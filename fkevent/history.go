@@ -12,6 +12,7 @@ import (
 )
 
 type ToolCallRecord struct {
+	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 	Result    string `json:"result"`
@@ -71,15 +72,6 @@ func (m *AgentMessage) GetTextContent() string {
 // 这类工具（如网页抓取、文档读取）会产生大量输出，在历史上下文中属于冗余内容。
 var NoisyToolPrefixes = []string{"fetch", "doc"}
 
-// isNoisyTool 判断工具名是否属于噪声工具
-func isNoisyTool(name string) bool {
-	for _, p := range NoisyToolPrefixes {
-		if strings.HasPrefix(name, p) {
-			return true
-		}
-	}
-	return false
-}
 
 // maxToolArgLen 工具参数摘要最大长度（rune）
 const maxToolArgLen = 200
@@ -87,46 +79,6 @@ const maxToolArgLen = 200
 // maxToolResultLen 工具结果摘要最大长度（rune）
 const maxToolResultLen = 2000
 
-// GetContentWithTools 获取消息中的文本内容和工具调用摘要，按事件顺序拼接
-func (m *AgentMessage) GetContentWithTools() string {
-	return m.getContentWithToolsInternal(false)
-}
-
-// GetContentWithToolsFiltered 获取消息中的文本内容和工具调用摘要，过滤掉噪声工具的结果
-func (m *AgentMessage) GetContentWithToolsFiltered() string {
-	return m.getContentWithToolsInternal(true)
-}
-
-func (m *AgentMessage) getContentWithToolsInternal(filterNoisy bool) string {
-	var builder strings.Builder
-	for _, event := range m.Events {
-		switch event.Type {
-		case MsgTypeText:
-			builder.WriteString(event.Content)
-		case MsgTypeToolCall:
-			if tc := event.ToolCall; tc != nil {
-				builder.WriteString("\n[调用工具: ")
-				builder.WriteString(tc.Name)
-				if tc.Arguments != "" {
-					builder.WriteString("(")
-					builder.WriteString(truncateRunes(tc.Arguments, maxToolArgLen))
-					builder.WriteString(")")
-				}
-				builder.WriteString("]")
-				if tc.Result != "" {
-					if filterNoisy && isNoisyTool(tc.Name) {
-						fmt.Fprintf(&builder, " → [result omitted] (~%d chars)", len([]rune(tc.Result)))
-					} else {
-						builder.WriteString(" → ")
-						builder.WriteString(truncateRunes(tc.Result, maxToolResultLen))
-					}
-				}
-				builder.WriteString("\n")
-			}
-		}
-	}
-	return builder.String()
-}
 
 // truncateRunes 按 rune 截断字符串
 func truncateRunes(s string, maxLen int) string {
@@ -153,6 +105,7 @@ const maxErrorContentLen = 1200
 
 // pendingToolCall 待匹配的工具调用
 type pendingToolCall struct {
+	ID        string
 	Name      string
 	Arguments string
 }
@@ -165,7 +118,7 @@ type HistoryRecorder struct {
 	currentRunPath   string
 	currentStartTime time.Time
 	currentEvents    []MessageEvent
-	pendingToolCalls []pendingToolCall // FIFO 队列，支持同名工具并发调用
+	pendingToolCalls []pendingToolCall // 按 ID 匹配工具调用与结果
 	summary          string            // 上下文压缩摘要
 	summarizedCount  int               // 已被摘要覆盖的消息数量
 }
@@ -223,6 +176,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		for _, tc := range event.ToolCalls {
 			if tc.Function.Name != "" {
 				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
+					ID:   tc.ID,
 					Name: tc.Function.Name,
 				})
 			}
@@ -230,11 +184,10 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	case EventToolCalls:
 		h.ensureAgentContext(event)
-		// tool_calls 事件带有完整参数，更新对应的 pending 记录
 		for _, tc := range event.ToolCalls {
 			updated := false
 			for i := range h.pendingToolCalls {
-				if h.pendingToolCalls[i].Name == tc.Function.Name && h.pendingToolCalls[i].Arguments == "" {
+				if h.pendingToolCalls[i].ID == tc.ID && h.pendingToolCalls[i].Arguments == "" {
 					h.pendingToolCalls[i].Arguments = tc.Function.Arguments
 					updated = true
 					break
@@ -242,6 +195,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 			if !updated {
 				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
+					ID:        tc.ID,
 					Name:      tc.Function.Name,
 					Arguments: tc.Function.Arguments,
 				})
@@ -249,12 +203,21 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 
 	case EventToolResult, EventToolResultChunk:
-		if len(h.pendingToolCalls) > 0 {
-			tc := h.pendingToolCalls[0]
-			h.pendingToolCalls = h.pendingToolCalls[1:]
+		h.ensureAgentContext(event)
+		idx := -1
+		for i := range h.pendingToolCalls {
+			if h.pendingToolCalls[i].ID == event.ToolCallID && event.ToolCallID != "" {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			tc := h.pendingToolCalls[idx]
+			h.pendingToolCalls = append(h.pendingToolCalls[:idx], h.pendingToolCalls[idx+1:]...)
 			h.currentEvents = append(h.currentEvents, MessageEvent{
 				Type: MsgTypeToolCall,
 				ToolCall: &ToolCallRecord{
+					ID:        tc.ID,
 					Name:      tc.Name,
 					Arguments: tc.Arguments,
 					Result:    event.Content,
@@ -276,6 +239,15 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				Content: event.Content,
 			})
 		}
+		for _, tc := range event.ToolCalls {
+			if tc.Function.Name != "" {
+				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
+					ID:        tc.ID,
+					Name:      tc.Function.Name,
+					Arguments: tc.Function.Arguments,
+				})
+			}
+		}
 
 	case EventAction:
 		h.currentEvents = append(h.currentEvents, MessageEvent{
@@ -294,7 +266,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			Content: truncateErrorContent(event.Error),
 		})
 
-	case "dispatch_progress":
+	case EventDispatchProgress:
 		// 子任务进度事件不单独记录，最终结果已包含在 tool_call 的 result 中
 	}
 }

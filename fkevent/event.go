@@ -216,7 +216,8 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 			Type:      eventType,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
-			Content:   chunk.Content,
+			Content:    chunk.Content,
+			ToolCallID: chunk.ToolCallID,
 		}); err != nil {
 			return err
 		}
@@ -245,9 +246,10 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 				Type:      EventToolCallsPreparing,
 				AgentName: event.AgentName,
 				RunPath:   formatRunPath(event.RunPath),
-				ToolCalls: []schema.ToolCall{
-					{Function: schema.FunctionCall{Name: tc.Function.Name}},
-				},
+				ToolCalls: []schema.ToolCall{{
+					ID:       tc.ID,
+					Function: schema.FunctionCall{Name: tc.Function.Name},
+				}},
 			}); err != nil {
 				return err
 			}

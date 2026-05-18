@@ -164,11 +164,11 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 
 		// 摘要未覆盖的最近记录
 		for _, msg := range agentMessages[summarizedCount:] {
-			messages = append(messages, agentMessageToSchemaMessage(msg))
+			messages = append(messages, agentMessageToSchemaMessages(msg)...)
 		}
 	} else if len(agentMessages) > 0 {
 		for _, msg := range agentMessages {
-			messages = append(messages, agentMessageToSchemaMessage(msg))
+			messages = append(messages, agentMessageToSchemaMessages(msg)...)
 		}
 	}
 
@@ -192,22 +192,35 @@ func logMessages(tag string, msgs []adk.Message) {
 	log.Debugf("[%s] 共 %d 条消息, 约 %d 字符", tag, len(msgs), totalChars)
 	for i, m := range msgs {
 		role := string(m.Role)
-		label := m.Name
 		preview := truncatePreview(m.Content, 120)
 		extra := ""
+
+		// 工具调用：拆分为独立的 tool_call / tool_result 展示
 		if len(m.ToolCalls) > 0 {
-			extra += fmt.Sprintf(" tool_calls=%d", len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				name := tc.Function.Name
+				if tc.Function.Arguments != "" {
+					name += "(" + tc.Function.Arguments + ")"
+				}
+				log.Debugf("  [%d] %-10s | %s", i+1, "tool_call", truncatePreview(name, 160))
+			}
+			continue
 		}
+		if m.Role == schema.Tool {
+			log.Debugf("  [%d] %-10s | %s%s", i+1, "tool_result", preview, extra)
+			continue
+		}
+
 		if m.ReasoningContent != "" {
 			extra += fmt.Sprintf(" reasoning=%dchars", len([]rune(m.ReasoningContent)))
 		}
 		if len(m.UserInputMultiContent) > 0 {
 			extra += fmt.Sprintf(" multimodal_parts=%d", len(m.UserInputMultiContent))
 		}
-		if label != "" {
-			extra += fmt.Sprintf(" name=%s", label)
+		if m.Name != "" {
+			extra += fmt.Sprintf(" name=%s", m.Name)
 		}
-		log.Debugf("  [%d] %-9s | %s%s", i+1, role, preview, extra)
+		log.Debugf("  [%d] %-10s | %s%s", i+1, role, preview, extra)
 	}
 }
 
@@ -221,20 +234,69 @@ func truncatePreview(s string, n int) string {
 	return string(r[:n]) + "..."
 }
 
-// agentMessageToSchemaMessage 将 AgentMessage 转为对应角色的 Message
-func agentMessageToSchemaMessage(msg fkevent.AgentMessage) *schema.Message {
-	content := msg.GetContentWithToolsFiltered()
-
+// agentMessageToSchemaMessages 将 AgentMessage 转为结构化消息列表。
+// 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
+func agentMessageToSchemaMessages(msg fkevent.AgentMessage) []adk.Message {
 	if msg.AgentName == "用户" {
-		return schema.UserMessage(content)
+		return []adk.Message{schema.UserMessage(msg.GetTextContent())}
 	}
 
-	m := schema.AssistantMessage(content, nil)
-	m.Name = msg.AgentName
+	var messages []adk.Message
+	var textBuf strings.Builder
+	var reasoningBuf strings.Builder
 
-	if reasoning := msg.GetReasoningContent(); reasoning != "" {
-		m.ReasoningContent = reasoning
+	flushText := func() {
+		content := strings.TrimSpace(textBuf.String())
+		reasoning := strings.TrimSpace(reasoningBuf.String())
+		textBuf.Reset()
+		reasoningBuf.Reset()
+		if content == "" && reasoning == "" {
+			return
+		}
+		m := schema.AssistantMessage(content, nil)
+		m.Name = msg.AgentName
+		if reasoning != "" {
+			m.ReasoningContent = reasoning
+		}
+		messages = append(messages, m)
 	}
 
-	return m
+	for _, event := range msg.Events {
+		switch event.Type {
+		case fkevent.MsgTypeText:
+			textBuf.WriteString(event.Content)
+
+		case fkevent.MsgTypeReasoning:
+			reasoningBuf.WriteString(event.Content)
+
+		case fkevent.MsgTypeToolCall:
+			tc := event.ToolCall
+			if tc == nil {
+				continue
+			}
+			flushText()
+			// AssistantMessage 携带 ToolCall
+			messages = append(messages, schema.AssistantMessage("", []schema.ToolCall{{
+				ID:   tc.ID,
+				Type: "function",
+				Function: schema.FunctionCall{
+					Name:      tc.Name,
+					Arguments: tc.Arguments,
+				},
+			}}))
+			// ToolMessage 携带结果
+			messages = append(messages, schema.ToolMessage(tc.Result, tc.ID, schema.WithToolName(tc.Name)))
+
+		case fkevent.MsgTypeAction:
+			if event.Action != nil {
+				fmt.Fprintf(&textBuf, "[%s] %s\n", event.Action.ActionType, event.Action.Content)
+			}
+
+		case fkevent.MsgTypeError:
+			fmt.Fprintf(&textBuf, "[错误] %s\n", event.Content)
+		}
+	}
+
+	flushText()
+	return messages
 }
