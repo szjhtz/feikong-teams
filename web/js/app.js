@@ -58,10 +58,37 @@ class FKTeamsChat {
     if (resp.status === 401) {
       localStorage.removeItem("fk_token");
       document.cookie = "fk_token=; path=/; max-age=0";
-      window.location.href = "/login";
+      this.showAuthExpiredOverlay();
       throw new Error("unauthorized");
     }
     return resp;
+  }
+
+  showAuthExpiredOverlay() {
+    if (document.getElementById("auth-expired-overlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "auth-expired-overlay";
+    overlay.innerHTML = `
+      <div class="auth-expired-card">
+        <div class="auth-expired-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            <circle cx="12" cy="16" r="1"/>
+          </svg>
+        </div>
+        <h2>登录已过期</h2>
+        <p>为了你的数据安全，请重新登录后继续使用</p>
+        <button class="auth-expired-btn" onclick="window.location.href='/login'">重新登录</button>
+      </div>
+    `;
+    overlay.style.cssText = `
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6); z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+    `;
+    document.body.appendChild(overlay);
   }
 
   init() {

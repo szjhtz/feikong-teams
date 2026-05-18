@@ -63,6 +63,15 @@ func WebSocketHandler() gin.HandlerFunc {
 			_ = conn.Close()
 		}()
 
+		// 提取 WS 连接时的 token，用于每条消息的二次校验
+		wsToken := c.Query("token")
+		if wsToken == "" {
+			if cookie, err := c.Cookie("fk_token"); err == nil {
+				wsToken = cookie
+			}
+		}
+		authEnabled, _ := AuthEnabled()
+
 		// 线程安全的写入
 		var writeMu sync.Mutex
 		writeJSON := func(v any) error {
@@ -89,6 +98,13 @@ func WebSocketHandler() gin.HandlerFunc {
 			if err := json.Unmarshal(msgBytes, &wsMsg); err != nil {
 				_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "invalid message format"})
 				continue
+			}
+
+			// chat 消息二次校验 token，防止 WS 长时间连接后 token 过期仍可操作
+			if wsMsg.Type == "chat" && authEnabled && !ValidateToken(wsToken) {
+				_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "登录已过期，请重新登录"})
+				conn.Close()
+				break
 			}
 
 			switch wsMsg.Type {

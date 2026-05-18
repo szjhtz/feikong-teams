@@ -1273,8 +1273,13 @@ FKTeamsChat.prototype.handleAction = function (event) {
 };
 
 FKTeamsChat.prototype.handleError = function (event) {
-  const errorEl = document.createElement("div");
   const errorMsg = event.error || "";
+  if (errorMsg.includes("登录已过期")) {
+    this.showAuthExpiredOverlay();
+    return;
+  }
+
+  const errorEl = document.createElement("div");
   const isMaxIterations = errorMsg.includes("exceeds max iterations");
 
   if (isMaxIterations) {
