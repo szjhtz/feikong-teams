@@ -219,6 +219,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, _ error) {
 			stopSpinner()
 			e.state.EndQuery()
+			recorder.FinalizeCurrent()
 			if g.MemoryManager != nil {
 				g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
 			}

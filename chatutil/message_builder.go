@@ -2,8 +2,10 @@
 package chatutil
 
 import (
+	"fkteams/fkenv"
 	"fkteams/fkevent"
 	"fkteams/g"
+	"fkteams/log"
 	"fkteams/memory"
 	"fmt"
 	"strings"
@@ -20,7 +22,7 @@ func BuildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []a
 	if g.MemoryManager != nil {
 		memories := g.MemoryManager.Search(userInput, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.UserMessage(memCtx))
+			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
 		}
 	}
 
@@ -29,6 +31,10 @@ func BuildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []a
 
 	// 添加用户输入
 	inputMessages = append(inputMessages, schema.UserMessage(userInput))
+
+	if debugContextEnabled() {
+		logMessages("BuildInputMessages", inputMessages)
+	}
 	return inputMessages
 }
 
@@ -40,7 +46,7 @@ func BuildMultimodalInputMessages(recorder *fkevent.HistoryRecorder, textContent
 	if g.MemoryManager != nil {
 		memories := g.MemoryManager.Search(textContent, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.UserMessage(memCtx))
+			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
 		}
 	}
 
@@ -52,6 +58,10 @@ func BuildMultimodalInputMessages(recorder *fkevent.HistoryRecorder, textContent
 		Role:                  schema.User,
 		UserInputMultiContent: parts,
 	})
+
+	if debugContextEnabled() {
+		logMessages("BuildMultimodalInputMessages", inputMessages)
+	}
 	return inputMessages
 }
 
@@ -140,43 +150,91 @@ func ExtractTextFromParts(parts []schema.MessageInputPart) string {
 	return strings.Join(texts, " ")
 }
 
-// buildHistoryMessages 将历史记录构建为消息列表，支持摘要压缩
+// buildHistoryMessages 构建结构化历史消息列表
 func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
 
+	var messages []adk.Message
+
 	if summaryText != "" && summarizedCount > 0 {
-		// 有摘要时：摘要 + 未被摘要覆盖的最近记录
-		var historyMessage strings.Builder
-		historyMessage.WriteString("## 对话历史摘要\n")
-		historyMessage.WriteString(summaryText)
+		messages = append(messages, schema.SystemMessage(
+			"## 对话历史摘要\n"+summaryText+"\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。",
+		))
 
-		if summarizedCount < len(agentMessages) {
-			historyMessage.WriteString("\n\n## 最近的对话记录\n")
-			for _, msg := range agentMessages[summarizedCount:] {
-				fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetContentWithToolsFiltered())
-			}
+		// 摘要未覆盖的最近记录
+		for _, msg := range agentMessages[summarizedCount:] {
+			messages = append(messages, agentMessageToSchemaMessage(msg))
 		}
-
-		return []adk.Message{
-			schema.UserMessage(
-				fmt.Sprintf("以下是已完成的对话历史（仅供参考）:\n---\n%s\n---\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。", historyMessage.String()),
-			),
-		}
-	}
-
-	if len(agentMessages) > 0 {
-		// 无摘要时：使用全部历史记录
-		var historyMessage strings.Builder
+	} else if len(agentMessages) > 0 {
 		for _, msg := range agentMessages {
-			fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetContentWithToolsFiltered())
-		}
-		return []adk.Message{
-			schema.UserMessage(
-				fmt.Sprintf("以下是已完成的对话历史（仅供参考）:\n---\n%s\n---\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。", historyMessage.String()),
-			),
+			messages = append(messages, agentMessageToSchemaMessage(msg))
 		}
 	}
 
-	return nil
+	return messages
+}
+
+// debugContextEnabled 检查是否启用上下文调试日志
+func debugContextEnabled() bool {
+	return fkenv.Get(fkenv.DebugContext) == "1"
+}
+
+// logMessages 打印消息列表摘要
+func logMessages(tag string, msgs []adk.Message) {
+	totalChars := 0
+	for _, m := range msgs {
+		totalChars += len(m.Content)
+		if m.ReasoningContent != "" {
+			totalChars += len(m.ReasoningContent)
+		}
+	}
+	log.Debugf("[%s] 共 %d 条消息, 约 %d 字符", tag, len(msgs), totalChars)
+	for i, m := range msgs {
+		role := string(m.Role)
+		label := m.Name
+		preview := truncatePreview(m.Content, 120)
+		extra := ""
+		if len(m.ToolCalls) > 0 {
+			extra += fmt.Sprintf(" tool_calls=%d", len(m.ToolCalls))
+		}
+		if m.ReasoningContent != "" {
+			extra += fmt.Sprintf(" reasoning=%dchars", len([]rune(m.ReasoningContent)))
+		}
+		if len(m.UserInputMultiContent) > 0 {
+			extra += fmt.Sprintf(" multimodal_parts=%d", len(m.UserInputMultiContent))
+		}
+		if label != "" {
+			extra += fmt.Sprintf(" name=%s", label)
+		}
+		log.Debugf("  [%d] %-9s | %s%s", i+1, role, preview, extra)
+	}
+}
+
+func truncatePreview(s string, n int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
+}
+
+// agentMessageToSchemaMessage 将 AgentMessage 转为对应角色的 Message
+func agentMessageToSchemaMessage(msg fkevent.AgentMessage) *schema.Message {
+	content := msg.GetContentWithToolsFiltered()
+
+	if msg.AgentName == "用户" {
+		return schema.UserMessage(content)
+	}
+
+	m := schema.AssistantMessage(content, nil)
+	m.Name = msg.AgentName
+
+	if reasoning := msg.GetReasoningContent(); reasoning != "" {
+		m.ReasoningContent = reasoning
+	}
+
+	return m
 }

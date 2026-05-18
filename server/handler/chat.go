@@ -156,6 +156,7 @@ func updateSessionTitleAndStatus(sessionID, userInput, status string) {
 
 // finishChat 保存历史、更新元数据、提取记忆
 func finishChat(recorder *fkevent.HistoryRecorder, sessionID, userInput string) {
+	recorder.FinalizeCurrent()
 	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 	ensureSessionMetadata(sessionID, userInput)
 	if g.MemoryManager != nil {
