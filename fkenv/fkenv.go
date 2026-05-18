@@ -10,7 +10,7 @@ const (
 	MaxIterations          = "FEIKONG_MAX_ITERATIONS"            // 智能体最大迭代次数
 	NoSelfRestart          = "FEIKONG_NO_SELF_RESTART"           // 禁用自动重启（systemd 等场景）
 	MaxTokensBeforeSummary = "FEIKONG_MAX_TOKENS_BEFORE_SUMMARY" // 触发摘要的 token 阈值
-	DebugContext           = "FEIKONG_DEBUG_CONTEXT"            // 开启上下文日志（影响性能）
+	DebugContext           = "FEIKONG_DEBUG_CONTEXT"             // 开启上下文日志
 )
 
 // Get 读取指定环境变量
