@@ -166,6 +166,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	destructiveGuard := destructiveguard.New()
 	if len(b.tools) > 0 {
 		cfg.ToolsConfig = adk.ToolsConfig{
+			EmitInternalEvents: true,
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools:               b.tools,
 				UnknownToolsHandler: unknownToolsHandler,
@@ -174,6 +175,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		}
 	} else {
 		cfg.ToolsConfig = adk.ToolsConfig{
+			EmitInternalEvents: true,
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				UnknownToolsHandler: unknownToolsHandler,
 			},

@@ -9,6 +9,7 @@ import (
 	"fkteams/providers/copilot"
 	"fkteams/tools/approval"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -174,13 +175,13 @@ func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk
 // runAgent 执行子智能体，通过 channel 推送事件到 UI
 func (m *middleware) runAgent(taskCtx context.Context, agent adk.Agent, index int, desc string, ch chan<- viewEvent) (string, []string, error) {
 	runner := adk.NewRunner(taskCtx, adk.RunnerConfig{
-		Agent: agent, EnableStreaming: false,
+		Agent: agent, EnableStreaming: true,
 		CheckPointStore: rootcommon.NewInMemoryStore(),
 	})
 
 	iter := runner.Run(taskCtx, []*schema.Message{{Role: schema.User, Content: desc}})
 
-	var lastContent string
+	var content strings.Builder
 	var operations []string
 	for {
 		event, ok := iter.Next()
@@ -199,11 +200,54 @@ func (m *middleware) runAgent(taskCtx context.Context, agent adk.Agent, index in
 
 		// 保留最后一条消息作为最终结论
 		if msg := extractMessage(event); msg != nil && msg.Content != "" {
-			lastContent = msg.Content
+			content.Reset()
+			content.WriteString(msg.Content)
 			sendEvent(ch, index, "content", msg.Content)
 		}
+		if err := consumeMessageStream(event, index, ch, &content, &operations); err != nil {
+			return "", operations, err
+		}
 	}
-	return lastContent, operations, nil
+	return content.String(), operations, nil
+}
+
+func consumeMessageStream(event *adk.AgentEvent, index int, ch chan<- viewEvent, content *strings.Builder, operations *[]string) error {
+	if event.Output == nil || event.Output.MessageOutput == nil || event.Output.MessageOutput.MessageStream == nil {
+		return nil
+	}
+	stream := event.Output.MessageOutput.MessageStream
+	defer stream.Close()
+
+	for {
+		chunk, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if chunk == nil {
+			continue
+		}
+		if len(chunk.ToolCalls) > 0 {
+			for _, tc := range chunk.ToolCalls {
+				if tc.Function.Name == "" {
+					continue
+				}
+				op := fmt.Sprintf("%s(%s)", tc.Function.Name, tc.Function.Arguments)
+				opRunes := []rune(op)
+				if len(opRunes) > 120 {
+					op = string(opRunes[:120]) + "..."
+				}
+				*operations = append(*operations, op)
+				sendEvent(ch, index, "op", op)
+			}
+		}
+		if chunk.Content != "" {
+			content.WriteString(chunk.Content)
+			sendEvent(ch, index, "content", chunk.Content)
+		}
+	}
 }
 
 // sendEvent 安全发送事件到 channel（不会阻塞）
