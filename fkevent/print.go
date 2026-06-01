@@ -142,6 +142,7 @@ func (rw *reasoningWriter) writeChunk(content string) {
 func newPrintEvent() (func(Event), func()) {
 	agentName := ""
 	lastToolName := ""
+	toolNamesByID := map[string]string{}
 	inReasoning := false
 	var sb streamBuf
 	var rw *reasoningWriter
@@ -202,14 +203,20 @@ func newPrintEvent() (func(Event), func()) {
 
 		case EventToolResult:
 			tryFlush()
+			toolName := lastToolName
+			if event.ToolCallID != "" {
+				if name, ok := toolNamesByID[event.ToolCallID]; ok {
+					toolName = name
+				}
+			}
 			resultTitle := "工具结果"
-			if FormatToolDisplay(lastToolName).Kind == "agent" {
+			if FormatToolDisplay(toolName).Kind == "agent" {
 				resultTitle = "成员结果"
 			}
 			fmt.Printf("\n\033[1;33m⚙ [%s] %s:\033[0m\n", event.AgentName, resultTitle)
 			if event.Content != "" {
 				var formatted string
-				switch lastToolName {
+				switch toolName {
 				case "search":
 					formatted = formatSearchResults(event.Content)
 				case "execute":
@@ -219,11 +226,11 @@ func newPrintEvent() (func(Event), func()) {
 				case "file_patch":
 					formatted = formatFilePatchResult(event.Content)
 				case "ssh_execute", "ssh_upload", "ssh_download", "ssh_list_dir":
-					formatted = formatSSHResult(event.Content, lastToolName)
+					formatted = formatSSHResult(event.Content, toolName)
 				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
-					formatted = formatTodoResult(event.Content, lastToolName)
+					formatted = formatTodoResult(event.Content, toolName)
 				case "schedule_add", "schedule_list", "schedule_cancel", "schedule_delete":
-					formatted = formatSchedulerResult(event.Content, lastToolName)
+					formatted = formatSchedulerResult(event.Content, toolName)
 				case "dispatch_tasks":
 					formatted = formatDispatchResult(event.Content)
 				}
@@ -246,6 +253,9 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			for _, tool := range event.ToolCalls {
 				if tool.Function.Name != "" {
+					if tool.ID != "" {
+						toolNamesByID[tool.ID] = tool.Function.Name
+					}
 					display := FormatToolDisplay(tool.Function.Name)
 					if display.Kind == "agent" {
 						fmt.Printf("\n\033[1;35m[%s] 准备指派: \033[1m%s\033[0m \033[90m(任务准备中...)\033[0m\n", event.AgentName, display.Target)
@@ -260,6 +270,9 @@ func newPrintEvent() (func(Event), func()) {
 			tryFlush()
 			fmt.Printf("\n\033[1;35m[%s] 调用:\033[0m\n", event.AgentName)
 			for i, tool := range event.ToolCalls {
+				if tool.ID != "" {
+					toolNamesByID[tool.ID] = tool.Function.Name
+				}
 				display := FormatToolDisplay(tool.Function.Name)
 				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
 				if i == len(event.ToolCalls)-1 {
@@ -815,6 +828,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 	var buf strings.Builder
 	lastAgent := ""
 	lastToolName := ""
+	toolNamesByID := map[string]string{}
 	inStream := false
 
 	flushStream := func() {
@@ -849,12 +863,18 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			for _, tc := range event.ToolCalls {
 				if tc.Function.Name != "" {
 					lastToolName = tc.Function.Name
+					if tc.ID != "" {
+						toolNamesByID[tc.ID] = tc.Function.Name
+					}
 				}
 			}
 
 		case EventToolCalls:
 			flushStream()
 			for i, tc := range event.ToolCalls {
+				if tc.ID != "" {
+					toolNamesByID[tc.ID] = tc.Function.Name
+				}
 				if i == len(event.ToolCalls)-1 {
 					lastToolName = tc.Function.Name
 				}
@@ -870,7 +890,13 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 		case EventToolResult:
 			if event.Content != "" {
-				if formatted := formatToolResultMarkdown(event.Content, lastToolName); formatted != "" {
+				toolName := lastToolName
+				if event.ToolCallID != "" {
+					if name, ok := toolNamesByID[event.ToolCallID]; ok {
+						toolName = name
+					}
+				}
+				if formatted := formatToolResultMarkdown(event.Content, toolName); formatted != "" {
 					buf.WriteString(formatted)
 				}
 			}

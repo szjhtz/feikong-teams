@@ -320,6 +320,12 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 				"display_name": display.DisplayName,
 				"kind":         display.Kind,
 			}
+			if tc.ID != "" {
+				toolCall["id"] = tc.ID
+			}
+			if tc.Index != nil {
+				toolCall["index"] = *tc.Index
+			}
 			if display.Target != "" {
 				toolCall["target"] = display.Target
 			}
@@ -332,6 +338,9 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	}
 	if event.ActionType != "" {
 		result["action_type"] = event.ActionType
+	}
+	if event.ToolCallID != "" {
+		result["tool_call_id"] = event.ToolCallID
 	}
 	if event.Detail != "" {
 		result["detail"] = event.Detail

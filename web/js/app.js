@@ -10,6 +10,10 @@ class FKTeamsChat {
     this.mode = "team";
     this.isProcessing = false;
     this.currentMessageElement = null;
+    this.currentMessageElements = {};
+    this.pendingToolCalls = {};
+    this.toolCallsByID = {};
+    this.toolCallsByIndex = {};
     this.hasToolCallAfterMessage = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
@@ -388,7 +392,7 @@ class FKTeamsChat {
       // 如果有正在处理的任务，发送 resume 请求恢复输出流
       if (this.isProcessing && this.sessionId) {
         // 重置流式渲染标志，避免断连前的过期状态导致回放事件创建重复卡片
-        this.hasToolCallAfterMessage = false;
+        this.resetParallelState();
         this._resumePending = true;
         this._resumeReplayed = false;
         ws.send(

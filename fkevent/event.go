@@ -123,6 +123,7 @@ type streamState struct {
 	toolCallsMap    map[int][]*schema.Message // 按 index 聚合工具调用分片
 	toolCallStarted map[int]bool              // 记录已发送准备事件的工具调用
 	toolArgsBuffer  map[int]string            // 按 index 缓冲未发送的参数增量
+	toolCallIDs     map[int]string            // 按 index 记录工具调用 ID
 	lastArgsDelta   time.Time
 }
 
@@ -133,6 +134,7 @@ func newStreamState() *streamState {
 		toolCallsMap:    make(map[int][]*schema.Message),
 		toolCallStarted: make(map[int]bool),
 		toolArgsBuffer:  make(map[int]string),
+		toolCallIDs:     make(map[int]string),
 	}
 }
 
@@ -213,9 +215,9 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 			eventType = EventToolResultChunk
 		}
 		if err := handleEvent(ctx, Event{
-			Type:      eventType,
-			AgentName: event.AgentName,
-			RunPath:   formatRunPath(event.RunPath),
+			Type:       eventType,
+			AgentName:  event.AgentName,
+			RunPath:    formatRunPath(event.RunPath),
 			Content:    chunk.Content,
 			ToolCallID: chunk.ToolCallID,
 		}); err != nil {
@@ -239,6 +241,9 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 			continue
 		}
 		idx := *tc.Index
+		if tc.ID != "" {
+			ss.toolCallIDs[idx] = tc.ID
+		}
 
 		if !ss.toolCallStarted[idx] && tc.Function.Name != "" {
 			ss.toolCallStarted[idx] = true
@@ -248,6 +253,7 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 				RunPath:   formatRunPath(event.RunPath),
 				ToolCalls: []schema.ToolCall{{
 					ID:       tc.ID,
+					Index:    tc.Index,
 					Function: schema.FunctionCall{Name: tc.Function.Name},
 				}},
 			}); err != nil {
@@ -281,11 +287,12 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 				continue
 			}
 			if err := handleEvent(ctx, Event{
-				Type:      EventToolCallsArgsDelta,
-				AgentName: event.AgentName,
-				RunPath:   formatRunPath(event.RunPath),
-				Content:   delta,
-				Detail:    fmt.Sprintf("%d", idx),
+				Type:       EventToolCallsArgsDelta,
+				AgentName:  event.AgentName,
+				RunPath:    formatRunPath(event.RunPath),
+				Content:    delta,
+				Detail:     fmt.Sprintf("%d", idx),
+				ToolCallID: ss.toolCallIDs[idx],
 			}); err != nil {
 				return err
 			}
@@ -304,11 +311,12 @@ func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamS
 			continue
 		}
 		_ = handleEvent(ctx, Event{
-			Type:      EventToolCallsArgsDelta,
-			AgentName: event.AgentName,
-			RunPath:   formatRunPath(event.RunPath),
-			Content:   delta,
-			Detail:    fmt.Sprintf("%d", idx),
+			Type:       EventToolCallsArgsDelta,
+			AgentName:  event.AgentName,
+			RunPath:    formatRunPath(event.RunPath),
+			Content:    delta,
+			Detail:     fmt.Sprintf("%d", idx),
+			ToolCallID: ss.toolCallIDs[idx],
 		})
 	}
 }

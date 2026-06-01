@@ -29,6 +29,46 @@ FKTeamsChat.prototype.getToolDisplay = function (toolCall) {
   return { name, displayName: name, kind: "tool", target: "" };
 };
 
+FKTeamsChat.prototype.getStreamKey = function (event) {
+  return [event.agent_name || "", event.run_path || ""].join("|");
+};
+
+FKTeamsChat.prototype.resetParallelState = function () {
+  this.currentMessageElement = null;
+  this.currentMessageElements = {};
+  this.pendingToolCalls = {};
+  this.toolCallsByID = {};
+  this.toolCallsByIndex = {};
+  this.lastToolName = "";
+};
+
+FKTeamsChat.prototype.toolCallKey = function (toolCall, fallbackIndex) {
+  if (toolCall?.id) return "id:" + toolCall.id;
+  if (toolCall?.index !== undefined && toolCall?.index !== null) return "idx:" + toolCall.index;
+  return "fallback:" + fallbackIndex;
+};
+
+FKTeamsChat.prototype.findToolCallCard = function (key) {
+  const cards = this.messagesContainer.querySelectorAll(".tool-call");
+  for (const card of cards) {
+    if (card.getAttribute("data-tool-key") === key) return card;
+  }
+  return null;
+};
+
+FKTeamsChat.prototype.getMessageElementForEvent = function (event) {
+  const key = this.getStreamKey(event);
+  if (this.hasToolCallAfterMessage) {
+    this.currentMessageElements = {};
+    this.hasToolCallAfterMessage = false;
+  }
+  if (!this.currentMessageElements[key]) {
+    this.currentMessageElements[key] = this.createAssistantMessage(event.agent_name);
+  }
+  this.currentMessageElement = this.currentMessageElements[key];
+  return this.currentMessageElement;
+};
+
 FKTeamsChat.prototype.sendMessage = async function () {
   const message = this.messageInput.value.trim();
   const hasAttachments = this.attachments && this.attachments.length > 0;
@@ -297,8 +337,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
         this.isProcessing = false;
         this.updateStatus("connected", "已连接");
         this.updateSendButtonState();
-        this.currentMessageElement = null;
-        this.hasToolCallAfterMessage = false;
+        this.resetParallelState();
         this.loadSession(this.sessionId);
         break;
       }
@@ -308,8 +347,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       this.updateSendButtonState();
       // 流式结束后，对所有含 data-raw 的消息做一次脚注最终渲染
       this._finalizeFootnotes();
-      this.currentMessageElement = null;
-      this.hasToolCallAfterMessage = false;
+      this.resetParallelState();
       break;
     case "cancelled":
       this.handleCancelled(event);
@@ -613,18 +651,7 @@ FKTeamsChat.prototype._finalizeFootnotes = function () {
 };
 
 FKTeamsChat.prototype.handleStreamChunk = function (event) {
-  // 检查是否需要创建新卡片：工具调用后、没有当前元素、或者 agent 名称变化
-  const currentAgentName =
-    this.currentMessageElement?.getAttribute("data-agent");
-  const needNewCard =
-    this.hasToolCallAfterMessage ||
-    !this.currentMessageElement ||
-    (event.agent_name && currentAgentName !== event.agent_name);
-
-  if (needNewCard) {
-    this.currentMessageElement = this.createAssistantMessage(event.agent_name);
-    this.hasToolCallAfterMessage = false;
-  }
+  this.getMessageElementForEvent(event);
 
   const bodyEl = this.currentMessageElement.querySelector(".message-body");
   if (bodyEl) {
@@ -680,18 +707,7 @@ FKTeamsChat.prototype.handleStreamChunk = function (event) {
 
 // 处理推理/思考内容的流式事件
 FKTeamsChat.prototype.handleReasoningChunk = function (event) {
-  // 检查是否需要创建新卡片
-  const currentAgentName =
-    this.currentMessageElement?.getAttribute("data-agent");
-  const needNewCard =
-    this.hasToolCallAfterMessage ||
-    !this.currentMessageElement ||
-    (event.agent_name && currentAgentName !== event.agent_name);
-
-  if (needNewCard) {
-    this.currentMessageElement = this.createAssistantMessage(event.agent_name);
-    this.hasToolCallAfterMessage = false;
-  }
+  this.getMessageElementForEvent(event);
 
   const bodyEl = this.currentMessageElement.querySelector(".message-body");
   if (!bodyEl) return;
@@ -729,18 +745,7 @@ FKTeamsChat.prototype.handleReasoningChunk = function (event) {
 FKTeamsChat.prototype.handleMessage = function (event) {
   if (!event.content && !event.reasoning_content) return;
 
-  // 检查是否需要创建新卡片：工具调用后、没有当前元素、或者 agent 名称变化
-  const currentAgentName =
-    this.currentMessageElement?.getAttribute("data-agent");
-  const needNewCard =
-    this.hasToolCallAfterMessage ||
-    !this.currentMessageElement ||
-    (event.agent_name && currentAgentName !== event.agent_name);
-
-  if (needNewCard) {
-    this.currentMessageElement = this.createAssistantMessage(event.agent_name);
-    this.hasToolCallAfterMessage = false;
-  }
+  this.getMessageElementForEvent(event);
 
   const bodyEl = this.currentMessageElement.querySelector(".message-body");
   if (bodyEl) {
@@ -792,13 +797,16 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
   if (!event.tool_calls || event.tool_calls.length === 0) return;
 
   this.hasToolCallAfterMessage = true;
-  // 记录最近调用的工具名，供 handleToolResult 识别
-  this.lastToolName = event.tool_calls[0].name;
-
-  const toolDisplay = this.getToolDisplay(event.tool_calls[0]);
-  const toolCallEl = document.createElement("div");
-  toolCallEl.className = "tool-call" + (toolDisplay.kind === "agent" ? " agent-tool-call" : "");
-  toolCallEl.innerHTML = `
+  event.tool_calls.forEach((toolCall, i) => {
+    this.lastToolName = toolCall.name;
+    const key = this.toolCallKey(toolCall, i);
+    const toolDisplay = this.getToolDisplay(toolCall);
+    const toolCallEl = document.createElement("div");
+    toolCallEl.className = "tool-call" + (toolDisplay.kind === "agent" ? " agent-tool-call" : "");
+    toolCallEl.setAttribute("data-tool-key", key);
+    if (toolCall.id) toolCallEl.setAttribute("data-tool-call-id", toolCall.id);
+    if (toolCall.index !== undefined && toolCall.index !== null) toolCallEl.setAttribute("data-tool-index", toolCall.index);
+    toolCallEl.innerHTML = `
         <div class="tool-call-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3"/>
@@ -809,7 +817,11 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
         </div>
         <pre class="tool-call-args">${toolDisplay.kind === "agent" ? "任务准备中..." : "参数准备中..."}</pre>
     `;
-  this.messagesContainer.appendChild(toolCallEl);
+    this.pendingToolCalls[key] = { el: toolCallEl, toolCall };
+    if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
+    if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
+    this.messagesContainer.appendChild(toolCallEl);
+  });
   this.scrollToBottom();
 };
 
@@ -817,12 +829,12 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
 FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
   if (!event.content) return;
 
-  // 找到最后一个仍在准备中的 tool-call 卡片
-  const allCards = this.messagesContainer.querySelectorAll(".tool-call");
-  if (allCards.length === 0) return;
+  const key = event.tool_call_id ? "id:" + event.tool_call_id : "idx:" + (event.detail || "0");
+  const pending = this.pendingToolCalls[key];
+  const card = pending?.el || this.findToolCallCard(key);
+  if (!card) return;
 
-  const lastCard = allCards[allCards.length - 1];
-  const argsEl = lastCard.querySelector(".tool-call-args");
+  const argsEl = card.querySelector(".tool-call-args");
   if (!argsEl) return;
 
   // 首次增量到达时清除占位文本
@@ -841,7 +853,7 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
   if (!event.tool_calls || event.tool_calls.length === 0) return;
 
   // dispatch_tasks: 暂存任务列表，卡片在审批通过后由 dispatch_progress 触发创建
-  if (this.lastToolName === "dispatch_tasks" && event.tool_calls[0].arguments) {
+  if (event.tool_calls[0].name === "dispatch_tasks" && event.tool_calls[0].arguments) {
     try {
       const args = JSON.parse(event.tool_calls[0].arguments);
       if (args.tasks && args.tasks.length > 0) {
@@ -858,38 +870,43 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
     }
   }
 
-  // 找到所有待填充参数的 tool-call 卡片（仍显示"参数准备中..."或正在流式更新的）
-  const allCards = this.messagesContainer.querySelectorAll(".tool-call");
-  const pendingCards = [];
-  allCards.forEach(function (card) {
-    var argsEl = card.querySelector(".tool-call-args");
-    if (argsEl && (argsEl.textContent === "参数准备中..." || argsEl.textContent === "任务准备中..." || argsEl.classList.contains("streaming"))) {
-      pendingCards.push(card);
-    }
-  });
+  event.tool_calls.forEach((toolCall, i) => {
+    this.lastToolName = toolCall.name;
+    const key = this.toolCallKey(toolCall, i);
+    if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
+    if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
 
-  // 按顺序将 tool calls 的参数填入对应的待填充卡片
-  var count = Math.min(event.tool_calls.length, pendingCards.length);
-  for (var i = 0; i < count; i++) {
-    var argsEl = pendingCards[i].querySelector(".tool-call-args");
-    if (argsEl && event.tool_calls[i].arguments) {
-      argsEl.classList.remove("streaming");
-      try {
-        var args = JSON.parse(event.tool_calls[i].arguments);
-        argsEl.textContent = JSON.stringify(args, null, 2);
-      } catch (e) {
-        argsEl.textContent = event.tool_calls[i].arguments;
+    let pending = this.pendingToolCalls[key];
+    if (!pending) {
+      const fallbackKey = "fallback:" + i;
+      pending = this.pendingToolCalls[fallbackKey];
+      if (pending) {
+        this.pendingToolCalls[key] = pending;
+        delete this.pendingToolCalls[fallbackKey];
+        pending.el.setAttribute("data-tool-key", key);
       }
     }
-  }
+    const argsEl = pending?.el?.querySelector(".tool-call-args");
+    if (argsEl && toolCall.arguments) {
+      argsEl.classList.remove("streaming");
+      try {
+        var args = JSON.parse(toolCall.arguments);
+        argsEl.textContent = JSON.stringify(args, null, 2);
+      } catch (e) {
+        argsEl.textContent = toolCall.arguments;
+      }
+    }
+  });
   this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleToolResult = function (event) {
   let content = event.content || "";
+  const toolCall = event.tool_call_id ? this.toolCallsByID[event.tool_call_id] : null;
+  const toolName = toolCall?.name || this.lastToolName || "";
 
   // dispatch_tasks 专用渲染
-  if (this.lastToolName === "dispatch_tasks") {
+  if (toolName === "dispatch_tasks") {
     // 移除实时进度容器
     const progress = document.getElementById("dispatch-progress");
     if (progress) progress.remove();
@@ -917,7 +934,8 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
 
   const toolResultEl = document.createElement("div");
   toolResultEl.className = "tool-result";
-  const resultTitle = this.getToolDisplay({ name: this.lastToolName }).kind === "agent" ? "成员结果" : "执行结果";
+  if (event.tool_call_id) toolResultEl.setAttribute("data-tool-call-id", event.tool_call_id);
+  const resultTitle = this.getToolDisplay(toolCall || { name: toolName }).kind === "agent" ? "成员结果" : "执行结果";
   toolResultEl.innerHTML = `
         <div class="tool-result-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1494,8 +1512,7 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
   this.isProcessing = false;
   this.updateStatus("connected", "已连接");
   this.updateSendButtonState();
-  this.currentMessageElement = null;
-  this.hasToolCallAfterMessage = false;
+  this.resetParallelState();
 
   // 关闭审批弹窗
   var modal = document.getElementById("approval-modal");
@@ -1960,8 +1977,7 @@ FKTeamsChat.prototype.clearChatUI = function () {
             <p>多智能体协作系统，开始您的对话</p>
         </div>
     `;
-  this.currentMessageElement = null;
-  this.hasToolCallAfterMessage = false;
+  this.resetParallelState();
 
   // 隐藏回到底部按钮（切换到空页面时需要重置）
   this.showScrollToBottomBtn(false);

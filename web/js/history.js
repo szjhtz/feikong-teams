@@ -230,6 +230,10 @@ FKTeamsChat.prototype._saveSessionDOM = function () {
     fragment: fragment,
     scrollTop: this.mainContent ? this.mainContent.scrollTop : 0,
     currentMessageElement: this.currentMessageElement,
+    currentMessageElements: this.currentMessageElements,
+    pendingToolCalls: this.pendingToolCalls,
+    toolCallsByID: this.toolCallsByID,
+    toolCallsByIndex: this.toolCallsByIndex,
     hasToolCallAfterMessage: this.hasToolCallAfterMessage,
     userQuestions: [...this.userQuestions],
     currentAgent: this.currentAgent,
@@ -245,6 +249,10 @@ FKTeamsChat.prototype._restoreSessionDOM = function (sessionId) {
   this.messagesContainer.innerHTML = "";
   this.messagesContainer.appendChild(cached.fragment);
   this.currentMessageElement = cached.currentMessageElement;
+  this.currentMessageElements = cached.currentMessageElements || {};
+  this.pendingToolCalls = cached.pendingToolCalls || {};
+  this.toolCallsByID = cached.toolCallsByID || {};
+  this.toolCallsByIndex = cached.toolCallsByIndex || {};
   this.hasToolCallAfterMessage = cached.hasToolCallAfterMessage;
   this.userQuestions = cached.userQuestions || [];
   this.setCurrentAgent(cached.currentAgent || null, false); // 从缓存还原，仅更新 UI
@@ -823,8 +831,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
 
   // 清空当前消息
   this.messagesContainer.innerHTML = "";
-  this.currentMessageElement = null;
-  this.hasToolCallAfterMessage = false;
+  this.resetParallelState();
 
   // 清空快速导航（将重新构建）
   this.clearQuickNav();
