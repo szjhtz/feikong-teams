@@ -3,7 +3,11 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"strings"
+	"sync"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -35,6 +39,7 @@ func (e *errorSafeAgent) Run(ctx context.Context, input *adk.AgentInput, opts ..
 
 	go func() {
 		defer gen.Close()
+		collector := newPartialOutputCollector()
 
 		for {
 			event, ok := innerIter.Next()
@@ -43,8 +48,7 @@ func (e *errorSafeAgent) Run(ctx context.Context, input *adk.AgentInput, opts ..
 			}
 
 			if event.Err != nil {
-				errMsg := fmt.Sprintf("[执行出错] %s 执行任务时遇到错误: %s。任务未完成。",
-					e.inner.Name(ctx), event.Err.Error())
+				errMsg := formatAgentError(e.inner.Name(ctx), event.Err, collector.String())
 
 				gen.Send(&adk.AgentEvent{
 					AgentName: event.AgentName,
@@ -59,9 +63,82 @@ func (e *errorSafeAgent) Run(ctx context.Context, input *adk.AgentInput, opts ..
 				break
 			}
 
+			collector.Observe(event)
 			gen.Send(event)
 		}
 	}()
 
 	return iter
+}
+
+type partialOutputCollector struct {
+	mu sync.Mutex
+	sb strings.Builder
+}
+
+func newPartialOutputCollector() *partialOutputCollector {
+	return &partialOutputCollector{}
+}
+
+func (c *partialOutputCollector) Observe(event *adk.AgentEvent) {
+	if event == nil || event.Output == nil || event.Output.MessageOutput == nil {
+		return
+	}
+	msgOutput := event.Output.MessageOutput
+	if msgOutput.Message != nil && msgOutput.Message.Content != "" {
+		c.Append(msgOutput.Message.Content)
+		return
+	}
+	if msgOutput.MessageStream == nil {
+		return
+	}
+
+	streams := msgOutput.MessageStream.Copy(2)
+	msgOutput.MessageStream = streams[0]
+	go c.consumeStream(streams[1])
+}
+
+func (c *partialOutputCollector) consumeStream(stream *schema.StreamReader[*schema.Message]) {
+	defer stream.Close()
+	for {
+		chunk, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return
+		}
+		if err != nil {
+			return
+		}
+		if chunk != nil && chunk.Content != "" {
+			c.Append(chunk.Content)
+		}
+	}
+}
+
+func (c *partialOutputCollector) Append(content string) {
+	if content == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sb.WriteString(content)
+}
+
+func (c *partialOutputCollector) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return strings.TrimSpace(c.sb.String())
+}
+
+func formatAgentError(agentName string, err error, partial string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "[执行出错] %s 执行任务时遇到错误，任务未完整完成。\n\n", agentName)
+	if partial != "" {
+		fmt.Fprintf(&sb, "## 已产生的可用内容\n%s\n\n", partial)
+	}
+	fmt.Fprintf(&sb, "## 错误信息\n%s\n\n", err.Error())
+	sb.WriteString("## 给 coordinator 的处理建议\n")
+	sb.WriteString("- 不要丢弃“已产生的可用内容”，先判断哪些信息仍可用于回答。\n")
+	sb.WriteString("- 分析错误类型；如果是内容风控、限流或临时网络错误，调整任务表述、缩小范围或换用其他成员/工具补齐缺口。\n")
+	sb.WriteString("- 若已有内容足够回答，直接整合并说明不确定性；不要无意义重复同一个失败调用。")
+	return sb.String()
 }
