@@ -4,7 +4,6 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/agents/middlewares/summary"
-	"fkteams/agents/retry"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
 	"fkteams/tools"
@@ -34,11 +33,6 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 
-	retryModel := retry.NewRetryChatModel(chatModel, &retry.ModelRetryConfig{
-		MaxRetries:  rootcommon.MaxRetries,
-		IsRetryAble: rootcommon.IsRetryAble,
-	})
-
 	maxTokens := summary.DefaultMaxTokensBeforeSummary
 	if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
 		if n, _ := strconv.Atoi(v); n > 0 {
@@ -46,7 +40,7 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 		}
 	}
 	summaryMiddleware, err := summary.New(ctx, &summary.Config{
-		Model:                  retryModel,
+		Model:                  chatModel,
 		MaxTokensBeforeSummary: maxTokens,
 	})
 	if err != nil {
@@ -54,12 +48,13 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 	}
 
 	return deep.New(ctx, &deep.Config{
-		Name:         "deep_researcher",
-		Description:  "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
-		ChatModel:    retryModel,
-		SubAgents:    subAgents,
-		MaxIteration: common.MaxIterations(),
-		Handlers:     []adk.ChatModelAgentMiddleware{summaryMiddleware},
+		Name:             "deep_researcher",
+		Description:      "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
+		ChatModel:        chatModel,
+		ModelRetryConfig: rootcommon.NewModelRetryConfig(),
+		SubAgents:        subAgents,
+		MaxIteration:     common.MaxIterations(),
+		Handlers:         []adk.ChatModelAgentMiddleware{summaryMiddleware},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: toolList,

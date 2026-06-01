@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/google/uuid"
 )
 
@@ -107,4 +108,20 @@ func IsRetryAble(ctx context.Context, err error) bool {
 		strings.Contains(msg, "stream error") ||
 		strings.Contains(msg, "INTERNAL_ERROR") ||
 		strings.Contains(msg, "EOF")
+}
+
+// NewModelRetryConfig 返回 Eino ADK 原生模型重试配置。
+func NewModelRetryConfig() *adk.ModelRetryConfig {
+	return &adk.ModelRetryConfig{
+		MaxRetries: MaxRetries,
+		ShouldRetry: func(ctx context.Context, retryCtx *adk.RetryContext) *adk.RetryDecision {
+			if retryCtx == nil || retryCtx.Err == nil || !IsRetryAble(ctx, retryCtx.Err) {
+				return nil
+			}
+			return &adk.RetryDecision{
+				Retry:        true,
+				RejectReason: retryCtx.Err.Error(),
+			}
+		},
+	}
 }

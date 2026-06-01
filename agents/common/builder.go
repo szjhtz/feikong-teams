@@ -11,7 +11,6 @@ import (
 	"fkteams/agents/middlewares/tools/patch"
 	"fkteams/agents/middlewares/tools/trimresult"
 	"fkteams/agents/middlewares/tools/warperror"
-	"fkteams/agents/retry"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
 	"fkteams/tools"
@@ -150,20 +149,17 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	// 工具元数据分类
 	tools.ClassifyTools(b.tools)
 
-	// 注入动态上下文 + 重试包装
+	// 注入动态上下文
 	chatModel = inject.New(chatModel)
-	retryModel := retry.NewRetryChatModel(chatModel, &retry.ModelRetryConfig{
-		MaxRetries:  rootcommon.MaxRetries,
-		IsRetryAble: rootcommon.IsRetryAble,
-	})
 
 	// 构建配置
 	cfg := &adk.ChatModelAgentConfig{
-		Name:          b.name,
-		Description:   b.description,
-		Instruction:   instruction,
-		Model:         retryModel,
-		MaxIterations: MaxIterations(),
+		Name:             b.name,
+		Description:      b.description,
+		Instruction:      instruction,
+		Model:            chatModel,
+		ModelRetryConfig: rootcommon.NewModelRetryConfig(),
+		MaxIterations:    MaxIterations(),
 	}
 
 	// 工具
