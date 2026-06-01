@@ -26,6 +26,34 @@ type callbackKey struct{}
 // nonInteractiveKey 标记非交互模式（如 Web 服务），禁止终端 TUI
 type nonInteractiveKey struct{}
 
+const internalContinueToolName = "continue_output"
+
+func isInternalToolName(name string) bool {
+	return name == internalContinueToolName
+}
+
+func isInternalContinueContent(content string) bool {
+	return strings.Contains(content, "Your previous text output was truncated") ||
+		strings.Contains(content, "Your previous tool call was truncated")
+}
+
+func filterVisibleToolCalls(toolCalls []schema.ToolCall) []schema.ToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	visible := toolCalls[:0]
+	for _, tc := range toolCalls {
+		if isInternalToolName(tc.Function.Name) {
+			continue
+		}
+		visible = append(visible, tc)
+	}
+	if len(visible) == 0 {
+		return nil
+	}
+	return visible
+}
+
 // WithCallback 将事件回调绑定到 context
 func WithCallback(ctx context.Context, cb func(Event) error) context.Context {
 	return context.WithValue(ctx, callbackKey{}, cb)
@@ -99,6 +127,9 @@ func handleMessageOutput(ctx context.Context, event *adk.AgentEvent) error {
 func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schema.Message) error {
 	eventType := EventMessage
 	if msg.Role == schema.Tool {
+		if isInternalToolName(msg.ToolName) || isInternalContinueContent(msg.Content) {
+			return nil
+		}
 		eventType = EventToolResult
 	}
 
@@ -112,7 +143,10 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 	}
 
 	if len(msg.ToolCalls) > 0 {
-		nEvent.ToolCalls = msg.ToolCalls
+		nEvent.ToolCalls = filterVisibleToolCalls(msg.ToolCalls)
+		if nEvent.Content == "" && nEvent.ReasoningContent == "" && len(nEvent.ToolCalls) == 0 {
+			return nil
+		}
 	}
 
 	return handleEvent(ctx, nEvent)
@@ -120,21 +154,23 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 
 // streamState 持有流式消息处理过程中的工具调用聚合状态
 type streamState struct {
-	toolCallsMap    map[int][]*schema.Message // 按 index 聚合工具调用分片
-	toolCallStarted map[int]bool              // 记录已发送准备事件的工具调用
-	toolArgsBuffer  map[int]string            // 按 index 缓冲未发送的参数增量
-	toolCallIDs     map[int]string            // 按 index 记录工具调用 ID
-	lastArgsDelta   time.Time
+	toolCallsMap     map[int][]*schema.Message // 按 index 聚合工具调用分片
+	toolCallStarted  map[int]bool              // 记录已发送准备事件的工具调用
+	toolArgsBuffer   map[int]string            // 按 index 缓冲未发送的参数增量
+	toolCallIDs      map[int]string            // 按 index 记录工具调用 ID
+	internalToolCall map[int]bool              // 按 index 标记内部工具调用
+	lastArgsDelta    time.Time
 }
 
 const argsDeltaInterval = 100 * time.Millisecond
 
 func newStreamState() *streamState {
 	return &streamState{
-		toolCallsMap:    make(map[int][]*schema.Message),
-		toolCallStarted: make(map[int]bool),
-		toolArgsBuffer:  make(map[int]string),
-		toolCallIDs:     make(map[int]string),
+		toolCallsMap:     make(map[int][]*schema.Message),
+		toolCallStarted:  make(map[int]bool),
+		toolArgsBuffer:   make(map[int]string),
+		toolCallIDs:      make(map[int]string),
+		internalToolCall: make(map[int]bool),
 	}
 }
 
@@ -210,6 +246,9 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 	}
 
 	if chunk.Content != "" {
+		if chunk.Role == schema.Tool && isInternalToolName(chunk.ToolName) {
+			return nil
+		}
 		var eventType EventType = EventStreamChunk
 		if chunk.Role == schema.Tool {
 			eventType = EventToolResultChunk
@@ -243,6 +282,12 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 		idx := *tc.Index
 		if tc.ID != "" {
 			ss.toolCallIDs[idx] = tc.ID
+		}
+		if isInternalToolName(tc.Function.Name) {
+			ss.internalToolCall[idx] = true
+		}
+		if ss.internalToolCall[idx] {
+			continue
 		}
 
 		if !ss.toolCallStarted[idx] && tc.Function.Name != "" {
@@ -286,6 +331,9 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 			if delta == "" {
 				continue
 			}
+			if ss.internalToolCall[idx] {
+				continue
+			}
 			if err := handleEvent(ctx, Event{
 				Type:       EventToolCallsArgsDelta,
 				AgentName:  event.AgentName,
@@ -308,6 +356,9 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamState) {
 	for idx, delta := range ss.toolArgsBuffer {
 		if delta == "" {
+			continue
+		}
+		if ss.internalToolCall[idx] {
 			continue
 		}
 		_ = handleEvent(ctx, Event{
@@ -335,7 +386,7 @@ func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamS
 		if err != nil {
 			return err
 		}
-		allToolCalls = append(allToolCalls, concatenatedMsg.ToolCalls...)
+		allToolCalls = append(allToolCalls, filterVisibleToolCalls(concatenatedMsg.ToolCalls)...)
 	}
 
 	if len(allToolCalls) > 0 {

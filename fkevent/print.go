@@ -325,6 +325,9 @@ func newPrintEvent() (func(Event), func()) {
 					toolName = name
 				}
 			}
+			if isInternalToolName(toolName) || isInternalContinueContent(event.Content) {
+				return
+			}
 			display := FormatToolDisplay(toolName)
 			if display.Kind == "agent" {
 				key, memberName, ok := agentToolKey(toolName)
@@ -402,6 +405,9 @@ func newPrintEvent() (func(Event), func()) {
 				fmt.Printf("\033[0m\n")
 			}
 			for _, tool := range event.ToolCalls {
+				if isInternalToolName(tool.Function.Name) {
+					continue
+				}
 				if tool.Function.Name != "" {
 					if tool.ID != "" {
 						toolNamesByID[tool.ID] = tool.Function.Name
@@ -441,6 +447,9 @@ func newPrintEvent() (func(Event), func()) {
 			tryFlush()
 			printedHeader := false
 			for i, tool := range event.ToolCalls {
+				if isInternalToolName(tool.Function.Name) {
+					continue
+				}
 				if tool.ID != "" {
 					toolNamesByID[tool.ID] = tool.Function.Name
 				}
@@ -1068,6 +1077,9 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 		case EventToolCallsPreparing:
 			for _, tc := range event.ToolCalls {
+				if isInternalToolName(tc.Function.Name) {
+					continue
+				}
 				if tc.Function.Name != "" {
 					lastToolName = tc.Function.Name
 					if tc.ID != "" {
@@ -1079,6 +1091,9 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 		case EventToolCalls:
 			flushStream()
 			for i, tc := range event.ToolCalls {
+				if isInternalToolName(tc.Function.Name) {
+					continue
+				}
 				if tc.ID != "" {
 					toolNamesByID[tc.ID] = tc.Function.Name
 				}
@@ -1096,7 +1111,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			lastAgent = ""
 
 		case EventToolResult:
-			if event.Content != "" {
+			if event.Content != "" && !isInternalContinueContent(event.Content) {
 				toolName := lastToolName
 				if event.ToolCallID != "" {
 					if name, ok := toolNamesByID[event.ToolCallID]; ok {

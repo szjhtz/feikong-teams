@@ -172,6 +172,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	case EventToolCallsPreparing:
 		h.ensureAgentContext(event)
 		for _, tc := range event.ToolCalls {
+			if isInternalToolName(tc.Function.Name) {
+				continue
+			}
 			if tc.Function.Name != "" {
 				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
 					ID:   tc.ID,
@@ -183,6 +186,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	case EventToolCalls:
 		h.ensureAgentContext(event)
 		for _, tc := range event.ToolCalls {
+			if isInternalToolName(tc.Function.Name) {
+				continue
+			}
 			updated := false
 			for i := range h.pendingToolCalls {
 				if h.pendingToolCalls[i].ID == tc.ID && h.pendingToolCalls[i].Arguments == "" {
@@ -201,6 +207,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 
 	case EventToolResult, EventToolResultChunk:
+		if isInternalContinueContent(event.Content) {
+			return
+		}
 		h.ensureAgentContext(event)
 		idx := -1
 		for i := range h.pendingToolCalls {
@@ -212,6 +221,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		if idx >= 0 {
 			tc := h.pendingToolCalls[idx]
 			h.pendingToolCalls = append(h.pendingToolCalls[:idx], h.pendingToolCalls[idx+1:]...)
+			if isInternalToolName(tc.Name) {
+				return
+			}
 			h.currentEvents = append(h.currentEvents, MessageEvent{
 				Type: MsgTypeToolCall,
 				ToolCall: &ToolCallRecord{
@@ -238,6 +250,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			})
 		}
 		for _, tc := range event.ToolCalls {
+			if isInternalToolName(tc.Function.Name) {
+				continue
+			}
 			if tc.Function.Name != "" {
 				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
 					ID:        tc.ID,
