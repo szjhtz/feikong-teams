@@ -75,7 +75,9 @@ type Event struct {
 	Detail           string            `json:"detail,omitempty"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 推理模型思考内容
 	ToolCalls        []schema.ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string            `json:"tool_call_id,omitempty"` // 工具结果对应的调用 ID
+	ToolCallRefs     map[int]string    `json:"tool_call_refs,omitempty"` // 工具调用 index 到稳定引用的映射
+	ToolCallRef      string            `json:"tool_call_ref,omitempty"`  // 当前工具生命周期的稳定引用
+	ToolCallID       string            `json:"tool_call_id,omitempty"`   // 工具结果对应的调用 ID
 	ToolName         string            `json:"tool_name,omitempty"`
 	ToolCallIndex    *int              `json:"tool_call_index,omitempty"`
 	IsMemberEvent    bool              `json:"is_member_event,omitempty"`

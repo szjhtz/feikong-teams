@@ -927,7 +927,9 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
       }
       if (evt.type === "tool_call" && evt.tool_call) {
         const display = this.historyToolDisplay(evt.tool_call);
-        const flowKey = evt.tool_call.id
+        const flowKey = evt.tool_call.ref
+          ? "ref:" + evt.tool_call.ref
+          : evt.tool_call.id
           ? "id:" + evt.tool_call.id
           : evt.tool_call.index !== undefined && evt.tool_call.index !== null
             ? "idx:" + evt.tool_call.index

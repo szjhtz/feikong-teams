@@ -10,11 +10,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 const HistoryFileName = "history.jsonl"
 
 type ToolCallRecord struct {
+	Ref         string `json:"ref,omitempty"`
 	ID          string `json:"id"`
 	Index       *int   `json:"index,omitempty"`
 	Name        string `json:"name"`
@@ -126,6 +129,7 @@ const maxErrorContentLen = 1200
 
 // pendingToolCall 待匹配的工具调用
 type pendingToolCall struct {
+	Ref         string
 	ID          string
 	Index       *int
 	EventIndex  int
@@ -155,6 +159,7 @@ type HistoryRecorder struct {
 
 func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord {
 	record := ToolCallRecord{
+		Ref:         tc.Ref,
 		ID:          tc.ID,
 		Index:       tc.Index,
 		Name:        tc.Name,
@@ -183,9 +188,10 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 	return &record
 }
 
-func pendingToolCallFromEvent(id string, index *int, name, arguments string) pendingToolCall {
+func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string) pendingToolCall {
 	display := FormatToolDisplay(name)
 	return pendingToolCall{
+		Ref:         ref,
 		ID:          id,
 		Index:       index,
 		EventIndex:  -1,
@@ -195,6 +201,24 @@ func pendingToolCallFromEvent(id string, index *int, name, arguments string) pen
 		Target:      display.Target,
 		Arguments:   arguments,
 	}
+}
+
+func toolCallRefFromEvent(event Event, tc schema.ToolCall) string {
+	if tc.Index != nil && event.ToolCallRefs != nil {
+		if ref := event.ToolCallRefs[*tc.Index]; ref != "" {
+			return ref
+		}
+	}
+	if event.ToolCallRef != "" {
+		return event.ToolCallRef
+	}
+	if tc.ID != "" {
+		return "id:" + tc.ID
+	}
+	if tc.Index != nil {
+		return fmt.Sprintf("idx:%d", *tc.Index)
+	}
+	return ""
 }
 
 func (h *HistoryRecorder) appendToolCallEvent(tc pendingToolCall) int {
@@ -238,6 +262,9 @@ func truncateErrorContent(s string) string {
 }
 
 func toolResultKey(event Event) string {
+	if event.ToolCallRef != "" {
+		return event.ToolCallRef
+	}
 	if event.ToolCallID != "" {
 		return event.ToolCallID
 	}
@@ -286,7 +313,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				pending := pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, "")
+				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, "")
 				pending.EventIndex = h.appendToolCallEvent(pending)
 				h.pendingToolCalls = append(h.pendingToolCalls, pending)
 			}
@@ -302,7 +329,11 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			for i := range h.pendingToolCalls {
 				sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == tc.ID
 				sameIndex := h.pendingToolCalls[i].Index != nil && tc.Index != nil && *h.pendingToolCalls[i].Index == *tc.Index
-				if (sameID || sameIndex) && h.pendingToolCalls[i].Arguments == "" {
+				sameRef := h.pendingToolCalls[i].Ref != "" && h.pendingToolCalls[i].Ref == toolCallRefFromEvent(event, tc)
+				if sameRef || sameID || sameIndex {
+					if ref := toolCallRefFromEvent(event, tc); ref != "" {
+						h.pendingToolCalls[i].Ref = ref
+					}
 					if tc.ID != "" {
 						h.pendingToolCalls[i].ID = tc.ID
 					}
@@ -313,7 +344,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				}
 			}
 			if !updated {
-				pending := pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
 				pending.EventIndex = h.appendToolCallEvent(pending)
 				h.pendingToolCalls = append(h.pendingToolCalls, pending)
 			}
@@ -348,9 +379,22 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		for i := range h.pendingToolCalls {
 			sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == event.ToolCallID
 			sameIndex := h.pendingToolCalls[i].Index != nil && event.ToolCallIndex != nil && *h.pendingToolCalls[i].Index == *event.ToolCallIndex
-			if sameID || sameIndex {
+			sameRef := h.pendingToolCalls[i].Ref != "" && h.pendingToolCalls[i].Ref == event.ToolCallRef
+			if sameRef || sameID || sameIndex {
 				idx = i
 				break
+			}
+		}
+		if idx < 0 && event.ToolName != "" {
+			for i := range h.pendingToolCalls {
+				if h.pendingToolCalls[i].Name != event.ToolName {
+					continue
+				}
+				if idx >= 0 {
+					idx = -1
+					break
+				}
+				idx = i
 			}
 		}
 		if idx >= 0 {
@@ -386,7 +430,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				pending := pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
 				pending.EventIndex = h.appendToolCallEvent(pending)
 				h.pendingToolCalls = append(h.pendingToolCalls, pending)
 			}
@@ -444,9 +488,10 @@ func (h *HistoryRecorder) flushChunkedToolResults() {
 		}
 		idx := -1
 		for i := range h.pendingToolCalls {
+			sameRef := h.pendingToolCalls[i].Ref != "" && h.pendingToolCalls[i].Ref == resultKey
 			sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == resultKey
 			sameIndex := h.pendingToolCalls[i].Index != nil && resultKey == fmt.Sprintf("idx:%d", *h.pendingToolCalls[i].Index)
-			if sameID || sameIndex {
+			if sameRef || sameID || sameIndex {
 				idx = i
 				break
 			}

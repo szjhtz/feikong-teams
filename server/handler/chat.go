@@ -343,6 +343,9 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 			}
 			if tc.Index != nil {
 				toolCall["index"] = *tc.Index
+				if event.ToolCallRefs != nil && event.ToolCallRefs[*tc.Index] != "" {
+					toolCall["ref"] = event.ToolCallRefs[*tc.Index]
+				}
 			}
 			if display.Target != "" {
 				toolCall["target"] = display.Target
@@ -359,6 +362,9 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	}
 	if event.ToolCallID != "" {
 		result["tool_call_id"] = event.ToolCallID
+	}
+	if event.ToolCallRef != "" {
+		result["tool_call_ref"] = event.ToolCallRef
 	}
 	if event.ToolName != "" {
 		result["tool_name"] = event.ToolName

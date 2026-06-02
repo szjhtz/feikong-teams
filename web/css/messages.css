@@ -33,6 +33,8 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  --message-panel-gap: 16px;
+  --message-inner-gap: 8px;
 }
 
 /* Chat Loading */
@@ -666,7 +668,7 @@ a.source-item:hover {
 /* Tool Calls & Results */
 .tool-call,
 .tool-result {
-  margin: 10px 0;
+  margin: 0;
   padding: 12px 14px;
   border-radius: 10px;
   font-size: 13px;
@@ -723,12 +725,12 @@ a.source-item:hover {
 
 /* Parallel Members */
 .parallel-members-panel {
-  margin: 10px 0;
+  margin: 0;
   animation: fadeIn 0.2s ease;
 }
 
 .parallel-members-header {
-  margin-bottom: 8px;
+  margin-bottom: var(--message-inner-gap);
 }
 
 .parallel-members-title {
@@ -980,6 +982,22 @@ a.source-item:hover {
   margin-bottom: 6px;
 }
 
+.agent-tool-result .tool-result-content {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
+  max-height: 320px;
+}
+
+.agent-tool-result .tool-result-content p {
+  margin: 0 0 8px;
+}
+
+.agent-tool-result .tool-result-content p:last-child {
+  margin-bottom: 0;
+}
+
 /* Action Events */
 .action-event {
   display: flex;
@@ -991,14 +1009,14 @@ a.source-item:hover {
   border-radius: 10px;
   font-size: 13px;
   color: var(--warning);
-  margin: 10px 0;
+  margin: 0;
   animation: fadeIn 0.2s ease;
   box-shadow: var(--shadow-sketch);
 }
 
 /* Dispatch Task Results */
 .dispatch-result {
-  margin: 10px 0;
+  margin: 0;
   animation: fadeIn 0.2s ease;
 }
 
@@ -1034,7 +1052,7 @@ a.source-item:hover {
   font-size: 13px;
   font-weight: 500;
   font-family: var(--font-hand);
-  margin-bottom: 8px;
+  margin-bottom: var(--message-inner-gap);
 }
 
 .dispatch-progress-counter {
@@ -1058,7 +1076,7 @@ a.source-item:hover {
 .dispatch-cards {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--message-inner-gap);
 }
 
 .dispatch-card {
@@ -1357,7 +1375,7 @@ a.source-item:hover {
   border-radius: 10px;
   color: var(--error);
   font-size: 13px;
-  margin: 10px 0;
+  margin: 0;
   box-shadow: var(--shadow-sketch);
 }
 
@@ -1624,7 +1642,7 @@ a.source-item:hover {
   }
 
   .parallel-members-panel {
-    margin: 8px 0;
+    margin: 0;
   }
 
   .parallel-members-header {
@@ -1699,7 +1717,7 @@ a.source-item:hover {
 
 /* ===== Inline Ask Form (embedded in chat) ===== */
 .inline-ask-form {
-  margin: 12px 0;
+  margin: 0;
   padding: 16px;
   background: var(--bg-secondary);
   border: 2px solid var(--accent-primary);

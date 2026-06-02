@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +31,7 @@ type nonInteractiveKey struct{}
 const internalContinueToolName = "continue_output"
 
 var globalEventSequence int64
+var toolCallRefsByID sync.Map
 
 func isInternalToolName(name string) bool {
 	return name == internalContinueToolName
@@ -62,6 +64,11 @@ func intPtr(v int) *int {
 }
 
 func normalizeEvent(event Event) Event {
+	if event.ToolCallRef == "" && event.ToolCallID != "" {
+		if ref, ok := toolCallRefsByID.Load(event.ToolCallID); ok {
+			event.ToolCallRef, _ = ref.(string)
+		}
+	}
 	if event.Sequence == 0 {
 		event.Sequence = atomic.AddInt64(&globalEventSequence, 1)
 	}
@@ -84,6 +91,21 @@ func normalizeEvent(event Event) Event {
 		event.IsFinal = true
 	}
 	return event
+}
+
+func streamToolCallRef(event *adk.AgentEvent, scope MemberScope, idx int) string {
+	parts := []string{"tool", event.AgentName, formatRunPath(event.RunPath), fmt.Sprintf("idx:%d", idx)}
+	if scope.CallID != "" {
+		parts = append(parts, "member:"+scope.CallID)
+	}
+	return strings.Join(parts, "|")
+}
+
+func registerToolCallRef(id, ref string) {
+	if id == "" || ref == "" {
+		return
+	}
+	toolCallRefsByID.Store(id, ref)
 }
 
 // NormalizeEvent 补齐事件协议字段，供直接记录事件的调用方复用。
@@ -225,6 +247,16 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 		if nEvent.Content == "" && nEvent.ReasoningContent == "" && len(nEvent.ToolCalls) == 0 {
 			return nil
 		}
+		nEvent.ToolCallRefs = make(map[int]string, len(nEvent.ToolCalls))
+		for _, tc := range nEvent.ToolCalls {
+			if tc.Index == nil {
+				continue
+			}
+			idx := *tc.Index
+			ref := streamToolCallRef(event, scope, idx)
+			nEvent.ToolCallRefs[idx] = ref
+			registerToolCallRef(tc.ID, ref)
+		}
 	}
 
 	scope.apply(&nEvent)
@@ -237,6 +269,7 @@ type streamState struct {
 	toolCallStarted  map[int]bool              // 记录已发送准备事件的工具调用
 	toolArgsBuffer   map[int]string            // 按 index 缓冲未发送的参数增量
 	toolCallIDs      map[int]string            // 按 index 记录工具调用 ID
+	toolCallRefs     map[int]string            // 按 index 记录展示层稳定引用
 	internalToolCall map[int]bool              // 按 index 标记内部工具调用
 	lastArgsDelta    time.Time
 }
@@ -249,6 +282,7 @@ func newStreamState() *streamState {
 		toolCallStarted:  make(map[int]bool),
 		toolArgsBuffer:   make(map[int]string),
 		toolCallIDs:      make(map[int]string),
+		toolCallRefs:     make(map[int]string),
 		internalToolCall: make(map[int]bool),
 	}
 }
@@ -375,6 +409,10 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 		if tc.ID != "" {
 			ss.toolCallIDs[idx] = tc.ID
 		}
+		if ss.toolCallRefs[idx] == "" {
+			ss.toolCallRefs[idx] = streamToolCallRef(event, scope, idx)
+		}
+		registerToolCallRef(tc.ID, ss.toolCallRefs[idx])
 		if isInternalToolName(tc.Function.Name) {
 			ss.internalToolCall[idx] = true
 		}
@@ -396,6 +434,8 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 					Function: schema.FunctionCall{Name: tc.Function.Name},
 				}},
 				ToolName:      tc.Function.Name,
+				ToolCallRef:   ss.toolCallRefs[idx],
+				ToolCallRefs:  map[int]string{idx: ss.toolCallRefs[idx]},
 				ToolCallID:    tc.ID,
 				ToolCallIndex: tc.Index,
 			}
@@ -441,6 +481,7 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 				RunPath:       formatRunPath(event.RunPath),
 				Content:       delta,
 				Detail:        fmt.Sprintf("%d", idx),
+				ToolCallRef:   ss.toolCallRefs[idx],
 				ToolCallID:    ss.toolCallIDs[idx],
 				ToolCallIndex: intPtr(idx),
 			}
@@ -473,6 +514,7 @@ func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamS
 			RunPath:       formatRunPath(event.RunPath),
 			Content:       delta,
 			Detail:        fmt.Sprintf("%d", idx),
+			ToolCallRef:   ss.toolCallRefs[idx],
 			ToolCallID:    ss.toolCallIDs[idx],
 			ToolCallIndex: intPtr(idx),
 		}
@@ -490,22 +532,28 @@ func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamS
 	sort.Ints(indices)
 
 	var allToolCalls []schema.ToolCall
+	toolCallRefs := make(map[int]string, len(indices))
 	for _, idx := range indices {
 		concatenatedMsg, err := schema.ConcatMessages(ss.toolCallsMap[idx])
 		if err != nil {
 			return err
+		}
+		toolCallRefs[idx] = ss.toolCallRefs[idx]
+		for _, tc := range concatenatedMsg.ToolCalls {
+			registerToolCallRef(tc.ID, ss.toolCallRefs[idx])
 		}
 		allToolCalls = append(allToolCalls, filterVisibleToolCalls(concatenatedMsg.ToolCalls)...)
 	}
 
 	if len(allToolCalls) > 0 {
 		nEvent := Event{
-			Type:      EventToolCalls,
-			Phase:     EventPhaseComplete,
-			IsFinal:   true,
-			AgentName: event.AgentName,
-			RunPath:   formatRunPath(event.RunPath),
-			ToolCalls: allToolCalls,
+			Type:         EventToolCalls,
+			Phase:        EventPhaseComplete,
+			IsFinal:      true,
+			AgentName:    event.AgentName,
+			RunPath:      formatRunPath(event.RunPath),
+			ToolCalls:    allToolCalls,
+			ToolCallRefs: toolCallRefs,
 		}
 		scope.apply(&nEvent)
 		return handleEvent(ctx, nEvent)
