@@ -931,7 +931,7 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
         if (evt.tool_call.arguments) op += " 参数: " + evt.tool_call.arguments;
         this.appendMemberOp(entry, op);
         if (evt.tool_call.result) {
-          this.appendMemberOp(entry, "工具结果: " + this.summarizeMemberToolResult(evt.tool_call.result));
+          this.appendMemberToolResult(entry, evt.tool_call.result);
         }
         return;
       }
@@ -1226,39 +1226,18 @@ FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
             </svg>
             <span>${toolDisplay.kind === "agent" ? "成员指派:" : "工具调用:"}</span>
             <code class="tool-call-name">${this.escapeHtml(toolDisplay.displayName)}</code>
+            <span class="tool-call-status">${tc.result ? "已完成" : "已调用"}</span>
         </div>
-        <pre class="tool-call-args">${this.escapeHtml(argsDisplay)}</pre>
+        <div class="tool-call-detail" style="display:none">
+          <pre class="tool-call-args">${this.escapeHtml(argsDisplay)}</pre>
+        </div>
     `;
+  this.bindToolCallToggle(toolCallEl);
   this.messagesContainer.appendChild(toolCallEl);
 
   // 渲染工具结果（如果有）
   if (tc.result) {
-    let formattedResult = tc.result;
-    try {
-      const parsed = JSON.parse(tc.result);
-      formattedResult = JSON.stringify(parsed, null, 2);
-      if (formattedResult.length > 2048) {
-        formattedResult = formattedResult.substring(0, 2048) + "\n...";
-      }
-    } catch {
-      if (tc.result.length > 2048) {
-        formattedResult = tc.result.substring(0, 2048) + "\n...";
-      }
-    }
-
-    const toolResultEl = document.createElement("div");
-    toolResultEl.className = "tool-result";
-    const resultTitle = toolDisplay.kind === "agent" ? "成员结果" : "执行结果";
-    toolResultEl.innerHTML = `
-            <div class="tool-result-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                <span>${resultTitle}</span>
-            </div>
-            <pre class="tool-result-content">${this.escapeHtml(formattedResult)}</pre>
-        `;
-    this.messagesContainer.appendChild(toolResultEl);
+    this.appendToolResultToCard(toolCallEl, tc.result, toolDisplay);
   }
 };
 
@@ -1521,24 +1500,31 @@ FKTeamsChat.prototype.formatTime = function (timeString) {
   const date = new Date(timeString);
   if (isNaN(date.getTime()) || date.getFullYear() < 2000) return "";
   const now = new Date();
-  const diff = now - date;
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = Math.round((today - day) / (1000 * 60 * 60 * 24));
+  const time = date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   if (days === 0) {
-    return (
-      "今天 " +
-      date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-    );
+    return "今天 " + time;
   } else if (days === 1) {
-    return (
-      "昨天 " +
-      date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-    );
+    return "昨天 " + time;
   } else if (days < 7) {
-    return days + " 天前";
-  } else {
-    return date.toLocaleDateString("zh-CN");
+    return date.toLocaleDateString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+    }) + " " + time;
   }
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 FKTeamsChat.prototype.formatSize = function (bytes) {
@@ -1556,7 +1542,10 @@ FKTeamsChat.prototype.formatHistoryTime = function (timeInfo) {
   const endDate = timeInfo.endTime ? new Date(timeInfo.endTime) : null;
 
   // 格式化开始时间
-  const timeStr = startDate.toLocaleTimeString("zh-CN", {
+  const timeStr = startDate.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

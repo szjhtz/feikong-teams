@@ -2,6 +2,7 @@ package fkevent
 
 import (
 	"encoding/json"
+	fktui "fkteams/tui"
 	"fmt"
 	"strings"
 	"time"
@@ -28,6 +29,16 @@ type streamBuf struct {
 	lastRendered string
 	lastRender   time.Time
 	hasRendered  bool
+}
+
+type terminalToolFlow struct {
+	Key       string
+	AgentName string
+	Name      string
+	Status    string
+	Args      string
+	Result    string
+	Streamed  bool
 }
 
 const renderInterval = 100 * time.Millisecond
@@ -186,6 +197,10 @@ func newPrintEvent() (func(Event), func()) {
 	agentName := ""
 	lastToolName := ""
 	toolNamesByID := map[string]string{}
+	toolFlows := map[string]*terminalToolFlow{}
+	toolKeysByIndex := map[int]string{}
+	toolPanel := fktui.NewToolPanel()
+	toolPending := map[string]bool{}
 	memberPanel := newMemberPanel()
 	memberNamesByToolID := map[string]string{}
 	memberKeysByToolID := map[string]string{}
@@ -232,6 +247,128 @@ func newPrintEvent() (func(Event), func()) {
 		}
 		ensureMember(key, name)
 		return key, name
+	}
+
+	memberToolKey := func(event Event, tool schema.ToolCall, fallbackIndex int) string {
+		if tool.ID != "" {
+			return "id:" + tool.ID
+		}
+		if event.ToolCallID != "" {
+			return "id:" + event.ToolCallID
+		}
+		if tool.Index != nil {
+			return fmt.Sprintf("idx:%d", *tool.Index)
+		}
+		if event.ToolCallIndex != nil {
+			return fmt.Sprintf("idx:%d", *event.ToolCallIndex)
+		}
+		if event.Detail != "" {
+			return "idx:" + event.Detail
+		}
+		return fmt.Sprintf("fallback:%d", fallbackIndex)
+	}
+
+	regularToolKey := func(event Event, tool schema.ToolCall, fallbackIndex int) string {
+		if tool.ID != "" {
+			return "id:" + tool.ID
+		}
+		if event.ToolCallID != "" {
+			return "id:" + event.ToolCallID
+		}
+		if tool.Index != nil {
+			return fmt.Sprintf("idx:%d", *tool.Index)
+		}
+		if event.ToolCallIndex != nil {
+			return fmt.Sprintf("idx:%d", *event.ToolCallIndex)
+		}
+		if event.Detail != "" {
+			return "idx:" + event.Detail
+		}
+		return fmt.Sprintf("fallback:%d", fallbackIndex)
+	}
+
+	ensureToolFlow := func(key, name string) *terminalToolFlow {
+		if key == "" {
+			key = "last"
+		}
+		flow := toolFlows[key]
+		if flow == nil {
+			flow = &terminalToolFlow{Key: key, Name: name, Status: "参数准备中"}
+			toolFlows[key] = flow
+		}
+		if name != "" {
+			flow.Name = name
+		}
+		return flow
+	}
+
+	sendToolPanel := func(key string, flow *terminalToolFlow, eventType string, content string, appendContent bool) bool {
+		if flow == nil {
+			return false
+		}
+		name := flow.Name
+		if name == "" {
+			name = key
+		}
+		panelType := eventType
+		switch eventType {
+		case "content":
+			panelType = "result"
+		case "op":
+			panelType = "args"
+		}
+		sent := toolPanel.Send(fktui.ToolEvent{
+			Key:     key,
+			Name:    name,
+			Type:    panelType,
+			Content: content,
+			Append:  appendContent,
+		})
+		if sent {
+			toolPending[key] = eventType != "done" && eventType != "error"
+		}
+		return sent
+	}
+
+	finishToolsIfIdle := func() {
+		for _, pending := range toolPending {
+			if pending {
+				return
+			}
+		}
+		toolPanel.Finish()
+		toolPending = map[string]bool{}
+		toolFlows = map[string]*terminalToolFlow{}
+		toolKeysByIndex = map[int]string{}
+	}
+
+	printToolFlow := func(flow *terminalToolFlow) {
+		if flow == nil {
+			return
+		}
+		name := flow.Name
+		if name == "" {
+			name = lastToolName
+		}
+		display := FormatToolDisplay(name)
+		title := display.DisplayName
+		if title == "" {
+			title = name
+		}
+		fmt.Printf("\n\033[1;35m[%s] 工具: \033[1m%s\033[0m \033[90m(%s)\033[0m\n", flow.AgentName, title, flow.Status)
+		if flow.Args != "" {
+			fmt.Printf("  参数: %s\n", truncateString(flow.Args, 240))
+		}
+		if flow.Result != "" {
+			fmt.Printf("  结果:\n")
+			formatted := formatToolResultForPrint(name, flow.Result)
+			if formatted != "" {
+				fmt.Print(formatted)
+			} else {
+				printPlainResult(flow.Result)
+			}
+		}
+		fmt.Println()
 	}
 
 	hasPendingMembers := func() bool {
@@ -459,7 +596,8 @@ func newPrintEvent() (func(Event), func()) {
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.Content != "" {
-					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: "\n[工具结果]\n" + event.Content})
+					toolKey := memberToolKey(event, schema.ToolCall{}, 0)
+					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content})
 				}
 				return
 			}
@@ -501,40 +639,33 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			tryFlush()
-			resultTitle := "工具结果"
-			fmt.Printf("\n\033[1;33m⚙ [%s] %s:\033[0m\n", event.AgentName, resultTitle)
+			key := regularToolKey(event, schema.ToolCall{}, 0)
+			flow := ensureToolFlow(key, toolName)
+			flow.AgentName = event.AgentName
+			flow.Status = "已完成"
 			if event.Content != "" {
-				var formatted string
-				switch toolName {
-				case "search":
-					formatted = formatSearchResults(event.Content)
-				case "execute":
-					formatted = formatCommandResult(event.Content)
-				case "file_read", "file_write", "file_edit", "file_list", "grep":
-					formatted = formatFileOpResult(event.Content)
-				case "file_patch":
-					formatted = formatFilePatchResult(event.Content)
-				case "ssh_execute", "ssh_upload", "ssh_download", "ssh_list_dir":
-					formatted = formatSSHResult(event.Content, toolName)
-				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
-					formatted = formatTodoResult(event.Content, toolName)
-				case "schedule_add", "schedule_list", "schedule_cancel", "schedule_delete":
-					formatted = formatSchedulerResult(event.Content, toolName)
-				case "dispatch_tasks":
-					formatted = formatDispatchResult(event.Content)
-				}
-				if formatted != "" {
-					fmt.Print(formatted)
-				} else {
-					printPlainResult(event.Content)
+				if flow.Result != "" && !strings.Contains(flow.Result, event.Content) {
+					flow.Result += event.Content
+				} else if flow.Result == "" {
+					flow.Result = event.Content
 				}
 			}
-			fmt.Println()
+			doneContent := flow.Result
+			if flow.Streamed {
+				doneContent = ""
+			}
+			sent := sendToolPanel(key, flow, "done", doneContent, false)
+			finishToolsIfIdle()
+			if !sent {
+				printToolFlow(flow)
+			}
+			delete(toolFlows, key)
 
 		case EventToolResultChunk:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.Content})
+				toolKey := memberToolKey(event, schema.ToolCall{}, 0)
+				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content, Append: true})
 				return
 			}
 			if event.ToolCallID != "" && memberKeysByToolID[event.ToolCallID] != "" {
@@ -544,15 +675,21 @@ func newPrintEvent() (func(Event), func()) {
 			if finishMembersBeforeParentOutput(event) {
 				return
 			}
-			fmt.Printf("%s", event.Content)
+			key := regularToolKey(event, schema.ToolCall{}, 0)
+			flow := ensureToolFlow(key, event.ToolName)
+			flow.AgentName = event.AgentName
+			flow.Status = "执行中"
+			flow.Result += event.Content
+			flow.Streamed = true
+			sendToolPanel(key, flow, "content", event.Content, true)
 
 		case EventToolCallsPreparing:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				for _, tool := range event.ToolCalls {
+				for i, tool := range event.ToolCalls {
 					if tool.Function.Name != "" {
 						display := FormatToolDisplay(tool.Function.Name)
-						memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "op", Content: "准备调用工具: " + display.DisplayName})
+						memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_prepare", ToolKey: memberToolKey(event, tool, i), ToolName: display.DisplayName})
 					}
 				}
 				return
@@ -580,7 +717,7 @@ func newPrintEvent() (func(Event), func()) {
 				inReasoning = false
 				fmt.Printf("\033[0m\n")
 			}
-			for _, tool := range event.ToolCalls {
+			for i, tool := range event.ToolCalls {
 				if isInternalToolName(tool.Function.Name) {
 					continue
 				}
@@ -588,25 +725,28 @@ func newPrintEvent() (func(Event), func()) {
 					if tool.ID != "" {
 						toolNamesByID[tool.ID] = tool.Function.Name
 					}
-					display := FormatToolDisplay(tool.Function.Name)
-					fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, display.DisplayName)
+					if tool.Index != nil {
+						toolKeysByIndex[*tool.Index] = regularToolKey(event, tool, i)
+					}
+					key := regularToolKey(event, tool, i)
+					flow := ensureToolFlow(key, tool.Function.Name)
+					flow.AgentName = event.AgentName
+					flow.Status = "参数准备中"
+					flow.Name = tool.Function.Name
 					lastToolName = tool.Function.Name
+					sendToolPanel(key, flow, "start", "", false)
 				}
 			}
 
 		case EventToolCalls:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				for _, tool := range event.ToolCalls {
+				for i, tool := range event.ToolCalls {
 					if tool.Function.Name == "" {
 						continue
 					}
 					display := FormatToolDisplay(tool.Function.Name)
-					op := "调用工具: " + display.DisplayName
-					if tool.Function.Arguments != "" {
-						op += " 参数: " + truncateString(tool.Function.Arguments, 160)
-					}
-					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "op", Content: op})
+					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, tool, i), ToolName: display.DisplayName, Content: tool.Function.Arguments})
 				}
 				return
 			}
@@ -633,7 +773,6 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			tryFlush()
-			printedHeader := false
 			for i, tool := range event.ToolCalls {
 				if isInternalToolName(tool.Function.Name) {
 					continue
@@ -641,22 +780,24 @@ func newPrintEvent() (func(Event), func()) {
 				if tool.ID != "" {
 					toolNamesByID[tool.ID] = tool.Function.Name
 				}
-				display := FormatToolDisplay(tool.Function.Name)
-				if !printedHeader {
-					fmt.Printf("\n\033[1;35m[%s] 调用:\033[0m\n", event.AgentName)
-					printedHeader = true
+				key := regularToolKey(event, tool, i)
+				if tool.ID != "" && tool.Index != nil {
+					oldKey := fmt.Sprintf("idx:%d", *tool.Index)
+					if existing := toolFlows[oldKey]; existing != nil && toolFlows[key] == nil {
+						toolFlows[key] = existing
+						delete(toolFlows, oldKey)
+					}
 				}
-				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
+				flow := ensureToolFlow(key, tool.Function.Name)
+				flow.AgentName = event.AgentName
+				flow.Status = "已调用"
 				if tool.Function.Arguments != "" {
-					args := truncateString(tool.Function.Arguments, 200)
-					fmt.Printf("     参数: %s\n", args)
+					flow.Args = tool.Function.Arguments
+					sendToolPanel(key, flow, "op", tool.Function.Arguments, false)
 				}
 				if i == len(event.ToolCalls)-1 {
 					lastToolName = tool.Function.Name
 				}
-			}
-			if printedHeader {
-				fmt.Println()
 			}
 
 		case EventAction:
@@ -697,8 +838,21 @@ func newPrintEvent() (func(Event), func()) {
 
 		case EventToolCallsArgsDelta:
 			if isMemberEvent(event) {
+				key, name := memberFromEvent(event)
+				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, schema.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
 				return
 			}
+			key := regularToolKey(event, schema.ToolCall{}, 0)
+			if event.ToolCallIndex != nil {
+				if mapped := toolKeysByIndex[*event.ToolCallIndex]; mapped != "" && event.ToolCallID == "" {
+					key = mapped
+				}
+			}
+			flow := ensureToolFlow(key, event.ToolName)
+			flow.AgentName = event.AgentName
+			flow.Status = "参数准备中"
+			flow.Args += event.Content
+			sendToolPanel(key, flow, "op", flow.Args, false)
 		default:
 			if finishMembersBeforeParentOutput(event) {
 				return
@@ -729,6 +883,29 @@ func printPlainResult(content string) {
 		if line != "" {
 			fmt.Printf("  │ %s\n", truncateString(line, 200))
 		}
+	}
+}
+
+func formatToolResultForPrint(toolName, content string) string {
+	switch toolName {
+	case "search":
+		return formatSearchResults(content)
+	case "execute":
+		return formatCommandResult(content)
+	case "file_read", "file_write", "file_edit", "file_list", "grep":
+		return formatFileOpResult(content)
+	case "file_patch":
+		return formatFilePatchResult(content)
+	case "ssh_execute", "ssh_upload", "ssh_download", "ssh_list_dir":
+		return formatSSHResult(content, toolName)
+	case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
+		return formatTodoResult(content, toolName)
+	case "schedule_add", "schedule_list", "schedule_cancel", "schedule_delete":
+		return formatSchedulerResult(content, toolName)
+	case "dispatch_tasks":
+		return formatDispatchResult(content)
+	default:
+		return ""
 	}
 }
 

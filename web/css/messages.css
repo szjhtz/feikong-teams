@@ -249,8 +249,9 @@
 }
 
 .message-time {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .message-body {
@@ -701,6 +702,7 @@ a.source-item:hover {
   color: var(--info);
   font-family: var(--font-hand);
   font-size: 15px;
+  cursor: pointer;
 }
 
 .agent-tool-call .tool-call-header {
@@ -742,33 +744,186 @@ a.source-item:hover {
   white-space: nowrap;
 }
 
-.parallel-member-reasoning {
-  margin-bottom: 8px;
+.parallel-member-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.parallel-member-event {
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.parallel-member-event-title {
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 700;
   color: var(--text-secondary);
+  background: rgba(107, 127, 198, 0.06);
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.parallel-member-event-tool .parallel-member-event-title,
+.parallel-member-event-task .parallel-member-event-title,
+.parallel-member-event-result .parallel-member-event-title {
+  color: var(--info);
+  background: rgba(107, 165, 198, 0.08);
+}
+
+.parallel-member-event-reasoning .parallel-member-event-title {
+  color: var(--warning);
+  background: rgba(212, 165, 74, 0.08);
+}
+
+.parallel-member-event-output .parallel-member-event-title {
+  color: var(--success);
+  background: rgba(125, 184, 127, 0.08);
+}
+
+.parallel-member-event-body {
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.parallel-member-event-tool .parallel-member-event-body,
+.parallel-member-event-task .parallel-member-event-body,
+.parallel-member-event-result .parallel-member-event-body {
+  font-family: var(--font-mono, "SF Mono", Monaco, Consolas, monospace);
   font-size: 12px;
 }
 
-.parallel-member-reasoning summary {
+.parallel-member-tool-flow details {
+  display: block;
+}
+
+.parallel-member-tool-flow summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
   cursor: pointer;
-  padding: 6px 8px;
-  font-weight: 600;
+  list-style: none;
+  color: var(--info);
+  background: rgba(107, 165, 198, 0.08);
+  border-bottom: 1px dashed var(--border-color);
 }
 
-.parallel-member-reasoning-content {
-  max-height: 180px;
-  overflow: auto;
-  padding: 0 8px 8px;
-}
-
-.parallel-member-output {
-  margin-top: 8px;
-}
-
-.parallel-member-output:empty {
+.parallel-member-tool-flow summary::-webkit-details-marker {
   display: none;
+}
+
+.parallel-member-tool-flow summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.parallel-member-tool-flow details[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.parallel-member-tool-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.parallel-member-tool-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.parallel-member-tool-section {
+  padding: 8px 10px;
+}
+
+.parallel-member-tool-section + .parallel-member-tool-section {
+  border-top: 1px dashed var(--border-color);
+}
+
+.parallel-member-tool-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  margin-bottom: 5px;
+}
+
+.parallel-member-tool-section pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--font-mono, "SF Mono", Monaco, Consolas, monospace);
+  font-size: 12px;
+}
+
+.parallel-member-markdown {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.parallel-member-markdown p {
+  margin: 0 0 8px;
+}
+
+.parallel-member-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.parallel-member-markdown h1,
+.parallel-member-markdown h2,
+.parallel-member-markdown h3,
+.parallel-member-markdown h4 {
+  margin: 12px 0 6px;
+  line-height: 1.35;
+}
+
+.parallel-member-markdown ul,
+.parallel-member-markdown ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.parallel-member-markdown pre {
+  overflow-x: auto;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8f6f2;
+  border: 1px solid var(--border-color);
+}
+
+.parallel-member-markdown code {
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: rgba(107, 127, 198, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.parallel-member-markdown pre code {
+  background: transparent;
+  padding: 0;
 }
 
 .tool-call-name {
@@ -778,6 +933,20 @@ a.source-item:hover {
   border-radius: 6px;
   font-size: 12px;
   border: 1px solid rgba(107, 165, 198, 0.3);
+}
+
+.tool-call-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.tool-call-detail {
+  margin-top: 8px;
 }
 
 .tool-call-args,
@@ -795,6 +964,20 @@ a.source-item:hover {
   overflow-y: auto;
   margin: 0;
   border: 1px solid var(--border-color);
+}
+
+.tool-call-result {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.tool-call-result-header {
+  color: var(--success);
+  font-family: var(--font-hand);
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
 /* Action Events */
@@ -888,6 +1071,7 @@ a.source-item:hover {
     background 0.15s,
     border-color 0.2s;
   overflow: hidden;
+  box-shadow: none;
 }
 
 .dispatch-card[style*="cursor: pointer"]:hover,
@@ -950,6 +1134,8 @@ a.source-item:hover {
   flex: 1;
   color: var(--text-primary);
   line-height: 1.4;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .dispatch-card-ops-count {
@@ -1472,8 +1658,7 @@ a.source-item:hover {
     padding-top: 8px;
   }
 
-  .parallel-member-output,
-  .parallel-member-reasoning-content {
+  .parallel-member-event-body {
     max-height: 220px;
   }
 

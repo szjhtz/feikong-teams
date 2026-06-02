@@ -14,11 +14,14 @@ import (
 )
 
 type memberViewEvent struct {
-	Key     string
-	NewKey  string
-	Name    string
-	Type    string
-	Content string
+	Key      string
+	NewKey   string
+	Name     string
+	Type     string
+	Content  string
+	ToolKey  string
+	ToolName string
+	Append   bool
 }
 
 type memberAllDoneMsg struct{}
@@ -41,23 +44,37 @@ type memberCard struct {
 	status     string
 	operations []string
 	content    string
+	tools      []memberToolFlow
+	toolIndex  map[string]int
+}
+
+type memberToolFlow struct {
+	key    string
+	name   string
+	status string
+	args   string
+	result string
 }
 
 type memberModel struct {
-	members  []memberCard
-	indexes  map[string]int
-	cursor   int
-	expanded int
-	scrollY  int
-	width    int
-	done     bool
+	members   []memberCard
+	indexes   map[string]int
+	cursor    int
+	expanded  int
+	scrollY   int
+	width     int
+	done      bool
+	title     string
+	emptyText string
 }
 
-func newMemberModel() memberModel {
+func newMemberModel(title, emptyText string) memberModel {
 	return memberModel{
-		indexes:  make(map[string]int),
-		expanded: -1,
-		width:    80,
+		indexes:   make(map[string]int),
+		expanded:  -1,
+		width:     80,
+		title:     title,
+		emptyText: emptyText,
 	}
 }
 
@@ -145,6 +162,15 @@ func (m *memberModel) applyEvent(e memberViewEvent) {
 					dst.status = src.status
 				}
 				dst.operations = append(dst.operations, src.operations...)
+				if dst.toolIndex == nil {
+					dst.toolIndex = make(map[string]int)
+				}
+				for _, tool := range src.tools {
+					dstTool := dst.ensureTool(tool.key, tool.name)
+					dstTool.status = tool.status
+					dstTool.args += tool.args
+					dstTool.result += tool.result
+				}
 				if src.content != "" {
 					dst.content += src.content
 				}
@@ -182,10 +208,13 @@ func (m *memberModel) applyEvent(e memberViewEvent) {
 		if name == "" {
 			name = e.Key
 		}
-		m.members = append(m.members, memberCard{key: e.Key, name: name, status: "waiting"})
+		m.members = append(m.members, memberCard{key: e.Key, name: name, status: "waiting", toolIndex: make(map[string]int)})
 	}
 
 	card := &m.members[i]
+	if card.toolIndex == nil {
+		card.toolIndex = make(map[string]int)
+	}
 	if e.Name != "" {
 		card.name = e.Name
 	}
@@ -195,6 +224,25 @@ func (m *memberModel) applyEvent(e memberViewEvent) {
 	case "op":
 		if e.Content != "" {
 			card.operations = append(card.operations, e.Content)
+		}
+	case "tool_prepare":
+		tool := card.ensureTool(e.ToolKey, e.ToolName)
+		tool.status = "参数准备中"
+	case "tool_args":
+		tool := card.ensureTool(e.ToolKey, e.ToolName)
+		tool.status = "已调用"
+		if e.Append {
+			tool.args += e.Content
+		} else {
+			tool.args = e.Content
+		}
+	case "tool_result":
+		tool := card.ensureTool(e.ToolKey, e.ToolName)
+		tool.status = "已完成"
+		if e.Append {
+			tool.result += e.Content
+		} else {
+			tool.result = e.Content
 		}
 	case "content":
 		card.content += e.Content
@@ -212,6 +260,30 @@ func (m *memberModel) applyEvent(e memberViewEvent) {
 			card.content += "错误: " + e.Content
 		}
 	}
+}
+
+func (c *memberCard) ensureTool(key, name string) *memberToolFlow {
+	if key == "" {
+		key = name
+	}
+	if key == "" {
+		key = fmt.Sprintf("tool:%d", len(c.tools)+1)
+	}
+	if name == "" {
+		name = key
+	}
+	if c.toolIndex == nil {
+		c.toolIndex = make(map[string]int)
+	}
+	if i, ok := c.toolIndex[key]; ok {
+		if name != "" {
+			c.tools[i].name = name
+		}
+		return &c.tools[i]
+	}
+	c.tools = append(c.tools, memberToolFlow{key: key, name: name, status: "参数准备中"})
+	c.toolIndex[key] = len(c.tools) - 1
+	return &c.tools[len(c.tools)-1]
 }
 
 func memberStatusIcon(status string) string {
@@ -265,11 +337,19 @@ func (m memberModel) View() tea.View {
 		w = 80
 	}
 
-	b.WriteString(memberHeaderStyle.Render(fmt.Sprintf("成员并行任务 %d 个智能体", len(m.members))))
+	title := m.title
+	if title == "" {
+		title = "成员并行任务"
+	}
+	b.WriteString(memberHeaderStyle.Render(fmt.Sprintf("%s %d 个", title, len(m.members))))
 	b.WriteString("\n\n")
 
 	if len(m.members) == 0 {
-		b.WriteString(memberDimStyle.Render("  等待子智能体启动..."))
+		emptyText := m.emptyText
+		if emptyText == "" {
+			emptyText = "等待事件..."
+		}
+		b.WriteString(memberDimStyle.Render("  " + emptyText))
 		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
@@ -316,14 +396,19 @@ func (m memberModel) renderCollapsed(i, w int) string {
 		}
 	}
 
-	if len(card.operations) > 0 {
-		names := make([]string, 0, min(3, len(card.operations)))
+	if len(card.tools) > 0 || len(card.operations) > 0 {
+		names := make([]string, 0, 3)
+		for j := len(card.tools) - 1; j >= 0 && len(names) < 3; j-- {
+			tool := card.tools[j]
+			names = append(names, fmt.Sprintf("%s(%s)", tool.name, tool.status))
+		}
 		for j := len(card.operations) - 1; j >= 0 && len(names) < 3; j-- {
 			names = append(names, card.operations[j])
 		}
 		title += "\n" + memberDimStyle.Render("  "+strings.Join(names, " | "))
-		if len(card.operations) > 3 {
-			title += memberDimStyle.Render(fmt.Sprintf(" (+%d)", len(card.operations)-3))
+		remain := len(card.tools) + len(card.operations) - len(names)
+		if remain > 0 {
+			title += memberDimStyle.Render(fmt.Sprintf(" (+%d)", remain))
 		}
 	}
 
@@ -367,6 +452,26 @@ func (m memberModel) renderExpanded(i, w int) string {
 		}
 	}
 
+	if len(card.tools) > 0 {
+		detail.WriteString("\n")
+		detail.WriteString(memberDimStyle.Render("工具调用:") + "\n")
+		for _, tool := range card.tools {
+			detail.WriteString(memberDimStyle.Render("  ▸ "+tool.name+" ["+tool.status+"]") + "\n")
+			if tool.args != "" {
+				detail.WriteString(memberDimStyle.Render("    参数: "+truncateString(tool.args, 240)) + "\n")
+			}
+			if tool.result != "" {
+				lines := strings.Split(strings.TrimSpace(tool.result), "\n")
+				for _, line := range lines[:min(len(lines), 6)] {
+					detail.WriteString(memberDimStyle.Render("    "+line) + "\n")
+				}
+				if len(lines) > 6 {
+					detail.WriteString(memberDimStyle.Render(fmt.Sprintf("    ... 还有 %d 行", len(lines)-6)) + "\n")
+				}
+			}
+		}
+	}
+
 	var borderColor color.Color = memberColorCyan
 	switch card.status {
 	case "done":
@@ -385,15 +490,17 @@ func (m memberModel) renderExpanded(i, w int) string {
 }
 
 type memberPanel struct {
-	mu      sync.Mutex
-	program *tea.Program
-	done    chan struct{}
-	active  bool
-	enabled bool
+	mu        sync.Mutex
+	program   *tea.Program
+	done      chan struct{}
+	active    bool
+	enabled   bool
+	title     string
+	emptyText string
 }
 
 func newMemberPanel() *memberPanel {
-	return &memberPanel{enabled: isatty.IsTerminal(os.Stdout.Fd())}
+	return &memberPanel{enabled: isatty.IsTerminal(os.Stdout.Fd()), title: "成员并行任务", emptyText: "等待子智能体启动..."}
 }
 
 func (p *memberPanel) send(e memberViewEvent) bool {
@@ -404,7 +511,7 @@ func (p *memberPanel) send(e memberViewEvent) bool {
 	defer p.mu.Unlock()
 
 	if !p.active {
-		p.program = tea.NewProgram(newMemberModel())
+		p.program = tea.NewProgram(newMemberModel(p.title, p.emptyText))
 		p.done = make(chan struct{})
 		p.active = true
 		go func(program *tea.Program, done chan struct{}) {
