@@ -2,7 +2,7 @@
 name: fkteams
 description: >
   fkteams 多智能体协作 AI 助手的完整使用指南。当用户需要启动 fkteams、切换工作模式（团队/深度/讨论/自定义）、
-  通过命令行或管道执行查询、管理单个智能体（coder/researcher/analyst/shell/remote/generalist）、管理会话历史（保存/加载/导出/恢复）、
+  通过命令行或管道执行查询、管理单个智能体（coder/researcher/analyst/remote/generalist）、管理会话历史（保存/加载/导出/恢复）、
   管理模型配置（添加/切换/删除/登录服务商）、管理本地技能（列出/搜索/安装/移除）、初始化或修改配置文件，
   以及了解 fkteams 的任意命令行用法时，请使用此 skill。
 compatibility: 需要 fkteams 二进制文件，首次使用前需运行 fkteams generate config 生成配置文件。
@@ -139,7 +139,6 @@ fkteams -r "20260302_091249" -q "继续上次的分析"  # 恢复后直接查询
 | 名称 | 角色 |
 |------|------|
 | `coder` | 软件工程师，代码实现、调试、重构 |
-| `shell` | 命令行专家，根据 OS 执行合适的 shell 命令 |
 ### 可选智能体（需在配置中启用）
 
 | 名称 | 配置项 | 角色 |

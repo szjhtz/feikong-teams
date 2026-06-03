@@ -4,7 +4,6 @@ import (
 	"context"
 	"fkteams/agents/analyst"
 	assistantagent "fkteams/agents/assistant"
-	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
 	"fkteams/agents/custom"
 	"fkteams/agents/searcher"
@@ -51,7 +50,6 @@ func buildRegistry() {
 
 	// 基础智能体（始终可用）
 	creators := []agentCreator{
-		{name: "shell", aliases: []string{"小令", "cmder"}, creator: cmder.NewAgent},
 		{name: "coder", aliases: []string{"小码"}, creator: coder.NewAgent},
 	}
 
