@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/engine"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
@@ -188,7 +189,7 @@ func WebSocketHandler() gin.HandlerFunc {
 // --- WebSocket HITL 中断处理器 ---
 
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan any) engine.InterruptHandler {
+func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan any) engine.InterruptHandler {
 	channelHandler := engine.ChannelHandler(approvalCh)
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
@@ -252,7 +253,7 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 // --- WebSocket 事件回调 ---
 
 // wsEventCallbackBuffered 构建支持断线缓冲的事件回调
-func wsEventCallbackBuffered(recorder *fkevent.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(fkevent.Event) error {
+func wsEventCallbackBuffered(recorder *eventlog.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(fkevent.Event) error {
 	return func(event fkevent.Event) error {
 		if event.Type == fkevent.EventAction && event.ActionType == fkevent.ActionInterrupted {
 			return nil
@@ -311,7 +312,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	}
 
 	// 构建输入消息
-	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }

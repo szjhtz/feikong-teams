@@ -6,6 +6,7 @@ import (
 	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/log"
@@ -259,7 +260,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		combinedInput = merged.String()
 	}
 
-	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
+	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
 	messages := chatutil.BuildInputMessages(recorder, combinedInput)
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
@@ -279,7 +280,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			}
 			recorder.FinalizeCurrent()
 			rc.flush()
-			historyFile := filepath.Join(channelHistoryDir, sessionID, fkevent.HistoryFileName)
+			historyFile := filepath.Join(channelHistoryDir, sessionID, eventlog.HistoryFileName)
 			if err := recorder.SaveToFile(historyFile); err != nil {
 				log.Printf("[bridge] save history failed: session=%s, err=%v", sessionID, err)
 			}
@@ -298,7 +299,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 func saveChannelSessionMetadata(sessionID, userInput string) {
 	sessionDir := filepath.Join(channelHistoryDir, sessionID)
 	now := time.Now()
-	meta, err := fkevent.LoadMetadata(sessionDir)
+	meta, err := eventlog.LoadMetadata(sessionDir)
 	if err != nil {
 		title := userInput
 		runes := []rune(title)
@@ -308,7 +309,7 @@ func saveChannelSessionMetadata(sessionID, userInput string) {
 		if title == "" {
 			title = "通道会话"
 		}
-		meta = &fkevent.SessionMetadata{
+		meta = &eventlog.SessionMetadata{
 			ID:        sessionID,
 			Title:     title,
 			Status:    "completed",
@@ -319,7 +320,7 @@ func saveChannelSessionMetadata(sessionID, userInput string) {
 		meta.UpdatedAt = now
 		meta.Status = "completed"
 	}
-	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 		log.Printf("[bridge] save metadata failed: session=%s, err=%v", sessionID, err)
 	}
 }

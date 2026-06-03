@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fkteams/agents"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/runner"
 	"fkteams/tui"
@@ -29,7 +30,7 @@ type Session struct {
 	queryState       *QueryState
 	currentAgent     string
 	createModeRunner ModeRunnerCreator
-	callbackBuilder  func(*fkevent.HistoryRecorder) func(fkevent.Event) error
+	callbackBuilder  func(*eventlog.HistoryRecorder) func(fkevent.Event) error
 }
 
 // NewSession 创建交互会话
@@ -284,7 +285,7 @@ func (s *Session) SetCurrentAgent(name string) {
 }
 
 // SetCallbackBuilder 设置事件回调构造器（用于自定义输出格式）
-func (s *Session) SetCallbackBuilder(cb func(*fkevent.HistoryRecorder) func(fkevent.Event) error) {
+func (s *Session) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(fkevent.Event) error) {
 	s.callbackBuilder = cb
 }
 

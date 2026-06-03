@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/tools/approval"
 
@@ -18,7 +19,7 @@ type RunConfig struct {
 	EventCallback func(fkevent.Event) error
 
 	// Recorder 会话历史记录器。设置后 Engine 自动配置摘要持久化回调
-	Recorder *fkevent.HistoryRecorder
+	Recorder *eventlog.HistoryRecorder
 
 	// OnStart 执行开始回调（context 装配完成后，事件循环开始前）
 	OnStart func(ctx context.Context)

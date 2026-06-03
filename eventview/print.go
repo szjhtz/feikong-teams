@@ -1,16 +1,53 @@
-package fkevent
+package eventview
 
 import (
 	"encoding/json"
+	"fkteams/agenttool"
+	"fkteams/eventlog"
+	"fkteams/fkevent"
 	fktui "fkteams/tui"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/cloudwego/eino/schema"
 	"github.com/mattn/go-runewidth"
 )
+
+const agentToolPrefix = agenttool.AgentToolPrefix
+
+type Event = fkevent.Event
+
+const (
+	EventReasoningChunk     = fkevent.EventReasoningChunk
+	EventStreamChunk        = fkevent.EventStreamChunk
+	EventMessage            = fkevent.EventMessage
+	EventToolResult         = fkevent.EventToolResult
+	EventToolResultChunk    = fkevent.EventToolResultChunk
+	EventToolCallsPreparing = fkevent.EventToolCallsPreparing
+	EventToolCalls          = fkevent.EventToolCalls
+	EventToolCallsArgsDelta = fkevent.EventToolCallsArgsDelta
+	EventAction             = fkevent.EventAction
+	EventError              = fkevent.EventError
+
+	ActionTransfer             = fkevent.ActionTransfer
+	ActionContextCompressStart = fkevent.ActionContextCompressStart
+	ActionContextCompress      = fkevent.ActionContextCompress
+)
+
+func isInternalToolName(name string) bool {
+	return fkevent.IsInternalToolName(name)
+}
+
+func isInternalContinueContent(content string) bool {
+	return fkevent.IsInternalContinueContent(content)
+}
+
+func FormatToolDisplay(name string) agenttool.ToolDisplay {
+	return agenttool.FormatToolDisplay(name)
+}
 
 var (
 	PrintEvent      func(Event)
@@ -19,6 +56,28 @@ var (
 
 func init() {
 	PrintEvent, FlushPrintEvent = newPrintEvent()
+}
+
+// CLIEventCallback 创建 CLI 模式的事件回调，同时记录和打印。
+func CLIEventCallback(recorder *eventlog.HistoryRecorder) func(Event) error {
+	return func(event Event) error {
+		recorder.RecordEvent(event)
+		PrintEvent(event)
+		return nil
+	}
+}
+
+// JSONEventCallback 创建 JSON 格式的事件回调，将事件序列化为 JSON 输出。
+func JSONEventCallback(recorder *eventlog.HistoryRecorder) func(Event) error {
+	return func(event Event) error {
+		recorder.RecordEvent(event)
+		data, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
 }
 
 // streamBuf 累积流式文本并增量差分渲染
@@ -65,7 +124,7 @@ func (s *streamBuf) render() {
 	if content == "" {
 		return
 	}
-	rendered := RenderMarkdown(content)
+	rendered := fktui.RenderMarkdown(content)
 	if rendered == "" || rendered == s.lastRendered {
 		return
 	}
@@ -128,6 +187,21 @@ func agentDisplayName(name string) string {
 	return titleIdentifier(normalized)
 }
 
+func titleIdentifier(s string) string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == '_' || r == '-'
+	})
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		runes := []rune(strings.ToLower(part))
+		runes[0] = unicode.ToUpper(runes[0])
+		parts[i] = string(runes)
+	}
+	return strings.Join(parts, " ")
+}
+
 func agentKey(name string) string {
 	normalized := strings.TrimPrefix(strings.TrimSpace(strings.ToLower(name)), agentToolPrefix)
 	normalized = strings.ReplaceAll(normalized, "-", "_")
@@ -169,7 +243,7 @@ type reasoningWriter struct {
 const reasoningPrefix = "\033[1;36m│\033[0m  \033[3;90m"
 
 func newReasoningWriter() *reasoningWriter {
-	w := termWidth() - 4
+	w := fktui.TermWidth() - 4
 	if w < 20 {
 		w = 20
 	}
@@ -629,7 +703,7 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			if event.Content != "" {
 				fmt.Printf("\n\033[1;32m✓ [%s]\033[0m\n", event.AgentName)
-				lipgloss.Println(RenderMarkdown(event.Content))
+				lipgloss.Println(fktui.RenderMarkdown(event.Content))
 			}
 
 		case EventToolResult:

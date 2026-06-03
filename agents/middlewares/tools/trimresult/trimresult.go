@@ -8,7 +8,7 @@ package trimresult
 
 import (
 	"context"
-	"fkteams/fkevent"
+	"fkteams/eventlog"
 	"fmt"
 	"strings"
 
@@ -27,7 +27,7 @@ func omittedMsg(placeholder, content string) string {
 // Config 配置噪声工具结果修剪中间件。
 type Config struct {
 	// NoisyToolPrefixes 指定噪声工具名称前缀列表，结果将从已处理的历史中移除。
-	// 默认值来自 fkevent.NoisyToolPrefixes。
+	// 默认值来自 eventlog.NoisyToolPrefixes。
 	NoisyToolPrefixes []string
 
 	// Placeholder 是替换被修剪内容的占位符文本。
@@ -41,7 +41,7 @@ type Config struct {
 // 说明 LLM 已将该结果处理到其文字输出中，不再需要在上下文中保留完整内容。
 // 活跃工具调用链（尚无文字响应跟随）的结果始终保留。
 func New(cfg *Config) adk.ChatModelAgentMiddleware {
-	prefixes := fkevent.NoisyToolPrefixes
+	prefixes := eventlog.NoisyToolPrefixes
 	placeholder := defaultPlaceholder
 
 	if cfg != nil {

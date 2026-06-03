@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/engine"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fmt"
 	"log"
@@ -60,7 +61,7 @@ func ChatHandler() gin.HandlerFunc {
 			return
 		}
 
-		recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+		recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 		inputMessages, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
 
 		if req.Stream {
@@ -72,7 +73,7 @@ func ChatHandler() gin.HandlerFunc {
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, sessionID, userDisplayText string) {
+func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *eventlog.HistoryRecorder, inputMessages []adk.Message, sessionID, userDisplayText string) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -108,7 +109,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, sessionID, userDisplayText string) {
+func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *eventlog.HistoryRecorder, inputMessages []adk.Message, sessionID, userDisplayText string) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 

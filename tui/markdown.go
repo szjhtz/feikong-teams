@@ -1,4 +1,4 @@
-package fkevent
+package tui
 
 import (
 	"os"
@@ -18,7 +18,7 @@ var (
 	mdRendererOnce sync.Once
 )
 
-func termWidth() int {
+func TermWidth() int {
 	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
 		return w
 	}
@@ -140,7 +140,7 @@ func customDarkStyle() glamour.TermRendererOption {
 
 func initRenderer() *glamour.TermRenderer {
 	mdRendererOnce.Do(func() {
-		w := termWidth() - 4
+		w := TermWidth() - 4
 		if w < 40 {
 			w = 40
 		}
@@ -390,7 +390,7 @@ func renderMarkdownTable(tableMarkdown string) string {
 		})
 
 	rendered := t.String()
-	maxWidth := termWidth() - 4
+	maxWidth := TermWidth() - 4
 	if maxWidth < 40 {
 		maxWidth = 40
 	}

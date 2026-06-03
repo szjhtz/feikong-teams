@@ -2,8 +2,8 @@
 package chatutil
 
 import (
+	"fkteams/eventlog"
 	"fkteams/fkenv"
-	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/log"
 	"fkteams/memory"
@@ -15,7 +15,7 @@ import (
 )
 
 // BuildInputMessages 构建输入消息列表（长期记忆 + 对话历史 + 用户输入）
-func BuildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []adk.Message {
+func BuildInputMessages(recorder *eventlog.HistoryRecorder, userInput string) []adk.Message {
 	var inputMessages []adk.Message
 
 	// 注入长期记忆
@@ -39,7 +39,7 @@ func BuildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []a
 }
 
 // BuildMultimodalInputMessages 构建多模态输入消息列表（长期记忆 + 对话历史 + 多模态内容）
-func BuildMultimodalInputMessages(recorder *fkevent.HistoryRecorder, textContent string, parts []schema.MessageInputPart) []adk.Message {
+func BuildMultimodalInputMessages(recorder *eventlog.HistoryRecorder, textContent string, parts []schema.MessageInputPart) []adk.Message {
 	var inputMessages []adk.Message
 
 	// 注入长期记忆（使用文本部分进行搜索）
@@ -151,7 +151,7 @@ func ExtractTextFromParts(parts []schema.MessageInputPart) string {
 }
 
 // buildHistoryMessages 构建结构化历史消息列表
-func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
+func buildHistoryMessages(recorder *eventlog.HistoryRecorder) []adk.Message {
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
 
@@ -236,7 +236,7 @@ func truncatePreview(s string, n int) string {
 
 // agentMessageToSchemaMessages 将 AgentMessage 转为结构化消息列表。
 // 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
-func agentMessageToSchemaMessages(msg fkevent.AgentMessage) []adk.Message {
+func agentMessageToSchemaMessages(msg eventlog.AgentMessage) []adk.Message {
 	if msg.AgentName == "用户" {
 		return []adk.Message{schema.UserMessage(msg.GetTextContent())}
 	}
@@ -263,13 +263,13 @@ func agentMessageToSchemaMessages(msg fkevent.AgentMessage) []adk.Message {
 
 	for _, event := range msg.Events {
 		switch event.Type {
-		case fkevent.MsgTypeText:
+		case eventlog.MsgTypeText:
 			textBuf.WriteString(event.Content)
 
-		case fkevent.MsgTypeReasoning:
+		case eventlog.MsgTypeReasoning:
 			reasoningBuf.WriteString(event.Content)
 
-		case fkevent.MsgTypeToolCall:
+		case eventlog.MsgTypeToolCall:
 			tc := event.ToolCall
 			if tc == nil {
 				continue
@@ -287,12 +287,12 @@ func agentMessageToSchemaMessages(msg fkevent.AgentMessage) []adk.Message {
 			// ToolMessage 携带结果
 			messages = append(messages, schema.ToolMessage(tc.Result, tc.ID, schema.WithToolName(tc.Name)))
 
-		case fkevent.MsgTypeAction:
+		case eventlog.MsgTypeAction:
 			if event.Action != nil {
 				fmt.Fprintf(&textBuf, "[%s] %s\n", event.Action.ActionType, event.Action.Content)
 			}
 
-		case fkevent.MsgTypeError:
+		case eventlog.MsgTypeError:
 			fmt.Fprintf(&textBuf, "[错误] %s\n", event.Content)
 		}
 	}

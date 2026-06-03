@@ -1,8 +1,10 @@
-package fkevent
+package eventlog
 
 import (
 	"encoding/json"
+	"fkteams/agenttool"
 	"fkteams/common"
+	"fkteams/fkevent"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +15,24 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+)
+
+type Event = fkevent.Event
+type ActionType = fkevent.ActionType
+
+const (
+	EventReasoningChunk     = fkevent.EventReasoningChunk
+	EventStreamChunk        = fkevent.EventStreamChunk
+	EventToolCallsPreparing = fkevent.EventToolCallsPreparing
+	EventToolCalls          = fkevent.EventToolCalls
+	EventToolResultChunk    = fkevent.EventToolResultChunk
+	EventToolResult         = fkevent.EventToolResult
+	EventMessage            = fkevent.EventMessage
+	EventAction             = fkevent.EventAction
+	EventError              = fkevent.EventError
+	EventDispatchProgress   = fkevent.EventDispatchProgress
+
+	ActionContextCompress = fkevent.ActionContextCompress
 )
 
 const HistoryFileName = "history.jsonl"
@@ -165,7 +185,7 @@ func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord
 		Result:      result,
 	}
 	if record.DisplayName == "" || record.Kind == "" {
-		display := FormatToolDisplay(tc.Name)
+		display := agenttool.FormatToolDisplay(tc.Name)
 		if record.DisplayName == "" {
 			record.DisplayName = display.DisplayName
 		}
@@ -184,7 +204,7 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 }
 
 func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string) pendingToolCall {
-	display := FormatToolDisplay(name)
+	display := agenttool.FormatToolDisplay(name)
 	return pendingToolCall{
 		Ref:         ref,
 		ID:          id,
@@ -362,7 +382,7 @@ func (h *HistoryRecorder) sortedActiveKeysLocked() []string {
 
 // RecordEvent 记录事件
 func (h *HistoryRecorder) RecordEvent(event Event) {
-	event = NormalizeEvent(event)
+	event = fkevent.NormalizeEvent(event)
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -395,7 +415,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	case EventToolCallsPreparing:
 		ctx := h.ensureMessageContext(event)
 		for _, tc := range event.ToolCalls {
-			if isInternalToolName(tc.Function.Name) {
+			if fkevent.IsInternalToolName(tc.Function.Name) {
 				continue
 			}
 			if tc.Function.Name != "" {
@@ -408,7 +428,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	case EventToolCalls:
 		ctx := h.ensureMessageContext(event)
 		for _, tc := range event.ToolCalls {
-			if isInternalToolName(tc.Function.Name) {
+			if fkevent.IsInternalToolName(tc.Function.Name) {
 				continue
 			}
 			updated := false
@@ -437,7 +457,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 
 	case EventToolResultChunk:
-		if isInternalContinueContent(event.Content) {
+		if fkevent.IsInternalContinueContent(event.Content) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
@@ -446,7 +466,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 
 	case EventToolResult:
-		if isInternalContinueContent(event.Content) {
+		if fkevent.IsInternalContinueContent(event.Content) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
@@ -486,7 +506,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		if idx >= 0 {
 			tc := ctx.pendingToolCalls[idx]
 			ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
-			if isInternalToolName(tc.Name) {
+			if fkevent.IsInternalToolName(tc.Name) {
 				return
 			}
 			if !h.updateToolCallEvent(ctx, tc, content) {
@@ -512,7 +532,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			})
 		}
 		for _, tc := range event.ToolCalls {
-			if isInternalToolName(tc.Function.Name) {
+			if fkevent.IsInternalToolName(tc.Function.Name) {
 				continue
 			}
 			if tc.Function.Name != "" {
@@ -570,7 +590,7 @@ func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 		}
 		tc := ctx.pendingToolCalls[idx]
 		ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
-		if !isInternalToolName(tc.Name) {
+		if !fkevent.IsInternalToolName(tc.Name) {
 			if !h.updateToolCallEvent(ctx, tc, content) {
 				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 					Type:     MsgTypeToolCall,
@@ -1005,7 +1025,7 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 			case MsgTypeToolCall:
 				if event.ToolCall != nil {
-					display := FormatToolDisplay(event.ToolCall.Name)
+					display := agenttool.FormatToolDisplay(event.ToolCall.Name)
 					fmt.Fprintf(&md, "> **工具调用**: %s\n", display.DisplayName)
 					if event.ToolCall.Arguments != "" {
 						fmt.Fprintf(&md, "> - **参数**: `%s`\n", event.ToolCall.Arguments)
@@ -1044,26 +1064,4 @@ func (h *HistoryRecorder) SaveToMarkdownWithTimestamp() (string, error) {
 	filePath := filepath.Join(common.AppDir(), "history", "output_history", fmt.Sprintf("chat_%s.md", timestamp))
 	err := h.SaveToMarkdownFile(filePath)
 	return filePath, err
-}
-
-// CLIEventCallback 创建 CLI 模式的事件回调，同时记录和打印
-func CLIEventCallback(recorder *HistoryRecorder) func(Event) error {
-	return func(event Event) error {
-		recorder.RecordEvent(event)
-		PrintEvent(event)
-		return nil
-	}
-}
-
-// JSONEventCallback 创建 JSON 格式的事件回调，将事件序列化为 JSON 输出
-func JSONEventCallback(recorder *HistoryRecorder) func(Event) error {
-	return func(event Event) error {
-		recorder.RecordEvent(event)
-		data, err := json.Marshal(event)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(data))
-		return nil
-	}
 }

@@ -222,11 +222,11 @@ FKTeamsChat.prototype.getMessageElementForEvent = function (event) {
 };
 
 FKTeamsChat.prototype.normalizedAgentName = function (name) {
-  return (name || "").toLowerCase().replace(/^ask_/, "").replace(/[^a-z0-9_-]+/g, "_");
+  return (name || "").toLowerCase().replace(/^ask_fkagent_/, "").replace(/[^a-z0-9_-]+/g, "_");
 };
 
 FKTeamsChat.prototype.agentNameFromTool = function (name) {
-  return this.normalizedAgentName((name || "").startsWith("ask_") ? name.slice(4) : name);
+  return this.normalizedAgentName((name || "").startsWith("ask_fkagent_") ? name.slice(12) : name);
 };
 
 FKTeamsChat.prototype.isMemberRunEvent = function (event) {

@@ -1,4 +1,4 @@
-package fkevent
+package agenttool
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 	"unicode"
 )
 
-const agentToolPrefix = "ask_"
+const AgentToolPrefix = "ask_fkagent_"
 
 var agentToolDisplays sync.Map
 
@@ -23,7 +23,7 @@ func RegisterAgentToolDisplay(toolName, displayName string) {
 	}
 	target := displayName
 	if target == "" {
-		target = titleIdentifier(strings.TrimPrefix(toolName, agentToolPrefix))
+		target = titleIdentifier(strings.TrimPrefix(toolName, AgentToolPrefix))
 	}
 	agentToolDisplays.Store(toolName, ToolDisplay{
 		Name:        toolName,

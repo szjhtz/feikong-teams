@@ -2,7 +2,7 @@ package memory
 
 import (
 	"context"
-	"fkteams/fkevent"
+	"fkteams/eventlog"
 	"fkteams/log"
 	"path/filepath"
 	"sort"
@@ -306,7 +306,7 @@ func (m *Manager) Count() int {
 }
 
 // ConvertRecorderMessages 将 HistoryRecorder 的消息转为 memory.Message
-func ConvertRecorderMessages(recorder *fkevent.HistoryRecorder) []Message {
+func ConvertRecorderMessages(recorder *eventlog.HistoryRecorder) []Message {
 	recorder.FinalizeCurrent()
 	agentMessages := recorder.GetMessages()
 	var msgs []Message
@@ -324,7 +324,7 @@ func ConvertRecorderMessages(recorder *fkevent.HistoryRecorder) []Message {
 }
 
 // ExtractFromRecorder 异步从 HistoryRecorder 提取记忆
-func (m *Manager) ExtractFromRecorder(recorder *fkevent.HistoryRecorder, sessionID string) {
+func (m *Manager) ExtractFromRecorder(recorder *eventlog.HistoryRecorder, sessionID string) {
 	msgs := ConvertRecorderMessages(recorder)
 	if len(msgs) == 0 {
 		return
@@ -337,7 +337,7 @@ func (m *Manager) ExtractFromRecorder(recorder *fkevent.HistoryRecorder, session
 }
 
 // FlushFromRecorder 退出前强制从 HistoryRecorder 提取剩余记忆
-func (m *Manager) FlushFromRecorder(recorder *fkevent.HistoryRecorder, sessionID string) {
+func (m *Manager) FlushFromRecorder(recorder *eventlog.HistoryRecorder, sessionID string) {
 	msgs := ConvertRecorderMessages(recorder)
 	if len(msgs) == 0 {
 		return

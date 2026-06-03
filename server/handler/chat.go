@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"fkteams/agents"
+	"fkteams/agenttool"
 	"fkteams/chatutil"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
@@ -110,7 +112,7 @@ func resolveRunner(ctx context.Context, mode, agentName string) (*adk.Runner, er
 // --- 聊天输入构建 ---
 
 // buildChatInput 构建输入消息（含历史），支持多模态
-func buildChatInput(recorder *fkevent.HistoryRecorder, message string, contents []ContentPart) (messages []adk.Message, displayText string) {
+func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart) (messages []adk.Message, displayText string) {
 	if len(contents) > 0 {
 		parts := convertContentParts(contents)
 		displayText = chatutil.ExtractTextFromParts(parts)
@@ -127,13 +129,13 @@ func buildChatInput(recorder *fkevent.HistoryRecorder, message string, contents 
 
 // chatHistoryPath 返回会话历史文件路径（使用 filepath.Base 防止路径穿越）
 func chatHistoryPath(sessionID string) string {
-	return filepath.Join(historyDir, filepath.Base(sessionID), fkevent.HistoryFileName)
+	return filepath.Join(historyDir, filepath.Base(sessionID), eventlog.HistoryFileName)
 }
 
 // --- 执行后处理 ---
 
 // saveHistory 保存聊天历史到文件
-func saveHistory(recorder *fkevent.HistoryRecorder, filePath, sessionID string) {
+func saveHistory(recorder *eventlog.HistoryRecorder, filePath, sessionID string) {
 	if err := recorder.SaveToFile(filePath); err != nil {
 		log.Printf("failed to save history: session=%s, err=%v", sessionID, err)
 	}
@@ -142,7 +144,7 @@ func saveHistory(recorder *fkevent.HistoryRecorder, filePath, sessionID string) 
 // updateSessionTitleAndStatus 更新会话标题（仅当标题为默认值时）和状态
 func updateSessionTitleAndStatus(sessionID, userInput, status string) {
 	sessionDir := sessionDirPath(sessionID)
-	meta, err := fkevent.LoadMetadata(sessionDir)
+	meta, err := eventlog.LoadMetadata(sessionDir)
 	if err != nil {
 		return
 	}
@@ -151,13 +153,13 @@ func updateSessionTitleAndStatus(sessionID, userInput, status string) {
 	}
 	meta.Status = status
 	meta.UpdatedAt = time.Now()
-	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 		log.Printf("failed to update session metadata: session=%s, err=%v", sessionID, err)
 	}
 }
 
 // finishChat 保存历史、更新元数据、提取记忆
-func finishChat(recorder *fkevent.HistoryRecorder, sessionID, userInput string) {
+func finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {
 	recorder.FinalizeCurrent()
 	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 	ensureSessionMetadata(sessionID, userInput)
@@ -171,14 +173,14 @@ func finishChat(recorder *fkevent.HistoryRecorder, sessionID, userInput string) 
 func ensureSessionMetadata(sessionID, userInput string) {
 	sessionDir := sessionDirPath(sessionID)
 	now := time.Now()
-	meta, err := fkevent.LoadMetadata(sessionDir)
+	meta, err := eventlog.LoadMetadata(sessionDir)
 	if err != nil {
 		// 首次创建
 		title := "未命名会话"
 		if userInput != "" {
 			title = truncateTitle(userInput)
 		}
-		meta = &fkevent.SessionMetadata{
+		meta = &eventlog.SessionMetadata{
 			ID:        sessionID,
 			Title:     title,
 			Status:    "completed",
@@ -193,7 +195,7 @@ func ensureSessionMetadata(sessionID, userInput string) {
 			meta.Title = truncateTitle(userInput)
 		}
 	}
-	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 		log.Printf("failed to save metadata: session=%s, err=%v", sessionID, err)
 	}
 }
@@ -339,7 +341,7 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if len(event.ToolCalls) > 0 {
 		toolCalls := make([]map[string]any, 0, len(event.ToolCalls))
 		for _, tc := range event.ToolCalls {
-			display := fkevent.FormatToolDisplay(tc.Function.Name)
+			display := agenttool.FormatToolDisplay(tc.Function.Name)
 			toolCall := map[string]any{
 				"name":         tc.Function.Name,
 				"display_name": display.DisplayName,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/engine"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
@@ -76,7 +77,7 @@ func StreamStartHandler() gin.HandlerFunc {
 			return
 		}
 
-		recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+		recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 		inputMessages, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
 
 		// 创建任务——统一使用 GlobalStreams
@@ -110,7 +111,7 @@ func StreamStartHandler() gin.HandlerFunc {
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, userDisplayText string) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *eventlog.HistoryRecorder, inputMessages []adk.Message, userDisplayText string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
@@ -300,7 +301,7 @@ func StreamStatusHandler() gin.HandlerFunc {
 
 		// 无活跃任务，返回会话元数据（供前端判断会话是否存在）
 		sessionDir := sessionDirPath(sessionID)
-		meta, err := fkevent.LoadMetadata(sessionDir)
+		meta, err := eventlog.LoadMetadata(sessionDir)
 		if err != nil {
 			Fail(c, http.StatusNotFound, "session not found")
 			return
@@ -419,7 +420,7 @@ func StreamEventsHandler() gin.HandlerFunc {
 // ==================== 内部辅助 ====================
 
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
-func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.HistoryRecorder, sessionID string) engine.InterruptHandler {
+func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) engine.InterruptHandler {
 	channelHandler := engine.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断

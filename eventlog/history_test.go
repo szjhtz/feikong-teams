@@ -1,4 +1,4 @@
-package fkevent
+package eventlog
 
 import (
 	"testing"
@@ -18,7 +18,7 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 			ID:    "call_1",
 			Index: &toolIndex,
 			Function: schema.FunctionCall{
-				Name:      "ask_researcher",
+				Name:      "ask_fkagent_researcher",
 				Arguments: `{"task":"查资料"}`,
 			},
 		}},
@@ -29,7 +29,7 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 		AgentName:      "researcher",
 		Content:        "结果",
 		MemberCallID:   "call_1",
-		MemberToolName: "ask_researcher",
+		MemberToolName: "ask_fkagent_researcher",
 		MemberName:     "Researcher",
 		MemberOrder:    &toolIndex,
 	})

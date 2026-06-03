@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 	"fkteams/agents"
-	"fkteams/fkevent"
+	"fkteams/eventlog"
 	"fkteams/g"
 	"fkteams/memory"
 	"fkteams/tools/scheduler"
@@ -102,7 +102,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 > 直接输入问题即可与智能体团队对话
 
 ---`
-		fmt.Println(fkevent.RenderMarkdown(helpMD))
+		fmt.Println(tui.RenderMarkdown(helpMD))
 		return ResultHandled
 
 	case "list_chat_history":
@@ -111,7 +111,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 
 	case "save_chat_history":
 		recorder := getCliRecorder()
-		historyFile := filepath.Join(CLIHistoryDir, activeSessionID, fkevent.HistoryFileName)
+		historyFile := filepath.Join(CLIHistoryDir, activeSessionID, eventlog.HistoryFileName)
 		err := recorder.SaveToFile(historyFile)
 		if err != nil {
 			pterm.Error.Printfln("保存聊天历史失败: %v", err)
@@ -122,7 +122,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	case "clear_chat_history":
-		fkevent.GlobalSessionManager.Clear(activeSessionID)
+		eventlog.GlobalSessionManager.Clear(activeSessionID)
 		pterm.Success.Println("成功清空当前聊天历史")
 		return ResultHandled
 
@@ -228,11 +228,11 @@ func ListSessions(interactive ...bool) {
 		sessionDir := filepath.Join(CLIHistoryDir, sessionID)
 
 		title := sessionID
-		if meta, err := fkevent.LoadMetadata(sessionDir); err == nil {
+		if meta, err := eventlog.LoadMetadata(sessionDir); err == nil {
 			title = meta.Title
 		}
 
-		histFile := filepath.Join(sessionDir, fkevent.HistoryFileName)
+		histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
 		if info, err := os.Stat(histFile); err == nil {
 			fmt.Fprintf(&sb, "| `%s` | %s | %s | %d B |\n",
 				sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
@@ -253,12 +253,12 @@ func ListSessions(interactive ...bool) {
 		fmt.Fprintf(&sb, "\n共 **%d** 个会话，使用 `-r <session_id>` 恢复会话\n", count)
 	}
 	sb.WriteString("\n---\n")
-	fmt.Println(fkevent.RenderMarkdown(sb.String()))
+	fmt.Println(tui.RenderMarkdown(sb.String()))
 }
 
 // loadSession 加载指定 session ID 的聊天历史
 func loadSession(sessionID string) {
-	historyFile := filepath.Join(CLIHistoryDir, sessionID, fkevent.HistoryFileName)
+	historyFile := filepath.Join(CLIHistoryDir, sessionID, eventlog.HistoryFileName)
 	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
 		pterm.Error.Printfln("历史文件不存在: %s", historyFile)
 		pterm.Info.Println("使用 list_chat_history 查看可用的会话")
@@ -289,7 +289,7 @@ func ListAvailableAgents() {
 
 	sb.WriteString("\n> 输入 `@` 后会自动提示可用的智能体")
 	sb.WriteString("\n---\n")
-	fmt.Println(fkevent.RenderMarkdown(sb.String()))
+	fmt.Println(tui.RenderMarkdown(sb.String()))
 }
 
 // handleListMemory 列出所有长期记忆条目
@@ -309,7 +309,7 @@ func handleListMemory() {
 	sb.WriteString("# 长期记忆列表\n\n")
 	printMemoryEntries(entries, &sb)
 	fmt.Fprintf(&sb, "---\n共 **%d** 条记忆，使用 `delete_memory` 删除条目，或 `clear_memory` 清空全部", len(entries))
-	fmt.Println(fkevent.RenderMarkdown(sb.String()))
+	fmt.Println(tui.RenderMarkdown(sb.String()))
 }
 
 // handleDeleteMemory 交互式选择并删除记忆条目
@@ -478,12 +478,12 @@ func handleLoadSession() {
 		sessionDir := filepath.Join(CLIHistoryDir, sessionID)
 
 		title := sessionID
-		if meta, err := fkevent.LoadMetadata(sessionDir); err == nil {
+		if meta, err := eventlog.LoadMetadata(sessionDir); err == nil {
 			title = meta.Title
 		}
 
 		label := title
-		histFile := filepath.Join(sessionDir, fkevent.HistoryFileName)
+		histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
 		if info, err := os.Stat(histFile); err == nil {
 			label = fmt.Sprintf("%s (%s, %d bytes)", title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
 		}

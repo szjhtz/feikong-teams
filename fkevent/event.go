@@ -5,6 +5,7 @@ package fkevent
 import (
 	"context"
 	"errors"
+	"fkteams/agenttool"
 	"fmt"
 	"io"
 	"sort"
@@ -40,9 +41,19 @@ func isInternalToolName(name string) bool {
 	return name == internalContinueToolName
 }
 
+// IsInternalToolName 判断工具名是否为内部事件管线工具。
+func IsInternalToolName(name string) bool {
+	return isInternalToolName(name)
+}
+
 func isInternalContinueContent(content string) bool {
 	return strings.Contains(content, "Your previous text output was truncated") ||
 		strings.Contains(content, "Your previous tool call was truncated")
+}
+
+// IsInternalContinueContent 判断内容是否为自动续写内部提示。
+func IsInternalContinueContent(content string) bool {
+	return isInternalContinueContent(content)
 }
 
 func filterVisibleToolCalls(toolCalls []schema.ToolCall) []schema.ToolCall {
@@ -456,7 +467,7 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 		if chunk.Role == schema.Tool && isInternalToolName(chunk.ToolName) {
 			return nil
 		}
-		if chunk.Role == schema.Tool && FormatToolDisplay(chunk.ToolName).Kind == "agent" {
+		if chunk.Role == schema.Tool && agenttool.FormatToolDisplay(chunk.ToolName).Kind == "agent" {
 			return nil
 		}
 		var eventType EventType = EventStreamChunk
@@ -734,7 +745,7 @@ func isContextCanceled(ctx context.Context, err error) bool {
 	return strings.Contains(msg, "context canceled") || strings.Contains(msg, "context deadline exceeded")
 }
 
-// handleEvent 分发事件到 context 中的回调，无回调时仅打印
+// handleEvent 分发事件到 context 中的回调。
 func handleEvent(ctx context.Context, event Event) error {
 	eventDispatchMu.Lock()
 	defer eventDispatchMu.Unlock()
@@ -743,7 +754,6 @@ func handleEvent(ctx context.Context, event Event) error {
 	if cb := getCallback(ctx); cb != nil {
 		return cb(event)
 	}
-	PrintEvent(event)
 	return nil
 }
 

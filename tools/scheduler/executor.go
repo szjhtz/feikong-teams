@@ -3,7 +3,7 @@ package scheduler
 import (
 	"context"
 	"fkteams/engine"
-	"fkteams/fkevent"
+	"fkteams/eventview"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,7 +52,7 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 		return "", fmt.Errorf("create runner: %w", err)
 	}
 
-	callback, getResult := fkevent.NewMarkdownCollector()
+	callback, getResult := eventview.NewMarkdownCollector()
 
 	inputMessages := []adk.Message{schema.UserMessage(task)}
 

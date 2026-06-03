@@ -841,7 +841,7 @@ FKTeamsChat.prototype.checkAndLoadSessionHistory = async function (sessionId) {
 
 FKTeamsChat.prototype.isLegacyHistoryMemberMessage = function (msg) {
   const name = msg?.agent_name || "";
-  return /^ask_[A-Za-z0-9_-]+$/.test(name) && name !== "ask_questions";
+  return /^ask_fkagent_[A-Za-z0-9_-]+$/.test(name);
 };
 
 FKTeamsChat.prototype.isHistoryMemberMessage = function (msg) {
@@ -868,7 +868,7 @@ FKTeamsChat.prototype.historyMemberLabel = function (msg) {
 
 FKTeamsChat.prototype.historyToolDisplay = function (tc) {
   const display = this.getToolDisplay(tc);
-  if (display.kind === "agent" || !tc?.name || !/^ask_[A-Za-z0-9_-]+$/.test(tc.name) || tc.name === "ask_questions") {
+  if (display.kind === "agent" || !tc?.name || !/^ask_fkagent_[A-Za-z0-9_-]+$/.test(tc.name)) {
     return display;
   }
   const target = this.historyMemberLabel({ agent_name: tc.name });

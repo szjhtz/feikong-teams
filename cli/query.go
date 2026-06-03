@@ -6,6 +6,8 @@ import (
 	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
+	"fkteams/eventlog"
+	"fkteams/eventview"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/report"
@@ -89,7 +91,7 @@ type QueryExecutor struct {
 	runner          *adk.Runner
 	autoReject      bool
 	approveStores   []string // 自动批准的 store 列表
-	callbackBuilder func(*fkevent.HistoryRecorder) func(fkevent.Event) error
+	callbackBuilder func(*eventlog.HistoryRecorder) func(fkevent.Event) error
 }
 
 // NewQueryExecutor 创建查询执行器
@@ -97,7 +99,7 @@ func NewQueryExecutor(runner *adk.Runner, state *QueryState) *QueryExecutor {
 	return &QueryExecutor{
 		state:           state,
 		runner:          runner,
-		callbackBuilder: fkevent.CLIEventCallback,
+		callbackBuilder: eventview.CLIEventCallback,
 	}
 }
 
@@ -124,7 +126,7 @@ func (e *QueryExecutor) SetRunner(runner *adk.Runner) {
 }
 
 // SetCallbackBuilder 设置事件回调构造器
-func (e *QueryExecutor) SetCallbackBuilder(cb func(*fkevent.HistoryRecorder) func(fkevent.Event) error) {
+func (e *QueryExecutor) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(fkevent.Event) error) {
 	e.callbackBuilder = cb
 }
 
@@ -156,8 +158,8 @@ func SetResumeSessionID(sessionID string) {
 }
 
 // getCliRecorder 获取 CLI 模式的历史记录器
-func getCliRecorder() *fkevent.HistoryRecorder {
-	return fkevent.GlobalSessionManager.GetOrCreate(activeSessionID, CLIHistoryDir)
+func getCliRecorder() *eventlog.HistoryRecorder {
+	return eventlog.GlobalSessionManager.GetOrCreate(activeSessionID, CLIHistoryDir)
 }
 
 // BuildInputMessages 构建输入消息列表（包含历史对话，支持上下文压缩摘要）
@@ -227,7 +229,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	})
 
 	if queryCtx.Err() == nil {
-		fkevent.FlushPrintEvent()
+		eventview.FlushPrintEvent()
 	}
 
 	if err != nil {
@@ -339,7 +341,7 @@ func FlushSessionMemory() {
 // AutoSaveCLIHistory 自动保存 CLI 模式的聊天历史（由 --save 参数控制）
 func AutoSaveCLIHistory() {
 	recorder := getCliRecorder()
-	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, fkevent.HistoryFileName)
+	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, eventlog.HistoryFileName)
 
 	pterm.Info.Println("正在自动保存聊天历史...")
 	if err := recorder.SaveToFile(historyFile); err != nil {
@@ -362,13 +364,13 @@ func AutoSaveCLIHistory() {
 func saveCliSessionMetadata(sessionID, userInput string) {
 	sessionDir := filepath.Join(CLIHistoryDir, sessionID)
 	now := time.Now()
-	meta, err := fkevent.LoadMetadata(sessionDir)
+	meta, err := eventlog.LoadMetadata(sessionDir)
 	if err != nil {
 		title := "未命名会话"
 		if userInput != "" {
 			title = truncateTitle(userInput)
 		}
-		meta = &fkevent.SessionMetadata{
+		meta = &eventlog.SessionMetadata{
 			ID:        sessionID,
 			Title:     title,
 			Status:    "active",
@@ -381,7 +383,7 @@ func saveCliSessionMetadata(sessionID, userInput string) {
 			meta.Title = truncateTitle(userInput)
 		}
 	}
-	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 		log.Printf("failed to save CLI session metadata: %v", err)
 	}
 }

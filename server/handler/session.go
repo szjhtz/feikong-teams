@@ -2,7 +2,7 @@ package handler
 
 import (
 	"fkteams/common"
-	"fkteams/fkevent"
+	"fkteams/eventlog"
 	"log"
 	"net/http"
 	"os"
@@ -66,14 +66,14 @@ func ListSessionsHandler() gin.HandlerFunc {
 			// 读取元数据
 			title := sessionID
 			status := "active"
-			meta, metaErr := fkevent.LoadMetadata(sessionDir)
+			meta, metaErr := eventlog.LoadMetadata(sessionDir)
 			if metaErr == nil {
 				title = meta.Title
 				status = meta.Status
 			}
 
 			// 获取历史事件日志大小和时间
-			histFile := filepath.Join(sessionDir, fkevent.HistoryFileName)
+			histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
 			var size int64
 			var modTime time.Time
 			if info, err := os.Stat(histFile); err == nil {
@@ -130,7 +130,7 @@ func CreateSessionHandler() gin.HandlerFunc {
 		if _, err := os.Stat(sessionDir); err == nil {
 			// 会话已存在，返回已有的元数据
 			currentAgent := ""
-			if meta, metaErr := fkevent.LoadMetadata(sessionDir); metaErr == nil {
+			if meta, metaErr := eventlog.LoadMetadata(sessionDir); metaErr == nil {
 				currentAgent = meta.CurrentAgent
 			}
 			OK(c, gin.H{
@@ -152,14 +152,14 @@ func CreateSessionHandler() gin.HandlerFunc {
 		}
 
 		now := time.Now()
-		meta := &fkevent.SessionMetadata{
+		meta := &eventlog.SessionMetadata{
 			ID:        req.SessionID,
 			Title:     title,
 			Status:    "idle",
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
-		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+		if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 			log.Printf("failed to create session %s: %v", req.SessionID, err)
 			Fail(c, http.StatusInternalServerError, "failed to create session")
 			return
@@ -178,8 +178,8 @@ func GetSessionHandler() gin.HandlerFunc {
 			return
 		}
 
-		histFile := filepath.Join(sessionDirPath(sessionID), fkevent.HistoryFileName)
-		recorder := fkevent.NewHistoryRecorder()
+		histFile := filepath.Join(sessionDirPath(sessionID), eventlog.HistoryFileName)
+		recorder := eventlog.NewHistoryRecorder()
 		if err := recorder.LoadFromFile(histFile); err != nil {
 			if os.IsNotExist(err) {
 				Fail(c, http.StatusNotFound, "session not found")
@@ -191,7 +191,7 @@ func GetSessionHandler() gin.HandlerFunc {
 		}
 
 		currentAgent := ""
-		meta, metaErr := fkevent.LoadMetadata(sessionDirPath(sessionID))
+		meta, metaErr := eventlog.LoadMetadata(sessionDirPath(sessionID))
 		if metaErr == nil {
 			currentAgent = meta.CurrentAgent
 		}
@@ -223,7 +223,7 @@ func DeleteSessionHandler() gin.HandlerFunc {
 		GlobalStreams.CancelAndRemove(sessionID)
 
 		// 清理内存中的会话历史记录
-		fkevent.GlobalSessionManager.Remove(sessionID)
+		eventlog.GlobalSessionManager.Remove(sessionID)
 
 		if err := os.RemoveAll(sessionDir); err != nil {
 			log.Printf("failed to delete session %s: %v", sessionID, err)
@@ -253,7 +253,7 @@ func RenameSessionHandler() gin.HandlerFunc {
 		}
 
 		sessionDir := sessionDirPath(req.SessionID)
-		meta, err := fkevent.LoadMetadata(sessionDir)
+		meta, err := eventlog.LoadMetadata(sessionDir)
 		if err != nil {
 			if os.IsNotExist(err) {
 				Fail(c, http.StatusNotFound, "session not found")
@@ -266,7 +266,7 @@ func RenameSessionHandler() gin.HandlerFunc {
 
 		meta.Title = req.Title
 		meta.UpdatedAt = time.Now()
-		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+		if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 			log.Printf("failed to save metadata: session=%s, err=%v", req.SessionID, err)
 			Fail(c, http.StatusInternalServerError, "failed to save metadata")
 			return
@@ -298,7 +298,7 @@ func UpdateSessionAgentHandler() gin.HandlerFunc {
 		}
 
 		sessionDir := sessionDirPath(req.SessionID)
-		meta, err := fkevent.LoadMetadata(sessionDir)
+		meta, err := eventlog.LoadMetadata(sessionDir)
 		if err != nil {
 			if os.IsNotExist(err) {
 				Fail(c, http.StatusNotFound, "session not found")
@@ -311,7 +311,7 @@ func UpdateSessionAgentHandler() gin.HandlerFunc {
 
 		meta.CurrentAgent = req.CurrentAgent
 		meta.UpdatedAt = time.Now()
-		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+		if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 			log.Printf("failed to save metadata: session=%s, err=%v", req.SessionID, err)
 			Fail(c, http.StatusInternalServerError, "failed to save metadata")
 			return

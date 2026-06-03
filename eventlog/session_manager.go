@@ -1,4 +1,4 @@
-package fkevent
+package eventlog
 
 import (
 	"encoding/json"

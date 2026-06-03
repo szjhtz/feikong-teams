@@ -62,8 +62,15 @@ channels/                   # 消息通道桥接
   bridge.go                 #   Bridge — 连接通道和引擎，goroutine 串行处理会话消息
 fkevent/                    # 事件系统
   types.go                  #   类型常量：EventType / ActionType / NotifyType（禁止字符串字面量）
-  event.go                  #   ProcessAgentEvent() — 事件分发和流式消息处理
+  event.go                  #   ProcessAgentEvent() — ADK 事件转换与回调分发
+  scope.go                  #   子智能体事件归属标记
+eventlog/                   # 事件日志与会话历史
   history.go                #   HistoryRecorder — 会话历史记录和摘要持久化
+  session_manager.go        #   会话 metadata 与全局历史记录器管理
+agenttool/                  # 成员智能体工具元数据
+  tool_display.go           #   成员工具前缀、显示名和工具分类注册
+eventview/                  # 事件展示层
+  print.go                  #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
 config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
 providers/                  # 模型提供者（OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot）
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
@@ -72,7 +79,7 @@ g/                          # 全局变量（MemoryManager / ProcessCleaner）
 common/                     # 跨模块共享（会话 ID / 目录路径 / 重试判断）
 fkenv/                      # 环境变量读取
 log/                        # 日志配置（lumberjack 轮转）
-tui/                        # 终端 UI 组件
+tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环
 mdiff/                      # 文件差异/补丁
 bootstrap/                  # 应用目录初始化

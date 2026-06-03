@@ -10,7 +10,7 @@ import (
 	"fkteams/cli"
 	commonPkg "fkteams/common"
 	"fkteams/config"
-	"fkteams/fkevent"
+	"fkteams/eventview"
 	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/runner"
@@ -156,7 +156,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 
 		format := cmd.String("format")
 		if format == "json" {
-			session.SetCallbackBuilder(fkevent.JSONEventCallback)
+			session.SetCallbackBuilder(eventview.JSONEventCallback)
 		}
 
 		if query != "" {

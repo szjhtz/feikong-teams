@@ -1,4 +1,4 @@
-package fkevent
+package tui
 
 import (
 	"strings"

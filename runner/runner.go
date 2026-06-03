@@ -11,6 +11,7 @@ import (
 	"fkteams/agents/discussant"
 	"fkteams/agents/moderator"
 	"fkteams/agents/tasker"
+	"fkteams/agenttool"
 	"fkteams/common"
 	"fkteams/config"
 	"fkteams/fkevent"
@@ -90,7 +91,7 @@ func agentToolName(name string, index int, used map[string]bool) string {
 	if normalized == "" || (normalized[0] >= '0' && normalized[0] <= '9') {
 		normalized = fmt.Sprintf("member_%d", index+1)
 	}
-	normalized = "ask_" + normalized
+	normalized = agenttool.AgentToolPrefix + normalized
 
 	base := normalized
 	for suffix := 2; used[normalized]; suffix++ {
@@ -110,7 +111,7 @@ func buildAgentTools(ctx context.Context, subAgents []adk.Agent) []tool.BaseTool
 			toolName:    agentToolName(displayName, i, usedNames),
 			displayName: displayName,
 		}
-		fkevent.RegisterAgentToolDisplay(wrapped.toolName, displayName)
+		agenttool.RegisterAgentToolDisplay(wrapped.toolName, displayName)
 		agentTools = append(agentTools, adk.NewAgentTool(ctx, wrapped))
 	}
 	return agentTools
