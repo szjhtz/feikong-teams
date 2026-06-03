@@ -1,15 +1,19 @@
 package tui
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"sync"
+	"unicode"
 
 	glamour "charm.land/glamour/v2"
 	"charm.land/glamour/v2/ansi"
 	"charm.land/glamour/v2/styles"
+	"github.com/alecthomas/chroma/v2/quick"
 	classiclipgloss "github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
 
@@ -28,6 +32,33 @@ func TermWidth() int {
 func sp(s string) *string { return &s }
 func bp(b bool) *bool     { return &b }
 func up(u uint) *uint     { return &u }
+
+const codeBlockBackground = "#1f2329"
+const codeBlockBackgroundANSI = "\x1b[48;2;31;35;41m"
+
+func codeToken(fg string) ansi.StylePrimitive {
+	return ansi.StylePrimitive{Color: sp(fg), BackgroundColor: sp(codeBlockBackground)}
+}
+
+func codeTokenStyle(fg string, opts ...func(*ansi.StylePrimitive)) ansi.StylePrimitive {
+	p := codeToken(fg)
+	for _, opt := range opts {
+		opt(&p)
+	}
+	return p
+}
+
+func tokenBold(p *ansi.StylePrimitive) {
+	p.Bold = bp(true)
+}
+
+func tokenItalic(p *ansi.StylePrimitive) {
+	p.Italic = bp(true)
+}
+
+func tokenUnderline(p *ansi.StylePrimitive) {
+	p.Underline = bp(true)
+}
 
 // customDarkStyle 基于 DarkStyleConfig 全面定制配色
 func customDarkStyle() glamour.TermRendererOption {
@@ -101,37 +132,42 @@ func customDarkStyle() glamour.TermRendererOption {
 	// ── 代码块 + 语法高亮 ──
 	s.CodeBlock = ansi.StyleCodeBlock{
 		StyleBlock: ansi.StyleBlock{
-			StylePrimitive: ansi.StylePrimitive{Color: sp("#e0e0e0")},
-			Margin:         up(1),
+			StylePrimitive: ansi.StylePrimitive{
+				Color:           sp("#e0e0e0"),
+				BackgroundColor: sp(codeBlockBackground),
+			},
+			Indent:      up(1),
+			IndentToken: sp("▌ "),
+			Margin:      up(1),
 		},
 		Chroma: &ansi.Chroma{
-			Text:                ansi.StylePrimitive{Color: sp("#e0e0e0")},
+			Text:                codeToken("#e0e0e0"),
 			Error:               ansi.StylePrimitive{Color: sp("#e06c75"), BackgroundColor: sp("#3c2020")},
-			Comment:             ansi.StylePrimitive{Color: sp("#6a6a6a")},
-			CommentPreproc:      ansi.StylePrimitive{Color: sp("#fab283")},
-			Keyword:             ansi.StylePrimitive{Color: sp("#5c9cf5")},
-			KeywordReserved:     ansi.StylePrimitive{Color: sp("#9d7cd8")},
-			KeywordNamespace:    ansi.StylePrimitive{Color: sp("#e06c75")},
-			KeywordType:         ansi.StylePrimitive{Color: sp("#e5c07b")},
-			Operator:            ansi.StylePrimitive{Color: sp("#56b6c2")},
-			Punctuation:         ansi.StylePrimitive{Color: sp("#abb2bf")},
-			Name:                ansi.StylePrimitive{Color: sp("#e0e0e0")},
-			NameBuiltin:         ansi.StylePrimitive{Color: sp("#56b6c2")},
-			NameTag:             ansi.StylePrimitive{Color: sp("#e06c75")},
-			NameAttribute:       ansi.StylePrimitive{Color: sp("#e5c07b")},
-			NameClass:           ansi.StylePrimitive{Color: sp("#e5c07b"), Bold: bp(true), Underline: bp(true)},
-			NameConstant:        ansi.StylePrimitive{Color: sp("#fab283")},
-			NameDecorator:       ansi.StylePrimitive{Color: sp("#e5c07b")},
-			NameFunction:        ansi.StylePrimitive{Color: sp("#fab283")},
-			LiteralNumber:       ansi.StylePrimitive{Color: sp("#9d7cd8")},
-			LiteralString:       ansi.StylePrimitive{Color: sp("#7fd88f")},
-			LiteralStringEscape: ansi.StylePrimitive{Color: sp("#56b6c2")},
-			GenericDeleted:      ansi.StylePrimitive{Color: sp("#e06c75")},
-			GenericEmph:         ansi.StylePrimitive{Italic: bp(true)},
-			GenericInserted:     ansi.StylePrimitive{Color: sp("#7fd88f")},
-			GenericStrong:       ansi.StylePrimitive{Bold: bp(true)},
-			GenericSubheading:   ansi.StylePrimitive{Color: sp("#6a6a6a")},
-			Background:          ansi.StylePrimitive{BackgroundColor: sp("#2d2d2d")},
+			Comment:             codeToken("#6a6a6a"),
+			CommentPreproc:      codeToken("#fab283"),
+			Keyword:             codeToken("#5c9cf5"),
+			KeywordReserved:     codeToken("#9d7cd8"),
+			KeywordNamespace:    codeToken("#e06c75"),
+			KeywordType:         codeToken("#e5c07b"),
+			Operator:            codeToken("#56b6c2"),
+			Punctuation:         codeToken("#abb2bf"),
+			Name:                codeToken("#e0e0e0"),
+			NameBuiltin:         codeToken("#56b6c2"),
+			NameTag:             codeToken("#e06c75"),
+			NameAttribute:       codeToken("#e5c07b"),
+			NameClass:           codeTokenStyle("#e5c07b", tokenBold, tokenUnderline),
+			NameConstant:        codeToken("#fab283"),
+			NameDecorator:       codeToken("#e5c07b"),
+			NameFunction:        codeToken("#fab283"),
+			LiteralNumber:       codeToken("#9d7cd8"),
+			LiteralString:       codeToken("#7fd88f"),
+			LiteralStringEscape: codeToken("#56b6c2"),
+			GenericDeleted:      codeToken("#e06c75"),
+			GenericEmph:         codeTokenStyle("#e0e0e0", tokenItalic),
+			GenericInserted:     codeToken("#7fd88f"),
+			GenericStrong:       codeTokenStyle("#e0e0e0", tokenBold),
+			GenericSubheading:   codeToken("#6a6a6a"),
+			Background:          ansi.StylePrimitive{BackgroundColor: sp(codeBlockBackground)},
 		},
 	}
 
@@ -169,7 +205,7 @@ func RenderMarkdown(content string) string {
 		return ""
 	}
 	content = strings.ReplaceAll(content, "[^", `\[^`)
-	if segments := splitMarkdownTables(content); hasMarkdownTableSegment(segments) {
+	if segments := splitMarkdownSegments(content); hasSpecialMarkdownSegment(segments) {
 		return renderMarkdownSegments(segments)
 	}
 	r := initRenderer()
@@ -186,11 +222,12 @@ func RenderMarkdown(content string) string {
 type markdownSegment struct {
 	text  string
 	table bool
+	code  bool
 }
 
-func hasMarkdownTableSegment(segments []markdownSegment) bool {
+func hasSpecialMarkdownSegment(segments []markdownSegment) bool {
 	for _, seg := range segments {
-		if seg.table {
+		if seg.table || seg.code {
 			return true
 		}
 	}
@@ -208,6 +245,10 @@ func renderMarkdownSegments(segments []markdownSegment) string {
 			rendered = append(rendered, renderMarkdownTable(text))
 			continue
 		}
+		if seg.code {
+			rendered = append(rendered, renderCodeBlock(text))
+			continue
+		}
 		r := initRenderer()
 		if r == nil {
 			rendered = append(rendered, text)
@@ -223,11 +264,10 @@ func renderMarkdownSegments(segments []markdownSegment) string {
 	return strings.Join(rendered, "\n\n")
 }
 
-func splitMarkdownTables(content string) []markdownSegment {
+func splitMarkdownSegments(content string) []markdownSegment {
 	lines := strings.Split(content, "\n")
 	var segments []markdownSegment
 	var normal []string
-	inFence := false
 
 	flushNormal := func() {
 		text := strings.TrimSpace(strings.Join(normal, "\n"))
@@ -240,12 +280,27 @@ func splitMarkdownTables(content string) []markdownSegment {
 	for i := 0; i < len(lines); {
 		trimmed := strings.TrimSpace(lines[i])
 		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			inFence = !inFence
-			normal = append(normal, lines[i])
+			flushNormal()
+			fence := "```"
+			if strings.HasPrefix(trimmed, "~~~") {
+				fence = "~~~"
+			}
+			start := i
 			i++
+			for i < len(lines) {
+				if strings.HasPrefix(strings.TrimSpace(lines[i]), fence) {
+					i++
+					break
+				}
+				i++
+			}
+			segments = append(segments, markdownSegment{
+				text: strings.Join(lines[start:i], "\n"),
+				code: true,
+			})
 			continue
 		}
-		if !inFence && i+1 < len(lines) && isMarkdownTableRow(lines[i]) && isMarkdownTableSeparator(lines[i+1]) {
+		if i+1 < len(lines) && isMarkdownTableRow(lines[i]) && isMarkdownTableSeparator(lines[i+1]) {
 			flushNormal()
 			start := i
 			i += 2
@@ -315,6 +370,112 @@ func splitMarkdownTableLine(line string) []string {
 	}
 	cells = append(cells, strings.TrimSpace(b.String()))
 	return cells
+}
+
+func renderCodeBlock(codeMarkdown string) string {
+	lang, code := parseCodeBlock(codeMarkdown)
+	highlighted := highlightCode(code, lang)
+	return paintCodeBlockBackground(highlighted, TermWidth()-4)
+}
+
+func parseCodeBlock(codeMarkdown string) (lang string, code string) {
+	lines := strings.Split(strings.Trim(codeMarkdown, "\n"), "\n")
+	if len(lines) == 0 {
+		return "", ""
+	}
+	opener := strings.TrimSpace(lines[0])
+	fence := "```"
+	if strings.HasPrefix(opener, "~~~") {
+		fence = "~~~"
+	}
+	lang = strings.TrimSpace(strings.TrimPrefix(opener, fence))
+	if fields := strings.Fields(lang); len(fields) > 0 {
+		lang = fields[0]
+	}
+	body := lines[1:]
+	if len(body) > 0 && strings.HasPrefix(strings.TrimSpace(body[len(body)-1]), fence) {
+		body = body[:len(body)-1]
+	}
+	return lang, strings.Join(body, "\n")
+}
+
+func highlightCode(code, lang string) string {
+	code = normalizeCodeBlockText(code)
+	if strings.TrimSpace(code) == "" {
+		return ""
+	}
+	lexer := lang
+	if lexer == "" {
+		lexer = "text"
+	}
+	var out bytes.Buffer
+	if err := quick.Highlight(&out, code, lexer, "terminal16m", "monokai"); err != nil {
+		return code
+	}
+	return strings.TrimRight(out.String(), "\n")
+}
+
+func normalizeCodeBlockText(code string) string {
+	code = strings.ReplaceAll(code, "\r\n", "\n")
+	code = strings.ReplaceAll(code, "\r", "\n")
+
+	const tabSize = 4
+	var b strings.Builder
+	col := 0
+	for _, r := range code {
+		switch {
+		case r == '\n':
+			b.WriteRune(r)
+			col = 0
+		case r == '\t':
+			spaces := tabSize - col%tabSize
+			b.WriteString(strings.Repeat(" ", spaces))
+			col += spaces
+		case unicode.IsControl(r):
+			b.WriteRune(' ')
+			col++
+		default:
+			b.WriteRune(r)
+			width := runewidth.RuneWidth(r)
+			if width < 1 {
+				width = 1
+			}
+			col += width
+		}
+	}
+	return b.String()
+}
+
+func paintCodeBlockBackground(highlighted string, width int) string {
+	if width < 40 {
+		width = 80
+	}
+	contentWidth := width - 4
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
+	lines := strings.Split(highlighted, "\n")
+	rows := make([]string, 0, len(lines)+2)
+	rows = append(rows, paintCodeBlockLine("", contentWidth))
+	for _, line := range lines {
+		rows = append(rows, paintCodeBlockLine("  "+keepBackgroundAfterReset(line), contentWidth))
+	}
+	rows = append(rows, paintCodeBlockLine("", contentWidth))
+	return strings.Join(rows, "\n")
+}
+
+func paintCodeBlockLine(line string, contentWidth int) string {
+	visibleWidth := runewidthStringWidth(line)
+	if visibleWidth < contentWidth {
+		line += strings.Repeat(" ", contentWidth-visibleWidth)
+	}
+	return codeBlockBackgroundANSI + line + "\x1b[0m"
+}
+
+func keepBackgroundAfterReset(s string) string {
+	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+codeBlockBackgroundANSI)
+	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+codeBlockBackgroundANSI)
+	return s
 }
 
 type tableAlign int

@@ -7,12 +7,15 @@ import (
 	"fkteams/fkevent"
 	fktui "fkteams/tui"
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
 
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/cloudwego/eino/schema"
+	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -80,14 +83,13 @@ func JSONEventCallback(recorder *eventlog.HistoryRecorder) func(Event) error {
 	}
 }
 
-// streamBuf 累积流式文本并增量差分渲染
+// streamBuf 流式预览普通 Markdown，代码块内容折叠到状态行，最终正文一次性渲染。
 type streamBuf struct {
-	buf          strings.Builder
-	agent        string
-	path         string
-	lastRendered string
-	lastRender   time.Time
-	hasRendered  bool
+	buf        strings.Builder
+	agent      string
+	path       string
+	lastRender time.Time
+	status     liveResponseStatus
 }
 
 type terminalToolFlow struct {
@@ -102,79 +104,279 @@ type terminalToolFlow struct {
 
 const renderInterval = 100 * time.Millisecond
 
+type liveResponseStatus struct {
+	enabled   bool
+	checked   bool
+	active    bool
+	lastLines int
+	lastView  string
+}
+
+var ansiSeqRe = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\a]*(?:\a|\x1b\\))`)
+
 func (s *streamBuf) reset() {
 	s.buf.Reset()
 	s.agent = ""
 	s.path = ""
-	s.lastRendered = ""
-	s.hasRendered = false
 	s.lastRender = time.Time{}
 }
 
 func (s *streamBuf) addChunk(content string) {
 	s.buf.WriteString(content)
-	if !s.hasRendered || time.Since(s.lastRender) >= renderInterval {
-		s.render()
+	if s.lastRender.IsZero() || time.Since(s.lastRender) >= renderInterval {
+		s.status.update(streamPreviewMarkdown(s.buf.String()))
+		s.lastRender = time.Now()
 	}
 }
 
-// render 对比新旧输出，只清除并重绘变化的尾部
-func (s *streamBuf) render() {
-	content := s.buf.String()
-	if content == "" {
-		return
-	}
-	rendered := fktui.RenderMarkdown(content)
-	if rendered == "" || rendered == s.lastRendered {
-		return
-	}
-
-	if !s.hasRendered {
-		lipgloss.Print(rendered)
-		fmt.Print("\n")
-	} else {
-		diffIdx := commonPrefixLen(s.lastRendered, rendered)
-		// 回退到换行边界
-		snapIdx := strings.LastIndex(s.lastRendered[:diffIdx], "\n")
-		if snapIdx < 0 {
-			snapIdx = 0
-		} else {
-			snapIdx++
-		}
-		oldTail := s.lastRendered[snapIdx:]
-		clearLines := strings.Count(oldTail, "\n") + 1
-		if clearLines > 0 {
-			fmt.Printf("\033[%dF\033[J", clearLines)
-		}
-		lipgloss.Print(rendered[snapIdx:])
-		fmt.Print("\n")
-	}
-
-	s.lastRendered = rendered
-	s.lastRender = time.Now()
-	s.hasRendered = true
+func (s *streamBuf) content() string {
+	return s.buf.String()
 }
 
-func (s *streamBuf) flush() {
-	if s.buf.Len() == 0 {
-		s.reset()
-		return
-	}
-	s.render()
+func (s *streamBuf) discard() {
+	s.status.finish()
 	s.reset()
 }
 
-func commonPrefixLen(a, b string) int {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
+func (s *streamBuf) flush() {
+	content := s.buf.String()
+	if content == "" {
+		s.reset()
+		return
 	}
-	for i := 0; i < n; i++ {
-		if a[i] != b[i] {
-			return i
+	s.status.finish()
+	rendered := fktui.RenderMarkdown(content)
+	if rendered == "" {
+		s.reset()
+		return
+	}
+	lipgloss.Print(rendered)
+	fmt.Print("\n")
+	s.reset()
+}
+
+func (s *liveResponseStatus) ensure() {
+	if s.checked {
+		return
+	}
+	s.checked = true
+	s.enabled = isatty.IsTerminal(os.Stdout.Fd())
+}
+
+func (s *liveResponseStatus) update(content string) {
+	s.ensure()
+	if !s.enabled {
+		return
+	}
+	view := fktui.RenderMarkdown(content)
+	if view == s.lastView {
+		return
+	}
+	if s.lastLines > 0 {
+		fmt.Printf("\033[%dF\033[J", s.lastLines)
+	}
+	fmt.Print(view)
+	if !strings.HasSuffix(view, "\n") {
+		fmt.Print("\n")
+		view += "\n"
+	}
+	s.active = true
+	s.lastView = view
+	s.lastLines = renderedScreenLines(view, fktui.TermWidth())
+}
+
+func (s *liveResponseStatus) finish() {
+	if !s.active {
+		return
+	}
+	if s.lastLines > 0 {
+		fmt.Printf("\033[%dF\033[J", s.lastLines)
+	}
+	s.active = false
+	s.lastLines = 0
+	s.lastView = ""
+}
+
+func responseStatusView(content string, width int) string {
+	if width < 40 {
+		width = 80
+	}
+	content = strings.TrimRight(content, "\n")
+	runes := []rune(content)
+	lineCount := 0
+	if content != "" {
+		lineCount = strings.Count(content, "\n") + 1
+	}
+	text := fmt.Sprintf("> **代码生成中** · %d 字 · %d 行", len(runes), lineCount)
+	return truncateVisible(text, width-1) + "\n"
+}
+
+func streamPreviewMarkdown(content string) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	return foldCodeBlocksForStream(content)
+}
+
+func foldCodeBlocksForStream(content string) string {
+	var out strings.Builder
+	var code strings.Builder
+	inCode := false
+	fence := ""
+	lines := strings.SplitAfter(content, "\n")
+
+	for _, line := range lines {
+		if inCode {
+			code.WriteString(line)
+			if isClosingFenceLine(line, fence) {
+				out.WriteString(responseStatusView(codeProgressContent(code.String()), fktui.TermWidth()))
+				code.Reset()
+				inCode = false
+				fence = ""
+			}
+			continue
 		}
+		if nextFence, ok := openingFence(line); ok {
+			inCode = true
+			fence = nextFence
+			code.WriteString(line)
+			continue
+		}
+		out.WriteString(line)
 	}
-	return n
+
+	if inCode {
+		out.WriteString(responseStatusView(codeProgressContent(code.String()), fktui.TermWidth()))
+	}
+	return out.String()
+}
+
+func renderedScreenLines(s string, width int) int {
+	if s == "" {
+		return 0
+	}
+	if width < 20 {
+		width = 80
+	}
+
+	total := 0
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if i == len(lines)-1 && line == "" {
+			continue
+		}
+		visibleWidth := runewidth.StringWidth(ansiSeqRe.ReplaceAllString(line, ""))
+		if visibleWidth <= 0 {
+			total++
+			continue
+		}
+		total += (visibleWidth-1)/width + 1
+	}
+	return total
+}
+
+func codeProgressContent(content string) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	if _, ok := openingFence(lines[0]); ok {
+		lines = lines[1:]
+	}
+	if len(lines) > 0 && isClosingFenceLine(lines[len(lines)-1], "```") {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) > 0 && isClosingFenceLine(lines[len(lines)-1], "~~~") {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
+}
+
+func truncateVisible(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(s) <= maxWidth {
+		return s
+	}
+	ellipsis := "..."
+	limit := maxWidth - runewidth.StringWidth(ellipsis)
+	if limit <= 0 {
+		return ellipsis
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if width+rw > limit {
+			break
+		}
+		b.WriteRune(r)
+		width += rw
+	}
+	return b.String() + ellipsis
+}
+
+func sameStreamMessage(streamContent, messageContent string) bool {
+	streamContent = strings.TrimSpace(streamContent)
+	messageContent = strings.TrimSpace(messageContent)
+	if streamContent == "" || messageContent == "" {
+		return false
+	}
+	return streamContent == messageContent ||
+		strings.Contains(messageContent, streamContent)
+}
+
+func openingFence(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	switch {
+	case strings.HasPrefix(trimmed, "```"):
+		return "```", true
+	case strings.HasPrefix(trimmed, "~~~"):
+		return "~~~", true
+	default:
+		return "", false
+	}
+}
+
+func isClosingFenceLine(line, fence string) bool {
+	if fence == "" {
+		return false
+	}
+	trimmed := strings.TrimSpace(line)
+	return strings.HasPrefix(trimmed, fence)
+}
+
+func unclosedFenceRange(content string) (start int, bodyStart int, inFence bool) {
+	lineStart := 0
+	for lineStart <= len(content) {
+		lineEnd := strings.IndexByte(content[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(content)
+		} else {
+			lineEnd += lineStart
+		}
+
+		line := strings.TrimSpace(content[lineStart:lineEnd])
+		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+			if !inFence {
+				start = lineStart
+				bodyStart = lineEnd
+				if bodyStart < len(content) && content[bodyStart] == '\n' {
+					bodyStart++
+				}
+				inFence = true
+			} else {
+				inFence = false
+			}
+		}
+
+		if lineEnd == len(content) {
+			break
+		}
+		lineStart = lineEnd + 1
+	}
+	return start, bodyStart, inFence
 }
 
 func isMemberEvent(event Event) bool {
@@ -671,11 +873,15 @@ func newPrintEvent() (func(Event), func()) {
 				tryFlush()
 				agentName = event.AgentName
 				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
-				fmt.Printf("\033[1;36m╰─▶\033[0m\n")
 				sb.agent = agentName
 				sb.path = event.RunPath
-			} else if wasReasoning {
-				fmt.Printf("\033[1;36m╰─▶\033[0m\n")
+			} else if wasReasoning && sb.agent == "" {
+				sb.agent = agentName
+				sb.path = event.RunPath
+			}
+			if sb.agent == "" {
+				sb.agent = event.AgentName
+				sb.path = event.RunPath
 			}
 			sb.addChunk(event.Content)
 
@@ -693,7 +899,11 @@ func newPrintEvent() (func(Event), func()) {
 			if finishMembersBeforeParentOutput(event) {
 				return
 			}
-			tryFlush()
+			if event.Content != "" && sameStreamMessage(sb.content(), event.Content) {
+				sb.discard()
+			} else {
+				tryFlush()
+			}
 			if inReasoning {
 				inReasoning = false
 				fmt.Printf("\033[0m\n")
@@ -809,6 +1019,13 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			agentTools, otherTools := splitAgentToolCalls(event.ToolCalls)
+			if len(agentTools) > 0 {
+				if inReasoning {
+					inReasoning = false
+					fmt.Printf("\033[0m\n")
+				}
+				tryFlush()
+			}
 			for i, tool := range agentTools {
 				key, memberName := registerAgentToolCall(tool, i)
 				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: "任务准备中"})
@@ -865,6 +1082,13 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			agentTools, otherTools := splitAgentToolCalls(event.ToolCalls)
+			if len(agentTools) > 0 {
+				if inReasoning {
+					inReasoning = false
+					fmt.Printf("\033[0m\n")
+				}
+				tryFlush()
+			}
 			for i, tool := range agentTools {
 				key, memberName := registerAgentToolCall(tool, i)
 				op := "任务已分配"
