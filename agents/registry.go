@@ -8,8 +8,6 @@ import (
 	"fkteams/agents/coder"
 	"fkteams/agents/custom"
 	"fkteams/agents/searcher"
-	"fkteams/agents/storyteller"
-	"fkteams/agents/summarizer"
 	"fkteams/agents/visitor"
 	"fkteams/config"
 	"sync"
@@ -55,8 +53,6 @@ func buildRegistry() {
 	creators := []agentCreator{
 		{name: "shell", aliases: []string{"小令", "cmder"}, creator: cmder.NewAgent},
 		{name: "coder", aliases: []string{"小码"}, creator: coder.NewAgent},
-		{name: "writer", aliases: []string{"小说", "storyteller"}, creator: storyteller.NewAgent},
-		{name: "summarizer", aliases: []string{"小简"}, creator: summarizer.NewAgent},
 	}
 
 	// 可选智能体（根据配置文件启用）
