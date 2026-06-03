@@ -201,7 +201,8 @@ func newPrintEvent() (func(Event), func()) {
 	toolKeysByIndex := map[int]string{}
 	toolPanel := fktui.NewToolPanel()
 	toolPending := map[string]bool{}
-	memberPanel := newMemberPanel()
+	memberPanel := fktui.NewMemberPanel()
+	activePanel := ""
 	memberNamesByToolID := map[string]string{}
 	memberKeysByToolID := map[string]string{}
 	memberKeysByIndex := map[int]string{}
@@ -220,6 +221,42 @@ func newPrintEvent() (func(Event), func()) {
 		}
 	}
 
+	finishToolPanel := func() {
+		toolPanel.Finish()
+		if activePanel == "tool" {
+			activePanel = ""
+		}
+	}
+
+	finishMemberPanel := func() {
+		memberPanel.Finish()
+		if activePanel == "member" {
+			activePanel = ""
+		}
+	}
+
+	activateMemberPanel := func() {
+		if activePanel == "tool" {
+			finishToolPanel()
+			toolPending = map[string]bool{}
+			toolFlows = map[string]*terminalToolFlow{}
+			toolKeysByIndex = map[int]string{}
+		}
+		activePanel = "member"
+	}
+
+	sendMemberPanel := func(e fktui.MemberEvent) bool {
+		activateMemberPanel()
+		return memberPanel.Send(e)
+	}
+
+	activateToolPanel := func() {
+		if activePanel == "member" {
+			finishMemberPanel()
+		}
+		activePanel = "tool"
+	}
+
 	ensureMember := func(key, name string) {
 		if key == "" {
 			return
@@ -230,10 +267,10 @@ func newPrintEvent() (func(Event), func()) {
 		if !memberStarted[key] {
 			memberStarted[key] = true
 			memberPending[key] = true
-			memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "start"})
+			sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "start"})
 			return
 		}
-		memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "meta"})
+		sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "meta"})
 	}
 
 	memberFromEvent := func(event Event) (string, string) {
@@ -307,8 +344,8 @@ func newPrintEvent() (func(Event), func()) {
 			return false
 		}
 		name := flow.Name
-		if name == "" {
-			name = key
+		if name == "" || (name == key && strings.HasPrefix(key, "id:")) {
+			return false
 		}
 		panelType := eventType
 		switch eventType {
@@ -317,6 +354,7 @@ func newPrintEvent() (func(Event), func()) {
 		case "op":
 			panelType = "args"
 		}
+		activateToolPanel()
 		sent := toolPanel.Send(fktui.ToolEvent{
 			Key:     key,
 			Name:    name,
@@ -336,7 +374,7 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 		}
-		toolPanel.Finish()
+		finishToolPanel()
 		toolPending = map[string]bool{}
 		toolFlows = map[string]*terminalToolFlow{}
 		toolKeysByIndex = map[int]string{}
@@ -403,9 +441,9 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			memberName := memberNamesByToolID[callID]
 			if isErrorContent(content) {
-				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "error", Content: content})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: content})
 			} else {
-				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "done"})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "done"})
 			}
 			memberPending[key] = false
 			delete(memberResultChunks, callID)
@@ -417,7 +455,7 @@ func newPrintEvent() (func(Event), func()) {
 		if hasPendingMembers() {
 			return
 		}
-		memberPanel.finish()
+		finishMemberPanel()
 		resetMemberState()
 		if len(deferredEvents) > 0 && !replayingDeferred {
 			events := deferredEvents
@@ -432,7 +470,7 @@ func newPrintEvent() (func(Event), func()) {
 
 	flushDeferred := func() {
 		finalizeChunkedMemberResults()
-		memberPanel.finish()
+		finishMemberPanel()
 		resetMemberState()
 		if len(deferredEvents) > 0 && !replayingDeferred {
 			events := deferredEvents
@@ -454,7 +492,7 @@ func newPrintEvent() (func(Event), func()) {
 			deferredEvents = append(deferredEvents, event)
 			return true
 		}
-		memberPanel.finish()
+		finishMemberPanel()
 		resetMemberState()
 		return false
 	}
@@ -463,7 +501,7 @@ func newPrintEvent() (func(Event), func()) {
 		if oldKey == "" || newKey == "" || oldKey == newKey {
 			return
 		}
-		memberPanel.send(memberViewEvent{Key: oldKey, NewKey: newKey, Name: name, Type: "rename"})
+		sendMemberPanel(fktui.MemberEvent{Key: oldKey, NewKey: newKey, Name: name, Type: "rename"})
 		if pending, ok := memberPending[oldKey]; ok {
 			delete(memberPending, oldKey)
 			memberPending[newKey] = pending
@@ -495,6 +533,8 @@ func newPrintEvent() (func(Event), func()) {
 		}
 		if tool.ID != "" {
 			toolNamesByID[tool.ID] = tool.Function.Name
+			delete(toolFlows, "id:"+tool.ID)
+			delete(toolPending, "id:"+tool.ID)
 		}
 		ensureMember(key, memberName)
 		return key, memberName
@@ -520,7 +560,7 @@ func newPrintEvent() (func(Event), func()) {
 		case EventReasoningChunk:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.Content})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
 				return
 			}
 			if finishMembersBeforeParentOutput(event) {
@@ -542,7 +582,7 @@ func newPrintEvent() (func(Event), func()) {
 		case EventStreamChunk:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.Content})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
 				return
 			}
 			if finishMembersBeforeParentOutput(event) {
@@ -569,10 +609,10 @@ func newPrintEvent() (func(Event), func()) {
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.ReasoningContent != "" {
-					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.ReasoningContent})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.ReasoningContent})
 				}
 				if event.Content != "" {
-					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.Content})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
 				}
 				return
 			}
@@ -597,7 +637,7 @@ func newPrintEvent() (func(Event), func()) {
 				key, name := memberFromEvent(event)
 				if event.Content != "" {
 					toolKey := memberToolKey(event, schema.ToolCall{}, 0)
-					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content})
 				}
 				return
 			}
@@ -627,9 +667,9 @@ func newPrintEvent() (func(Event), func()) {
 					key = memberKeysByToolID[event.ToolCallID]
 				}
 				if isErrorContent(event.Content) {
-					memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "error", Content: event.Content})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: event.Content})
 				} else {
-					memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "done"})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "done"})
 				}
 				memberPending[key] = false
 				finishMembersIfIdle()
@@ -665,7 +705,7 @@ func newPrintEvent() (func(Event), func()) {
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				toolKey := memberToolKey(event, schema.ToolCall{}, 0)
-				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content, Append: true})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content, Append: true})
 				return
 			}
 			if event.ToolCallID != "" && memberKeysByToolID[event.ToolCallID] != "" {
@@ -689,7 +729,7 @@ func newPrintEvent() (func(Event), func()) {
 				for i, tool := range event.ToolCalls {
 					if tool.Function.Name != "" {
 						display := FormatToolDisplay(tool.Function.Name)
-						memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_prepare", ToolKey: memberToolKey(event, tool, i), ToolName: display.DisplayName})
+						sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_prepare", ToolKey: memberToolKey(event, tool, i), ToolName: display.DisplayName})
 					}
 				}
 				return
@@ -697,7 +737,7 @@ func newPrintEvent() (func(Event), func()) {
 			agentTools, otherTools := splitAgentToolCalls(event.ToolCalls)
 			for i, tool := range agentTools {
 				key, memberName := registerAgentToolCall(tool, i)
-				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "op", Content: "任务准备中"})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: "任务准备中"})
 			}
 			if len(agentTools) > 0 && len(otherTools) == 0 {
 				return
@@ -746,7 +786,7 @@ func newPrintEvent() (func(Event), func()) {
 						continue
 					}
 					display := FormatToolDisplay(tool.Function.Name)
-					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, tool, i), ToolName: display.DisplayName, Content: tool.Function.Arguments})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, tool, i), ToolName: display.DisplayName, Content: tool.Function.Arguments})
 				}
 				return
 			}
@@ -757,7 +797,7 @@ func newPrintEvent() (func(Event), func()) {
 				if tool.Function.Arguments != "" {
 					op = "任务: " + truncateString(tool.Function.Arguments, 200)
 				}
-				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "op", Content: op})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: op})
 			}
 			if len(agentTools) > 0 && len(otherTools) == 0 {
 				return
@@ -820,7 +860,7 @@ func newPrintEvent() (func(Event), func()) {
 		case EventError:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "error", Content: event.Error})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "error", Content: event.Error})
 				memberPending[key] = false
 				finishMembersIfIdle()
 				return
@@ -839,8 +879,28 @@ func newPrintEvent() (func(Event), func()) {
 		case EventToolCallsArgsDelta:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, schema.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, schema.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
 				return
+			}
+			toolName := event.ToolName
+			if toolName == "" && event.ToolCallID != "" {
+				toolName = toolNamesByID[event.ToolCallID]
+			}
+			if toolName != "" {
+				if key, memberName, ok := agentToolKey(toolName); ok {
+					if event.ToolCallID != "" {
+						if mapped := memberKeysByToolID[event.ToolCallID]; mapped != "" {
+							key = mapped
+						} else {
+							memberKeysByToolID[event.ToolCallID] = key
+						}
+						if memberNamesByToolID[event.ToolCallID] == "" {
+							memberNamesByToolID[event.ToolCallID] = memberName
+						}
+					}
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: "任务参数接收中"})
+					return
+				}
 			}
 			key := regularToolKey(event, schema.ToolCall{}, 0)
 			if event.ToolCallIndex != nil {
@@ -848,10 +908,13 @@ func newPrintEvent() (func(Event), func()) {
 					key = mapped
 				}
 			}
-			flow := ensureToolFlow(key, event.ToolName)
+			flow := ensureToolFlow(key, toolName)
 			flow.AgentName = event.AgentName
 			flow.Status = "参数准备中"
 			flow.Args += event.Content
+			if toolName == "" {
+				return
+			}
 			sendToolPanel(key, flow, "op", flow.Args, false)
 		default:
 			if finishMembersBeforeParentOutput(event) {

@@ -5,9 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-isatty"
 )
@@ -20,9 +18,6 @@ type ToolEvent struct {
 	Append  bool
 }
 
-type toolDoneMsg struct{}
-type toolAutoExitMsg struct{}
-
 type toolItem struct {
 	key    string
 	name   string
@@ -33,13 +28,10 @@ type toolItem struct {
 }
 
 type toolModel struct {
-	items    []toolItem
-	indexes  map[string]int
-	cursor   int
-	expanded int
-	scrollY  int
-	width    int
-	done     bool
+	items   []toolItem
+	indexes map[string]int
+	width   int
+	done    bool
 }
 
 var (
@@ -52,72 +44,9 @@ var (
 
 func newToolModel() toolModel {
 	return toolModel{
-		indexes:  make(map[string]int),
-		expanded: -1,
-		width:    80,
+		indexes: make(map[string]int),
+		width:   80,
 	}
-}
-
-func (m toolModel) Init() tea.Cmd { return nil }
-
-func (m toolModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		return m, nil
-	case ToolEvent:
-		m.applyEvent(msg)
-		return m, nil
-	case toolDoneMsg:
-		m.done = true
-		return m, tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return toolAutoExitMsg{} })
-	case toolAutoExitMsg:
-		return m, tea.Quit
-	case tea.KeyPressMsg:
-		return m.handleKey(msg)
-	}
-	return m, nil
-}
-
-func (m toolModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "q":
-		if m.done {
-			return m, tea.Quit
-		}
-	case "enter":
-		if m.expanded >= 0 {
-			m.expanded = -1
-			m.scrollY = 0
-		} else if len(m.items) > 0 {
-			m.expanded = m.cursor
-			m.scrollY = 0
-		}
-	case "esc":
-		if m.expanded >= 0 {
-			m.expanded = -1
-			m.scrollY = 0
-		} else if m.done {
-			return m, tea.Quit
-		}
-	case "up", "k":
-		if m.expanded >= 0 {
-			if m.scrollY > 0 {
-				m.scrollY--
-			}
-		} else if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.expanded >= 0 {
-			m.scrollY++
-		} else if m.cursor < len(m.items)-1 {
-			m.cursor++
-		}
-	}
-	return m, nil
 }
 
 func (m *toolModel) applyEvent(e ToolEvent) {
@@ -196,107 +125,41 @@ func toolStatusStyle(status string) lipgloss.Style {
 	}
 }
 
-func (m toolModel) View() tea.View {
+func (m toolModel) View() string {
 	var b strings.Builder
 	if len(m.items) == 0 {
 		b.WriteString(toolDimStyle.Render("等待工具调用..."))
 		b.WriteString("\n")
-		return tea.NewView(b.String())
+		return b.String()
 	}
 	for i := range m.items {
-		if i == m.expanded {
-			b.WriteString(m.renderExpanded(i))
-		} else {
-			b.WriteString(m.renderCollapsed(i))
-		}
+		b.WriteString(m.renderItem(i))
 		b.WriteString("\n")
 	}
-	if !m.done {
-		if m.expanded >= 0 {
-			b.WriteString(toolDimStyle.Render("↑↓ 滚动  Enter/Esc 收起"))
-		} else {
-			b.WriteString(toolDimStyle.Render("↑↓ 选择  Enter 展开"))
-		}
-		b.WriteString("\n")
-	}
-	return tea.NewView(b.String())
+	return b.String()
 }
 
-func (m toolModel) renderCollapsed(i int) string {
+func (m toolModel) renderItem(i int) string {
 	item := m.items[i]
-	prefix := "  "
-	if !m.done && i == m.cursor {
-		prefix = "▶ "
-	}
+	w := max(40, m.width)
+	lineWidth := max(20, w-4)
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s%s %s", prefix, toolStatusStyle(item.status).Render(toolIcon(item.status)), item.name)
+	name := truncateRunes(item.name, max(12, lineWidth-12))
+	fmt.Fprintf(&b, "%s %s", toolStatusStyle(item.status).Render(toolIcon(item.status)), name)
 	b.WriteString(toolDimStyle.Render("  " + item.status))
 	if item.args != "" {
 		b.WriteString("\n")
-		b.WriteString(toolDimStyle.Render("  参数: " + truncateRunes(compactLine(item.args), 120)))
-	}
-	if item.status == "已完成" && item.result != "" {
-		b.WriteString("\n")
-		b.WriteString(toolDimStyle.Render("  结果: " + truncateRunes(compactLine(item.result), 180)))
-	}
-	if item.error != "" {
-		b.WriteString("\n")
-		b.WriteString(toolErrorStyle.Render("  " + truncateRunes(compactLine(item.error), 120)))
-	}
-	return b.String()
-}
-
-func (m toolModel) renderExpanded(i int) string {
-	item := m.items[i]
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("▼ %s %s  %s\n", toolStatusStyle(item.status).Render(toolIcon(item.status)), item.name, toolDimStyle.Render(item.status)))
-	if item.args != "" {
-		b.WriteString("\n")
-		b.WriteString(toolDimStyle.Render("参数:") + "\n")
-		b.WriteString(wrapBlock(item.args, 8))
+		b.WriteString(toolDimStyle.Render("  参数: " + truncateRunes(compactLine(item.args), max(20, lineWidth-8))))
 	}
 	if item.result != "" {
 		b.WriteString("\n")
-		b.WriteString(toolDimStyle.Render("结果:") + "\n")
-		lines := strings.Split(strings.TrimSpace(item.result), "\n")
-		start := m.scrollY
-		if start >= len(lines) {
-			start = max(0, len(lines)-1)
-		}
-		end := min(start+12, len(lines))
-		for _, line := range lines[start:end] {
-			b.WriteString("  " + truncateRunes(line, 160) + "\n")
-		}
-		if end < len(lines) {
-			b.WriteString(toolDimStyle.Render(fmt.Sprintf("  ... 还有 %d 行", len(lines)-end)) + "\n")
-		}
+		b.WriteString(toolDimStyle.Render("  结果: " + truncateRunes(compactLine(item.result), max(20, lineWidth-8))))
 	}
 	if item.error != "" {
 		b.WriteString("\n")
-		b.WriteString(toolErrorStyle.Render("错误: "+item.error) + "\n")
+		b.WriteString(toolErrorStyle.Render("  " + truncateRunes(compactLine(item.error), lineWidth-2)))
 	}
 	return b.String()
-}
-
-func wrapBlock(text string, maxLines int) string {
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	var b strings.Builder
-	for i, line := range lines {
-		if i >= maxLines {
-			b.WriteString(toolDimStyle.Render(fmt.Sprintf("  ... 还有 %d 行", len(lines)-maxLines)) + "\n")
-			break
-		}
-		b.WriteString("  " + truncateRunes(line, 160) + "\n")
-	}
-	return b.String()
-}
-
-func truncateRunes(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-	return string(runes[:maxLen]) + "..."
 }
 
 func compactLine(s string) string {
@@ -304,11 +167,11 @@ func compactLine(s string) string {
 }
 
 type ToolPanel struct {
-	mu      sync.Mutex
-	program *tea.Program
-	done    chan struct{}
-	active  bool
-	enabled bool
+	mu        sync.Mutex
+	model     toolModel
+	active    bool
+	enabled   bool
+	lastLines int
 }
 
 func NewToolPanel() *ToolPanel {
@@ -322,35 +185,32 @@ func (p *ToolPanel) Send(e ToolEvent) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.active {
-		p.program = tea.NewProgram(newToolModel())
-		p.done = make(chan struct{})
+		p.model = newToolModel()
 		p.active = true
-		go func(program *tea.Program, done chan struct{}) {
-			_, _ = program.Run()
-			close(done)
-		}(p.program, p.done)
 	}
-	p.program.Send(e)
+	p.model.applyEvent(e)
+	p.renderLocked()
 	return true
 }
 
 func (p *ToolPanel) Finish() {
 	p.mu.Lock()
-	if !p.active || p.program == nil {
-		p.mu.Unlock()
+	defer p.mu.Unlock()
+	if !p.active {
 		return
 	}
-	program := p.program
-	done := p.done
+	p.model.done = true
+	p.renderLocked()
 	p.active = false
-	p.program = nil
-	p.done = nil
-	p.mu.Unlock()
-	program.Send(toolDoneMsg{})
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		program.Quit()
-		<-done
+	p.lastLines = 0
+}
+
+func (p *ToolPanel) renderLocked() {
+	p.model.width = terminalWidth()
+	if p.lastLines > 0 {
+		fmt.Printf("\033[%dF\033[J", p.lastLines)
 	}
+	view := p.model.View()
+	fmt.Print(view)
+	p.lastLines = renderedLineCount(view, p.model.width)
 }
