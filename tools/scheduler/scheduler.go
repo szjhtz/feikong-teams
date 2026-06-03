@@ -137,11 +137,6 @@ func (s *Scheduler) taskResultPath(taskID string) string {
 	return filepath.Join(s.taskDir(taskID), "result.md")
 }
 
-// ensureTaskDir 确保任务目录存在
-func (s *Scheduler) ensureTaskDir(taskID string) error {
-	return os.MkdirAll(s.taskDir(taskID), 0755)
-}
-
 // ParseCronExpr 解析 cron 表达式并返回下次执行时间
 func (s *Scheduler) ParseCronExpr(expr string) (time.Time, error) {
 	sched, err := s.cronParser.Parse(expr)

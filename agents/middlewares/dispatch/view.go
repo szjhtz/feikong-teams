@@ -181,17 +181,13 @@ func (m *dispatchModel) applyEvent(e viewEvent) {
 // --- 渲染 ---
 
 var (
-	colorCyan    = lipgloss.Color("6")
-	colorGreen   = lipgloss.Color("2")
-	colorRed     = lipgloss.Color("1")
-	colorYellow  = lipgloss.Color("3")
-	colorDim     = lipgloss.Color("8")
-	headerStyle  = lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
-	dimStyle     = lipgloss.NewStyle().Foreground(colorDim)
-	statusStyles = map[string]lipgloss.Style{
-		"done":  lipgloss.NewStyle().Foreground(colorGreen),
-		"error": lipgloss.NewStyle().Foreground(colorRed),
-	}
+	colorCyan   = lipgloss.Color("6")
+	colorGreen  = lipgloss.Color("2")
+	colorRed    = lipgloss.Color("1")
+	colorYellow = lipgloss.Color("3")
+	colorDim    = lipgloss.Color("8")
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
+	dimStyle    = lipgloss.NewStyle().Foreground(colorDim)
 )
 
 func statusIcon(s string) string {

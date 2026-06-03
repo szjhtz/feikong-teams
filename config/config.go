@@ -259,7 +259,6 @@ func (c *Config) WorkspaceDir() string {
 var (
 	globalConfig atomic.Pointer[Config]
 	configOnce   sync.Once
-	configPath   string
 	configMu     sync.Mutex // 保护写操作
 )
 
@@ -271,7 +270,6 @@ func configFilePath() string {
 func Init() error {
 	var initErr error
 	configOnce.Do(func() {
-		configPath = configFilePath()
 		cfg, err := load()
 		if err != nil {
 			initErr = err

@@ -13,6 +13,8 @@ import (
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+
+//lint:ignore SA1019 kept for compatibility with legacy Eino interface checks.
 var _ model.ChatModel = (*ChatModel)(nil)
 
 const (

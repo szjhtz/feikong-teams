@@ -8,6 +8,8 @@ import (
 	glamour "charm.land/glamour/v2"
 	"charm.land/glamour/v2/ansi"
 	"charm.land/glamour/v2/styles"
+	classiclipgloss "github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"golang.org/x/term"
 )
 
@@ -167,6 +169,9 @@ func RenderMarkdown(content string) string {
 		return ""
 	}
 	content = strings.ReplaceAll(content, "[^", `\[^`)
+	if segments := splitMarkdownTables(content); hasMarkdownTableSegment(segments) {
+		return renderMarkdownSegments(segments)
+	}
 	r := initRenderer()
 	if r == nil {
 		return content
@@ -176,4 +181,241 @@ func RenderMarkdown(content string) string {
 		return content
 	}
 	return strings.Trim(out, "\n")
+}
+
+type markdownSegment struct {
+	text  string
+	table bool
+}
+
+func hasMarkdownTableSegment(segments []markdownSegment) bool {
+	for _, seg := range segments {
+		if seg.table {
+			return true
+		}
+	}
+	return false
+}
+
+func renderMarkdownSegments(segments []markdownSegment) string {
+	var rendered []string
+	for _, seg := range segments {
+		text := strings.TrimSpace(seg.text)
+		if text == "" {
+			continue
+		}
+		if seg.table {
+			rendered = append(rendered, renderMarkdownTable(text))
+			continue
+		}
+		r := initRenderer()
+		if r == nil {
+			rendered = append(rendered, text)
+			continue
+		}
+		out, err := r.Render(text)
+		if err != nil {
+			rendered = append(rendered, text)
+			continue
+		}
+		rendered = append(rendered, strings.Trim(out, "\n"))
+	}
+	return strings.Join(rendered, "\n\n")
+}
+
+func splitMarkdownTables(content string) []markdownSegment {
+	lines := strings.Split(content, "\n")
+	var segments []markdownSegment
+	var normal []string
+	inFence := false
+
+	flushNormal := func() {
+		text := strings.TrimSpace(strings.Join(normal, "\n"))
+		if text != "" {
+			segments = append(segments, markdownSegment{text: text})
+		}
+		normal = nil
+	}
+
+	for i := 0; i < len(lines); {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+			normal = append(normal, lines[i])
+			i++
+			continue
+		}
+		if !inFence && i+1 < len(lines) && isMarkdownTableRow(lines[i]) && isMarkdownTableSeparator(lines[i+1]) {
+			flushNormal()
+			start := i
+			i += 2
+			for i < len(lines) && isMarkdownTableRow(lines[i]) && strings.TrimSpace(lines[i]) != "" {
+				i++
+			}
+			segments = append(segments, markdownSegment{
+				text:  strings.Join(lines[start:i], "\n"),
+				table: true,
+			})
+			continue
+		}
+		normal = append(normal, lines[i])
+		i++
+	}
+	flushNormal()
+	return segments
+}
+
+func isMarkdownTableRow(line string) bool {
+	return strings.Contains(line, "|")
+}
+
+func isMarkdownTableSeparator(line string) bool {
+	cells := splitMarkdownTableLine(line)
+	if len(cells) < 2 {
+		return false
+	}
+	for _, cell := range cells {
+		cell = strings.TrimSpace(cell)
+		if strings.Count(cell, "-") < 3 {
+			return false
+		}
+		for _, r := range cell {
+			if r != '-' && r != ':' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func splitMarkdownTableLine(line string) []string {
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "|")
+	line = strings.TrimSuffix(line, "|")
+
+	var cells []string
+	var b strings.Builder
+	escaped := false
+	for _, r := range line {
+		if escaped {
+			b.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if r == '|' {
+			cells = append(cells, strings.TrimSpace(b.String()))
+			b.Reset()
+			continue
+		}
+		b.WriteRune(r)
+	}
+	cells = append(cells, strings.TrimSpace(b.String()))
+	return cells
+}
+
+type tableAlign int
+
+const (
+	tableAlignLeft tableAlign = iota
+	tableAlignCenter
+	tableAlignRight
+)
+
+func parseTableAligns(separator []string, count int) []tableAlign {
+	aligns := make([]tableAlign, count)
+	for i := 0; i < count && i < len(separator); i++ {
+		cell := strings.TrimSpace(separator[i])
+		left := strings.HasPrefix(cell, ":")
+		right := strings.HasSuffix(cell, ":")
+		switch {
+		case left && right:
+			aligns[i] = tableAlignCenter
+		case right:
+			aligns[i] = tableAlignRight
+		default:
+			aligns[i] = tableAlignLeft
+		}
+	}
+	return aligns
+}
+
+func renderMarkdownTable(tableMarkdown string) string {
+	lines := strings.Split(strings.TrimSpace(tableMarkdown), "\n")
+	if len(lines) < 2 {
+		return tableMarkdown
+	}
+
+	rows := make([][]string, 0, len(lines)-1)
+	header := splitMarkdownTableLine(lines[0])
+	colCount := len(header)
+	for _, line := range lines[2:] {
+		cells := splitMarkdownTableLine(line)
+		if len(cells) > colCount {
+			colCount = len(cells)
+		}
+		rows = append(rows, cells)
+	}
+	normalizeTableRow(&header, colCount)
+	for i := range rows {
+		normalizeTableRow(&rows[i], colCount)
+	}
+	aligns := parseTableAligns(splitMarkdownTableLine(lines[1]), colCount)
+
+	t := table.New().
+		Border(classiclipgloss.NormalBorder()).
+		BorderStyle(classiclipgloss.NewStyle().Foreground(classiclipgloss.Color("8"))).
+		BorderTop(true).
+		BorderBottom(true).
+		BorderLeft(true).
+		BorderRight(true).
+		BorderHeader(true).
+		BorderColumn(true).
+		BorderRow(false).
+		Wrap(true).
+		Headers(header...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) classiclipgloss.Style {
+			style := classiclipgloss.NewStyle().Padding(0, 1)
+			if row == table.HeaderRow {
+				return style.Bold(true).Foreground(classiclipgloss.Color("12")).Align(classiclipgloss.Center)
+			}
+			if col < len(aligns) {
+				return style.Align(tableAlignPosition(aligns[col]))
+			}
+			return style
+		})
+
+	rendered := t.String()
+	maxWidth := termWidth() - 4
+	if maxWidth < 40 {
+		maxWidth = 40
+	}
+	if classiclipgloss.Width(rendered) > maxWidth {
+		rendered = t.Width(maxWidth).String()
+	}
+	return strings.TrimRight(rendered, "\n")
+}
+
+func normalizeTableRow(row *[]string, count int) {
+	for len(*row) < count {
+		*row = append(*row, "")
+	}
+	if len(*row) > count {
+		*row = (*row)[:count]
+	}
+}
+
+func tableAlignPosition(align tableAlign) classiclipgloss.Position {
+	switch align {
+	case tableAlignRight:
+		return classiclipgloss.Right
+	case tableAlignCenter:
+		return classiclipgloss.Center
+	default:
+		return classiclipgloss.Left
+	}
 }

@@ -99,21 +99,6 @@ func (m *AgentMessage) GetTextContent() string {
 // 这类工具（如网页抓取、文档读取）会产生大量输出，在历史上下文中属于冗余内容。
 var NoisyToolPrefixes = []string{"fetch", "doc"}
 
-// maxToolArgLen 工具参数摘要最大长度（rune）
-const maxToolArgLen = 200
-
-// maxToolResultLen 工具结果摘要最大长度（rune）
-const maxToolResultLen = 2000
-
-// truncateRunes 按 rune 截断字符串
-func truncateRunes(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-	return string(runes[:maxLen]) + "..."
-}
-
 // GetReasoningContent 获取消息中的推理/思考内容
 func (m *AgentMessage) GetReasoningContent() string {
 	var builder strings.Builder
@@ -160,7 +145,6 @@ type HistoryRecorder struct {
 	currentMemberID   string
 	currentMemberTool string
 	currentMemberName string
-	currentStartTime  time.Time
 	currentEvents     []MessageEvent
 	pendingToolCalls  []pendingToolCall // 按 ID 匹配工具调用与结果
 	toolResultChunks  map[string]string // 按 ID 累积流式工具结果
@@ -561,25 +545,6 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	}
 }
 
-// ensureAgentContext 确保当前 agent 上下文已初始化，处理 agent/member 切换
-func (h *HistoryRecorder) ensureAgentContext(event Event) {
-	sameAgent := event.AgentName == h.currentAgent
-	sameMember := event.MemberCallID == h.currentMemberID
-	if h.currentAgent != "" && (!sameAgent || !sameMember) {
-		h.finalizeCurrentMessage()
-	}
-	if !sameAgent || !sameMember {
-		h.currentAgent = event.AgentName
-		h.currentRunPath = event.RunPath
-		h.currentMemberID = event.MemberCallID
-		h.currentMemberTool = event.MemberToolName
-		h.currentMemberName = event.MemberName
-		h.currentStartTime = time.Now()
-		h.currentEvents = make([]MessageEvent, 0)
-		h.pendingToolCalls = nil
-	}
-}
-
 func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 	if ctx == nil || len(ctx.toolResultChunks) == 0 {
 		return
@@ -638,8 +603,6 @@ func (h *HistoryRecorder) RecordUserInput(input string) {
 	h.currentMemberTool = ""
 	h.currentMemberName = ""
 }
-
-func (h *HistoryRecorder) finalizeCurrentMessage() { h.finalizeAllActiveMessages() }
 
 // FinalizeCurrent 完成当前消息记录，在对话结束时调用
 func (h *HistoryRecorder) FinalizeCurrent() {

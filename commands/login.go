@@ -244,7 +244,7 @@ func loginWithGitHubToken(ctx context.Context, tm *copilot.TokenManager, githubT
 	}
 	// GetToken 会检测到过期并自动刷新（触发 exchange）
 	if _, err := tm.GetToken(ctx); err != nil {
-		return nil, fmt.Errorf("Copilot token 交换失败: %w", err)
+		return nil, fmt.Errorf("copilot token 交换失败: %w", err)
 	}
 	fmt.Println("✓ GitHub Copilot 登录成功（从 VS Code 导入）!")
 	return tempToken, nil

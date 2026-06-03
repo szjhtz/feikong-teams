@@ -243,12 +243,12 @@ func ListModels(ctx context.Context, _ *internal.Config) ([]internal.ModelInfo, 
 	client := internal.NewHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("请求 Copilot 模型列表失败: %w", err)
+		return nil, fmt.Errorf("请求 copilot 模型列表失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Copilot 模型列表返回状态 %d", resp.StatusCode)
+		return nil, fmt.Errorf("copilot 模型列表返回状态 %d", resp.StatusCode)
 	}
 
 	var result struct {

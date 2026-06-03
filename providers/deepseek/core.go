@@ -147,43 +147,6 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	return &ChatModel{cli: cli, conf: config}, nil
 }
 
-func toLogProbs(probs *deepseek.Logprobs) *schema.LogProbs {
-	if probs == nil {
-		return nil
-	}
-	ret := &schema.LogProbs{}
-	for _, content := range probs.Content {
-		schemaContent := schema.LogProb{
-			Token:       content.Token,
-			LogProb:     content.Logprob,
-			Bytes:       intSlice2int64(content.Bytes),
-			TopLogProbs: toTopLogProb(content.TopLogprobs),
-		}
-		ret.Content = append(ret.Content, schemaContent)
-	}
-	return ret
-}
-
-func toTopLogProb(probs []deepseek.TopLogprobToken) []schema.TopLogProb {
-	ret := make([]schema.TopLogProb, 0, len(probs))
-	for _, prob := range probs {
-		ret = append(ret, schema.TopLogProb{
-			Token:   prob.Token,
-			LogProb: prob.Logprob,
-			Bytes:   intSlice2int64(prob.Bytes),
-		})
-	}
-	return ret
-}
-
-func intSlice2int64(in []int) []int64 {
-	ret := make([]int64, 0, len(in))
-	for _, v := range in {
-		ret = append(ret, int64(v))
-	}
-	return ret
-}
-
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
