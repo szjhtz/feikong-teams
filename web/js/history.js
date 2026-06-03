@@ -664,8 +664,14 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages) {
         .markdown-body pre code {
             background: none; padding: 0;
         }
+        .markdown-table-wrap {
+            max-width: 100%; overflow-x: auto; margin: 8px 0;
+        }
         .markdown-body table {
-            border-collapse: collapse; width: 100%; margin: 8px 0;
+            border-collapse: collapse; width: 100%; margin: 0;
+        }
+        .markdown-table-wrap table {
+            min-width: max-content;
         }
         .markdown-body th, .markdown-body td {
             border: 1px solid #ddd; padding: 6px 10px; text-align: left;
@@ -874,6 +880,98 @@ FKTeamsChat.prototype.historyToolDisplay = function (tc) {
   };
 };
 
+FKTeamsChat.prototype.queueHistoryMemberTask = function (tc) {
+  const display = this.historyToolDisplay(tc);
+  if (display.kind !== "agent") return;
+  if (!this._historyPendingMemberTasks) this._historyPendingMemberTasks = [];
+  this._historyPendingMemberTasks.push({
+    id: tc.id || "",
+    index: tc.index,
+    name: tc.name || "",
+    target: display.target || "",
+    arguments: tc.arguments || "",
+  });
+};
+
+FKTeamsChat.prototype.takeHistoryMemberTask = function (msg, fallbackIndex) {
+  if (msg?.__historyMemberTask) return msg.__historyMemberTask;
+  const tasks = this._historyPendingMemberTasks || [];
+  if (tasks.length === 0) return null;
+
+  const callID = msg.member_call_id || "";
+  let idx = callID ? tasks.findIndex((task) => task.id && task.id === callID) : -1;
+  if (idx < 0 && msg.member_tool_name) {
+    idx = tasks.findIndex((task) => task.name && task.name === msg.member_tool_name);
+  }
+  if (idx < 0 && msg.member_name) {
+    const normalized = this.normalizedAgentName(msg.member_name);
+    idx = tasks.findIndex((task) => this.normalizedAgentName(task.target) === normalized);
+  }
+  if (idx < 0 && Number.isInteger(fallbackIndex) && fallbackIndex < tasks.length) {
+    idx = fallbackIndex;
+  }
+  if (idx < 0) idx = 0;
+
+  const task = tasks[idx];
+  tasks.splice(idx, 1);
+  return task;
+};
+
+FKTeamsChat.prototype.prepareHistoryMemberTasks = function (messages) {
+  const assignTurn = (turn) => {
+    if (!turn || turn.length === 0) return;
+    const tasks = [];
+    const members = [];
+
+    turn.forEach((msg) => {
+      if (this.isHistoryMemberMessage(msg)) {
+        members.push(msg);
+        return;
+      }
+      (msg.events || []).forEach((evt) => {
+        if (evt.type !== "tool_call" || !evt.tool_call) return;
+        const display = this.historyToolDisplay(evt.tool_call);
+        if (display.kind !== "agent") return;
+        tasks.push({
+          id: evt.tool_call.id || "",
+          index: evt.tool_call.index,
+          name: evt.tool_call.name || "",
+          target: display.target || "",
+          arguments: evt.tool_call.arguments || "",
+        });
+      });
+    });
+
+    members.forEach((msg, fallbackIndex) => {
+      if (msg.__historyMemberTask) return;
+      const callID = msg.member_call_id || "";
+      let idx = callID ? tasks.findIndex((task) => task.id && task.id === callID) : -1;
+      if (idx < 0 && msg.member_tool_name) {
+        idx = tasks.findIndex((task) => task.name && task.name === msg.member_tool_name);
+      }
+      if (idx < 0 && msg.member_name) {
+        const normalized = this.normalizedAgentName(msg.member_name);
+        idx = tasks.findIndex((task) => this.normalizedAgentName(task.target) === normalized);
+      }
+      if (idx < 0 && fallbackIndex < tasks.length) idx = fallbackIndex;
+      if (idx < 0) return;
+      msg.__historyMemberTask = tasks[idx];
+      tasks.splice(idx, 1);
+    });
+  };
+
+  let turn = [];
+  (messages || []).forEach((msg) => {
+    if (msg.agent_name === "用户") {
+      assignTurn(turn);
+      turn = [];
+      return;
+    }
+    turn.push(msg);
+  });
+  assignTurn(turn);
+};
+
 FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
   if (!messages || messages.length === 0) return;
 
@@ -909,20 +1007,24 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
     const key = "history:" + (msg.member_call_id || msg.start_time || index);
     const label = this.historyMemberLabel(msg);
     const entry = this.ensureMemberCard(key, label, label);
+    const task = this.takeHistoryMemberTask(msg, index);
+    if (task?.arguments) {
+      this.updateMemberTaskContent(entry, task.arguments, false);
+    }
     let hasError = false;
 
     (msg.events || []).forEach((evt) => {
       if (evt.type === "reasoning" && evt.content) {
-        this.appendMemberReasoning(entry, evt.content);
+        this.appendMemberReasoningFinal(entry, evt.content);
         return;
       }
       if (evt.type === "text" && evt.content) {
-        this.appendMemberOutput(entry, evt.content);
+        this.appendMemberOutputFinal(entry, evt.content);
         return;
       }
       if (evt.type === "error" && evt.content) {
         hasError = true;
-        this.appendMemberOutput(entry, "\n\n" + evt.content);
+        this.appendMemberOutputFinal(entry, "\n\n" + evt.content);
         return;
       }
       if (evt.type === "tool_call" && evt.tool_call) {
@@ -948,6 +1050,7 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
     });
 
     this.updateMemberStatus(entry, hasError ? "error" : "done", hasError ? "失败" : "完成");
+    this.finalizeMemberMarkdown(entry);
     this.updateMemberDetailVisibility(entry);
   });
 
@@ -980,6 +1083,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
   // 清空当前消息
   this.messagesContainer.innerHTML = "";
   this.resetParallelState();
+  this._historyPendingMemberTasks = [];
 
   // 清空快速导航（将重新构建）
   this.clearQuickNav();
@@ -994,6 +1098,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
 
   // 渲染历史消息
   if (event.messages && event.messages.length > 0) {
+    this.prepareHistoryMemberTasks(event.messages);
     for (let index = 0; index < event.messages.length; index++) {
       const msg = event.messages[index];
       // 检查是否是用户消息

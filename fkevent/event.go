@@ -31,7 +31,10 @@ type nonInteractiveKey struct{}
 const internalContinueToolName = "continue_output"
 
 var globalEventSequence int64
+var globalStreamSequence int64
 var toolCallRefsByID sync.Map
+var toolCallOrdersByID sync.Map
+var eventDispatchMu sync.Mutex
 
 func isInternalToolName(name string) bool {
 	return name == internalContinueToolName
@@ -69,6 +72,13 @@ func normalizeEvent(event Event) Event {
 			event.ToolCallRef, _ = ref.(string)
 		}
 	}
+	if event.MemberOrder == nil && event.ParentToolCallID != "" {
+		if order, ok := toolCallOrdersByID.Load(event.ParentToolCallID); ok {
+			if v, ok := order.(int); ok {
+				event.MemberOrder = intPtr(v)
+			}
+		}
+	}
 	if event.Sequence == 0 {
 		event.Sequence = atomic.AddInt64(&globalEventSequence, 1)
 	}
@@ -84,6 +94,9 @@ func normalizeEvent(event Event) Event {
 	if event.Phase == "" {
 		event.Phase = defaultEventPhase(event.Type)
 	}
+	if event.ContentKind == "" {
+		event.ContentKind = defaultContentKind(event.Type)
+	}
 	if !event.IsPartial && isPartialEventType(event.Type) {
 		event.IsPartial = true
 	}
@@ -93,12 +106,33 @@ func normalizeEvent(event Event) Event {
 	return event
 }
 
-func streamToolCallRef(event *adk.AgentEvent, scope MemberScope, idx int) string {
-	parts := []string{"tool", event.AgentName, formatRunPath(event.RunPath), fmt.Sprintf("idx:%d", idx)}
+func defaultContentKind(eventType EventType) ContentKind {
+	switch eventType {
+	case EventReasoningChunk:
+		return ContentKindReasoning
+	case EventStreamChunk, EventMessage:
+		return ContentKindOutput
+	case EventToolCallsArgsDelta:
+		return ContentKindToolArgs
+	case EventToolResult, EventToolResultChunk:
+		return ContentKindToolResult
+	case EventError:
+		return ContentKindError
+	default:
+		return ""
+	}
+}
+
+func toolCallRef(event *adk.AgentEvent, scope MemberScope, group string, idx int) string {
+	parts := []string{"tool", group, event.AgentName, formatRunPath(event.RunPath), fmt.Sprintf("idx:%d", idx)}
 	if scope.CallID != "" {
 		parts = append(parts, "member:"+scope.CallID)
 	}
 	return strings.Join(parts, "|")
+}
+
+func streamToolCallRef(streamBase string, idx int) string {
+	return strings.Join([]string{"tool", streamBase, fmt.Sprintf("idx:%d", idx)}, "|")
 }
 
 func registerToolCallRef(id, ref string) {
@@ -106,6 +140,13 @@ func registerToolCallRef(id, ref string) {
 		return
 	}
 	toolCallRefsByID.Store(id, ref)
+}
+
+func registerToolCallOrder(id string, idx int) {
+	if id == "" {
+		return
+	}
+	toolCallOrdersByID.Store(id, idx)
 }
 
 // NormalizeEvent 补齐事件协议字段，供直接记录事件的调用方复用。
@@ -241,21 +282,22 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 		ToolName:         msg.ToolName,
 		ToolCallID:       msg.ToolCallID,
 	}
-
 	if len(msg.ToolCalls) > 0 {
 		nEvent.ToolCalls = filterVisibleToolCalls(msg.ToolCalls)
 		if nEvent.Content == "" && nEvent.ReasoningContent == "" && len(nEvent.ToolCalls) == 0 {
 			return nil
 		}
+		refGroup := fmt.Sprintf("msg:%d", atomic.AddInt64(&globalStreamSequence, 1))
 		nEvent.ToolCallRefs = make(map[int]string, len(nEvent.ToolCalls))
 		for _, tc := range nEvent.ToolCalls {
 			if tc.Index == nil {
 				continue
 			}
 			idx := *tc.Index
-			ref := streamToolCallRef(event, scope, idx)
+			ref := toolCallRef(event, scope, refGroup, idx)
 			nEvent.ToolCallRefs[idx] = ref
 			registerToolCallRef(tc.ID, ref)
+			registerToolCallOrder(tc.ID, idx)
 		}
 	}
 
@@ -271,12 +313,16 @@ type streamState struct {
 	toolCallIDs      map[int]string            // 按 index 记录工具调用 ID
 	toolCallRefs     map[int]string            // 按 index 记录展示层稳定引用
 	internalToolCall map[int]bool              // 按 index 标记内部工具调用
+	streamBase       string
+	chunkIndexes     map[string]int64
+	segmentIndex     int64
+	lastSegmentKey   string
 	lastArgsDelta    time.Time
 }
 
 const argsDeltaInterval = 100 * time.Millisecond
 
-func newStreamState() *streamState {
+func newStreamState(streamBase string) *streamState {
 	return &streamState{
 		toolCallsMap:     make(map[int][]*schema.Message),
 		toolCallStarted:  make(map[int]bool),
@@ -284,12 +330,51 @@ func newStreamState() *streamState {
 		toolCallIDs:      make(map[int]string),
 		toolCallRefs:     make(map[int]string),
 		internalToolCall: make(map[int]bool),
+		streamBase:       streamBase,
+		chunkIndexes:     make(map[string]int64),
 	}
+}
+
+func streamBaseID(event *adk.AgentEvent, scope MemberScope, streamSeq int64) string {
+	parts := []string{"stream", fmt.Sprintf("seq:%d", streamSeq), event.AgentName, formatRunPath(event.RunPath)}
+	if scope.CallID != "" {
+		parts = append(parts, "member:"+scope.CallID)
+	}
+	return strings.Join(parts, "|")
+}
+
+func (ss *streamState) applyStreamFields(event *Event, kind ContentKind, suffix string) {
+	if event == nil {
+		return
+	}
+	event.ContentKind = kind
+	segmentKey := string(kind) + "|" + suffix
+	if segmentKey != ss.lastSegmentKey {
+		ss.segmentIndex++
+		ss.lastSegmentKey = segmentKey
+	}
+	streamID := ss.streamBase + "|" + fmt.Sprintf("seg:%d", ss.segmentIndex) + "|" + string(kind)
+	if suffix != "" {
+		streamID += "|" + suffix
+	}
+	event.StreamID = streamID
+	event.ChunkIndex = ss.chunkIndexes[streamID]
+	ss.chunkIndexes[streamID]++
+}
+
+func (ss *streamState) markStreamSegment(kind ContentKind, suffix string) {
+	segmentKey := string(kind) + "|" + suffix
+	if segmentKey == ss.lastSegmentKey {
+		return
+	}
+	ss.segmentIndex++
+	ss.lastSegmentKey = segmentKey
 }
 
 // handleStreamingMessage 处理流式消息，通过 goroutine 异步接收以支持 context 取消
 func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message], scope MemberScope) error {
-	ss := newStreamState()
+	streamSeq := atomic.AddInt64(&globalStreamSequence, 1)
+	ss := newStreamState(streamBaseID(event, scope, streamSeq))
 
 	type recvResult struct {
 		chunk *schema.Message
@@ -360,6 +445,7 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 			RunPath:   formatRunPath(event.RunPath),
 			Content:   chunk.ReasoningContent,
 		}
+		ss.applyStreamFields(&nEvent, ContentKindReasoning, "")
 		scope.apply(&nEvent)
 		if err := handleEvent(ctx, nEvent); err != nil {
 			return err
@@ -368,6 +454,9 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 
 	if chunk.Content != "" {
 		if chunk.Role == schema.Tool && isInternalToolName(chunk.ToolName) {
+			return nil
+		}
+		if chunk.Role == schema.Tool && FormatToolDisplay(chunk.ToolName).Kind == "agent" {
 			return nil
 		}
 		var eventType EventType = EventStreamChunk
@@ -384,6 +473,16 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 			ToolName:   chunk.ToolName,
 			ToolCallID: chunk.ToolCallID,
 		}
+		kind := ContentKindOutput
+		suffix := ""
+		if eventType == EventToolResultChunk {
+			kind = ContentKindToolResult
+			suffix = chunk.ToolCallID
+			if suffix == "" {
+				suffix = chunk.ToolName
+			}
+		}
+		ss.applyStreamFields(&nEvent, kind, suffix)
 		scope.apply(&nEvent)
 		if err := handleEvent(ctx, nEvent); err != nil {
 			return err
@@ -408,9 +507,10 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 		idx := *tc.Index
 		if tc.ID != "" {
 			ss.toolCallIDs[idx] = tc.ID
+			registerToolCallOrder(tc.ID, idx)
 		}
 		if ss.toolCallRefs[idx] == "" {
-			ss.toolCallRefs[idx] = streamToolCallRef(event, scope, idx)
+			ss.toolCallRefs[idx] = streamToolCallRef(ss.streamBase, idx)
 		}
 		registerToolCallRef(tc.ID, ss.toolCallRefs[idx])
 		if isInternalToolName(tc.Function.Name) {
@@ -440,6 +540,7 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 				ToolCallIndex: tc.Index,
 			}
 			scope.apply(&nEvent)
+			ss.markStreamSegment(ContentKindToolArgs, ss.toolCallRefs[idx])
 			if err := handleEvent(ctx, nEvent); err != nil {
 				return err
 			}
@@ -485,6 +586,7 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 				ToolCallID:    ss.toolCallIDs[idx],
 				ToolCallIndex: intPtr(idx),
 			}
+			ss.applyStreamFields(&nEvent, ContentKindToolArgs, ss.toolCallRefs[idx])
 			scope.apply(&nEvent)
 			if err := handleEvent(ctx, nEvent); err != nil {
 				return err
@@ -518,6 +620,7 @@ func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamS
 			ToolCallID:    ss.toolCallIDs[idx],
 			ToolCallIndex: intPtr(idx),
 		}
+		ss.applyStreamFields(&nEvent, ContentKindToolArgs, ss.toolCallRefs[idx])
 		scope.apply(&nEvent)
 		_ = handleEvent(ctx, nEvent)
 	}
@@ -541,6 +644,7 @@ func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamS
 		toolCallRefs[idx] = ss.toolCallRefs[idx]
 		for _, tc := range concatenatedMsg.ToolCalls {
 			registerToolCallRef(tc.ID, ss.toolCallRefs[idx])
+			registerToolCallOrder(tc.ID, idx)
 		}
 		allToolCalls = append(allToolCalls, filterVisibleToolCalls(concatenatedMsg.ToolCalls)...)
 	}
@@ -632,6 +736,9 @@ func isContextCanceled(ctx context.Context, err error) bool {
 
 // handleEvent 分发事件到 context 中的回调，无回调时仅打印
 func handleEvent(ctx context.Context, event Event) error {
+	eventDispatchMu.Lock()
+	defer eventDispatchMu.Unlock()
+
 	event = normalizeEvent(event)
 	if cb := getCallback(ctx); cb != nil {
 		return cb(event)

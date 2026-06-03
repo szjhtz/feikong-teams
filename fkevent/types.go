@@ -30,6 +30,17 @@ const (
 	EventPhaseInfo     EventPhase = "info"
 )
 
+// ContentKind 描述 content 字段的语义通道。
+type ContentKind string
+
+const (
+	ContentKindOutput     ContentKind = "output"
+	ContentKindReasoning  ContentKind = "reasoning"
+	ContentKindToolArgs   ContentKind = "tool_args"
+	ContentKindToolResult ContentKind = "tool_result"
+	ContentKindError      ContentKind = "error"
+)
+
 // ActionType 动作类型（EventAction 事件下的子类型）
 type ActionType string
 
@@ -69,6 +80,9 @@ type Event struct {
 	Phase            EventPhase        `json:"phase,omitempty"`
 	IsPartial        bool              `json:"is_partial,omitempty"`
 	IsFinal          bool              `json:"is_final,omitempty"`
+	StreamID         string            `json:"stream_id,omitempty"`
+	ChunkIndex       int64             `json:"chunk_index,omitempty"`
+	ContentKind      ContentKind       `json:"content_kind,omitempty"`
 	AgentName        string            `json:"agent_name,omitempty"`
 	RunPath          string            `json:"run_path,omitempty"`
 	Content          string            `json:"content,omitempty"`
@@ -84,6 +98,9 @@ type Event struct {
 	MemberCallID     string            `json:"member_call_id,omitempty"`
 	MemberToolName   string            `json:"member_tool_name,omitempty"`
 	MemberName       string            `json:"member_name,omitempty"`
+	MemberOrder      *int              `json:"member_order,omitempty"`
+	ParentToolCallID string            `json:"parent_tool_call_id,omitempty"`
+	ParentToolName   string            `json:"parent_tool_name,omitempty"`
 	ActionType       ActionType        `json:"action_type,omitempty"`
 	Error            string            `json:"error,omitempty"`
 }

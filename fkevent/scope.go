@@ -43,4 +43,13 @@ func (s MemberScope) apply(event *Event) {
 	event.MemberCallID = s.CallID
 	event.MemberToolName = s.ToolName
 	event.MemberName = s.Name
+	if event.MemberOrder == nil && s.CallID != "" {
+		if order, ok := toolCallOrdersByID.Load(s.CallID); ok {
+			if v, ok := order.(int); ok {
+				event.MemberOrder = intPtr(v)
+			}
+		}
+	}
+	event.ParentToolCallID = s.CallID
+	event.ParentToolName = s.ToolName
 }

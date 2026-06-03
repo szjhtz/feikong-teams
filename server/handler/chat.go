@@ -320,6 +320,13 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if event.IsFinal {
 		result["is_final"] = true
 	}
+	if event.StreamID != "" {
+		result["stream_id"] = event.StreamID
+		result["chunk_index"] = event.ChunkIndex
+	}
+	if event.ContentKind != "" {
+		result["content_kind"] = event.ContentKind
+	}
 	if event.RunPath != "" {
 		result["run_path"] = event.RunPath
 	}
@@ -383,6 +390,15 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	}
 	if event.MemberName != "" {
 		result["member_name"] = event.MemberName
+	}
+	if event.MemberOrder != nil {
+		result["member_order"] = *event.MemberOrder
+	}
+	if event.ParentToolCallID != "" {
+		result["parent_tool_call_id"] = event.ParentToolCallID
+	}
+	if event.ParentToolName != "" {
+		result["parent_tool_name"] = event.ParentToolName
 	}
 	if event.Detail != "" {
 		result["detail"] = event.Detail

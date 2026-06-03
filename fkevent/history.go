@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -140,10 +141,20 @@ type pendingToolCall struct {
 	Arguments   string
 }
 
+type activeMessageContext struct {
+	msg              AgentMessage
+	pendingToolCalls []pendingToolCall
+	toolResultChunks map[string]string
+	order            int
+	createdSeq       int64
+}
+
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
 	mu                sync.RWMutex
 	messages          []AgentMessage
+	activeMessages    map[string]*activeMessageContext
+	activeOrder       []string
 	currentAgent      string
 	currentRunPath    string
 	currentMemberID   string
@@ -221,29 +232,31 @@ func toolCallRefFromEvent(event Event, tc schema.ToolCall) string {
 	return ""
 }
 
-func (h *HistoryRecorder) appendToolCallEvent(tc pendingToolCall) int {
+func (h *HistoryRecorder) appendToolCallEvent(ctx *activeMessageContext, tc pendingToolCall) int {
 	record := toolCallRecordFromPending(tc, "")
-	h.currentEvents = append(h.currentEvents, MessageEvent{
+	ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 		Type:     MsgTypeToolCall,
 		ToolCall: ptrToolCallRecord(record),
 	})
-	return len(h.currentEvents) - 1
+	return len(ctx.msg.Events) - 1
 }
 
-func (h *HistoryRecorder) updateToolCallEvent(tc pendingToolCall, result string) bool {
-	if tc.EventIndex < 0 || tc.EventIndex >= len(h.currentEvents) {
+func (h *HistoryRecorder) updateToolCallEvent(ctx *activeMessageContext, tc pendingToolCall, result string) bool {
+	if tc.EventIndex < 0 || tc.EventIndex >= len(ctx.msg.Events) {
 		return false
 	}
-	if h.currentEvents[tc.EventIndex].Type != MsgTypeToolCall || h.currentEvents[tc.EventIndex].ToolCall == nil {
+	if ctx.msg.Events[tc.EventIndex].Type != MsgTypeToolCall || ctx.msg.Events[tc.EventIndex].ToolCall == nil {
 		return false
 	}
 	record := toolCallRecordFromPending(tc, result)
-	h.currentEvents[tc.EventIndex].ToolCall = ptrToolCallRecord(record)
+	ctx.msg.Events[tc.EventIndex].ToolCall = ptrToolCallRecord(record)
 	return true
 }
 
 func NewHistoryRecorder() *HistoryRecorder {
 	return &HistoryRecorder{
+		activeMessages:   make(map[string]*activeMessageContext),
+		activeOrder:      make([]string, 0),
 		messages:         make([]AgentMessage, 0),
 		currentEvents:    make([]MessageEvent, 0),
 		toolResultChunks: make(map[string]string),
@@ -274,6 +287,95 @@ func toolResultKey(event Event) string {
 	return ""
 }
 
+func historyActiveKey(event Event) string {
+	if event.MemberCallID != "" {
+		return "member:" + event.MemberCallID
+	}
+	return "agent:" + event.AgentName + "|" + event.RunPath
+}
+
+func activeMessageOrder(event Event) int {
+	if event.MemberOrder != nil {
+		return *event.MemberOrder
+	}
+	return 1_000_000
+}
+
+func (h *HistoryRecorder) ensureMessageContext(event Event) *activeMessageContext {
+	if h.activeMessages == nil {
+		h.activeMessages = make(map[string]*activeMessageContext)
+	}
+	key := historyActiveKey(event)
+	if key == "agent:|" {
+		key = "agent:" + event.AgentName
+	}
+	if ctx := h.activeMessages[key]; ctx != nil {
+		return ctx
+	}
+	ctx := &activeMessageContext{
+		msg: AgentMessage{
+			AgentName:      event.AgentName,
+			RunPath:        event.RunPath,
+			MemberCallID:   event.MemberCallID,
+			MemberToolName: event.MemberToolName,
+			MemberName:     event.MemberName,
+			IsMemberEvent:  event.MemberCallID != "",
+			StartTime:      time.Now(),
+			Events:         make([]MessageEvent, 0),
+		},
+		toolResultChunks: make(map[string]string),
+		order:            activeMessageOrder(event),
+		createdSeq:       event.Sequence,
+	}
+	h.activeMessages[key] = ctx
+	h.activeOrder = append(h.activeOrder, key)
+	return ctx
+}
+
+func (h *HistoryRecorder) finalizeActiveMessage(key string) {
+	ctx := h.activeMessages[key]
+	if ctx == nil {
+		return
+	}
+	h.flushChunkedToolResults(ctx)
+	if len(ctx.msg.Events) > 0 {
+		ctx.msg.EndTime = time.Now()
+		h.messages = append(h.messages, ctx.msg)
+	}
+	delete(h.activeMessages, key)
+}
+
+func (h *HistoryRecorder) finalizeAllActiveMessages() {
+	for _, key := range h.sortedActiveKeysLocked() {
+		h.finalizeActiveMessage(key)
+	}
+	h.activeOrder = nil
+}
+
+func (h *HistoryRecorder) sortedActiveKeysLocked() []string {
+	keys := make([]string, 0, len(h.activeOrder))
+	for _, key := range h.activeOrder {
+		if h.activeMessages[key] != nil {
+			keys = append(keys, key)
+		}
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		a := h.activeMessages[keys[i]]
+		b := h.activeMessages[keys[j]]
+		if a == nil || b == nil {
+			return a != nil
+		}
+		if a.createdSeq != b.createdSeq {
+			return a.createdSeq < b.createdSeq
+		}
+		if a.order != b.order {
+			return a.order < b.order
+		}
+		return a.msg.StartTime.Before(b.msg.StartTime)
+	})
+	return keys
+}
+
 // RecordEvent 记录事件
 func (h *HistoryRecorder) RecordEvent(event Event) {
 	event = NormalizeEvent(event)
@@ -283,70 +385,70 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	switch event.Type {
 	case EventReasoningChunk:
-		h.ensureAgentContext(event)
+		ctx := h.ensureMessageContext(event)
 		// 合并连续推理事件
-		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == MsgTypeReasoning {
-			h.currentEvents[n-1].Content += event.Content
+		if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning {
+			ctx.msg.Events[n-1].Content += event.Content
 		} else {
-			h.currentEvents = append(h.currentEvents, MessageEvent{
+			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 				Type:    MsgTypeReasoning,
 				Content: event.Content,
 			})
 		}
 
 	case EventStreamChunk:
-		h.ensureAgentContext(event)
+		ctx := h.ensureMessageContext(event)
 		// 合并连续文本事件
-		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == MsgTypeText {
-			h.currentEvents[n-1].Content += event.Content
+		if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeText {
+			ctx.msg.Events[n-1].Content += event.Content
 		} else {
-			h.currentEvents = append(h.currentEvents, MessageEvent{
+			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 				Type:    MsgTypeText,
 				Content: event.Content,
 			})
 		}
 
 	case EventToolCallsPreparing:
-		h.ensureAgentContext(event)
+		ctx := h.ensureMessageContext(event)
 		for _, tc := range event.ToolCalls {
 			if isInternalToolName(tc.Function.Name) {
 				continue
 			}
 			if tc.Function.Name != "" {
 				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, "")
-				pending.EventIndex = h.appendToolCallEvent(pending)
-				h.pendingToolCalls = append(h.pendingToolCalls, pending)
+				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
+				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
 		}
 
 	case EventToolCalls:
-		h.ensureAgentContext(event)
+		ctx := h.ensureMessageContext(event)
 		for _, tc := range event.ToolCalls {
 			if isInternalToolName(tc.Function.Name) {
 				continue
 			}
 			updated := false
-			for i := range h.pendingToolCalls {
-				sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == tc.ID
-				sameIndex := h.pendingToolCalls[i].Index != nil && tc.Index != nil && *h.pendingToolCalls[i].Index == *tc.Index
-				sameRef := h.pendingToolCalls[i].Ref != "" && h.pendingToolCalls[i].Ref == toolCallRefFromEvent(event, tc)
+			for i := range ctx.pendingToolCalls {
+				sameID := ctx.pendingToolCalls[i].ID != "" && ctx.pendingToolCalls[i].ID == tc.ID
+				sameIndex := ctx.pendingToolCalls[i].Index != nil && tc.Index != nil && *ctx.pendingToolCalls[i].Index == *tc.Index
+				sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == toolCallRefFromEvent(event, tc)
 				if sameRef || sameID || sameIndex {
 					if ref := toolCallRefFromEvent(event, tc); ref != "" {
-						h.pendingToolCalls[i].Ref = ref
+						ctx.pendingToolCalls[i].Ref = ref
 					}
 					if tc.ID != "" {
-						h.pendingToolCalls[i].ID = tc.ID
+						ctx.pendingToolCalls[i].ID = tc.ID
 					}
-					h.pendingToolCalls[i].Arguments = tc.Function.Arguments
-					h.updateToolCallEvent(h.pendingToolCalls[i], "")
+					ctx.pendingToolCalls[i].Arguments = tc.Function.Arguments
+					h.updateToolCallEvent(ctx, ctx.pendingToolCalls[i], "")
 					updated = true
 					break
 				}
 			}
 			if !updated {
 				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
-				pending.EventIndex = h.appendToolCallEvent(pending)
-				h.pendingToolCalls = append(h.pendingToolCalls, pending)
+				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
+				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
 		}
 
@@ -354,40 +456,40 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		if isInternalContinueContent(event.Content) {
 			return
 		}
-		h.ensureAgentContext(event)
+		ctx := h.ensureMessageContext(event)
 		if key := toolResultKey(event); key != "" {
-			h.toolResultChunks[key] += event.Content
+			ctx.toolResultChunks[key] += event.Content
 		}
 
 	case EventToolResult:
 		if isInternalContinueContent(event.Content) {
 			return
 		}
-		h.ensureAgentContext(event)
+		ctx := h.ensureMessageContext(event)
 		content := event.Content
 		resultKey := toolResultKey(event)
-		if resultKey != "" && h.toolResultChunks[resultKey] != "" {
-			chunked := h.toolResultChunks[resultKey]
+		if resultKey != "" && ctx.toolResultChunks[resultKey] != "" {
+			chunked := ctx.toolResultChunks[resultKey]
 			if content == "" || strings.Contains(chunked, content) {
 				content = chunked
 			} else {
 				content = chunked + content
 			}
-			delete(h.toolResultChunks, resultKey)
+			delete(ctx.toolResultChunks, resultKey)
 		}
 		idx := -1
-		for i := range h.pendingToolCalls {
-			sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == event.ToolCallID
-			sameIndex := h.pendingToolCalls[i].Index != nil && event.ToolCallIndex != nil && *h.pendingToolCalls[i].Index == *event.ToolCallIndex
-			sameRef := h.pendingToolCalls[i].Ref != "" && h.pendingToolCalls[i].Ref == event.ToolCallRef
+		for i := range ctx.pendingToolCalls {
+			sameID := ctx.pendingToolCalls[i].ID != "" && ctx.pendingToolCalls[i].ID == event.ToolCallID
+			sameIndex := ctx.pendingToolCalls[i].Index != nil && event.ToolCallIndex != nil && *ctx.pendingToolCalls[i].Index == *event.ToolCallIndex
+			sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == event.ToolCallRef
 			if sameRef || sameID || sameIndex {
 				idx = i
 				break
 			}
 		}
 		if idx < 0 && event.ToolName != "" {
-			for i := range h.pendingToolCalls {
-				if h.pendingToolCalls[i].Name != event.ToolName {
+			for i := range ctx.pendingToolCalls {
+				if ctx.pendingToolCalls[i].Name != event.ToolName {
 					continue
 				}
 				if idx >= 0 {
@@ -398,13 +500,13 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		}
 		if idx >= 0 {
-			tc := h.pendingToolCalls[idx]
-			h.pendingToolCalls = append(h.pendingToolCalls[:idx], h.pendingToolCalls[idx+1:]...)
+			tc := ctx.pendingToolCalls[idx]
+			ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
 			if isInternalToolName(tc.Name) {
 				return
 			}
-			if !h.updateToolCallEvent(tc, content) {
-				h.currentEvents = append(h.currentEvents, MessageEvent{
+			if !h.updateToolCallEvent(ctx, tc, content) {
+				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 					Type:     MsgTypeToolCall,
 					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 				})
@@ -412,15 +514,15 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 
 	case EventMessage:
-		h.ensureAgentContext(event)
+		ctx := h.ensureMessageContext(event)
 		if event.ReasoningContent != "" {
-			h.currentEvents = append(h.currentEvents, MessageEvent{
+			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 				Type:    MsgTypeReasoning,
 				Content: event.ReasoningContent,
 			})
 		}
 		if event.Content != "" {
-			h.currentEvents = append(h.currentEvents, MessageEvent{
+			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 				Type:    MsgTypeText,
 				Content: event.Content,
 			})
@@ -431,13 +533,14 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 			if tc.Function.Name != "" {
 				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
-				pending.EventIndex = h.appendToolCallEvent(pending)
-				h.pendingToolCalls = append(h.pendingToolCalls, pending)
+				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
+				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
 		}
 
 	case EventAction:
-		h.currentEvents = append(h.currentEvents, MessageEvent{
+		ctx := h.ensureMessageContext(event)
+		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Type: MsgTypeAction,
 			Action: &ActionRecord{
 				ActionType: event.ActionType,
@@ -447,8 +550,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		})
 
 	case EventError:
-		h.ensureAgentContext(event)
-		h.currentEvents = append(h.currentEvents, MessageEvent{
+		ctx := h.ensureMessageContext(event)
+		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Type:    MsgTypeError,
 			Content: truncateErrorContent(event.Error),
 		})
@@ -477,40 +580,40 @@ func (h *HistoryRecorder) ensureAgentContext(event Event) {
 	}
 }
 
-func (h *HistoryRecorder) flushChunkedToolResults() {
-	if len(h.toolResultChunks) == 0 {
+func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
+	if ctx == nil || len(ctx.toolResultChunks) == 0 {
 		return
 	}
-	for resultKey, content := range h.toolResultChunks {
+	for resultKey, content := range ctx.toolResultChunks {
 		if content == "" {
-			delete(h.toolResultChunks, resultKey)
+			delete(ctx.toolResultChunks, resultKey)
 			continue
 		}
 		idx := -1
-		for i := range h.pendingToolCalls {
-			sameRef := h.pendingToolCalls[i].Ref != "" && h.pendingToolCalls[i].Ref == resultKey
-			sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == resultKey
-			sameIndex := h.pendingToolCalls[i].Index != nil && resultKey == fmt.Sprintf("idx:%d", *h.pendingToolCalls[i].Index)
+		for i := range ctx.pendingToolCalls {
+			sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == resultKey
+			sameID := ctx.pendingToolCalls[i].ID != "" && ctx.pendingToolCalls[i].ID == resultKey
+			sameIndex := ctx.pendingToolCalls[i].Index != nil && resultKey == fmt.Sprintf("idx:%d", *ctx.pendingToolCalls[i].Index)
 			if sameRef || sameID || sameIndex {
 				idx = i
 				break
 			}
 		}
 		if idx < 0 {
-			delete(h.toolResultChunks, resultKey)
+			delete(ctx.toolResultChunks, resultKey)
 			continue
 		}
-		tc := h.pendingToolCalls[idx]
-		h.pendingToolCalls = append(h.pendingToolCalls[:idx], h.pendingToolCalls[idx+1:]...)
+		tc := ctx.pendingToolCalls[idx]
+		ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
 		if !isInternalToolName(tc.Name) {
-			if !h.updateToolCallEvent(tc, content) {
-				h.currentEvents = append(h.currentEvents, MessageEvent{
+			if !h.updateToolCallEvent(ctx, tc, content) {
+				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 					Type:     MsgTypeToolCall,
 					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 				})
 			}
 		}
-		delete(h.toolResultChunks, resultKey)
+		delete(ctx.toolResultChunks, resultKey)
 	}
 }
 
@@ -518,9 +621,7 @@ func (h *HistoryRecorder) RecordUserInput(input string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if h.currentAgent != "" {
-		h.finalizeCurrentMessage()
-	}
+	h.finalizeAllActiveMessages()
 
 	h.messages = append(h.messages, AgentMessage{
 		AgentName: "用户",
@@ -538,33 +639,13 @@ func (h *HistoryRecorder) RecordUserInput(input string) {
 	h.currentMemberName = ""
 }
 
-func (h *HistoryRecorder) finalizeCurrentMessage() {
-	if h.currentAgent == "" {
-		return
-	}
-	h.flushChunkedToolResults()
-	if len(h.currentEvents) == 0 {
-		return
-	}
-
-	h.messages = append(h.messages, AgentMessage{
-		AgentName:      h.currentAgent,
-		RunPath:        h.currentRunPath,
-		MemberCallID:   h.currentMemberID,
-		MemberToolName: h.currentMemberTool,
-		MemberName:     h.currentMemberName,
-		IsMemberEvent:  h.currentMemberID != "",
-		StartTime:      h.currentStartTime,
-		EndTime:        time.Now(),
-		Events:         h.currentEvents,
-	})
-}
+func (h *HistoryRecorder) finalizeCurrentMessage() { h.finalizeAllActiveMessages() }
 
 // FinalizeCurrent 完成当前消息记录，在对话结束时调用
 func (h *HistoryRecorder) FinalizeCurrent() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.finalizeCurrentMessage()
+	h.finalizeAllActiveMessages()
 	h.currentAgent = ""
 	h.currentRunPath = ""
 	h.currentMemberID = ""
@@ -573,6 +654,8 @@ func (h *HistoryRecorder) FinalizeCurrent() {
 	h.currentEvents = make([]MessageEvent, 0)
 	h.pendingToolCalls = nil
 	h.toolResultChunks = make(map[string]string)
+	h.activeMessages = make(map[string]*activeMessageContext)
+	h.activeOrder = nil
 }
 
 func (h *HistoryRecorder) GetMessages() []AgentMessage {
@@ -602,6 +685,23 @@ func (h *HistoryRecorder) GetCurrentMessage() (agentName, content string) {
 	defer h.mu.RUnlock()
 
 	var builder strings.Builder
+	for _, key := range h.sortedActiveKeysLocked() {
+		ctx := h.activeMessages[key]
+		if ctx == nil {
+			continue
+		}
+		if agentName == "" {
+			agentName = ctx.msg.AgentName
+		}
+		for _, event := range ctx.msg.Events {
+			if event.Type == MsgTypeText {
+				builder.WriteString(event.Content)
+			}
+		}
+	}
+	if builder.Len() > 0 {
+		return agentName, builder.String()
+	}
 	for _, event := range h.currentEvents {
 		if event.Type == MsgTypeText {
 			builder.WriteString(event.Content)
@@ -614,8 +714,9 @@ func (h *HistoryRecorder) GetFullHistory() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	messages := h.snapshotMessagesLocked()
 	var result strings.Builder
-	for i, msg := range h.messages {
+	for i, msg := range messages {
 		if i > 0 {
 			result.WriteString("\n\n")
 		}
@@ -623,21 +724,6 @@ func (h *HistoryRecorder) GetFullHistory() string {
 		result.WriteString(msg.AgentName)
 		result.WriteString(" ===\n")
 		for _, event := range msg.Events {
-			if event.Type == MsgTypeText {
-				result.WriteString(event.Content)
-			}
-		}
-	}
-
-	// 包含构建中的内容
-	if h.currentAgent != "" && len(h.currentEvents) > 0 {
-		if len(h.messages) > 0 {
-			result.WriteString("\n\n")
-		}
-		result.WriteString("=== ")
-		result.WriteString(h.currentAgent)
-		result.WriteString(" (当前) ===\n")
-		for _, event := range h.currentEvents {
 			if event.Type == MsgTypeText {
 				result.WriteString(event.Content)
 			}
@@ -679,6 +765,8 @@ func (h *HistoryRecorder) Clear() {
 	h.currentMemberName = ""
 	h.pendingToolCalls = nil
 	h.toolResultChunks = make(map[string]string)
+	h.activeMessages = make(map[string]*activeMessageContext)
+	h.activeOrder = nil
 	h.summary = ""
 	h.summarizedCount = 0
 }
@@ -730,8 +818,10 @@ func (h *HistoryRecorder) GetAgentNames() []string {
 	for _, msg := range h.messages {
 		nameMap[msg.AgentName] = true
 	}
-	if h.currentAgent != "" {
-		nameMap[h.currentAgent] = true
+	for _, ctx := range h.activeMessages {
+		if ctx != nil && ctx.msg.AgentName != "" {
+			nameMap[ctx.msg.AgentName] = true
+		}
 	}
 
 	names := make([]string, 0, len(nameMap))
@@ -744,32 +834,29 @@ func (h *HistoryRecorder) GetAgentNames() []string {
 func (h *HistoryRecorder) GetMessageCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return len(h.messages)
+	return len(h.snapshotMessagesLocked())
 }
 
 func (h *HistoryRecorder) SaveToFile(filePath string) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	if h.currentAgent != "" && len(h.currentEvents) > 0 {
-		tempMessages := make([]AgentMessage, len(h.messages))
-		copy(tempMessages, h.messages)
-		msg := AgentMessage{
-			AgentName:      h.currentAgent,
-			RunPath:        h.currentRunPath,
-			MemberCallID:   h.currentMemberID,
-			MemberToolName: h.currentMemberTool,
-			MemberName:     h.currentMemberName,
-			IsMemberEvent:  h.currentMemberID != "",
-			StartTime:      h.currentStartTime,
-			EndTime:        time.Now(),
-			Events:         h.currentEvents,
-		}
-		tempMessages = append(tempMessages, msg)
-		return saveMessagesToFile(tempMessages, filePath)
-	}
+	return saveMessagesToFile(h.snapshotMessagesLocked(), filePath)
+}
 
-	return saveMessagesToFile(h.messages, filePath)
+func (h *HistoryRecorder) snapshotMessagesLocked() []AgentMessage {
+	messages := make([]AgentMessage, len(h.messages))
+	copy(messages, h.messages)
+	for _, key := range h.activeOrder {
+		ctx := h.activeMessages[key]
+		if ctx == nil || len(ctx.msg.Events) == 0 {
+			continue
+		}
+		msg := ctx.msg
+		msg.EndTime = time.Now()
+		messages = append(messages, msg)
+	}
+	return messages
 }
 
 func saveMessagesToFile(messages []AgentMessage, filePath string) error {
@@ -849,6 +936,8 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	h.currentMemberName = ""
 	h.pendingToolCalls = nil
 	h.toolResultChunks = make(map[string]string)
+	h.activeMessages = make(map[string]*activeMessageContext)
+	h.activeOrder = nil
 
 	return nil
 }
@@ -899,26 +988,7 @@ func (h *HistoryRecorder) SaveToMarkdownFile(filePath string) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	// 包含构建中的消息
-	messages := make([]AgentMessage, len(h.messages))
-	copy(messages, h.messages)
-
-	if h.currentAgent != "" && len(h.currentEvents) > 0 {
-		msg := AgentMessage{
-			AgentName:      h.currentAgent,
-			RunPath:        h.currentRunPath,
-			MemberCallID:   h.currentMemberID,
-			MemberToolName: h.currentMemberTool,
-			MemberName:     h.currentMemberName,
-			IsMemberEvent:  h.currentMemberID != "",
-			StartTime:      h.currentStartTime,
-			EndTime:        time.Now(),
-			Events:         h.currentEvents,
-		}
-		messages = append(messages, msg)
-	}
-
-	return saveMessagesToMarkdown(messages, filePath)
+	return saveMessagesToMarkdown(h.snapshotMessagesLocked(), filePath)
 }
 
 func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
