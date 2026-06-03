@@ -26,7 +26,7 @@ model = "gpt-5"
 
 ```toml
 [agents]
-searcher = true        # 搜索专家
+researcher = true      # 网络研究员
 assistant = true       # 个人全能助手（带审批以及子任务功能）
 analyst = false        # 数据分析师
 

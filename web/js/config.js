@@ -136,8 +136,8 @@ FKTeamsChat.prototype.fillConfigForm = function (cfg) {
     cfg.server?.auth?.secret || "";
 
   // 智能体
-  document.getElementById("config-agent-searcher").checked =
-    cfg.agents?.searcher || false;
+  document.getElementById("config-agent-researcher").checked =
+    cfg.agents?.researcher || false;
   document.getElementById("config-agent-assistant").checked =
     cfg.agents?.assistant || false;
   document.getElementById("config-agent-analyst").checked =
@@ -985,7 +985,7 @@ FKTeamsChat.prototype.collectConfigData = function () {
 
   // 智能体
   cfg.agents = {
-    searcher: document.getElementById("config-agent-searcher").checked,
+    researcher: document.getElementById("config-agent-researcher").checked,
     assistant: document.getElementById("config-agent-assistant").checked,
     analyst: document.getElementById("config-agent-analyst").checked,
     ssh_visitor: {

@@ -80,7 +80,7 @@ type SSHVisitor struct {
 
 // Agents 内置智能体开关
 type Agents struct {
-	Searcher   bool       `toml:"searcher" json:"searcher"`
+	Researcher bool       `toml:"researcher" json:"researcher"`
 	Assistant  bool       `toml:"assistant" json:"assistant"`
 	Analyst    bool       `toml:"analyst" json:"analyst"`
 	SSHVisitor SSHVisitor `toml:"ssh_visitor" json:"ssh_visitor"`
@@ -431,9 +431,9 @@ func GenerateExample() error {
 			APIKeys: []string{"sk-fkteams-your-api-key"},
 		},
 		Agents: Agents{
-			Searcher:  true,
-			Assistant: true,
-			Analyst:   false,
+			Researcher: true,
+			Assistant:  true,
+			Analyst:    false,
 			SSHVisitor: SSHVisitor{
 				Enabled:  false,
 				Host:     "",

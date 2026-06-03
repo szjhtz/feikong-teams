@@ -1,4 +1,4 @@
-package leader
+package coordinator
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 func NewAgent(ctx context.Context, agentTools ...tool.BaseTool) (adk.Agent, error) {
 	safeDir := common.WorkspaceDir()
 
-	return common.NewAgentBuilder("coordinator", "核心协调智能体，直接处理常规任务，并按需指派专业成员。").
-		WithTemplate(leaderPromptTemplate).
+	return common.NewAgentBuilder("coordinator", "核心工程智能体，直接完成常规工程任务，并按需指派专业成员。").
+		WithTemplate(coordinatorPromptTemplate).
 		WithTemplateVar("workspace_dir", safeDir).
 		WithToolNames("todo", "file", "scheduler", "ask").
 		WithTools(agentTools...).

@@ -1,11 +1,11 @@
-package searcher
+package researcher
 
 import (
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/schema"
 )
 
-var searcherPrompt = `
+var researcherPrompt = `
 # Role: Researcher - 非空小队情报搜索专家
 
 ## 工作准则
@@ -59,6 +59,6 @@ var searcherPrompt = `
 - 仅当信息明确过时、不完整或需要补充验证时，才重新调用工具
 `
 
-var searcherPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(searcherPrompt),
+var researcherPromptTemplate = prompt.FromMessages(schema.FString,
+	schema.SystemMessage(researcherPrompt),
 )

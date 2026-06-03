@@ -6,7 +6,7 @@ import (
 	assistantagent "fkteams/agents/assistant"
 	"fkteams/agents/coder"
 	"fkteams/agents/custom"
-	"fkteams/agents/searcher"
+	"fkteams/agents/researcher"
 	"fkteams/agents/visitor"
 	"fkteams/config"
 	"sync"
@@ -54,8 +54,8 @@ func buildRegistry() {
 	}
 
 	// 可选智能体（根据配置文件启用）
-	if cfg.Agents.Searcher {
-		creators = append(creators, agentCreator{name: "researcher", aliases: []string{"小搜", "searcher"}, creator: searcher.NewAgent})
+	if cfg.Agents.Researcher {
+		creators = append(creators, agentCreator{name: "researcher", aliases: []string{"小搜"}, creator: researcher.NewAgent})
 	}
 
 	if cfg.Agents.Analyst {

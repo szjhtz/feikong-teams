@@ -176,7 +176,7 @@ list_agents
 
 需在配置文件 `[agents]` 中启用的智能体：
 
-- `@researcher` - 网络研究员，擅长检索、抓取和交叉验证时效信息（`searcher = true`）
+- `@researcher` - 网络研究员，擅长检索、抓取和交叉验证时效信息（`researcher = true`）
 - `@analyst` - 数据分析师，擅长使用 Excel、Python 脚本和文档处理工具（`analyst = true`）
 - `@remote` - 远程运维专家，擅长通过 SSH 连接远程服务器（`[agents.ssh_visitor] enabled = true`）
 - `@generalist` - 通用执行助手，综合命令、文件、搜索等工具完成任务（`assistant = true`）

@@ -5,10 +5,10 @@ import (
 	"context"
 	"fkteams/agents"
 	agentcommon "fkteams/agents/common"
+	"fkteams/agents/coordinator"
 	"fkteams/agents/custom"
 	"fkteams/agents/deep"
 	"fkteams/agents/discussant"
-	"fkteams/agents/leader"
 	"fkteams/agents/moderator"
 	"fkteams/agents/tasker"
 	"fkteams/common"
@@ -47,9 +47,17 @@ func (a *agentToolNameAgent) Name(context.Context) string {
 func (a *agentToolNameAgent) Description(ctx context.Context) string {
 	desc := a.inner.Description(ctx)
 	if desc == "" {
-		return fmt.Sprintf("指派给 %s 处理任务。", a.displayName)
+		return fmt.Sprintf("指派给 %s 处理一个独立子任务。", a.displayName)
 	}
-	return fmt.Sprintf("指派给 %s 处理任务。能力描述：%s", a.displayName, desc)
+	return fmt.Sprintf(`指派给 %s 处理一个独立子任务。
+
+使用原则：
+- 仅当该成员能力明显匹配，或任务需要并行/专业工具/独立视角时调用。
+- request 中写清任务目标、必要上下文、期望输出和完成标准。
+- 派发后等待其结果，不要同时重复执行同一子任务。
+- 成员最终消息只返回给 coordinator，不直接展示给用户；你需要阅读、筛选并整合。
+
+能力描述：%s`, a.displayName, desc)
 }
 
 func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
@@ -149,12 +157,12 @@ func CreateAgentRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
 func CreateTeamRunner(ctx context.Context) (*adk.Runner, error) {
 	agentTools := buildAgentTools(ctx, wrapErrorSafe(agents.GetTeamAgents(ctx)))
 
-	leaderAgent, err := leader.NewAgent(ctx, agentTools...)
+	coordinatorAgent, err := coordinator.NewAgent(ctx, agentTools...)
 	if err != nil {
 		return nil, fmt.Errorf("创建 coordinator 智能体失败: %w", err)
 	}
 
-	return newRunner(ctx, leaderAgent), nil
+	return newRunner(ctx, coordinatorAgent), nil
 }
 
 // CreateDeepAgentsRunner 创建 DeepAgents 模式的 Runner

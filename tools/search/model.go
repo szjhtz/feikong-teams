@@ -10,8 +10,16 @@ var (
 	searchHTMLURL = "https://html.duckduckgo.com/html/"
 
 	defaultTextSearchToolName = "duckduckgo_text_search"
-	defaultTextSearchToolDesc = `This is a duckduckgo plain text information search tool. 
-It can be useful to help you get information within a certain time range.`
+	defaultTextSearchToolDesc = `DuckDuckGo plain-text web search.
+
+Use when the answer may depend on current or external information, or when you need candidate URLs before fetching source pages.
+
+Guidelines:
+- For recent information, use time_range when appropriate and include concrete dates in the query.
+- Prefer official, primary, authoritative, or original sources when available.
+- Search results are candidates, not final evidence; use fetch for pages that matter or when snippets conflict.
+- Avoid repeated identical searches; vary language, entity names, or source type when broadening coverage.
+- When answering from web results, preserve the URLs you actually used so the final answer can cite sources.`
 )
 
 type Search interface {

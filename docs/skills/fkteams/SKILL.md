@@ -143,7 +143,7 @@ fkteams -r "20260302_091249" -q "继续上次的分析"  # 恢复后直接查询
 
 | 名称 | 配置项 | 角色 |
 |------|--------|------|
-| `researcher` | `[agents] searcher = true` | DuckDuckGo 网络搜索 |
+| `researcher` | `[agents] researcher = true` | DuckDuckGo 网络搜索 |
 | `analyst` | `[agents] analyst = true` | 数据分析（Excel、Python、文档） |
 | `remote` | `[agents.ssh_visitor] enabled = true` | SSH 远程服务器访问 |
 | `generalist` | `[agents] assistant = true` | 通用执行助手，支持多工具任务 |
@@ -316,7 +316,7 @@ model    = "gpt-4o"
 
 # 智能体开关
 [agents]
-searcher  = true
+researcher = true
 assistant = true
 analyst   = false
 
