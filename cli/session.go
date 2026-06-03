@@ -56,7 +56,7 @@ func (s *Session) currentPrefix() string {
 	return s.CurrentMode.GetPromptPrefix()
 }
 
-// StartSignalHandler 监听系统信号（SIGINT 在查询运行时中断查询，否则忽略；其他信号转发为退出信号）
+// StartSignalHandler 监听系统信号（SIGINT 运行时取消查询；其他信号转发为退出信号）
 func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -151,6 +151,14 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				var err error
 				in, trigger, err = tui.ReadLine(prefix, opts)
 				if err != nil {
+					if errors.Is(err, tui.ErrCtrlC) {
+						fmt.Println()
+						select {
+						case exitSignals <- syscall.SIGTERM:
+						default:
+						}
+						return
+					}
 					if errors.Is(err, tui.ErrInterrupted) {
 						fmt.Println()
 						break readInput

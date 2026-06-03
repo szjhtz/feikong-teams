@@ -3,8 +3,10 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -15,12 +17,22 @@ import (
 // ErrInterrupted 用户中断输入
 var ErrInterrupted = errors.New("user interrupted")
 
+// ErrCtrlC 用户按下 Ctrl+C
+var ErrCtrlC = errors.New("user pressed ctrl+c")
+
 // triggerChars 在空输入时立即触发选择
 var triggerChars = map[string]bool{"@": true, "/": true}
+
+const (
+	inputExitConfirmWindow = 2 * time.Second
+	inputExitConfirmTick   = time.Second
+)
 
 // pasteTagRe / pasteTagSuffixRe 匹配内联粘贴占位符
 var pasteTagRe = regexp.MustCompile(`\[粘贴\d+行内容\]`)
 var pasteTagSuffixRe = regexp.MustCompile(`\s?\[粘贴\d+行内容\]\s?$`)
+
+type inputExitTickMsg time.Time
 
 type ReadLineOpts struct {
 	History      []string
@@ -32,10 +44,12 @@ type inputModel struct {
 	text         string
 	trigger      string
 	aborted      bool
+	ctrlC        bool
 	history      []string
 	historyIndex int
 	savedInput   string
 	pastes       []string // 多行粘贴内容，顺序与文本中占位符一一对应
+	exitUntil    time.Time
 }
 
 func newInputModel(prompt string, opts *ReadLineOpts) inputModel {
@@ -71,9 +85,19 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.textInput.SetWidth(msg.Width - 4)
 		return m, nil
+	case inputExitTickMsg:
+		if m.exitUntil.IsZero() {
+			return m, nil
+		}
+		if time.Now().After(m.exitUntil) {
+			m.exitUntil = time.Time{}
+			return m, nil
+		}
+		return m, inputExitTickCmd()
 	case tea.PasteMsg:
 		content := msg.Content
 		if strings.ContainsAny(content, "\n\r") {
+			m.exitUntil = time.Time{}
 			return m.insertPaste(strings.TrimRight(content, "\n\r")), nil
 		}
 	case tea.KeyPressMsg:
@@ -81,18 +105,28 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.text = expandPastes(strings.TrimSpace(m.textInput.Value()), m.pastes)
 			return m, tea.Quit
-		case "ctrl+c", "esc":
+		case "ctrl+c":
+			if m.isExitConfirming() {
+				m.ctrlC = true
+				return m, tea.Quit
+			}
+			m.exitUntil = time.Now().Add(inputExitConfirmWindow)
+			return m, inputExitTickCmd()
+		case "esc":
 			m.aborted = true
 			return m, tea.Quit
 		case "ctrl+v":
 			if text, err := clipboard.ReadAll(); err == nil && strings.ContainsAny(text, "\n\r") {
+				m.exitUntil = time.Time{}
 				return m.insertPaste(strings.TrimRight(text, "\n\r")), nil
 			}
 		case "backspace":
+			m.exitUntil = time.Time{}
 			if newM, ok := m.backspaceTag(); ok {
 				return newM, nil
 			}
 		case "up":
+			m.exitUntil = time.Time{}
 			if len(m.history) > 0 && m.historyIndex > 0 {
 				if m.historyIndex == len(m.history) {
 					m.savedInput = m.textInput.Value()
@@ -103,6 +137,7 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "down":
+			m.exitUntil = time.Time{}
 			if len(m.history) > 0 && m.historyIndex < len(m.history) {
 				m.historyIndex++
 				if m.historyIndex == len(m.history) {
@@ -115,6 +150,7 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Text != "" {
+			m.exitUntil = time.Time{}
 			if msg.Text == "#" {
 				m.text = expandPastes(m.textInput.Value(), m.pastes)
 				m.trigger = "#"
@@ -129,6 +165,16 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
 	return m, cmd
+}
+
+func inputExitTickCmd() tea.Cmd {
+	return tea.Tick(inputExitConfirmTick, func(t time.Time) tea.Msg {
+		return inputExitTickMsg(t)
+	})
+}
+
+func (m inputModel) isExitConfirming() bool {
+	return !m.exitUntil.IsZero() && time.Now().Before(m.exitUntil)
 }
 
 // insertPaste 在当前光标位置插入多行粘贴内容的占位符，维护 pastes 顺序。
@@ -201,18 +247,37 @@ func expandPastes(text string, pastes []string) string {
 
 func (m inputModel) View() tea.View {
 	// 提交或取消后返回空视图，清除屏幕上的输入行
-	if m.text != "" || m.trigger != "" || m.aborted {
+	if m.text != "" || m.trigger != "" || m.aborted || m.ctrlC {
 		return tea.NewView("")
 	}
 
 	viewStr := m.textInput.View()
 	if len(m.pastes) == 0 {
-		return tea.NewView(viewStr)
+		return tea.NewView(m.renderExitConfirm(viewStr))
 	}
 	tagStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("178")).Bold(true)
-	return tea.NewView(pasteTagRe.ReplaceAllStringFunc(viewStr, func(match string) string {
+	viewStr = pasteTagRe.ReplaceAllStringFunc(viewStr, func(match string) string {
 		return tagStyle.Render(match)
-	}))
+	})
+	return tea.NewView(m.renderExitConfirm(viewStr))
+}
+
+func (m inputModel) renderExitConfirm(viewStr string) string {
+	if !m.isExitConfirming() {
+		return viewStr
+	}
+	seconds := int(math.Ceil(time.Until(m.exitUntil).Seconds()))
+	if seconds < 1 {
+		seconds = 1
+	}
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	countdownStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	return fmt.Sprintf(
+		"%s\n%s",
+		viewStr,
+		dimStyle.Render("再按 ")+keyStyle.Render("Ctrl+C")+dimStyle.Render(" 退出 · ")+countdownStyle.Render(fmt.Sprintf("%ds", seconds)),
+	)
 }
 
 // ReadLine 读取一行输入，检测触发字符（@/#/）。
@@ -228,6 +293,9 @@ func ReadLine(prompt string, opts ...*ReadLineOpts) (text string, trigger string
 		return "", "", runErr
 	}
 	m := final.(inputModel)
+	if m.ctrlC {
+		return "", "", ErrCtrlC
+	}
 	if m.aborted {
 		return "", "", ErrInterrupted
 	}
