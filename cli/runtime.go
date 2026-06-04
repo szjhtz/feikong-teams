@@ -490,7 +490,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
-		if mouse.Button == tea.MouseLeft && mouse.Y < m.bodyHeight() {
+		if mouse.Button == tea.MouseLeft && mouse.Y >= 0 && mouse.Y < m.viewHeight() {
 			point := tui.TextPoint{X: mouse.X, Y: mouse.Y}
 			m.selection = tui.NewTextSelection(point)
 		}
@@ -498,13 +498,13 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMotionMsg:
 		if m.selection.Active {
 			mouse := msg.Mouse()
-			m.selection.Cursor = tui.TextPoint{X: mouse.X, Y: min(mouse.Y, max(0, m.bodyHeight()-1))}
+			m.selection.Cursor = tui.TextPoint{X: mouse.X, Y: min(mouse.Y, max(0, m.viewHeight()-1))}
 		}
 		return m, nil
 	case tea.MouseReleaseMsg:
 		if m.selection.Active {
 			mouse := msg.Mouse()
-			m.selection.Cursor = tui.TextPoint{X: mouse.X, Y: min(mouse.Y, max(0, m.bodyHeight()-1))}
+			m.selection.Cursor = tui.TextPoint{X: mouse.X, Y: min(mouse.Y, max(0, m.viewHeight()-1))}
 			selected := strings.TrimRight(m.selectedVisibleText(), "\n")
 			m.selection.Active = false
 			if strings.TrimSpace(selected) != "" {
@@ -561,6 +561,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "backspace":
 			m.exitUntil = time.Time{}
 			if newM, ok := m.backspacePasteTag(); ok {
+				return newM, nil
+			}
+			if newM, ok := m.backspaceInlineToken(); ok {
 				return newM, nil
 			}
 		case "pgup":
@@ -675,12 +678,8 @@ func (m runtimeModel) acceptPicker() (tea.Model, tea.Cmd) {
 	switch m.picker.kind {
 	case runtimePickerAgent:
 		m.picker = nil
-		msg, err := m.runtime.switchAgent(selected.Value)
-		if err != nil {
-			m.appendBlock(runtimeBlockError, "智能体切换失败", err.Error())
-			return m, nil
-		}
-		m.appendBlock(runtimeBlockSystem, "智能体", msg)
+		m.input.SetValue("@" + selected.Value + " ")
+		m.input.CursorEnd()
 		return m, nil
 	case runtimePickerCommand:
 		m.picker = nil
@@ -784,6 +783,16 @@ func (m runtimeModel) backspacePasteTag() (runtimeModel, bool) {
 		return m, false
 	}
 	m.pastes = pastes
+	m.input.SetValue(value)
+	m.input.SetCursor(cursor)
+	return m, true
+}
+
+func (m runtimeModel) backspaceInlineToken() (runtimeModel, bool) {
+	value, cursor, ok := tui.DeleteInlineTokenNearCursor(m.input.Value(), m.input.Position())
+	if !ok {
+		return m, false
+	}
 	m.input.SetValue(value)
 	m.input.SetCursor(cursor)
 	return m, true
@@ -1079,6 +1088,17 @@ func (m runtimeModel) acceptRuntimeConfirmation(action string) runtimeModel {
 }
 
 func (m runtimeModel) View() tea.View {
+	content := m.screenContent()
+	if m.selection.Active {
+		content = m.renderSelection(content)
+	}
+	view := tea.NewView(content)
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
+	return view
+}
+
+func (m runtimeModel) screenContent() string {
 	bottom := m.renderBottom()
 	bottomLines := tui.LineCount(bottom)
 	available := m.bodyHeightForBottom(bottomLines)
@@ -1095,10 +1115,27 @@ func (m runtimeModel) View() tea.View {
 		sb.WriteString("\n")
 	}
 	sb.WriteString(bottom)
-	view := tea.NewView(sb.String())
-	view.AltScreen = true
-	view.MouseMode = tea.MouseModeCellMotion
-	return view
+	return sb.String()
+}
+
+func (m runtimeModel) renderSelection(content string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = m.selection.RenderLine(i, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m runtimeModel) screenLines() []string {
+	return strings.Split(m.screenContent(), "\n")
+}
+
+func (m runtimeModel) viewHeight() int {
+	height := m.height
+	if height <= 0 {
+		height = 40
+	}
+	return height
 }
 
 func (m runtimeModel) bodyHeightForBottom(bottomLines int) int {
@@ -1129,17 +1166,11 @@ func (m runtimeModel) renderVisibleTranscript(maxLines int) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	if !m.selection.Active {
-		return strings.Join(lines, "\n")
-	}
-	for i, line := range lines {
-		lines[i] = m.selection.RenderLine(i, line)
-	}
 	return strings.Join(lines, "\n")
 }
 
 func (m runtimeModel) selectedVisibleText() string {
-	lines := m.visibleTranscriptLines(m.bodyHeight())
+	lines := m.screenLines()
 	return m.selection.SelectedText(lines)
 }
 
@@ -1188,9 +1219,7 @@ func (m runtimeModel) renderBottom() string {
 	if m.scrollOffset > 0 {
 		fmt.Fprintf(&sb, "%s\n", tui.Dim(fmt.Sprintf("已上翻 %d 行 · 滚轮向下或 End 回到底部", m.scrollOffset)))
 	}
-	if m.selection.Active {
-		fmt.Fprintf(&sb, "%s\n", tui.Dim("松开鼠标复制选中文本"))
-	} else if m.isCopiedNoticeVisible() {
+	if m.isCopiedNoticeVisible() {
 		fmt.Fprintf(&sb, "%s\n", tui.Dim(tui.CopiedNotice(m.selection.Copied)))
 	}
 	if m.running {

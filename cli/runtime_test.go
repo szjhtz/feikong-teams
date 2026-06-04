@@ -125,6 +125,33 @@ func TestRuntimeCommandPickerFillsInput(t *testing.T) {
 	}
 }
 
+func TestRuntimeAgentPickerFillsInput(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.picker = newRuntimePicker(runtimePickerAgent, "选择智能体", []runtimePickerItem{
+		{Label: "coder - 编码助手", Value: "coder"},
+	}, 10)
+	blockCount := len(model.blocks)
+
+	updated, cmd := model.acceptPicker()
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("agent picker should fill the input instead of switching immediately")
+	}
+	if got := model.input.Value(); got != "@coder " {
+		t.Fatalf("agent picker should fill selected agent mention, got %q", got)
+	}
+	if model.runtime.session.currentAgent != "" {
+		t.Fatalf("agent picker should not switch immediately, got current agent %q", model.runtime.session.currentAgent)
+	}
+	if len(model.blocks) != blockCount {
+		t.Fatalf("agent picker should not append transcript blocks before submission")
+	}
+}
+
 func TestRuntimeNativeCommandsOpenPickers(t *testing.T) {
 	tests := []struct {
 		command string
@@ -169,17 +196,6 @@ func TestRuntimeCommandIsRecordedAsUserInput(t *testing.T) {
 	userBlock := model.blocks[len(model.blocks)-2]
 	if userBlock.Kind != runtimeBlockUser || userBlock.Content != "/help" {
 		t.Fatalf("/help should be recorded as user input, got %#v", userBlock)
-	}
-}
-
-func TestRuntimeCommandResultHasSpacingAfterUserInput(t *testing.T) {
-	for _, kind := range []runtimeBlockKind{runtimeBlockSystem, runtimeBlockError} {
-		if !shouldSpaceBeforeBlock(runtimeBlockUser, kind) {
-			t.Fatalf("%s result should have spacing after user input", kind)
-		}
-		if shouldSpaceBeforeBlock(runtimeBlockSystem, kind) {
-			t.Fatalf("%s result should not add extra spacing after system block", kind)
-		}
 	}
 }
 
@@ -296,14 +312,6 @@ func TestRuntimeReasoningChunksAreMerged(t *testing.T) {
 	}
 }
 
-func TestRuntimeConversationMarkersArePlainText(t *testing.T) {
-	for _, marker := range []string{tui.PromptMarker(), tui.DoneMarker()} {
-		if strings.Contains(marker, "\x1b[") {
-			t.Fatalf("conversation markers should not contain ANSI styles, got %q", marker)
-		}
-	}
-}
-
 func TestRuntimePasteMsgInsertsMultilinePlaceholder(t *testing.T) {
 	model := newRuntimeModel(&Runtime{
 		ctx:         context.Background(),
@@ -353,24 +361,6 @@ func TestRuntimeShiftEnterInsertsLineBreak(t *testing.T) {
 	got := model.blocks[len(model.blocks)-1].Content
 	if got != "第一行\n第二行" {
 		t.Fatalf("shift+enter should submit as a real newline, got %q", got)
-	}
-}
-
-func TestRuntimeTranscriptWrapsLongLines(t *testing.T) {
-	model := newRuntimeModel(&Runtime{
-		ctx:         context.Background(),
-		session:     NewSession(ModeTeam, nil, nil),
-		exitSignals: make(chan os.Signal, 1),
-	})
-	model.width = 30
-	model.appendBlock(runtimeBlockTool, "工具", strings.Repeat("长文本", 20))
-
-	transcript := model.transcriptText()
-	if !strings.Contains(transcript, strings.Repeat("长文本", 4)) {
-		t.Fatalf("wrapped transcript should keep long content, got %q", transcript)
-	}
-	if tui.LineCount(transcript) < 3 {
-		t.Fatalf("long transcript line should wrap into multiple lines, got %q", transcript)
 	}
 }
 

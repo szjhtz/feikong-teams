@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 )
@@ -14,6 +15,8 @@ var (
 	InlinePasteTagRe       = regexp.MustCompile(`\[粘贴\d+行内容\]`)
 	InlinePasteTagSuffixRe = regexp.MustCompile(`\s?\[粘贴\d+行内容\]\s?$`)
 	InlineLineBreakTagRe   = regexp.MustCompile(regexp.QuoteMeta(InlineLineBreakTag))
+	InlineMentionTokenRe   = regexp.MustCompile(`(^|[\s]|\x1b\[[0-9;]*m)(@[^\s\x1b]+)`)
+	InlineFileTokenRe      = regexp.MustCompile(`(^|[\s]|\x1b\[[0-9;]*m)(#[^\s\x1b]+)`)
 )
 
 func InsertInlinePaste(value string, cursor int, pastes []string, content string) (string, int, []string) {
@@ -73,6 +76,55 @@ func DeleteInlinePasteBeforeCursor(value string, cursor int, pastes []string) (s
 	return value, cursor, pastes, true
 }
 
+func DeleteInlineTokenNearCursor(value string, cursor int) (string, int, bool) {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	if cursor == 0 {
+		return value, cursor, false
+	}
+
+	anchor := cursor
+	for anchor > 0 && unicode.IsSpace(runes[anchor-1]) {
+		anchor--
+	}
+	if anchor == 0 {
+		return value, cursor, false
+	}
+
+	start := anchor - 1
+	for start > 0 && !unicode.IsSpace(runes[start-1]) {
+		start--
+	}
+	end := anchor
+	for end < len(runes) && !unicode.IsSpace(runes[end]) {
+		end++
+	}
+
+	token := string(runes[start:end])
+	if len([]rune(token)) < 2 || (runes[start] != '@' && runes[start] != '#') {
+		return value, cursor, false
+	}
+
+	deleteStart := start
+	if deleteStart > 0 && unicode.IsSpace(runes[deleteStart-1]) {
+		deleteStart--
+	}
+	deleteEnd := end
+	if cursor > end {
+		deleteEnd = cursor
+	}
+
+	newRunes := make([]rune, 0, len(runes)-(deleteEnd-deleteStart))
+	newRunes = append(newRunes, runes[:deleteStart]...)
+	newRunes = append(newRunes, runes[deleteEnd:]...)
+	return string(newRunes), deleteStart, true
+}
+
 func ExpandInlineInput(text string, pastes []string) string {
 	if len(pastes) > 0 {
 		idx := 0
@@ -89,11 +141,31 @@ func ExpandInlineInput(text string, pastes []string) string {
 }
 
 func RenderInlineInputValue(view string) string {
-	tagStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("178")).Bold(true)
+	tagStyle := inlineTokenStyle("178")
+	mentionStyle := inlineTokenStyle("6")
+	fileStyle := inlineTokenStyle("10")
 	view = InlinePasteTagRe.ReplaceAllStringFunc(view, func(match string) string {
 		return tagStyle.Render(match)
+	})
+	view = InlineMentionTokenRe.ReplaceAllStringFunc(view, func(match string) string {
+		return renderInlinePrefixedToken(match, "@", mentionStyle)
+	})
+	view = InlineFileTokenRe.ReplaceAllStringFunc(view, func(match string) string {
+		return renderInlinePrefixedToken(match, "#", fileStyle)
 	})
 	return InlineLineBreakTagRe.ReplaceAllStringFunc(view, func(match string) string {
 		return "\n  "
 	})
+}
+
+func inlineTokenStyle(foreground string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(foreground)).Bold(true)
+}
+
+func renderInlinePrefixedToken(match string, prefix string, style lipgloss.Style) string {
+	index := strings.Index(match, prefix)
+	if index < 0 {
+		return match
+	}
+	return match[:index] + style.Render(match[index:])
 }
