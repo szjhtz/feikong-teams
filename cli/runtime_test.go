@@ -157,8 +157,8 @@ func TestRuntimeNativeCommandsOpenPickers(t *testing.T) {
 		command string
 		kind    runtimePickerKind
 	}{
-		{command: "clear_chat_history", kind: runtimePickerConfirm},
-		{command: "clear_memory", kind: runtimePickerConfirm},
+		{command: "/clear_chat_history", kind: runtimePickerConfirm},
+		{command: "/clear_memory", kind: runtimePickerConfirm},
 	}
 
 	for _, tt := range tests {

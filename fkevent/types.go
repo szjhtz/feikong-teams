@@ -103,4 +103,7 @@ type Event struct {
 	ParentToolName   string            `json:"parent_tool_name,omitempty"`
 	ActionType       ActionType        `json:"action_type,omitempty"`
 	Error            string            `json:"error,omitempty"`
+	PromptTokens     int               `json:"prompt_tokens,omitempty"`
+	CompletionTokens int               `json:"completion_tokens,omitempty"`
+	TotalTokens      int               `json:"total_tokens,omitempty"`
 }

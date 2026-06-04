@@ -1,9 +1,15 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
+)
+
+const (
+	defaultToolDisplayName   = "tool"
+	defaultToolResultContent = "完成"
 )
 
 type WelcomeInfo struct {
@@ -25,9 +31,39 @@ func DoneMarker() string {
 func RenderRuntimeInputBox(width int, content string, hint string) string {
 	width = max(20, width)
 	line := dividerStyle().Render(strings.Repeat("─", width))
+	bottomLine := dividerStyle().Render(strings.Repeat("─", width))
 	inputLine := strings.Join(WrapStyledLine(content, width), "\n")
 	hintLine := dimStyle().Render(hint)
-	return strings.Join([]string{line, inputLine, line, hintLine}, "\n")
+	return strings.Join([]string{line, inputLine, bottomLine, hintLine}, "\n")
+}
+
+func JumpToBottomButton() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("15")).
+		Background(lipgloss.Color("236")).
+		Render(" Jump to bottom (End) ↓ ")
+}
+
+func CenterLine(content string, width int) string {
+	if width <= 0 {
+		return content
+	}
+	contentWidth := CellWidth(StripANSI(content))
+	if contentWidth >= width {
+		return content
+	}
+	return strings.Repeat(" ", (width-contentWidth)/2) + content
+}
+
+func RightLine(content string, width int) string {
+	if width <= 0 {
+		return content
+	}
+	contentWidth := CellWidth(StripANSI(content))
+	if contentWidth >= width {
+		return content
+	}
+	return strings.Repeat(" ", width-contentWidth) + content
 }
 
 func RenderRuntimeScreen(content string, width int, height int, gutter int) string {
@@ -194,6 +230,33 @@ func Status(text string) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(text)
 }
 
+func ToolCall(name string, args string) string {
+	name = emptyAs(name, defaultToolDisplayName)
+	args = toolArgsSummary(args)
+	label := name
+	if args != "" {
+		label = name + "(" + truncateRunes(args, 88) + ")"
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("● ") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true).Render(label)
+}
+
+func ToolResult(content string) string {
+	lines, hidden := toolResultPreviewLines(content, 5)
+	rendered := make([]string, 0, len(lines)+1)
+	for i, line := range lines {
+		prefix := "  │ "
+		if i == 0 {
+			prefix = "  └ "
+		}
+		rendered = append(rendered, dimStyle().Render(prefix+line))
+	}
+	if hidden > 0 {
+		rendered = append(rendered, dimStyle().Render("    ... 隐藏 "+formatInt(hidden)+" 行"))
+	}
+	return strings.Join(rendered, "\n")
+}
+
 func Interrupted(text string) string {
 	return dimStyle().Render("  └─ " + text)
 }
@@ -253,4 +316,33 @@ func userLineStyle(width int) lipgloss.Style {
 
 func userTextStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
+}
+
+func toolResultPreviewLines(content string, limit int) ([]string, int) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = strings.ReplaceAll(content, "\r", "\n")
+	content = strings.TrimSpace(content)
+	if content == "" {
+		content = defaultToolResultContent
+	}
+	rawLines := strings.Split(content, "\n")
+	lines := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		line = strings.TrimRight(line, " \t")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, truncateRunes(line, 120))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, defaultToolResultContent)
+	}
+	if limit <= 0 || len(lines) <= limit {
+		return lines, 0
+	}
+	return lines[:limit], len(lines) - limit
+}
+
+func formatInt(n int) string {
+	return strconv.Itoa(n)
 }

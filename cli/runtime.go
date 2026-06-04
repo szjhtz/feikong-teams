@@ -34,6 +34,8 @@ const (
 	runtimeExitConfirmTick   = time.Second
 	runtimeSelectionNotice   = 2 * time.Second
 	runtimeHorizontalGutter  = 1
+	runtimeDefaultAgentName  = "assistant"
+	runtimeDefaultToolName   = "tool"
 )
 
 type Runtime struct {
@@ -130,6 +132,7 @@ type runtimeModel struct {
 	running      bool
 	cancelling   bool
 	status       string
+	totalTokens  int
 	exitUntil    time.Time
 	copiedUntil  time.Time
 	welcome      tui.WelcomeInfo
@@ -492,6 +495,11 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft && m.hitJumpToBottom(mouse) {
+			m.scrollOffset = 0
+			m.selection.Active = false
+			return m, nil
+		}
 		if mouse.Button == tea.MouseLeft && mouse.Y >= 0 && mouse.Y < m.viewHeight() {
 			m.selection = tui.NewTextSelection(m.mouseTextPoint(mouse))
 		}
@@ -1132,6 +1140,26 @@ func (m runtimeModel) mouseTextPoint(mouse tea.Mouse) tui.TextPoint {
 	}
 }
 
+func (m runtimeModel) hitJumpToBottom(mouse tea.Mouse) bool {
+	if m.scrollOffset <= 0 {
+		return false
+	}
+	y, startX, endX := m.jumpToBottomBounds()
+	return mouse.Y == y && mouse.X >= startX && mouse.X < endX
+}
+
+func (m runtimeModel) jumpToBottomBounds() (int, int, int) {
+	bottomStart := m.bodyHeightForBottom(tui.LineCount(m.renderBottom()))
+	lineOffset := 0
+	if m.picker != nil {
+		lineOffset += tui.LineCount(m.renderPicker())
+	}
+	labelWidth := tui.CellWidth(tui.StripANSI(tui.JumpToBottomButton()))
+	contentWidth := m.contentWidth()
+	startX := runtimeHorizontalGutter + max(0, (contentWidth-labelWidth)/2)
+	return bottomStart + lineOffset, startX, startX + labelWidth
+}
+
 func (m runtimeModel) screenLines() []string {
 	return strings.Split(m.screenContent(), "\n")
 }
@@ -1223,7 +1251,7 @@ func (m runtimeModel) renderBottom() string {
 		}
 	}
 	if m.scrollOffset > 0 {
-		fmt.Fprintf(&sb, "%s\n", tui.Dim(fmt.Sprintf("已上翻 %d 行 · 滚轮向下或 End 回到底部", m.scrollOffset)))
+		fmt.Fprintf(&sb, "%s\n", tui.CenterLine(tui.JumpToBottomButton(), m.contentWidth()))
 	}
 	if m.isCopiedNoticeVisible() {
 		fmt.Fprintf(&sb, "%s\n", tui.Dim(tui.CopiedNotice(m.selection.Copied)))
@@ -1237,6 +1265,9 @@ func (m runtimeModel) renderBottom() string {
 			seconds = 1
 		}
 		fmt.Fprintf(&sb, "%s\n", tui.Dim("再按 ")+tui.Key("Ctrl+C")+tui.Dim(" 退出 · ")+tui.Dim(fmt.Sprintf("%ds", seconds)))
+	}
+	if tokenStatus := m.tokenStatus(); tokenStatus != "" {
+		fmt.Fprintf(&sb, "%s\n", tui.RightLine(tui.Dim(tokenStatus), m.contentWidth()))
 	}
 	sb.WriteString(m.renderInputBox())
 	return sb.String()
@@ -1258,6 +1289,13 @@ func (m runtimeModel) inputHint() string {
 		"# 文件",
 		"/ 命令",
 	}, " · ")
+}
+
+func (m runtimeModel) tokenStatus() string {
+	if m.totalTokens <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d tokens", m.totalTokens)
 }
 
 func (m runtimeModel) renderPicker() string {
@@ -1322,7 +1360,7 @@ func (m runtimeModel) renderBlock(block runtimeBlock) string {
 	case runtimeBlockSystem:
 		return tui.System(block.Title) + "\n" + m.runtimeRenderMarkdown(block.Content)
 	case runtimeBlockTool:
-		return tui.Tool(block.Content)
+		return block.Content
 	default:
 		return m.runtimeRenderMarkdown(block.Content)
 	}
@@ -1365,9 +1403,12 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 	if fkevent.IsInternalContinueContent(event.Content) {
 		return
 	}
+	if event.TotalTokens > 0 {
+		m.totalTokens = event.TotalTokens
+	}
 	agent := event.AgentName
 	if agent == "" {
-		agent = "assistant"
+		agent = runtimeDefaultAgentName
 	}
 	switch event.Type {
 	case fkevent.EventReasoningChunk:
@@ -1385,25 +1426,23 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 	case fkevent.EventToolCallsPreparing:
 		m.activeOutput = -1
 		m.activeReason = -1
-		m.appendBlock(runtimeBlockTool, "工具", runtimeToolLine("准备工具", event.ToolName, event.Content))
+		m.appendBlock(runtimeBlockTool, "", runtimeToolPreparingLine(event.ToolName, event.Content))
 	case fkevent.EventToolCalls, fkevent.EventToolCallsArgsDelta:
 		m.activeOutput = -1
 		m.activeReason = -1
 		for _, tool := range event.ToolCalls {
-			m.appendBlock(runtimeBlockTool, "工具", runtimeToolCallSummary(tool))
+			m.appendBlock(runtimeBlockTool, "", runtimeToolCallSummary(tool))
 		}
 	case fkevent.EventToolResult, fkevent.EventToolResultChunk:
 		m.activeOutput = -1
 		m.activeReason = -1
-		content := event.Content
-		if len([]rune(content)) > 180 {
-			content = string([]rune(content)[:180]) + "..."
-		}
-		m.appendBlock(runtimeBlockTool, "工具结果", runtimeToolLine("工具结果", event.ToolName, content))
+		m.appendBlock(runtimeBlockTool, "", runtimeToolResultLine(event.ToolName, event.Content))
 	case fkevent.EventAction:
 		m.activeOutput = -1
 		m.activeReason = -1
-		m.appendBlock(runtimeBlockSystem, string(event.ActionType), event.Content)
+		if event.ActionType != "" || event.Content != "" {
+			m.appendBlock(runtimeBlockSystem, string(event.ActionType), event.Content)
+		}
 	case fkevent.EventError:
 		msg := event.Error
 		if msg == "" {
@@ -1440,17 +1479,25 @@ func runtimeSelectionCopiedTickCmd() tea.Cmd {
 
 func runtimeToolCallSummary(tool schema.ToolCall) string {
 	display := agenttool.FormatToolDisplay(tool.Function.Name)
-	return runtimeToolLine("工具调用", display.DisplayName, tool.Function.Arguments)
+	return tui.ToolCall(display.DisplayName, tool.Function.Arguments)
 }
 
-func runtimeToolLine(label, name, detail string) string {
+func runtimeToolPreparingLine(name, detail string) string {
+	return runtimeToolCallLine(name, detail)
+}
+
+func runtimeToolCallLine(name, detail string) string {
 	if name == "" {
-		name = "tool"
+		name = runtimeDefaultToolName
 	}
 	if detail == "" {
-		return fmt.Sprintf("• %s: %s", label, name)
+		return tui.ToolCall(name, "")
 	}
-	return fmt.Sprintf("• %s: %s(%s)", label, name, truncateRuntimeText(detail, 120))
+	return tui.ToolCall(name, detail)
+}
+
+func runtimeToolResultLine(name, detail string) string {
+	return tui.ToolResult(detail)
 }
 
 func truncateRuntimeText(s string, limit int) string {

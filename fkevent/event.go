@@ -4,6 +4,7 @@ package fkevent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fkteams/agenttool"
 	"fmt"
@@ -293,6 +294,10 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 		ToolName:         msg.ToolName,
 		ToolCallID:       msg.ToolCallID,
 	}
+	if eventType == EventToolResult {
+		nEvent.Content = normalizeToolResultContent(nEvent.Content)
+	}
+	attachTokenUsage(&nEvent, msg.ResponseMeta)
 	if len(msg.ToolCalls) > 0 {
 		nEvent.ToolCalls = filterVisibleToolCalls(msg.ToolCalls)
 		if nEvent.Content == "" && nEvent.ReasoningContent == "" && len(nEvent.ToolCalls) == 0 {
@@ -456,6 +461,7 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 			RunPath:   formatRunPath(event.RunPath),
 			Content:   chunk.ReasoningContent,
 		}
+		attachTokenUsage(&nEvent, chunk.ResponseMeta)
 		ss.applyStreamFields(&nEvent, ContentKindReasoning, "")
 		scope.apply(&nEvent)
 		if err := handleEvent(ctx, nEvent); err != nil {
@@ -484,6 +490,10 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 			ToolName:   chunk.ToolName,
 			ToolCallID: chunk.ToolCallID,
 		}
+		if eventType == EventToolResultChunk {
+			nEvent.Content = normalizeToolResultContent(nEvent.Content)
+		}
+		attachTokenUsage(&nEvent, chunk.ResponseMeta)
 		kind := ContentKindOutput
 		suffix := ""
 		if eventType == EventToolResultChunk {
@@ -506,7 +516,71 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 		}
 	}
 
+	if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil &&
+		chunk.Content == "" && chunk.ReasoningContent == "" && len(chunk.ToolCalls) == 0 {
+		nEvent := Event{
+			Type:      EventAction,
+			Phase:     EventPhaseInfo,
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+		}
+		attachTokenUsage(&nEvent, chunk.ResponseMeta)
+		scope.apply(&nEvent)
+		if err := handleEvent(ctx, nEvent); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func attachTokenUsage(event *Event, meta *schema.ResponseMeta) {
+	if meta == nil || meta.Usage == nil {
+		return
+	}
+	event.PromptTokens = meta.Usage.PromptTokens
+	event.CompletionTokens = meta.Usage.CompletionTokens
+	event.TotalTokens = meta.Usage.TotalTokens
+}
+
+func normalizeToolResultContent(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return content
+	}
+	for _, key := range []string{"content", "result", "output", "text"} {
+		if text := toolResultValueText(payload[key]); text != "" {
+			return text
+		}
+	}
+	return content
+}
+
+func toolResultValueText(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			if text := toolResultValueText(item); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	case map[string]any:
+		for _, key := range []string{"text", "content", "result", "output"} {
+			if text := toolResultValueText(v[key]); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
 }
 
 // collectToolCallChunks 收集工具调用分片，节流发送参数增量
