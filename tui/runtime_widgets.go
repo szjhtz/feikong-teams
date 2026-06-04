@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	defaultToolDisplayName   = "tool"
-	defaultToolResultContent = "完成"
+	defaultToolDisplayName = "tool"
 )
 
 type ToolStatus string
@@ -249,19 +248,18 @@ func ToolCall(name string, args string, status ToolStatus) string {
 		lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true).Render(label)
 }
 
-func ToolResult(name string, content string, status ToolStatus) string {
-	lines, hidden := toolResultPreviewLines(content, 5)
-	rendered := make([]string, 0, len(lines)+2)
-	rendered = append(rendered, ToolCall(name, "", status))
-	for i, line := range lines {
-		prefix := "  │ "
-		if i == 0 {
-			prefix = "  └ "
-		}
-		rendered = append(rendered, dimStyle().Render(prefix+line))
+func ToolResult(name string, args string, content string, status ToolStatus) string {
+	if strings.TrimSpace(content) == "" {
+		return ToolCall(name, args, status)
 	}
-	if hidden > 0 {
-		rendered = append(rendered, dimStyle().Render("    ... 隐藏 "+formatInt(hidden)+" 行"))
+	line, hidden := toolResultPreviewLine(content)
+	rendered := make([]string, 0, 3)
+	rendered = append(rendered, ToolCall(name, args, status))
+	if line != "" {
+		if hidden > 0 {
+			line += "  ... 隐藏 " + formatInt(hidden) + " 行"
+		}
+		rendered = append(rendered, dimStyle().Render("  └ "+line))
 	}
 	return strings.Join(rendered, "\n")
 }
@@ -340,29 +338,25 @@ func userTextStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
 }
 
-func toolResultPreviewLines(content string, limit int) ([]string, int) {
+func toolResultPreviewLine(content string) (string, int) {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	content = strings.ReplaceAll(content, "\r", "\n")
 	content = strings.TrimSpace(content)
-	if content == "" {
-		content = defaultToolResultContent
-	}
 	rawLines := strings.Split(content, "\n")
-	lines := make([]string, 0, len(rawLines))
+	var parts []string
+	hidden := 0
 	for _, line := range rawLines {
-		line = strings.TrimRight(line, " \t")
+		line = strings.TrimSpace(line)
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		lines = append(lines, truncateRunes(line, 120))
+		if len(parts) < 2 {
+			parts = append(parts, strings.Join(strings.Fields(line), " "))
+		} else {
+			hidden++
+		}
 	}
-	if len(lines) == 0 {
-		lines = append(lines, defaultToolResultContent)
-	}
-	if limit <= 0 || len(lines) <= limit {
-		return lines, 0
-	}
-	return lines[:limit], len(lines) - limit
+	return truncateRunes(strings.Join(parts, "  "), 160), hidden
 }
 
 func formatInt(n int) string {

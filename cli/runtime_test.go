@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestRuntimeCtrlCCancelsRunningTask(t *testing.T) {
@@ -361,6 +362,138 @@ func TestRuntimeShiftEnterInsertsLineBreak(t *testing.T) {
 	got := model.blocks[len(model.blocks)-1].Content
 	if got != "第一行\n第二行" {
 		t.Fatalf("shift+enter should submit as a real newline, got %q", got)
+	}
+}
+
+func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	firstIndex := 0
+	secondIndex := 1
+
+	model.applyEvent(fkevent.Event{
+		Type:      fkevent.EventToolCalls,
+		AgentName: "coordinator",
+		ToolCalls: []schema.ToolCall{
+			{
+				ID:    "call_first",
+				Index: &firstIndex,
+				Function: schema.FunctionCall{
+					Name:      "ask_fkagent_researcher",
+					Arguments: `{"task":"first task"}`,
+				},
+			},
+			{
+				ID:    "call_second",
+				Index: &secondIndex,
+				Function: schema.FunctionCall{
+					Name:      "ask_fkagent_researcher",
+					Arguments: `{"task":"second task"}`,
+				},
+			},
+		},
+	})
+	model.applyEvent(fkevent.Event{
+		Type:         fkevent.EventStreamChunk,
+		AgentName:    "researcher",
+		Content:      "second output",
+		MemberCallID: "call_second",
+		MemberName:   "researcher",
+	})
+	model.applyEvent(fkevent.Event{
+		Type:         fkevent.EventStreamChunk,
+		AgentName:    "researcher",
+		Content:      "first output",
+		MemberCallID: "call_first",
+		MemberName:   "researcher",
+	})
+
+	first := model.members["call_first"]
+	second := model.members["call_second"]
+	if first == nil || second == nil {
+		t.Fatalf("expected separate members, got keys %#v", model.members)
+	}
+	if got := first.Blocks[0].Content; got != "first output" {
+		t.Fatalf("first member content = %q", got)
+	}
+	if got := second.Blocks[0].Content; got != "second output" {
+		t.Fatalf("second member content = %q", got)
+	}
+	if got := model.memberTools["member:0"]; got != "" {
+		t.Fatalf("unstable member order alias should not be registered, got %q", got)
+	}
+	if got := model.memberTools["member:1"]; got != "" {
+		t.Fatalf("unstable member order alias should not be registered, got %q", got)
+	}
+}
+
+func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	callIndex := 0
+
+	model.applyEvent(fkevent.Event{
+		Type:          fkevent.EventToolCallsPreparing,
+		ToolName:      "ask_fkagent_researcher",
+		ToolCallID:    "call_full",
+		ToolCallIndex: &callIndex,
+		Content:       "{",
+	})
+	model.applyEvent(fkevent.Event{
+		Type:          fkevent.EventToolCallsArgsDelta,
+		ToolName:      "ask_fkagent_researcher",
+		ToolCallID:    "call_full",
+		ToolCallIndex: &callIndex,
+		Content:       `{"request": "`,
+	})
+	if len(model.members) != 0 {
+		t.Fatalf("partial agent tool args should not create members, got %#v", model.members)
+	}
+
+	model.applyEvent(fkevent.Event{
+		Type:      fkevent.EventToolCalls,
+		AgentName: "coordinator",
+		ToolCalls: []schema.ToolCall{{
+			ID:    "call_full",
+			Index: &callIndex,
+			Function: schema.FunctionCall{
+				Name:      "ask_fkagent_researcher",
+				Arguments: `{"request":"完整任务目标"}`,
+			},
+		}},
+	})
+
+	member := model.members["call_full"]
+	if member == nil {
+		t.Fatalf("complete agent tool call should create member, got %#v", model.members)
+	}
+	if member.Task != "完整任务目标" {
+		t.Fatalf("member task = %q, want complete request", member.Task)
+	}
+}
+
+func TestRuntimeUnnamedAgentArgsDeltaDoesNotRenderToolBlock(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	blockCount := len(model.blocks)
+
+	model.applyEvent(fkevent.Event{
+		Type:        fkevent.EventToolCallsArgsDelta,
+		ToolCallRef: "tool|stream|seq:1|coordinator|idx:0",
+		Content:     `{"request":"partial`,
+	})
+
+	if len(model.blocks) != blockCount {
+		t.Fatalf("unnamed agent args delta should not render as ordinary tool, got %#v", model.blocks[blockCount:])
 	}
 }
 

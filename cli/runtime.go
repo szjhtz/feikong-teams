@@ -575,6 +575,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.PasteMsg:
+		if m.memberView != "" {
+			return m, nil
+		}
 		content := msg.Content
 		if strings.ContainsAny(content, "\n\r") {
 			m.exitUntil = time.Time{}
@@ -585,6 +588,12 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "esc", "backspace", "left":
 				m.memberView = ""
+				return m, nil
+			case "up":
+				m.scrollCurrentView(runtimeWheelLines)
+				return m, nil
+			case "down":
+				m.scrollCurrentView(-runtimeWheelLines)
 				return m, nil
 			case "pgup":
 				m.scrollCurrentView(max(1, m.bodyHeight()/2))
@@ -1531,8 +1540,15 @@ func (m runtimeModel) renderBottom() string {
 }
 
 func (m runtimeModel) renderInputBox() string {
+	if m.memberView != "" {
+		return tui.RenderRuntimeInputBox(max(24, m.contentWidth()), m.renderMemberDetailInputValue(), m.memberDetailHint())
+	}
 	content := m.renderInputValue()
 	return tui.RenderRuntimeInputBox(max(24, m.contentWidth()), content, m.inputHint())
+}
+
+func (m runtimeModel) renderMemberDetailInputValue() string {
+	return tui.Dim("当前为成员详情，返回主界面后继续输入")
 }
 
 func (m runtimeModel) renderInputValue() string {
@@ -1542,6 +1558,16 @@ func (m runtimeModel) renderInputValue() string {
 		rendered += tui.Dim(hint)
 	}
 	return rendered
+}
+
+func (m runtimeModel) memberDetailHint() string {
+	return strings.Join([]string{
+		"成员详情",
+		"Esc/Backspace 返回",
+		"↑↓/PgUp/PgDn 滚动",
+		"End 到底部",
+		"Ctrl+C 退出",
+	}, " · ")
 }
 
 func (m runtimeModel) inputHint() string {
@@ -1698,7 +1724,7 @@ func runtimeRenderToolBlock(block runtimeBlock) string {
 		block.ToolName = runtimeDefaultToolName
 	}
 	if block.ToolHasResult {
-		return tui.ToolResult(block.ToolName, block.ToolResult, block.ToolStatus)
+		return tui.ToolResult(block.ToolName, block.ToolArgs, block.ToolResult, block.ToolStatus)
 	}
 	return tui.ToolCall(block.ToolName, block.ToolArgs, block.ToolStatus)
 }
@@ -1733,6 +1759,10 @@ func (m *runtimeModel) appendLoadedHistory() {
 }
 
 func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
+	if msg.IsMemberEvent || msg.MemberCallID != "" {
+		m.appendHistoryMemberMessage(msg)
+		return
+	}
 	agent := msg.AgentName
 	if agent == "" {
 		agent = runtimeDefaultAgentName
@@ -1773,10 +1803,75 @@ func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
 	}
 }
 
+func (m *runtimeModel) appendHistoryMemberMessage(msg eventlog.AgentMessage) {
+	key := msg.MemberCallID
+	if key == "" {
+		key = msg.SpanID
+	}
+	if key == "" {
+		key = msg.AgentName + "|" + msg.RunPath
+	}
+	name := msg.MemberName
+	if name == "" {
+		name = msg.AgentName
+	}
+	member := m.ensureHistoryMember(key, name, "", "done")
+	if member == nil {
+		return
+	}
+	for _, event := range msg.Events {
+		switch event.Type {
+		case eventlog.MsgTypeReasoning:
+			if event.Content != "" {
+				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: name, Content: event.Content})
+			}
+		case eventlog.MsgTypeText:
+			if event.Content != "" {
+				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockAssistant, Title: name, Content: event.Content})
+			}
+		case eventlog.MsgTypeToolCall:
+			if event.ToolCall != nil {
+				m.appendHistoryMemberToolCall(member, event.ToolCall)
+			}
+		case eventlog.MsgTypeAction:
+			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
+				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockSystem, Title: string(event.Action.ActionType), Content: event.Action.Content})
+			}
+		case eventlog.MsgTypeError:
+			if event.Content != "" {
+				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockError, Title: name, Content: event.Content})
+			}
+		}
+	}
+	member.Status = "done"
+	member.markDirty()
+	m.syncMemberSummary(member)
+}
+
 func (m *runtimeModel) appendHistoryToolCall(tool *eventlog.ToolCallRecord) {
 	name := tool.DisplayName
 	if name == "" {
 		name = tool.Name
+	}
+	if tool.Kind == agenttool.ToolKindAgent {
+		key := tool.ID
+		if key == "" {
+			key = tool.Ref
+		}
+		if key == "" {
+			key = tool.SpanID
+		}
+		member := m.ensureHistoryMember(key, tool.Target, runtimeAgentTaskFromCompleteArgs(tool.Arguments), "done")
+		if member == nil {
+			return
+		}
+		m.registerMemberTool(member.Key, tool.Ref, tool.ID, tool.SpanID, tool.Name)
+		if strings.TrimSpace(tool.Result) != "" && len(member.Blocks) == 0 {
+			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockAssistant, Title: member.Name, Content: tool.Result})
+			member.markDirty()
+		}
+		m.syncMemberSummary(member)
+		return
 	}
 	block := runtimeBlock{
 		Kind:       runtimeBlockTool,
@@ -1790,6 +1885,81 @@ func (m *runtimeModel) appendHistoryToolCall(tool *eventlog.ToolCallRecord) {
 		block.ToolHasResult = true
 	}
 	m.appendHistoryBlock(block)
+}
+
+func (m *runtimeModel) appendHistoryMemberToolCall(member *runtimeMemberState, tool *eventlog.ToolCallRecord) {
+	if member == nil || tool == nil {
+		return
+	}
+	name := tool.DisplayName
+	if name == "" {
+		name = tool.Name
+	}
+	block := runtimeBlock{
+		Kind:       runtimeBlockTool,
+		ToolKey:    tool.Ref,
+		ToolName:   emptyRuntimeToolName(name),
+		ToolArgs:   tool.Arguments,
+		ToolStatus: tui.ToolStatusDone,
+	}
+	if strings.TrimSpace(tool.Result) != "" {
+		block.ToolResult = tool.Result
+		block.ToolHasResult = true
+	}
+	member.Blocks = append(member.Blocks, block)
+	member.ToolCount++
+	member.markDirty()
+}
+
+func (m *runtimeModel) ensureHistoryMember(key, name, task, status string) *runtimeMemberState {
+	if key == "" {
+		return nil
+	}
+	if m.members == nil {
+		m.members = make(map[string]*runtimeMemberState)
+	}
+	member := m.members[key]
+	if member == nil {
+		member = &runtimeMemberState{
+			Key:          key,
+			Name:         emptyRuntimeMemberName(name),
+			Status:       status,
+			Task:         task,
+			ActiveOutput: -1,
+			ActiveReason: -1,
+			RenderDirty:  true,
+		}
+		if member.Status == "" {
+			member.Status = "done"
+		}
+		m.members[key] = member
+		m.syncMemberSummary(member)
+		return member
+	}
+	if name != "" {
+		member.Name = name
+	}
+	if shouldReplaceRuntimeMemberTask(member.Task, task) {
+		member.Task = task
+	}
+	if status != "" {
+		member.Status = status
+	}
+	member.markDirty()
+	m.syncMemberSummary(member)
+	return member
+}
+
+func shouldReplaceRuntimeMemberTask(current, next string) bool {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return false
+	}
+	current = strings.TrimSpace(current)
+	if current == "" {
+		return true
+	}
+	return strings.HasPrefix(current, "{") || strings.HasPrefix(current, "[")
 }
 
 func (m *runtimeModel) ensureMember(event fkevent.Event) *runtimeMemberState {
@@ -1847,7 +2017,7 @@ func (m *runtimeModel) ensureAgentToolMember(key, name, task string) *runtimeMem
 			Key:          key,
 			Name:         emptyRuntimeMemberName(name),
 			Status:       "running",
-			Task:         runtimeAgentTaskFromArgs(task),
+			Task:         runtimeAgentTaskFromCompleteArgs(task),
 			ActiveOutput: -1,
 			ActiveReason: -1,
 			RenderDirty:  true,
@@ -1860,11 +2030,9 @@ func (m *runtimeModel) ensureAgentToolMember(key, name, task string) *runtimeMem
 			}
 			member.Name = name
 		}
-		if member.Task == "" {
-			if parsed := runtimeAgentTaskFromArgs(task); parsed != "" {
-				member.Task = parsed
-				member.markDirty()
-			}
+		if parsed := runtimeAgentTaskFromCompleteArgs(task); shouldReplaceRuntimeMemberTask(member.Task, parsed) {
+			member.Task = parsed
+			member.markDirty()
 		}
 	}
 	m.registerMemberTool(key, key)
@@ -2164,15 +2332,7 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 	case fkevent.EventToolCallsPreparing:
 		m.activeOutput = -1
 		m.activeReason = -1
-		if display, ok := runtimeAgentToolDisplay(event.ToolName); ok {
-			aliases := runtimeAgentToolEventAliases(event)
-			key := runtimeAgentToolEventKey(event)
-			if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
-				key = mapped
-			}
-			if member := m.ensureAgentToolMember(key, display.Target, event.Content); member != nil {
-				m.registerMemberTool(member.Key, aliases...)
-			}
+		if _, ok := runtimeAgentToolDisplay(event.ToolName); ok {
 			return
 		}
 		m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
@@ -2182,29 +2342,20 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 		if event.Type == fkevent.EventToolCallsArgsDelta {
 			if member, _ := m.memberForToolEvent(event); member != nil {
 				member.Status = "running"
-				if member.Task == "" {
-					member.Task = runtimeAgentTaskFromArgs(event.Content)
-				}
 				m.syncMemberSummary(member)
 				return
 			}
-			if display, ok := runtimeAgentToolDisplay(event.ToolName); ok {
-				aliases := runtimeAgentToolEventAliases(event)
-				key := runtimeAgentToolEventKey(event)
-				if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
-					key = mapped
-				}
-				if member := m.ensureAgentToolMember(key, display.Target, event.Content); member != nil {
-					m.registerMemberTool(member.Key, aliases...)
-				}
+			if _, ok := runtimeAgentToolDisplay(event.ToolName); ok {
+				return
+			}
+			if event.ToolName == "" && runtimeLikelyPendingAgentToolArgs(event) {
 				return
 			}
 			m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
 			return
 		}
 		for _, tool := range event.ToolCalls {
-			display := agenttool.FormatToolDisplay(tool.Function.Name)
-			if display.Kind == agenttool.ToolKindAgent {
+			if display, ok := runtimeAgentToolDisplay(tool.Function.Name); ok {
 				aliases := runtimeAgentToolCallAliases(event, tool)
 				key := runtimeAgentToolCallKey(event, tool)
 				if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
@@ -2215,6 +2366,7 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 				}
 				continue
 			}
+			display := agenttool.FormatToolDisplay(tool.Function.Name)
 			key := runtimeToolCallKey(event, tool)
 			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
@@ -2334,7 +2486,7 @@ func (m *runtimeModel) applyAgentToolResult(event fkevent.Event) bool {
 			key = mapped
 		}
 		if key == "" {
-			key = "name:" + event.ToolName
+			return true
 		}
 		member = m.ensureAgentToolMember(key, display.Target, "")
 		if member == nil {
@@ -2431,6 +2583,23 @@ func runtimeAgentTaskFromArgs(args string) string {
 	return args
 }
 
+func runtimeAgentTaskFromCompleteArgs(args string) string {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(args), &payload); err != nil {
+		return ""
+	}
+	for _, key := range []string{"request", "task", "goal", "objective", "description"} {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func runtimeAgentToolEventAliases(event fkevent.Event) []string {
 	aliases := []string{
 		event.SpanID,
@@ -2440,10 +2609,6 @@ func runtimeAgentToolEventAliases(event fkevent.Event) []string {
 	if key := runtimeToolEventKey(event); isRuntimeStableToolAlias(key) {
 		aliases = append(aliases, key)
 	}
-	if event.ToolCallIndex != nil {
-		idx := *event.ToolCallIndex
-		aliases = append(aliases, fmt.Sprintf("member:%d", idx))
-	}
 	return compactRuntimeAliases(aliases)
 }
 
@@ -2451,10 +2616,23 @@ func runtimeAgentToolEventKey(event fkevent.Event) string {
 	if event.SpanID != "" {
 		return event.SpanID
 	}
+	if event.ToolCallRef != "" {
+		return event.ToolCallRef
+	}
 	if event.ToolCallID != "" {
 		return event.ToolCallID
 	}
-	return runtimeToolEventKey(event)
+	if event.ToolCallIndex != nil && event.ParentSpanID != "" {
+		return fmt.Sprintf("%s|idx:%d", event.ParentSpanID, *event.ToolCallIndex)
+	}
+	return ""
+}
+
+func runtimeLikelyPendingAgentToolArgs(event fkevent.Event) bool {
+	if event.Type != fkevent.EventToolCallsArgsDelta {
+		return false
+	}
+	return event.ToolCallRef != "" || event.ToolCallID != "" || event.SpanID != ""
 }
 
 func runtimeAgentToolCallAliases(event fkevent.Event, tool schema.ToolCall) []string {
@@ -2469,7 +2647,6 @@ func runtimeAgentToolCallAliases(event fkevent.Event, tool schema.ToolCall) []st
 	}
 	if tool.Index != nil {
 		idx := *tool.Index
-		aliases = append(aliases, fmt.Sprintf("member:%d", idx))
 		if event.ToolCallRefs != nil {
 			aliases = append(aliases, event.ToolCallRefs[idx])
 		}
@@ -2485,6 +2662,9 @@ func runtimeAgentToolCallKey(event fkevent.Event, tool schema.ToolCall) string {
 	}
 	if tool.ID != "" {
 		return tool.ID
+	}
+	if tool.Index != nil && event.SpanID != "" {
+		return fmt.Sprintf("%s|idx:%d", event.SpanID, *tool.Index)
 	}
 	return runtimeToolCallKey(event, tool)
 }
@@ -2507,9 +2687,6 @@ func runtimeMemberEventAliases(event fkevent.Event) []string {
 		event.SpanID,
 		event.MemberCallID,
 		event.ParentToolCallID,
-	}
-	if event.MemberOrder != nil {
-		aliases = append(aliases, fmt.Sprintf("member:%d", *event.MemberOrder))
 	}
 	return compactRuntimeAliases(aliases)
 }
@@ -2580,12 +2757,6 @@ func runtimeMemberKey(event fkevent.Event) string {
 	}
 	if event.ParentToolCallID != "" {
 		return event.ParentToolCallID
-	}
-	if event.MemberOrder != nil {
-		return fmt.Sprintf("member:%d", *event.MemberOrder)
-	}
-	if event.MemberName != "" {
-		return "name:" + event.MemberName
 	}
 	return ""
 }
