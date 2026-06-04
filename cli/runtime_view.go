@@ -76,10 +76,6 @@ type runtimeStatusMsg struct {
 	text string
 }
 
-type runtimeLegacyCommandDoneMsg struct {
-	command string
-}
-
 type runtimeInternalErrorMsg struct {
 	err error
 }

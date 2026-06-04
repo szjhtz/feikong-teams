@@ -101,6 +101,110 @@ func TestRuntimeSlashOpensCommandPicker(t *testing.T) {
 	}
 }
 
+func TestRuntimeCommandPickerFillsInput(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.picker = newRuntimePicker(runtimePickerCommand, "选择命令", []runtimePickerItem{
+		{Label: "help - 帮助信息", Value: "help"},
+	}, 10)
+	blockCount := len(model.blocks)
+
+	updated, cmd := model.acceptPicker()
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("command picker should fill the input instead of executing the command")
+	}
+	if got := model.input.Value(); got != "/help" {
+		t.Fatalf("command picker should fill selected command, got %q", got)
+	}
+	if len(model.blocks) != blockCount {
+		t.Fatalf("command picker should not append transcript blocks before submission")
+	}
+}
+
+func TestRuntimeNativeCommandsOpenPickers(t *testing.T) {
+	tests := []struct {
+		command string
+		kind    runtimePickerKind
+	}{
+		{command: "clear_chat_history", kind: runtimePickerConfirm},
+		{command: "clear_memory", kind: runtimePickerConfirm},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			model := newRuntimeModel(&Runtime{
+				ctx:         context.Background(),
+				session:     NewSession(ModeTeam, nil, nil),
+				exitSignals: make(chan os.Signal, 1),
+			})
+
+			updated, _ := model.handleSubmit(tt.command)
+			model = updated.(runtimeModel)
+			if model.picker == nil || model.picker.kind != tt.kind {
+				t.Fatalf("%s should open %s picker, got %#v", tt.command, tt.kind, model.picker)
+			}
+		})
+	}
+}
+
+func TestRuntimeCommandIsRecordedAsUserInput(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+
+	updated, cmd := model.handleSubmit("/help")
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("/help should be handled by runtime command dispatch")
+	}
+	if len(model.blocks) < 2 {
+		t.Fatalf("/help should append user and result blocks, got %#v", model.blocks)
+	}
+	userBlock := model.blocks[len(model.blocks)-2]
+	if userBlock.Kind != runtimeBlockUser || userBlock.Content != "/help" {
+		t.Fatalf("/help should be recorded as user input, got %#v", userBlock)
+	}
+}
+
+func TestRuntimeCommandResultHasSpacingAfterUserInput(t *testing.T) {
+	for _, kind := range []runtimeBlockKind{runtimeBlockSystem, runtimeBlockError} {
+		if !shouldSpaceBeforeBlock(runtimeBlockUser, kind) {
+			t.Fatalf("%s result should have spacing after user input", kind)
+		}
+		if shouldSpaceBeforeBlock(runtimeBlockSystem, kind) {
+			t.Fatalf("%s result should not add extra spacing after system block", kind)
+		}
+	}
+}
+
+func TestRuntimeUnknownSlashCommandDoesNotSubmitQuery(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+
+	updated, cmd := model.handleSubmit("/unknown_command")
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("unknown slash command should not submit a query")
+	}
+	userBlock := model.blocks[len(model.blocks)-2]
+	if userBlock.Kind != runtimeBlockUser || userBlock.Content != "/unknown_command" {
+		t.Fatalf("unknown slash command should be recorded as user input, got %#v", userBlock)
+	}
+	last := model.blocks[len(model.blocks)-1]
+	if last.Kind != runtimeBlockError || !strings.Contains(last.Content, "unknown_command") {
+		t.Fatalf("unknown slash command should append an error block, got %#v", last)
+	}
+}
+
 func TestRuntimeMouseWheelScrollsTranscript(t *testing.T) {
 	model := newRuntimeModel(&Runtime{
 		ctx:         context.Background(),

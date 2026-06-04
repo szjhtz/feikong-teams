@@ -6,12 +6,15 @@ import (
 	"fkteams/agents"
 	"fkteams/agenttool"
 	"fkteams/config"
+	"fkteams/eventlog"
 	"fkteams/fkevent"
+	"fkteams/g"
+	"fkteams/memory"
 	"fkteams/runner"
+	"fkteams/tools/scheduler"
 	"fkteams/tui"
 	"fkteams/version"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,20 +40,17 @@ type Runtime struct {
 	session     *Session
 	runner      *adk.Runner
 	executor    *QueryExecutor
-	cmdHandler  *CommandHandler
 	exitSignals chan os.Signal
 	program     *tea.Program
 }
 
 func NewRuntime(ctx context.Context, session *Session, r *adk.Runner, exitSignals chan os.Signal) *Runtime {
 	executor := NewQueryExecutor(r, session.queryState)
-	modeSwitcher := &sessionModeSwitcher{session: session, ctx: ctx, executor: executor}
 	return &Runtime{
 		ctx:         ctx,
 		session:     session,
 		runner:      r,
 		executor:    executor,
-		cmdHandler:  NewCommandHandler(modeSwitcher),
 		exitSignals: exitSignals,
 	}
 }
@@ -112,37 +112,6 @@ func (r *Runtime) switchAgent(agentName string) (string, error) {
 	return fmt.Sprintf("已切换到智能体: %s (%s)", agentName, agentInfo.Description), nil
 }
 
-func (r *Runtime) runLegacyCommand(input string) tea.Cmd {
-	cmd := strings.TrimPrefix(input, "/")
-	return tea.Exec(runtimeFuncCommand{run: func() error {
-		result := r.cmdHandler.Handle(cmd)
-		if result == ResultExit {
-			r.requestExit()
-		}
-		return nil
-	}}, func(err error) tea.Msg {
-		if err != nil {
-			return runtimeInternalErrorMsg{err: err}
-		}
-		return runtimeLegacyCommandDoneMsg{command: cmd}
-	})
-}
-
-type runtimeFuncCommand struct {
-	run func() error
-}
-
-func (c runtimeFuncCommand) Run() error {
-	if c.run == nil {
-		return nil
-	}
-	return c.run()
-}
-
-func (c runtimeFuncCommand) SetStdin(_ io.Reader)  {}
-func (c runtimeFuncCommand) SetStdout(_ io.Writer) {}
-func (c runtimeFuncCommand) SetStderr(_ io.Writer) {}
-
 type runtimeModel struct {
 	runtime      *Runtime
 	input        textinput.Model
@@ -191,9 +160,14 @@ type runtimeBlock struct {
 type runtimePickerKind string
 
 const (
-	runtimePickerAgent   runtimePickerKind = "agent"
-	runtimePickerCommand runtimePickerKind = "command"
-	runtimePickerFile    runtimePickerKind = "file"
+	runtimePickerAgent          runtimePickerKind = "agent"
+	runtimePickerCommand        runtimePickerKind = "command"
+	runtimePickerFile           runtimePickerKind = "file"
+	runtimePickerSession        runtimePickerKind = "session"
+	runtimePickerMemoryDelete   runtimePickerKind = "memory_delete"
+	runtimePickerScheduleCancel runtimePickerKind = "schedule_cancel"
+	runtimePickerScheduleDelete runtimePickerKind = "schedule_delete"
+	runtimePickerConfirm        runtimePickerKind = "confirm"
 )
 
 type runtimePicker struct {
@@ -207,6 +181,7 @@ type runtimePicker struct {
 	filter     string
 	baseDir    string
 	currentDir string
+	action     string
 }
 
 type runtimePickerItem struct {
@@ -244,6 +219,71 @@ func newFilePicker(baseDir string) (*runtimePicker, error) {
 		return nil, err
 	}
 	return p, nil
+}
+
+func newSessionPicker() (*runtimePicker, error) {
+	items, err := runtimeSessionPickerItems()
+	if err != nil {
+		return nil, err
+	}
+	return newRuntimePicker(runtimePickerSession, "加载聊天历史", items, 12), nil
+}
+
+func newMemoryDeletePicker() (*runtimePicker, error) {
+	entries, err := runtimeMemoryEntries()
+	if err != nil {
+		return nil, err
+	}
+	items := make([]runtimePickerItem, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, runtimePickerItem{
+			Label: fmt.Sprintf("[%s] %s - %s", entry.Type, entry.Summary, entry.Detail),
+			Value: entry.Summary,
+		})
+	}
+	return newRuntimePicker(runtimePickerMemoryDelete, "删除长期记忆", items, 12), nil
+}
+
+func newScheduleCancelPicker() (*runtimePicker, error) {
+	tasks, err := runtimeScheduledTasks("pending")
+	if err != nil {
+		return nil, err
+	}
+	items := make([]runtimePickerItem, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, runtimePickerItem{
+			Label: fmt.Sprintf("%s - %s (下次: %s)", task.ID, task.Task, task.NextRunAt.Format("2006-01-02 15:04")),
+			Value: task.ID,
+		})
+	}
+	return newRuntimePicker(runtimePickerScheduleCancel, "取消定时任务", items, 12), nil
+}
+
+func newScheduleDeletePicker() (*runtimePicker, error) {
+	tasks, err := runtimeScheduledTasks("")
+	if err != nil {
+		return nil, err
+	}
+	items := make([]runtimePickerItem, 0, len(tasks))
+	for _, task := range tasks {
+		if task.Status == "running" {
+			continue
+		}
+		items = append(items, runtimePickerItem{
+			Label: fmt.Sprintf("[%s] %s - %s", task.Status, task.ID, task.Task),
+			Value: task.ID,
+		})
+	}
+	return newRuntimePicker(runtimePickerScheduleDelete, "删除定时任务", items, 12), nil
+}
+
+func newConfirmPicker(title string, action string) *runtimePicker {
+	p := newRuntimePicker(runtimePickerConfirm, title, []runtimePickerItem{
+		{Label: "确认", Value: "yes"},
+		{Label: "取消", Value: "no"},
+	}, 2)
+	p.action = action
+	return p
 }
 
 func newRuntimePicker(kind runtimePickerKind, title string, items []runtimePickerItem, height int) *runtimePicker {
@@ -433,9 +473,6 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case runtimeStatusMsg:
 		m.status = msg.text
-		return m, nil
-	case runtimeLegacyCommandDoneMsg:
-		m.status = "命令已完成"
 		return m, nil
 	case runtimeInternalErrorMsg:
 		if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
@@ -647,7 +684,29 @@ func (m runtimeModel) acceptPicker() (tea.Model, tea.Cmd) {
 		return m, nil
 	case runtimePickerCommand:
 		m.picker = nil
-		return m.handleSubmit(selected.Value)
+		m.input.SetValue("/" + selected.Value)
+		m.input.CursorEnd()
+		return m, nil
+	case runtimePickerSession:
+		m.picker = nil
+		return m.loadRuntimeSession(selected.Value), nil
+	case runtimePickerMemoryDelete:
+		m.picker = nil
+		return m.deleteRuntimeMemory(selected.Value), nil
+	case runtimePickerScheduleCancel:
+		m.picker = nil
+		return m.cancelRuntimeSchedule(selected.Value), nil
+	case runtimePickerScheduleDelete:
+		m.picker = nil
+		return m.deleteRuntimeSchedule(selected.Value), nil
+	case runtimePickerConfirm:
+		action := m.picker.action
+		m.picker = nil
+		if selected.Value != "yes" {
+			m.appendBlock(runtimeBlockSystem, "命令", "已取消")
+			return m, nil
+		}
+		return m.acceptRuntimeConfirmation(action), nil
 	case runtimePickerFile:
 		if selected.Value == ".." {
 			m.picker.enterParent()
@@ -776,6 +835,9 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 	m.runtime.session.InputHistory = append(m.runtime.session.InputHistory, input)
 
 	command := strings.TrimPrefix(input, "/")
+	if runtimeShouldRecordCommandInput(input, command) {
+		m.appendBlock(runtimeBlockUser, "用户", input)
+	}
 	switch command {
 	case "q", "quit":
 		m.runtime.requestExit()
@@ -783,27 +845,57 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 	case "help":
 		m.appendBlock(runtimeBlockSystem, "帮助", runtimeHelpMarkdown())
 		return m, nil
-	}
-	if command == "list_agents" {
+	case "list_agents":
 		m.appendBlock(runtimeBlockSystem, "可用智能体", runtimeAgentsMarkdown())
 		return m, nil
-	}
-	if command == "switch_work_mode" {
+	case "list_chat_history":
+		m.appendBlock(runtimeBlockSystem, "聊天历史", runtimeChatHistoryMarkdown(true))
+		return m, nil
+	case "load_chat_history":
+		picker, err := newSessionPicker()
+		return m.openRuntimePicker(picker, err, "加载聊天历史")
+	case "save_chat_history":
+		return m.saveRuntimeChatHistory(), nil
+	case "clear_chat_history":
+		m.picker = newConfirmPicker("清空当前聊天历史", "clear_chat_history")
+		return m, nil
+	case "save_chat_history_to_markdown":
+		return m.saveRuntimeChatHistoryMarkdown(), nil
+	case "save_chat_history_to_html":
+		return m.saveRuntimeChatHistoryHTML(), nil
+	case "switch_work_mode":
 		modeSwitcher := &sessionModeSwitcher{session: m.runtime.session, ctx: m.runtime.ctx, executor: m.runtime.executor}
 		newMode, err := modeSwitcher.SwitchMode()
 		if err != nil {
 			m.appendBlock(runtimeBlockError, "模式切换失败", err.Error())
 			return m, nil
 		}
+		m.welcome.Mode = runtimeModeName(m.runtime.session.CurrentMode)
 		m.appendBlock(runtimeBlockSystem, "模式", "已切换到工作模式: "+newMode)
 		return m, nil
+	case "list_schedule":
+		m.appendBlock(runtimeBlockSystem, "定时任务", runtimeScheduleMarkdown())
+		return m, nil
+	case "cancel_schedule":
+		picker, err := newScheduleCancelPicker()
+		return m.openRuntimePicker(picker, err, "取消定时任务")
+	case "delete_schedule":
+		picker, err := newScheduleDeletePicker()
+		return m.openRuntimePicker(picker, err, "删除定时任务")
+	case "list_memory":
+		m.appendBlock(runtimeBlockSystem, "长期记忆", runtimeMemoryMarkdown())
+		return m, nil
+	case "delete_memory":
+		picker, err := newMemoryDeletePicker()
+		return m.openRuntimePicker(picker, err, "删除长期记忆")
+	case "clear_memory":
+		m.picker = newConfirmPicker("清空所有长期记忆", "clear_memory")
+		return m, nil
 	}
-	if strings.HasPrefix(command, "load_chat_history") ||
-		strings.HasPrefix(command, "delete_memory") ||
-		strings.HasPrefix(command, "cancel_schedule") ||
-		strings.HasPrefix(command, "delete_schedule") {
-		m.appendBlock(runtimeBlockSystem, "兼容命令", "该命令会临时释放 TUI 控制权执行，后续会迁移为原生面板。")
-		return m, m.runtime.runLegacyCommand(command)
+
+	if strings.HasPrefix(input, "/") && command != "" {
+		m.appendBlock(runtimeBlockError, "未知命令", command)
+		return m, nil
 	}
 
 	if agentName, query := ExtractAgentMention(input); agentName != "" {
@@ -821,6 +913,169 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 
 	m.appendBlock(runtimeBlockUser, "用户", input)
 	return m, m.runtime.submitQuery(input)
+}
+
+func runtimeShouldRecordCommandInput(input string, command string) bool {
+	if command == "" {
+		return false
+	}
+	if strings.HasPrefix(input, "/") {
+		return true
+	}
+	return runtimeKnownCommand(command)
+}
+
+func runtimeKnownCommand(command string) bool {
+	if command == "q" {
+		return true
+	}
+	for _, item := range allCommands {
+		if item.Name == command {
+			return true
+		}
+	}
+	return false
+}
+
+func (m runtimeModel) openRuntimePicker(picker *runtimePicker, err error, title string) (tea.Model, tea.Cmd) {
+	if err != nil {
+		m.appendBlock(runtimeBlockError, title, err.Error())
+		return m, nil
+	}
+	if picker == nil || len(picker.items) == 0 {
+		m.appendBlock(runtimeBlockSystem, title, "暂无可选择的条目")
+		return m, nil
+	}
+	m.picker = picker
+	return m, nil
+}
+
+func (m runtimeModel) saveRuntimeChatHistory() runtimeModel {
+	recorder := getCliRecorder()
+	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, eventlog.HistoryFileName)
+	if err := recorder.SaveToFile(historyFile); err != nil {
+		m.appendBlock(runtimeBlockError, "保存聊天历史失败", err.Error())
+		return m
+	}
+	saveCliSessionMetadata(activeSessionID, cliSessionTitle)
+	m.appendBlock(runtimeBlockSystem, "聊天历史", "已保存到: "+historyFile)
+	return m
+}
+
+func (m runtimeModel) saveRuntimeChatHistoryMarkdown() runtimeModel {
+	recorder := getCliRecorder()
+	filePath, err := recorder.SaveToMarkdownWithTimestamp()
+	if err != nil {
+		m.appendBlock(runtimeBlockError, "导出 Markdown 失败", err.Error())
+		return m
+	}
+	m.appendBlock(runtimeBlockSystem, "聊天历史", "已导出 Markdown: "+filePath)
+	return m
+}
+
+func (m runtimeModel) saveRuntimeChatHistoryHTML() runtimeModel {
+	htmlFilePath, err := SaveChatHistoryToHTML()
+	if err != nil {
+		m.appendBlock(runtimeBlockError, "导出 HTML 失败", err.Error())
+		return m
+	}
+	m.appendBlock(runtimeBlockSystem, "聊天历史", "已导出 HTML: "+htmlFilePath)
+	return m
+}
+
+func (m runtimeModel) clearRuntimeChatHistory() runtimeModel {
+	eventlog.GlobalSessionManager.Clear(activeSessionID)
+	m.appendBlock(runtimeBlockSystem, "聊天历史", "已清空当前聊天历史")
+	return m
+}
+
+func (m runtimeModel) loadRuntimeSession(sessionID string) runtimeModel {
+	historyFile := filepath.Join(CLIHistoryDir, sessionID, eventlog.HistoryFileName)
+	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
+		m.appendBlock(runtimeBlockError, "加载聊天历史失败", "历史文件不存在: "+historyFile)
+		return m
+	}
+
+	activeSessionID = sessionID
+	recorder := getCliRecorder()
+	if err := recorder.LoadFromFile(historyFile); err != nil {
+		m.appendBlock(runtimeBlockError, "加载聊天历史失败", err.Error())
+		return m
+	}
+	m.welcome.SessionID = sessionID
+	m.appendBlock(runtimeBlockSystem, "聊天历史", "已加载会话: "+sessionID)
+	return m
+}
+
+func (m runtimeModel) deleteRuntimeMemory(summary string) runtimeModel {
+	if g.MemoryManager == nil {
+		m.appendBlock(runtimeBlockError, "删除长期记忆失败", "长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
+		return m
+	}
+	deleted := g.MemoryManager.Delete(summary)
+	if deleted == 0 {
+		m.appendBlock(runtimeBlockSystem, "长期记忆", "未找到匹配的记忆条目: "+summary)
+		return m
+	}
+	m.appendBlock(runtimeBlockSystem, "长期记忆", fmt.Sprintf("已删除 %d 条记忆: %s", deleted, summary))
+	return m
+}
+
+func (m runtimeModel) clearRuntimeMemory() runtimeModel {
+	if g.MemoryManager == nil {
+		m.appendBlock(runtimeBlockError, "清空长期记忆失败", "长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
+		return m
+	}
+	count := g.MemoryManager.Count()
+	if count == 0 {
+		m.appendBlock(runtimeBlockSystem, "长期记忆", "当前没有记忆条目")
+		return m
+	}
+	g.MemoryManager.Clear()
+	m.appendBlock(runtimeBlockSystem, "长期记忆", fmt.Sprintf("已清空 %d 条长期记忆", count))
+	return m
+}
+
+func (m runtimeModel) cancelRuntimeSchedule(taskID string) runtimeModel {
+	s := scheduler.Global()
+	if s == nil {
+		m.appendBlock(runtimeBlockError, "取消定时任务失败", "定时任务调度器未初始化")
+		return m
+	}
+	resp, _ := s.ScheduleCancel(context.Background(), &scheduler.ScheduleCancelRequest{TaskID: taskID})
+	if resp.ErrorMessage != "" {
+		m.appendBlock(runtimeBlockError, "取消定时任务失败", resp.ErrorMessage)
+		return m
+	}
+	m.appendBlock(runtimeBlockSystem, "定时任务", "已取消: "+taskID)
+	return m
+}
+
+func (m runtimeModel) deleteRuntimeSchedule(taskID string) runtimeModel {
+	s := scheduler.Global()
+	if s == nil {
+		m.appendBlock(runtimeBlockError, "删除定时任务失败", "定时任务调度器未初始化")
+		return m
+	}
+	resp, _ := s.ScheduleDelete(context.Background(), &scheduler.ScheduleDeleteRequest{TaskID: taskID})
+	if resp.ErrorMessage != "" {
+		m.appendBlock(runtimeBlockError, "删除定时任务失败", resp.ErrorMessage)
+		return m
+	}
+	m.appendBlock(runtimeBlockSystem, "定时任务", "已删除: "+taskID)
+	return m
+}
+
+func (m runtimeModel) acceptRuntimeConfirmation(action string) runtimeModel {
+	switch action {
+	case "clear_chat_history":
+		return m.clearRuntimeChatHistory()
+	case "clear_memory":
+		return m.clearRuntimeMemory()
+	default:
+		m.appendBlock(runtimeBlockError, "未知确认操作", action)
+		return m
+	}
 }
 
 func (m runtimeModel) View() tea.View {
@@ -891,7 +1146,7 @@ func (m runtimeModel) selectedVisibleText() string {
 func (m runtimeModel) transcriptText() string {
 	var transcript strings.Builder
 	for i, block := range m.blocks {
-		if i > 0 && shouldSpaceBeforeBlock(block.Kind) {
+		if i > 0 && shouldSpaceBeforeBlock(m.blocks[i-1].Kind, block.Kind) {
 			transcript.WriteString("\n")
 		}
 		fmt.Fprintf(&transcript, "%s\n", m.renderBlock(block))
@@ -899,10 +1154,12 @@ func (m runtimeModel) transcriptText() string {
 	return tui.WrapLines(transcript.String(), m.contentWidth())
 }
 
-func shouldSpaceBeforeBlock(kind runtimeBlockKind) bool {
-	switch kind {
+func shouldSpaceBeforeBlock(prev runtimeBlockKind, current runtimeBlockKind) bool {
+	switch current {
 	case runtimeBlockUser, runtimeBlockReasoning, runtimeBlockDone:
 		return true
+	case runtimeBlockSystem, runtimeBlockError:
+		return prev == runtimeBlockUser
 	default:
 		return false
 	}
@@ -1179,7 +1436,19 @@ func runtimeHelpMarkdown() string {
 | help | 显示帮助 |
 | q / quit | 退出 |
 | list_agents | 列出智能体 |
+| list_chat_history | 列出聊天历史 |
+| load_chat_history | 选择并加载聊天历史 |
+| save_chat_history | 保存聊天历史 |
+| clear_chat_history | 清空当前聊天历史 |
+| save_chat_history_to_markdown | 导出聊天历史为 Markdown |
+| save_chat_history_to_html | 导出聊天历史为 HTML |
 | switch_work_mode | 切换工作模式 |
+| list_schedule | 列出定时任务 |
+| cancel_schedule | 选择并取消定时任务 |
+| delete_schedule | 选择并删除定时任务 |
+| list_memory | 列出长期记忆 |
+| delete_memory | 选择并删除长期记忆 |
+| clear_memory | 清空长期记忆 |
 | @智能体名 查询 | 切换智能体并执行 |
 
 直接输入问题即可与智能体团队对话。`
@@ -1193,6 +1462,121 @@ func runtimeAgentsMarkdown() string {
 		fmt.Fprintf(&sb, "| %s | %s |\n", info.Name, strings.ReplaceAll(info.Description, "|", "\\|"))
 	}
 	return sb.String()
+}
+
+func runtimeChatHistoryMarkdown(interactive bool) string {
+	items, err := runtimeSessionPickerItems()
+	if err != nil {
+		return "读取历史目录失败: " + err.Error()
+	}
+	if len(items) == 0 {
+		return "暂无聊天历史文件"
+	}
+
+	var sb strings.Builder
+	sb.WriteString("| 会话 ID | 标题 |\n")
+	sb.WriteString("|---------|------|\n")
+	for _, item := range items {
+		fmt.Fprintf(&sb, "| `%s` | %s |\n", markdownEscapeTable(item.Value), markdownEscapeTable(item.Label))
+	}
+	if interactive {
+		fmt.Fprintf(&sb, "\n共 **%d** 个会话，使用 `load_chat_history` 加载。", len(items))
+	} else {
+		fmt.Fprintf(&sb, "\n共 **%d** 个会话，使用 `fkteams --resume <session_id>` 恢复。", len(items))
+	}
+	return sb.String()
+}
+
+func runtimeSessionPickerItems() ([]runtimePickerItem, error) {
+	entries, err := os.ReadDir(CLIHistoryDir)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]runtimePickerItem, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sessionID := entry.Name()
+		sessionDir := filepath.Join(CLIHistoryDir, sessionID)
+		title := sessionID
+		if meta, err := eventlog.LoadMetadata(sessionDir); err == nil && strings.TrimSpace(meta.Title) != "" {
+			title = meta.Title
+		}
+		label := title
+		historyFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
+		if info, err := os.Stat(historyFile); err == nil {
+			label = fmt.Sprintf("%s (%s, %d B)", title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
+		}
+		items = append(items, runtimePickerItem{Label: label, Value: sessionID})
+	}
+	return items, nil
+}
+
+func runtimeMemoryMarkdown() string {
+	entries, err := runtimeMemoryEntries()
+	if err != nil {
+		return err.Error()
+	}
+	if len(entries) == 0 {
+		return "暂无长期记忆条目"
+	}
+	var sb strings.Builder
+	sb.WriteString("| 类型 | 摘要 | 详情 | 命中 |\n")
+	sb.WriteString("|------|------|------|------|\n")
+	for _, entry := range entries {
+		fmt.Fprintf(&sb, "| %s | %s | %s | %d |\n",
+			markdownEscapeTable(string(entry.Type)),
+			markdownEscapeTable(entry.Summary),
+			markdownEscapeTable(entry.Detail),
+			entry.HitCount,
+		)
+	}
+	fmt.Fprintf(&sb, "\n共 **%d** 条记忆，使用 `delete_memory` 删除条目，或 `clear_memory` 清空全部。", len(entries))
+	return sb.String()
+}
+
+func runtimeMemoryEntries() ([]memory.MemoryEntry, error) {
+	if g.MemoryManager == nil {
+		return nil, fmt.Errorf("长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
+	}
+	return g.MemoryManager.List(), nil
+}
+
+func runtimeScheduleMarkdown() string {
+	tasks, err := runtimeScheduledTasks("")
+	if err != nil {
+		return err.Error()
+	}
+	if len(tasks) == 0 {
+		return "暂无定时任务"
+	}
+	var sb strings.Builder
+	sb.WriteString("| ID | 状态 | 任务 | 下次执行 |\n")
+	sb.WriteString("|----|------|------|----------|\n")
+	for _, task := range tasks {
+		fmt.Fprintf(&sb, "| `%s` | %s | %s | %s |\n",
+			markdownEscapeTable(task.ID),
+			markdownEscapeTable(task.Status),
+			markdownEscapeTable(truncateRuntimeText(task.Task, 80)),
+			task.NextRunAt.Format("2006-01-02 15:04"),
+		)
+	}
+	fmt.Fprintf(&sb, "\n共 **%d** 个定时任务。", len(tasks))
+	return sb.String()
+}
+
+func runtimeScheduledTasks(status string) ([]scheduler.ScheduledTask, error) {
+	s := scheduler.Global()
+	if s == nil {
+		return nil, fmt.Errorf("定时任务调度器未初始化")
+	}
+	return s.GetTasks(status)
+}
+
+func markdownEscapeTable(value string) string {
+	value = strings.ReplaceAll(value, "\n", " ")
+	return strings.ReplaceAll(value, "|", "\\|")
 }
 
 func runtimeWelcomeInfo(session *Session) tui.WelcomeInfo {
