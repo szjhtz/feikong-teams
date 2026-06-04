@@ -122,6 +122,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 		default:
 		}
 	}
+	printResumeHint(activeSessionID)
 }
 
 // SetCurrentAgent 设置当前智能体名称（用于 agent 命令初始化）
@@ -132,6 +133,21 @@ func (s *Session) SetCurrentAgent(name string) {
 // SetCallbackBuilder 设置事件回调构造器（用于自定义输出格式）
 func (s *Session) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(fkevent.Event) error) {
 	s.callbackBuilder = cb
+}
+
+func printResumeHint(sessionID string) {
+	command := resumeCommand(sessionID)
+	if command == "" {
+		return
+	}
+	fmt.Fprintf(os.Stdout, "\n\033[90mResume this session with:\n%s\033[0m\n", command)
+}
+
+func resumeCommand(sessionID string) string {
+	if sessionID == "" || sessionID == CLISessionID {
+		return ""
+	}
+	return fmt.Sprintf("fkteams --resume %s", sessionID)
 }
 
 // sessionModeSwitcher 模式切换器
