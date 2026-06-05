@@ -124,23 +124,66 @@
 
   function buildMessageBlocks(messages) {
     const blocks = [];
-    let memberGroup = [];
-    const flushMembers = () => {
-      if (memberGroup.length > 0) {
-        blocks.push({ type: "members", messages: memberGroup });
-        memberGroup = [];
-      }
-    };
+    const renderedMemberIndexes = new Set();
 
-    messages.forEach((msg) => {
+    for (let index = 0; index < messages.length; index++) {
+      const msg = messages[index];
       if (isMemberMessage(msg)) {
-        memberGroup.push(msg);
-        return;
+        if (renderedMemberIndexes.has(index)) continue;
+        const group = [];
+        while (
+          index < messages.length &&
+          isMemberMessage(messages[index]) &&
+          !renderedMemberIndexes.has(index)
+        ) {
+          group.push(messages[index]);
+          renderedMemberIndexes.add(index);
+          index++;
+        }
+        index--;
+        blocks.push({ type: "members", messages: group });
+        continue;
       }
-      flushMembers();
+
+      const inserted = agentMessageWithMemberInsert(msg, messages, renderedMemberIndexes);
+      if (inserted) {
+        blocks.push(...inserted);
+        continue;
+      }
       blocks.push({ type: "message", message: msg });
+    }
+    return blocks;
+  }
+
+  function agentMessageWithMemberInsert(msg, messages, renderedMemberIndexes) {
+    const refs = agentToolRefs(msg);
+    if (refs.ids.size === 0 && refs.names.size === 0) return null;
+
+    const members = [];
+    (messages || []).forEach((candidate, index) => {
+      if (renderedMemberIndexes.has(index)) return;
+      if (!isMemberMessage(candidate)) return;
+      if (!memberMatchesRefs(candidate, refs)) return;
+      members.push({ msg: candidate, index });
     });
-    flushMembers();
+    if (members.length === 0) return null;
+
+    const events = msg?.events || [];
+    let lastAgentToolIndex = -1;
+    events.forEach((event, index) => {
+      if (event.type !== "tool_call" || !isAgentTool(event.tool_call)) return;
+      if (!toolInRefs(event.tool_call, refs)) return;
+      lastAgentToolIndex = index;
+    });
+    if (lastAgentToolIndex < 0) return null;
+
+    members.forEach((item) => renderedMemberIndexes.add(item.index));
+    const blocks = [];
+    const before = events.slice(0, lastAgentToolIndex + 1);
+    const after = events.slice(lastAgentToolIndex + 1);
+    if (before.length > 0) blocks.push({ type: "message", message: { ...msg, events: before } });
+    blocks.push({ type: "members", messages: members.map((item) => item.msg) });
+    if (after.length > 0) blocks.push({ type: "message", message: { ...msg, events: after } });
     return blocks;
   }
 
@@ -162,6 +205,40 @@
         msg.member_tool_name ||
         msg.member_name ||
         isLegacyMemberMessage(msg))
+    );
+  }
+
+  function isAgentTool(tool) {
+    if (!tool) return false;
+    const kind = String(tool.kind || "").toLowerCase();
+    const name = tool.name || "";
+    return kind === "agent" || /^ask_fkagent_[A-Za-z0-9_-]+$/.test(name);
+  }
+
+  function agentToolRefs(msg) {
+    const refs = { ids: new Set(), names: new Set() };
+    (msg?.events || []).forEach((event) => {
+      if (event.type !== "tool_call" || !isAgentTool(event.tool_call)) return;
+      if (event.tool_call.id) refs.ids.add(event.tool_call.id);
+      if (event.tool_call.name) refs.names.add(event.tool_call.name);
+    });
+    return refs;
+  }
+
+  function toolInRefs(tool, refs) {
+    if (!tool || !refs) return false;
+    return !!(
+      (tool.id && refs.ids.has(tool.id)) ||
+      (tool.name && refs.names.has(tool.name))
+    );
+  }
+
+  function memberMatchesRefs(msg, refs) {
+    if (!msg || !refs) return false;
+    return !!(
+      (msg.member_call_id && refs.ids.has(msg.member_call_id)) ||
+      (msg.member_tool_name && refs.names.has(msg.member_tool_name)) ||
+      (msg.agent_name && refs.names.has(msg.agent_name))
     );
   }
 
