@@ -19,20 +19,15 @@ var readOnlyToolNames = map[string]bool{
 	"file_list": true,
 	"glob":      true,
 	// git
-	"git_status":  true,
-	"git_log":     true,
-	"git_diff":    true,
-	"git_branch":  true,
-	"git_tag":     true,
-	"git_remote":  true,
-	"git_config":  true,
-	"git_clean":   true,
+	"git_status": true,
+	"git_log":    true,
+	"git_diff":   true,
 	// search
 	"search": true,
 	"fetch":  true,
 	// ssh
-	"ssh_list_dir":  true,
-	"ssh_download":  true,
+	"ssh_list_dir": true,
+	"ssh_download": true,
 	// doc
 	"doc_read": true,
 }
@@ -45,12 +40,17 @@ var destructiveToolNames = map[string]bool{
 	"file_edit":   true,
 	"file_patch":  true,
 	// git
-	"git_init":    true,
-	"git_add":     true,
-	"git_commit":  true,
+	"git_init":     true,
+	"git_add":      true,
+	"git_commit":   true,
 	"git_checkout": true,
-	"git_reset":   true,
-	"git_remove":  true,
+	"git_reset":    true,
+	"git_remove":   true,
+	"git_branch":   true,
+	"git_tag":      true,
+	"git_remote":   true,
+	"git_config":   true,
+	"git_clean":    true,
 	// command
 	"execute": true,
 	// ssh
