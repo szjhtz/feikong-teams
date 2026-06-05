@@ -294,9 +294,20 @@ func agentMessageToSchemaMessages(msg eventlog.AgentMessage) []adk.Message {
 
 		case eventlog.MsgTypeError:
 			fmt.Fprintf(&textBuf, "[错误] %s\n", event.Content)
+
+		case eventlog.MsgTypeCancelled:
+			fmt.Fprintf(&textBuf, "[用户取消] %s\n", cancellationNotice(event.Content))
 		}
 	}
 
 	flushText()
 	return messages
+}
+
+func cancellationNotice(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		content = "任务已取消"
+	}
+	return content + "。用户刚才取消了上一轮任务；继续对话时不要把上一轮未完成的执行当作已经完成。"
 }
