@@ -682,18 +682,6 @@ a.source-item:hover {
   position: relative;
 }
 
-.message.assistant .message-body::before {
-  content: "";
-  position: absolute;
-  left: -6px;
-  top: 14px;
-  width: 8px;
-  height: 8px;
-  background: var(--accent-light);
-  border: 2px solid var(--accent-primary);
-  border-radius: 50%;
-}
-
 /* Agent Tag */
 .agent-tag {
   display: inline-flex;
