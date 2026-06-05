@@ -4,7 +4,7 @@
 
 通过 HTTP 发送聊天消息，支持同步和 SSE 流式两种响应模式。
 
-> SSE 和同步模式使用 `AutoRejectHandler` 自动拒绝危险命令（无人工审批流程）。WebSocket 模式支持完整的人工审批（HITL）流程，详见下方 WebSocket 协议说明。
+> SSE 和同步模式默认自动拒绝危险命令（无人工审批流程）。WebSocket 模式支持完整的人工审批（HITL）流程，详见下方 WebSocket 协议说明。
 
 **请求 Body**：
 

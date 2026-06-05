@@ -331,7 +331,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		}).
 		OnInterrupt(interruptHandler).
 		NonInteractive().
-		WithApproval(approval.NewDefaultRegistry()).
+		WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
 		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
 			if err != nil {
 				if ctx.Err() != nil {

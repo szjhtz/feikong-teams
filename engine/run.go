@@ -5,7 +5,6 @@ import (
 	"fkteams/agents/middlewares/summary"
 	"fkteams/common"
 	"fkteams/fkevent"
-	"fkteams/tools/approval"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -34,8 +33,10 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) 
 		ctx = fkevent.WithNonInteractive(ctx)
 	}
 
-	if cfg.ApprovalReg != nil {
-		ctx = approval.WithRegistry(ctx, cfg.ApprovalReg)
+	for _, hook := range cfg.ContextHooks {
+		if hook != nil {
+			ctx = hook(ctx)
+		}
 	}
 
 	if cfg.OnStart != nil {
@@ -44,7 +45,7 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) 
 
 	handler := cfg.OnInterrupt
 	if handler == nil {
-		handler = AutoRejectHandler()
+		handler = FixedDecisionHandler(0)
 	}
 
 	lastEvent, err := e.runLoop(ctx, cfg.Messages, handler)

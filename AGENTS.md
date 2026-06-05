@@ -37,7 +37,7 @@ engine/                     # 统一执行引擎
                             #   （OnStart → OnInterrupt → OnFinish），各入口通过 Session 装配
   run.go                    #   core.run() — 装配 context 后调用 runLoop
   loop.go                   #   runLoop() — Runner 事件循环，处理迭代和 HITL 中断/恢复
-  interrupt.go              #   HITL 中断处理器（AutoRejectHandler / ChannelHandler / CallbackHandler）
+  interrupt.go              #   HITL 中断处理器（FixedDecisionHandler / ChannelHandler / InfoHandler）
 agents/                     # 智能体系统
   registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
   common/builder.go         #   AgentBuilder 流式构建器（WithTools / WithTemplate / WithSummary / Build）
@@ -140,5 +140,5 @@ bootstrap/                  # 应用目录初始化
 
 ### 其他
 
-- `Session.OnInterrupt` 未设置时自动使用 `AutoRejectHandler`
+- `Session.OnInterrupt` 未设置时自动使用固定拒绝决策
 - 功能变更必须同步更新 `README.md`

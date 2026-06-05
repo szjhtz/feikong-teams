@@ -130,7 +130,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 		WithHistory(recorder).
 		OnInterrupt(interruptHandler).
 		NonInteractive().
-		WithApproval(approval.NewDefaultRegistry()).
+		WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
 		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {

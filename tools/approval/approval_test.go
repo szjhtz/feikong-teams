@@ -1,6 +1,7 @@
 package approval
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -73,5 +74,14 @@ func TestNewDefaultSelectiveRegistryApprovesRequestedStores(t *testing.T) {
 	}
 	if reg.get(StoreDispatch).IsApproved("any") {
 		t.Fatal("did not expect dispatch store to be auto approved")
+	}
+}
+
+func TestRegistryContextInjectsRegistry(t *testing.T) {
+	reg := NewAutoApproveRegistry()
+	ctx := RegistryContext(reg)(context.Background())
+
+	if err := Require(ctx, StoreCommand, "command", "info"); err != nil {
+		t.Fatalf("expected injected registry to approve command: %v", err)
 	}
 }

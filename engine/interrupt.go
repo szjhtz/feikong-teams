@@ -2,8 +2,6 @@ package engine
 
 import (
 	"context"
-	"fkteams/tools/approval"
-	"fkteams/tools/ask"
 
 	"github.com/cloudwego/eino/adk"
 )
@@ -11,13 +9,14 @@ import (
 // InterruptHandler 中断处理回调，接收中断上下文列表，返回审批目标映射
 type InterruptHandler func(ctx context.Context, interrupts []*adk.InterruptCtx) (targets map[string]any, err error)
 
-// AutoRejectHandler 自动拒绝所有危险命令
-func AutoRejectHandler() InterruptHandler {
+type InterruptInfoHandler func(info any) (decision any, ok bool)
+
+func FixedDecisionHandler(decision any) InterruptHandler {
 	return func(_ context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		targets := make(map[string]any, len(interrupts))
 		for _, ic := range interrupts {
 			if ic.IsRootCause {
-				targets[ic.ID] = approval.Reject
+				targets[ic.ID] = decision
 			}
 		}
 		return targets, nil
@@ -44,8 +43,8 @@ func ChannelHandler(ch <-chan any) InterruptHandler {
 	}
 }
 
-// CallbackHandler 通过回调函数获取审批决定（用于 CLI 交互式审批）
-func CallbackHandler(promptFunc func() int) InterruptHandler {
+// CallbackHandler 通过回调函数获取统一决策
+func CallbackHandler(promptFunc func() any) InterruptHandler {
 	return func(_ context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		decision := promptFunc()
 		targets := make(map[string]any, len(interrupts))
@@ -58,19 +57,16 @@ func CallbackHandler(promptFunc func() int) InterruptHandler {
 	}
 }
 
-// CompositeCallbackHandler 组合中断处理器，根据中断类型分发到不同回调
-func CompositeCallbackHandler(approvalFunc func() int, askFunc func(*ask.AskInfo) *ask.AskResponse) InterruptHandler {
+// InfoHandler 根据中断信息逐项生成恢复决策
+func InfoHandler(handler InterruptInfoHandler) InterruptHandler {
 	return func(_ context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		targets := make(map[string]any, len(interrupts))
 		for _, ic := range interrupts {
 			if !ic.IsRootCause {
 				continue
 			}
-			if info, ok := ic.Info.(*ask.AskInfo); ok && askFunc != nil {
-				resp := askFunc(info)
-				targets[ic.ID] = resp
-			} else if approvalFunc != nil {
-				targets[ic.ID] = approvalFunc()
+			if decision, ok := handler(ic.Info); ok {
+				targets[ic.ID] = decision
 			}
 		}
 		return targets, nil

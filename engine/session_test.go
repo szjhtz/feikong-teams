@@ -28,7 +28,7 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 	approvalReg := approval.NewDefaultRegistry()
 	eventHandler := func(fkevent.Event) error { return nil }
 	startHandler := func(context.Context) {}
-	interruptHandler := AutoRejectHandler()
+	interruptHandler := FixedDecisionHandler(approval.Reject)
 	finishHandler := func(context.Context, *adk.AgentEvent, error) {}
 
 	session := NewSession(&adk.Runner{}, "session-1").
@@ -38,7 +38,7 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 		OnStart(startHandler).
 		OnInterrupt(interruptHandler).
 		NonInteractive().
-		WithApproval(approvalReg).
+		WithContext(approval.RegistryContext(approvalReg)).
 		OnFinish(finishHandler)
 
 	if len(session.cfg.Messages) != 1 || session.cfg.Messages[0].Content != "hello" {
@@ -59,8 +59,8 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 	if !session.cfg.NonInteractive {
 		t.Fatal("non-interactive flag was not configured")
 	}
-	if session.cfg.ApprovalReg != approvalReg {
-		t.Fatal("approval registry was not configured")
+	if len(session.cfg.ContextHooks) != 1 {
+		t.Fatal("context hook was not configured")
 	}
 	if session.cfg.OnFinish == nil {
 		t.Fatal("finish handler was not configured")

@@ -3,10 +3,11 @@ package engine
 import (
 	"context"
 	"fkteams/fkevent"
-	"fkteams/tools/approval"
 
 	"github.com/cloudwego/eino/adk"
 )
+
+type ContextHook func(context.Context) context.Context
 
 type HistorySink interface {
 	GetMessageCount() int
@@ -29,14 +30,14 @@ type runConfig struct {
 	// OnStart 执行开始回调（context 装配完成后，事件循环开始前）
 	OnStart func(ctx context.Context)
 
-	// OnInterrupt HITL 中断处理。nil 时默认使用 AutoRejectHandler
+	// OnInterrupt HITL 中断处理。nil 时默认使用固定拒绝决策
 	OnInterrupt InterruptHandler
 
 	// NonInteractive 标记非交互模式（WebSocket / 通道），不输出终端动画
 	NonInteractive bool
 
-	// ApprovalReg 自动审批注册表。nil 时不设置
-	ApprovalReg *approval.Registry
+	// ContextHooks 额外 context 装配逻辑
+	ContextHooks []ContextHook
 
 	// OnFinish 执行结束回调（含错误）。用于保存历史、更新元数据、提取记忆等
 	OnFinish func(ctx context.Context, lastEvent *adk.AgentEvent, err error)

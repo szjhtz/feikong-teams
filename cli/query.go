@@ -212,7 +212,12 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	var handler engine.InterruptHandler
 	if !e.autoReject {
-		handler = engine.CompositeCallbackHandler(e.promptApproval, e.promptAskQuestions)
+		handler = engine.InfoHandler(func(info any) (any, bool) {
+			if askInfo, ok := info.(*ask.AskInfo); ok {
+				return e.promptAskQuestions(askInfo), true
+			}
+			return e.promptApproval(), true
+		})
 	}
 
 	e.state.SetCancelFunc(cancelFunc)
@@ -226,7 +231,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		}).
 		WithHistory(recorder).
 		OnInterrupt(handler).
-		WithApproval(approvalReg).
+		WithContext(approval.RegistryContext(approvalReg)).
 		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, _ error) {
 			e.state.EndQuery()
 			recorder.FinalizeCurrent()

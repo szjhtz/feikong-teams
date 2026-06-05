@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fkteams/fkevent"
-	"fkteams/tools/approval"
 
 	"github.com/cloudwego/eino/adk"
 )
@@ -52,8 +51,10 @@ func (s *Session) NonInteractive() *Session {
 	return s
 }
 
-func (s *Session) WithApproval(reg *approval.Registry) *Session {
-	s.cfg.ApprovalReg = reg
+func (s *Session) WithContext(hook ContextHook) *Session {
+	if hook != nil {
+		s.cfg.ContextHooks = append(s.cfg.ContextHooks, hook)
+	}
 	return s
 }
 

@@ -150,6 +150,12 @@ func WithRegistry(ctx context.Context, reg *Registry) context.Context {
 	return context.WithValue(ctx, registryCtxKey{}, reg)
 }
 
+func RegistryContext(reg *Registry) func(context.Context) context.Context {
+	return func(ctx context.Context) context.Context {
+		return WithRegistry(ctx, reg)
+	}
+}
+
 func getStore(ctx context.Context, name string) *Store {
 	if reg, ok := ctx.Value(registryCtxKey{}).(*Registry); ok {
 		return reg.get(name)

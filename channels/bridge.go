@@ -255,7 +255,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		}).
 		WithHistory(recorder).
 		NonInteractive().
-		WithApproval(approval.NewAutoApproveRegistry()).
+		WithContext(approval.RegistryContext(approval.NewAutoApproveRegistry())).
 		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
