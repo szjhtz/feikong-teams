@@ -24,10 +24,17 @@
 
 #### CORS 跨域
 
-所有请求自动处理跨域：
+服务默认允许同源请求和本机开发来源（`localhost`、`127.0.0.1`、`::1`）。跨域部署时需要在 `config.toml` 中显式配置允许的前端来源：
 
-- `Access-Control-Allow-Origin`：动态镜像请求 `Origin`
-- `Access-Control-Allow-Headers: *`
+```toml
+[server]
+allow_origins = ["https://your-frontend.example.com"]
+```
+
+通过校验后响应会包含：
+
+- `Access-Control-Allow-Origin`：当前通过校验的请求 `Origin`
+- `Access-Control-Allow-Headers: Authorization, Content-Type, X-Preview-Password`
 - `Access-Control-Allow-Methods: POST, GET, OPTIONS, DELETE, PUT`
 - `Access-Control-Allow-Credentials: true`
 - OPTIONS 预检请求直接返回 204

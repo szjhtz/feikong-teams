@@ -62,10 +62,11 @@ type ServerAuth struct {
 
 // Server 服务端配置
 type Server struct {
-	Host     string     `toml:"host" json:"host"`
-	Port     int        `toml:"port" json:"port"`
-	LogLevel string     `toml:"log_level" json:"log_level"`
-	Auth     ServerAuth `toml:"auth" json:"auth"`
+	Host         string     `toml:"host" json:"host"`
+	Port         int        `toml:"port" json:"port"`
+	LogLevel     string     `toml:"log_level" json:"log_level"`
+	AllowOrigins []string   `toml:"allow_origins,omitempty" json:"allow_origins"`
+	Auth         ServerAuth `toml:"auth" json:"auth"`
 }
 
 // ==================== 智能体 ====================
@@ -418,6 +419,8 @@ func GenerateExample() error {
 			Host:     "127.0.0.1",
 			Port:     23456,
 			LogLevel: "info",
+			// 默认允许同源和 localhost；跨域部署时在这里显式添加前端地址。
+			AllowOrigins: []string{"http://localhost:23456", "http://127.0.0.1:23456"},
 			Auth: ServerAuth{
 				Enabled:  false,
 				Username: "admin",

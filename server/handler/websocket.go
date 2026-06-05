@@ -7,10 +7,10 @@ import (
 	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/server/handler/taskstream"
+	"fkteams/server/origin"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 
@@ -20,7 +20,7 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin:     origin.IsAllowed,
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 }

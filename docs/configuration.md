@@ -54,6 +54,17 @@ password = "your_password"
 secret = "your_jwt_secret"
 ```
 
+### Web 跨域（可选）
+
+默认允许同源请求和本机开发来源（`localhost`、`127.0.0.1`、`::1`）。如果前端页面和 API 服务部署在不同来源，需要显式配置允许的前端地址：
+
+```toml
+[server]
+allow_origins = ["https://your-frontend.example.com"]
+```
+
+`allow_origins` 支持完整来源地址，也支持主机名或 `host:port`。生产环境不建议使用 `"*"`，尤其是启用登录认证或 Cookie 时。
+
 ### OpenAI 兼容 API
 
 服务内置了 OpenAI 兼容的 API 端点，任意支持 OpenAI API 的客户端（如 Cursor、ChatBox、Open WebUI 等）都可以直接接入。
