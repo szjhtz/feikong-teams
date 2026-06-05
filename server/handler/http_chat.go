@@ -81,17 +81,17 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
-	engine.New(r, sessionID).Run(taskCtx, engine.RunConfig{
-		Messages: inputMessages,
-		EventCallback: func(event fkevent.Event) error {
+	engine.NewSession(r, sessionID).
+		WithMessages(inputMessages).
+		OnEvent(func(event fkevent.Event) error {
 			recorder.RecordEvent(event)
 			data, _ := json.Marshal(convertEventToMap(event))
 			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 			return err
-		},
-		Recorder: recorder,
-		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		}).
+		WithHistory(recorder).
+		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("connection closed, stopping: session=%s", sessionID)
@@ -104,8 +104,8 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 			data, _ := json.Marshal(map[string]string{"type": string(fkevent.NotifyProcessingEnd), "message": "处理完成"})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
-		},
-	})
+		}).
+		Run(taskCtx)
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
@@ -115,21 +115,21 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder
 
 	var events []fkevent.Event
 
-	engine.New(r, sessionID).Run(taskCtx, engine.RunConfig{
-		Messages: inputMessages,
-		EventCallback: func(event fkevent.Event) error {
+	engine.NewSession(r, sessionID).
+		WithMessages(inputMessages).
+		OnEvent(func(event fkevent.Event) error {
 			recorder.RecordEvent(event)
 			events = append(events, event)
 			return nil
-		},
-		Recorder: recorder,
-		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		}).
+		WithHistory(recorder).
+		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
 			}
 			finishChat(recorder, sessionID, userDisplayText)
-		},
-	})
+		}).
+		Run(taskCtx)
 
 	var content strings.Builder
 	for _, e := range events {

@@ -247,16 +247,16 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
-	engine.New(r, sessionID).Run(ctx, engine.RunConfig{
-		Messages: messages,
-		EventCallback: func(event fkevent.Event) error {
+	engine.NewSession(r, sessionID).
+		WithMessages(messages).
+		OnEvent(func(event fkevent.Event) error {
 			recorder.RecordEvent(event)
 			return rc.handleEvent(event)
-		},
-		Recorder:       recorder,
-		NonInteractive: true,
-		ApprovalReg:    approval.NewAutoApproveRegistry(),
-		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		}).
+		WithHistory(recorder).
+		NonInteractive().
+		WithApproval(approval.NewAutoApproveRegistry()).
+		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
 			}
@@ -273,8 +273,8 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")
 			}
-		},
-	})
+		}).
+		Run(ctx)
 }
 
 // saveChannelSessionMetadata 保存通道会话的元数据

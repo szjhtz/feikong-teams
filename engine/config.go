@@ -14,9 +14,9 @@ type HistorySink interface {
 	SetSummary(summary string, beforeCount int)
 }
 
-// RunConfig 执行配置，收敛所有生命周期关注点。
+// runConfig 执行配置，收敛所有生命周期关注点。
 // 零值字段均有安全默认值。
-type RunConfig struct {
+type runConfig struct {
 	// Messages 输入消息列表
 	Messages []adk.Message
 

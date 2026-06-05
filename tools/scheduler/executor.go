@@ -56,10 +56,10 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 
 	inputMessages := []adk.Message{schema.UserMessage(task)}
 
-	_, err = engine.New(r, "fkteams_scheduler").Run(ctx, engine.RunConfig{
-		Messages:      inputMessages,
-		EventCallback: callback,
-	})
+	_, err = engine.NewSession(r, "fkteams_scheduler").
+		WithMessages(inputMessages).
+		OnEvent(callback).
+		Run(ctx)
 	if err != nil {
 		errMsg := fmt.Sprintf("execution error: %v", err)
 		e.writeResult(taskID, task, errMsg)

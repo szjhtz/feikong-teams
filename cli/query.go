@@ -219,22 +219,22 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	e.state.StartQuery()
 
 	startTime := time.Now()
-	_, err := engine.New(e.runner, activeSessionID).Run(queryCtx, engine.RunConfig{
-		Messages: inputMessages,
-		EventCallback: func(event fkevent.Event) error {
+	_, err := engine.NewSession(e.runner, activeSessionID).
+		WithMessages(inputMessages).
+		OnEvent(func(event fkevent.Event) error {
 			return innerCallback(event)
-		},
-		Recorder:    recorder,
-		OnInterrupt: handler,
-		ApprovalReg: approvalReg,
-		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, _ error) {
+		}).
+		WithHistory(recorder).
+		OnInterrupt(handler).
+		WithApproval(approvalReg).
+		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, _ error) {
 			e.state.EndQuery()
 			recorder.FinalizeCurrent()
 			if g.MemoryManager != nil {
 				g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
 			}
-		},
-	})
+		}).
+		Run(queryCtx)
 
 	if queryCtx.Err() == nil {
 		e.view.Flush()

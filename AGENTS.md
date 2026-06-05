@@ -32,9 +32,10 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
   session.go, agent.go      #   会话和智能体管理
   skill/                    #   技能安装、移除、搜索
 engine/                     # 统一执行引擎
-  config.go                 #   RunConfig — 集中管理 context 装配和回调
-                            #   （OnStart → OnInterrupt → OnFinish），各入口不再手动装配 context
-  run.go                    #   Engine.Run() — 装配 context 后调用 runLoop
+  session.go                #   NewSession() — 面向入口层的会话执行接口（WithMessages / OnEvent / WithHistory / Run）
+  config.go                 #   runConfig — 包内执行配置，集中管理 context 装配和回调
+                            #   （OnStart → OnInterrupt → OnFinish），各入口通过 Session 装配
+  run.go                    #   core.run() — 装配 context 后调用 runLoop
   loop.go                   #   runLoop() — Runner 事件循环，处理迭代和 HITL 中断/恢复
   interrupt.go              #   HITL 中断处理器（AutoRejectHandler / ChannelHandler / CallbackHandler）
 agents/                     # 智能体系统
@@ -139,5 +140,5 @@ bootstrap/                  # 应用目录初始化
 
 ### 其他
 
-- `RunConfig.OnInterrupt` 为 nil 时自动使用 `AutoRejectHandler`
+- `Session.OnInterrupt` 未设置时自动使用 `AutoRejectHandler`
 - 功能变更必须同步更新 `README.md`

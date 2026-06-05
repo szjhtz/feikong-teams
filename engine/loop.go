@@ -9,7 +9,7 @@ import (
 )
 
 // runLoop 事件循环，处理迭代和中断/恢复
-func (e *Engine) runLoop(ctx context.Context, messages []adk.Message, handler InterruptHandler) (*adk.AgentEvent, error) {
+func (e *core) runLoop(ctx context.Context, messages []adk.Message, handler InterruptHandler) (*adk.AgentEvent, error) {
 	iter := e.runner.Run(ctx, messages, adk.WithCheckPointID(e.checkpointID))
 	for {
 		lastEvent, err := drainEvents(ctx, iter)

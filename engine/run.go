@@ -11,9 +11,9 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// Run 执行查询，处理事件和 HITL 中断。
-// 根据 RunConfig 自动装配 context（session ID、事件回调、摘要持久化、审批注册表等）。
-func (e *Engine) Run(ctx context.Context, cfg RunConfig) (*adk.AgentEvent, error) {
+// run 执行查询，处理事件和 HITL 中断。
+// 根据 runConfig 自动装配 context（session ID、事件回调、摘要持久化、审批注册表等）。
+func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) {
 	ctx = common.WithSessionID(ctx, e.checkpointID)
 
 	if cfg.EventCallback != nil {
