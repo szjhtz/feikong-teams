@@ -171,8 +171,12 @@
     });
   }
 
-  function setError(message) {
+  function setError(message, title) {
     if (!els.content) return;
+    const displayTitle = title || "分享不可访问";
+    if (els.title) els.title.textContent = displayTitle;
+    if (els.meta) els.meta.innerHTML = "";
+    document.title = `${displayTitle} - 非空小队`;
     els.passwordCard.style.display = "none";
     els.content.style.display = "";
     els.content.innerHTML = `<div class="share-empty">${escapeHtml(message)}</div>`;
@@ -189,14 +193,15 @@
 
   async function loadInfo() {
     if (!state.shareID) {
-      setError("分享链接无效");
+      setError("分享链接无效", "分享链接无效");
       return;
     }
     try {
       const resp = await fetch(`/api/fkteams/public/session-shares/${encodeURIComponent(state.shareID)}/info`);
       const data = await resp.json();
       if (data.code !== 0) {
-        setError(data.message === "share expired" ? "分享链接已过期" : "分享链接不存在或已失效");
+        const expired = data.message === "share expired";
+        setError(expired ? "分享链接已过期" : "分享链接不存在或已失效", expired ? "分享已过期" : "分享不存在");
         return;
       }
       state.info = data.data;
@@ -211,7 +216,7 @@
       accessShare("");
     } catch (err) {
       console.error("load share info error:", err);
-      setError("加载分享信息失败");
+      setError("加载分享信息失败", "分享加载失败");
     }
   }
 
@@ -230,7 +235,8 @@
           els.passwordError.textContent = "密码不正确";
           return;
         }
-        setError(data.message === "share expired" ? "分享链接已过期" : "分享内容不可访问");
+        const expired = data.message === "share expired";
+        setError(expired ? "分享链接已过期" : "分享内容不可访问", expired ? "分享已过期" : "分享不可访问");
         return;
       }
       els.passwordCard.style.display = "none";
@@ -240,7 +246,7 @@
       renderMessages(data.data.messages || []);
     } catch (err) {
       console.error("access share error:", err);
-      setError("加载分享内容失败");
+      setError("加载分享内容失败", "分享加载失败");
     } finally {
       if (els.passwordSubmit) els.passwordSubmit.disabled = false;
     }
