@@ -100,7 +100,7 @@ func (bt *BunTools) InitEnv(ctx context.Context, req *InitEnvRequest) (*InitEnvR
 			return &InitEnvResponse{
 				Success:      false,
 				ErrorMessage: fmt.Sprintf("删除已有 package.json 失败: %v", err),
-			}, fmt.Errorf("删除已有 package.json 失败: %w", err)
+			}, nil
 		}
 	}
 
@@ -110,7 +110,7 @@ func (bt *BunTools) InitEnv(ctx context.Context, req *InitEnvRequest) (*InitEnvR
 		return &InitEnvResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("初始化项目失败: %v", err),
-		}, err
+		}, nil
 	}
 
 	return &InitEnvResponse{
@@ -141,7 +141,7 @@ func (bt *BunTools) InstallPackage(ctx context.Context, req *InstallPackageReque
 		return &InstallPackageResponse{
 			Success:      false,
 			ErrorMessage: "packages 不能为空",
-		}, fmt.Errorf("packages 不能为空")
+		}, nil
 	}
 
 	// 如果不是全局安装，检查 package.json 是否存在
@@ -151,7 +151,7 @@ func (bt *BunTools) InstallPackage(ctx context.Context, req *InstallPackageReque
 			return &InstallPackageResponse{
 				Success:      false,
 				ErrorMessage: "项目未初始化，请先调用 init_env 初始化环境",
-			}, fmt.Errorf("项目未初始化")
+			}, nil
 		}
 	}
 
@@ -173,7 +173,7 @@ func (bt *BunTools) InstallPackage(ctx context.Context, req *InstallPackageReque
 		return &InstallPackageResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("安装依赖失败: %v", err),
-		}, err
+		}, nil
 	}
 
 	return &InstallPackageResponse{
@@ -203,7 +203,7 @@ func (bt *BunTools) RemovePackage(ctx context.Context, req *RemovePackageRequest
 		return &RemovePackageResponse{
 			Success:      false,
 			ErrorMessage: "packages 不能为空",
-		}, fmt.Errorf("packages 不能为空")
+		}, nil
 	}
 
 	// 如果不是全局删除，检查 package.json 是否存在
@@ -213,7 +213,7 @@ func (bt *BunTools) RemovePackage(ctx context.Context, req *RemovePackageRequest
 			return &RemovePackageResponse{
 				Success:      false,
 				ErrorMessage: "项目未初始化，请先调用 init_env 初始化环境",
-			}, fmt.Errorf("项目未初始化")
+			}, nil
 		}
 	}
 
@@ -230,7 +230,7 @@ func (bt *BunTools) RemovePackage(ctx context.Context, req *RemovePackageRequest
 		return &RemovePackageResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("移除依赖失败: %v", err),
-		}, err
+		}, nil
 	}
 
 	return &RemovePackageResponse{
@@ -268,7 +268,7 @@ func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*
 			return &ListPackageResponse{
 				Success:      false,
 				ErrorMessage: "项目未初始化，请先调用 init_env 初始化环境",
-			}, fmt.Errorf("项目未初始化")
+			}, nil
 		}
 	}
 
@@ -279,7 +279,7 @@ func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*
 		return &ListPackageResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("读取 package.json 失败: %v", err),
-		}, err
+		}, nil
 	}
 
 	var pkgJSON struct {
@@ -291,7 +291,7 @@ func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*
 		return &ListPackageResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("解析 package.json 失败: %v", err),
-		}, err
+		}, nil
 	}
 
 	var packages []PackageInfo
@@ -335,7 +335,7 @@ func (bt *BunTools) CleanEnv(ctx context.Context, req *CleanEnvRequest) (*CleanE
 			return &CleanEnvResponse{
 				Success:      false,
 				ErrorMessage: fmt.Sprintf("删除 node_modules 失败: %v", err),
-			}, err
+			}, nil
 		}
 	}
 
@@ -345,7 +345,7 @@ func (bt *BunTools) CleanEnv(ctx context.Context, req *CleanEnvRequest) (*CleanE
 			return &CleanEnvResponse{
 				Success:      false,
 				ErrorMessage: fmt.Sprintf("删除 bun.lockb 失败: %v", err),
-			}, err
+			}, nil
 		}
 	}
 
@@ -358,7 +358,7 @@ func (bt *BunTools) CleanEnv(ctx context.Context, req *CleanEnvRequest) (*CleanE
 				return &CleanEnvResponse{
 					Success:      false,
 					ErrorMessage: fmt.Sprintf("删除 package.json 失败: %v", err),
-				}, err
+				}, nil
 			}
 			message += "，已删除 package.json"
 		}
@@ -407,7 +407,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 			return &RunScriptResponse{
 				Success:      false,
 				ErrorMessage: fmt.Sprintf("脚本文件不存在: %s", scriptPath),
-			}, fmt.Errorf("脚本文件不存在: %s", scriptPath)
+			}, nil
 		}
 	} else if req.ScriptContent != "" {
 		// 创建临时脚本文件
@@ -416,7 +416,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 			return &RunScriptResponse{
 				Success:      false,
 				ErrorMessage: fmt.Sprintf("创建临时脚本失败: %v", err),
-			}, err
+			}, nil
 		}
 		scriptPath = tempFile.Name()
 
@@ -427,7 +427,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 			return &RunScriptResponse{
 				Success:      false,
 				ErrorMessage: fmt.Sprintf("写入脚本内容失败: %v", err),
-			}, err
+			}, nil
 		}
 		tempFile.Close()
 
@@ -437,7 +437,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 		return &RunScriptResponse{
 			Success:      false,
 			ErrorMessage: "script_path 和 script_content 必须提供其中一个",
-		}, fmt.Errorf("script_path 和 script_content 必须提供其中一个")
+		}, nil
 	}
 
 	// 设置超时
@@ -476,7 +476,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 				Output:       string(output),
 				Duration:     duration.String(),
 				ErrorMessage: fmt.Sprintf("脚本执行失败: %v", err),
-			}, err
+			}, nil
 		}
 	}
 
