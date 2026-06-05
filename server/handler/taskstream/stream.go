@@ -9,6 +9,7 @@
 package taskstream
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -22,6 +23,15 @@ type IndexedEvent struct {
 	ID   uint64 `json:"id"`
 	Data Event  `json:"data"`
 }
+
+// InterruptKind 描述当前等待的人工输入类型。
+type InterruptKind string
+
+const (
+	InterruptNone     InterruptKind = ""
+	InterruptApproval InterruptKind = "approval"
+	InterruptAsk      InterruptKind = "ask"
+)
 
 // Subscriber 接收推送事件（Push 模式，如 WebSocket 连接）
 type Subscriber interface {
@@ -71,6 +81,8 @@ type Stream struct {
 	createdAt   time.Time
 	doneAt      time.Time
 	interruptCh chan any // 审批/ask 通道
+	pendingKind InterruptKind
+	submitted   bool
 
 	// 所属 Manager 引用（用于 grace timer 自动移除）
 	manager *Manager
@@ -246,6 +258,67 @@ func (s *Stream) Done() {
 // Cancel 取消底层任务
 func (s *Stream) Cancel() {
 	s.config.Cancel()
+}
+
+// BeginInterrupt 标记当前流正在等待指定类型的人工输入。
+func (s *Stream) BeginInterrupt(kind InterruptKind) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.drainInterruptLocked()
+	s.pendingKind = kind
+	s.submitted = false
+}
+
+// CompleteInterrupt 清除当前人工输入等待状态。
+func (s *Stream) CompleteInterrupt(kind InterruptKind) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pendingKind == kind {
+		s.pendingKind = InterruptNone
+		s.submitted = false
+	}
+}
+
+// SubmitInterrupt 提交人工输入。仅当前确实存在同类型 pending 时才接受。
+func (s *Stream) SubmitInterrupt(kind InterruptKind, value any) error {
+	s.mu.Lock()
+	if s.done || s.status != "processing" {
+		s.mu.Unlock()
+		return fmt.Errorf("task is not processing")
+	}
+	if s.pendingKind != kind {
+		s.mu.Unlock()
+		return fmt.Errorf("no pending %s request", kind)
+	}
+	if s.submitted {
+		s.mu.Unlock()
+		return fmt.Errorf("%s request already submitted", kind)
+	}
+	s.submitted = true
+	ch := s.interruptCh
+	s.mu.Unlock()
+
+	select {
+	case ch <- value:
+		return nil
+	default:
+		s.mu.Lock()
+		if s.pendingKind == kind {
+			s.submitted = false
+		}
+		s.mu.Unlock()
+		return fmt.Errorf("%s request is not ready", kind)
+	}
+}
+
+func (s *Stream) drainInterruptLocked() {
+	for {
+		select {
+		case <-s.interruptCh:
+		default:
+			return
+		}
+	}
 }
 
 // IsDone 检查流是否已完成

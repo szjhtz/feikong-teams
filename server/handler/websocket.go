@@ -157,10 +157,7 @@ func WebSocketHandler() gin.HandlerFunc {
 			case "approval":
 				sid := wsMsg.SessionID
 				if stream := GlobalStreams.Get(sid); stream != nil {
-					select {
-					case stream.InterruptCh() <- wsMsg.Decision:
-					default:
-					}
+					_ = stream.SubmitInterrupt(taskstream.InterruptApproval, wsMsg.Decision)
 				}
 
 			case "ask_response":
@@ -170,10 +167,7 @@ func WebSocketHandler() gin.HandlerFunc {
 					FreeText: wsMsg.AskFreeText,
 				}
 				if stream := GlobalStreams.Get(sid); stream != nil {
-					select {
-					case stream.InterruptCh() <- resp:
-					default:
-					}
+					_ = stream.SubmitInterrupt(taskstream.InterruptAsk, resp)
 				}
 
 			case "ping":
@@ -189,11 +183,14 @@ func WebSocketHandler() gin.HandlerFunc {
 // --- WebSocket HITL 中断处理器 ---
 
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan any) engine.InterruptHandler {
-	channelHandler := engine.ChannelHandler(approvalCh)
+func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, writeJSON func(any) error, stream *taskstream.Stream) engine.InterruptHandler {
+	channelHandler := engine.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if info := extractAskInfo(interrupts); info != nil {
+			stream.BeginInterrupt(taskstream.InterruptAsk)
+			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
+
 			recorder.RecordEvent(fkevent.Event{
 				Type:       fkevent.EventAction,
 				ActionType: fkevent.ActionAskQuestions,
@@ -222,6 +219,9 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 
 		// 默认审批流程
 		msg := extractInterruptMessage(interrupts)
+
+		stream.BeginInterrupt(taskstream.InterruptApproval)
+		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
 		recorder.RecordEvent(fkevent.Event{
 			Type:       fkevent.EventAction,
@@ -316,7 +316,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
-	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream.InterruptCh())
+	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
 	engine.New(r, sessionID).Run(taskCtx, engine.RunConfig{
 		Messages:      inputMessages,
 		EventCallback: wsEventCallbackBuffered(recorder, sessionID, stream),

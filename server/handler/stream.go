@@ -339,10 +339,9 @@ func StreamApprovalHandler() gin.HandlerFunc {
 			return
 		}
 
-		select {
-		case stream.InterruptCh() <- req.Decision:
+		if err := stream.SubmitInterrupt(taskstream.InterruptApproval, req.Decision); err == nil {
 			OK(c, gin.H{"message": "approval submitted"})
-		default:
+		} else {
 			Fail(c, http.StatusConflict, "no pending approval request")
 		}
 	}
@@ -375,10 +374,9 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 			Selected: req.Selected,
 			FreeText: req.FreeText,
 		}
-		select {
-		case stream.InterruptCh() <- resp:
+		if err := stream.SubmitInterrupt(taskstream.InterruptAsk, resp); err == nil {
 			OK(c, gin.H{"message": "response submitted"})
-		default:
+		} else {
 			Fail(c, http.StatusConflict, "no pending ask request")
 		}
 	}
@@ -425,6 +423,9 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if info := extractAskInfo(interrupts); info != nil {
+			stream.BeginInterrupt(taskstream.InterruptAsk)
+			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
+
 			recorder.RecordEvent(fkevent.Event{
 				Type:       fkevent.EventAction,
 				ActionType: fkevent.ActionAskQuestions,
@@ -451,6 +452,9 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 
 		// 默认审批流程
 		msg := extractInterruptMessage(interrupts)
+
+		stream.BeginInterrupt(taskstream.InterruptApproval)
+		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
 		recorder.RecordEvent(fkevent.Event{
 			Type:       fkevent.EventAction,
