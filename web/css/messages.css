@@ -799,13 +799,20 @@ a.source-item:hover {
   overflow-x: hidden;
 }
 
-.parallel-members-header {
-  margin-bottom: var(--message-inner-gap);
+.dispatch-header.parallel-members-header {
+  margin: 0 0 8px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+  font-family: inherit;
 }
 
 .parallel-members-title {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .parallel-member-head {
@@ -833,6 +840,10 @@ a.source-item:hover {
   white-space: nowrap;
 }
 
+.parallel-members-count {
+  color: var(--text-tertiary);
+}
+
 .parallel-member-head .parallel-member-task-content {
   display: block;
   flex: 1 1 0;
@@ -852,9 +863,9 @@ a.source-item:hover {
 }
 
 .parallel-member-head .parallel-member-activity {
-  flex: 0 1 150px;
+  flex: 0 1 auto;
   min-width: 72px;
-  max-width: 190px;
+  max-width: 150px;
   color: var(--text-tertiary);
   font-size: 12px;
   line-height: 1.4;
@@ -1721,8 +1732,8 @@ a.source-item:hover {
     margin: 0;
   }
 
-  .parallel-members-header {
-    padding: 8px 10px;
+  .dispatch-header.parallel-members-header {
+    padding: 0 2px;
     font-size: 12px;
   }
 
@@ -1768,9 +1779,9 @@ a.source-item:hover {
   }
 
   .parallel-member-head .parallel-member-activity {
-    flex: 0 1 92px;
+    flex: 0 1 auto;
     min-width: 54px;
-    max-width: 110px;
+    max-width: 92px;
     font-size: 11px;
   }
 

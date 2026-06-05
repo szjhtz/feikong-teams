@@ -408,7 +408,7 @@ FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
   const statusEl = entry.el.querySelector(".parallel-member-status");
   if (statusEl) statusEl.textContent = text;
   if (status === "done" || status === "error") {
-    this.updateMemberActivity(entry, status === "error" ? "执行失败" : "已完成");
+    this.updateMemberActivity(entry, "");
     this.finalizeMemberMarkdown(entry);
   } else if (text) {
     this.updateMemberActivity(entry, text);
