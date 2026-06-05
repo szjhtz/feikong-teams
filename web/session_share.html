@@ -90,7 +90,7 @@
       border: 2px solid var(--border);
       border-radius: 14px;
       box-shadow: 4px 5px 0 rgba(60, 50, 30, 0.08);
-      overflow: hidden;
+      overflow: visible;
     }
 
     .share-password {
@@ -148,12 +148,21 @@
     }
 
     .share-message {
-      padding: 18px 20px;
+      margin: 12px;
+      padding: 16px 18px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
       border-bottom: 1px dashed var(--border);
+      background: #fffefb;
     }
 
     .share-message:last-child {
-      border-bottom: none;
+      border-bottom: 1.5px solid var(--border);
+    }
+
+    .share-message.user {
+      background: #f4f0ff;
+      border-color: rgba(107, 127, 198, 0.28);
     }
 
     .share-message-head {
@@ -167,6 +176,10 @@
     .share-agent {
       font-weight: 800;
       color: var(--accent);
+    }
+
+    .share-message.user .share-agent {
+      color: #5364a8;
     }
 
     .share-time {
@@ -214,6 +227,144 @@
       overflow-x: auto;
     }
 
+    .share-member-panel {
+      margin: 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: #fbfaf6;
+      overflow: hidden;
+    }
+
+    .share-member-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px dashed var(--border);
+      background: var(--panel-soft);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .share-member-header span:last-child {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .share-member-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+    }
+
+    .share-member-card {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+
+    .share-member-card summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 11px;
+      cursor: pointer;
+      list-style: none;
+      min-width: 0;
+    }
+
+    .share-member-card summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .share-member-card summary::after {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(-45deg);
+      transition: transform 0.15s ease;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .share-member-card[open] summary::after {
+      transform: rotate(45deg);
+    }
+
+    .share-member-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #5fa56f;
+      flex-shrink: 0;
+    }
+
+    .share-member-dot.error {
+      background: var(--danger);
+    }
+
+    .share-member-name {
+      max-width: 150px;
+      font-weight: 800;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+    }
+
+    .share-member-summary {
+      flex: 1;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .share-member-status {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(95, 165, 111, 0.12);
+      color: #4f8d5e;
+      font-size: 12px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .share-member-status.error {
+      background: rgba(212, 93, 93, 0.1);
+      color: var(--danger);
+    }
+
+    .share-member-detail {
+      padding: 0 11px 11px;
+      border-top: 1px dashed var(--border);
+    }
+
+    .share-member-message {
+      padding-top: 10px;
+    }
+
+    .share-member-message + .share-member-message {
+      margin-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+
+    .share-member-time {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
     .share-empty,
     .share-loading {
       padding: 40px 20px;
@@ -247,13 +398,32 @@
       }
 
       .share-message {
-        padding: 15px 14px;
+        margin: 10px;
+        padding: 14px;
       }
 
       .share-message-head,
       .share-password-row {
         flex-direction: column;
         align-items: stretch;
+      }
+
+      .share-member-panel {
+        margin: 10px;
+      }
+
+      .share-member-card summary {
+        flex-wrap: wrap;
+      }
+
+      .share-member-name {
+        max-width: calc(100vw - 150px);
+      }
+
+      .share-member-summary {
+        flex-basis: 100%;
+        order: 5;
+        padding-left: 16px;
       }
     }
   </style>
