@@ -208,6 +208,11 @@ FKTeamsChat.prototype.migrateMemberCard = function (fromKey, toKey) {
   if (pending.el) pending.el.setAttribute("data-member-key", toKey);
 };
 
+FKTeamsChat.prototype.hasActiveTextSelection = function () {
+  const selection = window.getSelection ? window.getSelection() : null;
+  return !!(selection && !selection.isCollapsed && String(selection).trim());
+};
+
 FKTeamsChat.prototype.getMessageElementForEvent = function (event) {
   const key = this.getStreamKey(event);
   if (this.hasToolCallAfterMessage) {
@@ -347,6 +352,8 @@ FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order)
   `;
   card.addEventListener("click", (e) => {
     if (e.target.closest("a, button, summary, pre, code, details, .sources-card, .source-item, .footnote-cite, .parallel-member-tool-flow")) return;
+    if (this.hasActiveTextSelection()) return;
+    if (!e.target.closest(".parallel-member-head")) return;
     const detail = card.querySelector(".parallel-member-detail");
     const currentKey = card.getAttribute("data-member-key") || key;
     const currentEntry = this.parallelMemberCards[currentKey] || card._memberEntry;
@@ -429,7 +436,9 @@ FKTeamsChat.prototype.memberHasDetail = function (entry) {
 FKTeamsChat.prototype.updateMemberDetailVisibility = function (entry) {
   if (!entry || !entry.el || !entry.detail) return;
   const hasDetail = this.memberHasDetail(entry);
-  entry.el.style.cursor = hasDetail ? "pointer" : "";
+  const head = entry.el.querySelector(".parallel-member-head");
+  entry.el.style.cursor = "";
+  if (head) head.style.cursor = hasDetail ? "pointer" : "";
   if (!hasDetail) {
     entry.el.classList.remove("dispatch-card-expanded");
     entry.detail.style.display = "none";

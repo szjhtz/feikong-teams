@@ -824,6 +824,10 @@ a.source-item:hover {
   flex-wrap: nowrap;
 }
 
+.parallel-member-detail {
+  cursor: text;
+}
+
 .parallel-member-head .parallel-member-name {
   font-weight: 700;
   flex: 0 0 auto;
