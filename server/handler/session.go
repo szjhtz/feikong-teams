@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fkteams/common"
 	"fkteams/eventlog"
 	"log"
@@ -181,11 +182,14 @@ func GetSessionHandler() gin.HandlerFunc {
 		stream := GlobalStreams.Get(sessionID)
 		activeTask := stream != nil && stream.Status() == "processing"
 
-		histFile := filepath.Join(sessionDirPath(sessionID), eventlog.HistoryFileName)
+		sessionDir := sessionDirPath(sessionID)
+		meta, metaErr := eventlog.LoadMetadata(sessionDir)
+
+		histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
 		recorder := eventlog.NewHistoryRecorder()
 		if err := recorder.LoadFromFile(histFile); err != nil {
-			if os.IsNotExist(err) {
-				if !activeTask {
+			if errors.Is(err, os.ErrNotExist) {
+				if !activeTask && metaErr != nil {
 					Fail(c, http.StatusNotFound, "session not found")
 					return
 				}
@@ -197,7 +201,6 @@ func GetSessionHandler() gin.HandlerFunc {
 		}
 
 		currentAgent := ""
-		meta, metaErr := eventlog.LoadMetadata(sessionDirPath(sessionID))
 		if metaErr == nil {
 			currentAgent = meta.CurrentAgent
 		}
