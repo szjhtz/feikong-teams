@@ -2,6 +2,7 @@ package eventlog
 
 import (
 	"encoding/json"
+	"fkteams/common/atomicfile"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ func SaveMetadata(sessionDir string, meta *SessionMetadata) error {
 	if err != nil {
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
-	return os.WriteFile(filepath.Join(sessionDir, "metadata.json"), data, 0644)
+	return atomicfile.WriteFile(filepath.Join(sessionDir, "metadata.json"), data, 0644)
 }
 
 // LoadMetadata 从指定目录加载会话元数据

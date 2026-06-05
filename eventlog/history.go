@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fkteams/agenttool"
 	"fkteams/common"
+	"fkteams/common/atomicfile"
 	"fkteams/fkevent"
 	"fmt"
 	"io"
@@ -906,7 +907,7 @@ func saveMessagesToFile(messages []AgentMessage, filePath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 
@@ -1110,7 +1111,7 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 		}
 	}
 
-	if err := os.WriteFile(filePath, []byte(md.String()), 0644); err != nil {
+	if err := atomicfile.WriteFile(filePath, []byte(md.String()), 0644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 

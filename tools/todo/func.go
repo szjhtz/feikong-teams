@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"fkteams/common"
+	"fkteams/common/atomicfile"
 )
 
 // Todo 待办事项结构
@@ -61,7 +62,7 @@ func (tt *TodoTools) getFilePath(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("无法序列化待办列表: %w", err)
 		}
-		if err := os.WriteFile(filePath, data, 0644); err != nil {
+		if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
 			return "", fmt.Errorf("无法创建待办列表文件: %w", err)
 		}
 	}
@@ -90,7 +91,7 @@ func (tt *TodoTools) saveTo(filePath string, list *TodoList) error {
 		return fmt.Errorf("无法序列化待办列表: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("无法保存待办列表: %w", err)
 	}
 
