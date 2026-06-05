@@ -45,6 +45,15 @@ var toolCallRefsByID sync.Map
 var toolCallOrdersByID sync.Map
 var toolCallSpansByID sync.Map
 var toolCallSpansByRef sync.Map
+var toolCallStateStoreCount int64
+var toolCallStateTTL = 24 * time.Hour
+
+const toolCallStatePruneInterval = 1024
+
+type toolCallStateEntry struct {
+	Value     any
+	CreatedAt time.Time
+}
 
 func isInternalToolName(name string) bool {
 	return name == internalContinueToolName
@@ -94,7 +103,7 @@ func normalizeEvent(event Event) Event {
 		event.EventID = fmt.Sprintf("evt_%d", event.Sequence)
 	}
 	if event.ToolCallRef == "" && event.ToolCallID != "" {
-		if ref, ok := toolCallRefsByID.Load(event.ToolCallID); ok {
+		if ref, ok := loadToolCallState(&toolCallRefsByID, event.ToolCallID); ok {
 			event.ToolCallRef, _ = ref.(string)
 		}
 	}
@@ -102,7 +111,7 @@ func normalizeEvent(event Event) Event {
 		event.ExternalCallID = event.ToolCallID
 	}
 	if event.MemberOrder == nil && event.ParentToolCallID != "" {
-		if order, ok := toolCallOrdersByID.Load(event.ParentToolCallID); ok {
+		if order, ok := loadToolCallState(&toolCallOrdersByID, event.ParentToolCallID); ok {
 			if v, ok := order.(int); ok {
 				event.MemberOrder = intPtr(v)
 			}
@@ -163,14 +172,14 @@ func registerToolCallRef(id, ref string) {
 	if id == "" || ref == "" {
 		return
 	}
-	toolCallRefsByID.Store(id, ref)
+	storeToolCallState(&toolCallRefsByID, id, ref)
 }
 
 func registerToolCallOrder(id string, idx int) {
 	if id == "" {
 		return
 	}
-	toolCallOrdersByID.Store(id, idx)
+	storeToolCallState(&toolCallOrdersByID, id, idx)
 }
 
 func registerToolCallSpan(id, ref, span string) {
@@ -178,29 +187,76 @@ func registerToolCallSpan(id, ref, span string) {
 		return
 	}
 	if id != "" {
-		toolCallSpansByID.Store(id, span)
+		storeToolCallState(&toolCallSpansByID, id, span)
 	}
 	if ref != "" {
-		toolCallSpansByRef.Store(ref, span)
+		storeToolCallState(&toolCallSpansByRef, ref, span)
 	}
 }
 
 func lookupToolCallSpan(id, ref string) string {
 	if id != "" {
-		if span, ok := toolCallSpansByID.Load(id); ok {
+		if span, ok := loadToolCallState(&toolCallSpansByID, id); ok {
 			if v, ok := span.(string); ok {
 				return v
 			}
 		}
 	}
 	if ref != "" {
-		if span, ok := toolCallSpansByRef.Load(ref); ok {
+		if span, ok := loadToolCallState(&toolCallSpansByRef, ref); ok {
 			if v, ok := span.(string); ok {
 				return v
 			}
 		}
 	}
 	return ""
+}
+
+func storeToolCallState(store *sync.Map, key string, value any) {
+	store.Store(key, toolCallStateEntry{
+		Value:     value,
+		CreatedAt: time.Now(),
+	})
+	if atomic.AddInt64(&toolCallStateStoreCount, 1)%toolCallStatePruneInterval == 0 {
+		pruneToolCallState(time.Now())
+	}
+}
+
+func loadToolCallState(store *sync.Map, key string) (any, bool) {
+	raw, ok := store.Load(key)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := raw.(toolCallStateEntry)
+	if !ok {
+		return raw, true
+	}
+	if toolCallStateExpired(entry.CreatedAt, time.Now()) {
+		store.Delete(key)
+		return nil, false
+	}
+	return entry.Value, true
+}
+
+func pruneToolCallState(now time.Time) {
+	pruneToolCallStateMap(&toolCallRefsByID, now)
+	pruneToolCallStateMap(&toolCallOrdersByID, now)
+	pruneToolCallStateMap(&toolCallSpansByID, now)
+	pruneToolCallStateMap(&toolCallSpansByRef, now)
+}
+
+func pruneToolCallStateMap(store *sync.Map, now time.Time) {
+	store.Range(func(key, value any) bool {
+		entry, ok := value.(toolCallStateEntry)
+		if ok && toolCallStateExpired(entry.CreatedAt, now) {
+			store.Delete(key)
+		}
+		return true
+	})
+}
+
+func toolCallStateExpired(createdAt, now time.Time) bool {
+	return toolCallStateTTL > 0 && now.Sub(createdAt) > toolCallStateTTL
 }
 
 func makeSpanID(kind, key string) string {
