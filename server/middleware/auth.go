@@ -28,7 +28,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		// 文件预览/分享链接不需要验证（有独立的密码校验机制）
-		if strings.HasPrefix(path, "/p/") {
+		if strings.HasPrefix(path, "/p/") || strings.HasPrefix(path, "/s/") {
 			c.Next()
 			return
 		}
@@ -39,6 +39,10 @@ func Auth() gin.HandlerFunc {
 			return
 		}
 		if (c.Request.Method == "GET" || c.Request.Method == "HEAD") && strings.HasPrefix(path, "/api/fkteams/preview/") {
+			c.Next()
+			return
+		}
+		if strings.HasPrefix(path, "/api/fkteams/public/session-shares/") {
 			c.Next()
 			return
 		}

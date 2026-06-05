@@ -87,6 +87,21 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			preview.DELETE("/:linkId", handler.DeletePreviewLinkHandler())
 		}
 
+		// 会话分享管理 API
+		sessionShares := apiV1.Group("/session-shares")
+		{
+			sessionShares.POST("", handler.CreateSessionShareHandler())
+			sessionShares.GET("", handler.ListSessionSharesHandler())
+			sessionShares.DELETE("/:shareID", handler.DeleteSessionShareHandler())
+		}
+
+		// 公开会话分享 API
+		publicSessionShares := apiV1.Group("/public/session-shares")
+		{
+			publicSessionShares.GET("/:shareID/info", handler.GetPublicSessionShareInfoHandler())
+			publicSessionShares.POST("/:shareID/access", handler.AccessPublicSessionShareHandler())
+		}
+
 		// 会话管理 API
 		sessions := apiV1.Group("/sessions")
 		{
@@ -204,6 +219,15 @@ func Init() (*gin.Engine, error) {
 		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
 	}
 	r.GET("/p/:linkId", servePreview)
+	r.GET("/s/:shareID", func(c *gin.Context) {
+		data, err := webFS.Open("session_share.html")
+		if err != nil {
+			c.String(http.StatusNotFound, "Page not found")
+			return
+		}
+		defer data.Close()
+		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+	})
 
 	registerAPIRoutes(r, authEnabled)
 	return r, nil
