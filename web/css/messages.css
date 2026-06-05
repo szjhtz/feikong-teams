@@ -859,6 +859,18 @@ a.source-item:hover {
   color: var(--text-secondary);
 }
 
+.parallel-member-head .parallel-member-activity {
+  flex: 0 1 150px;
+  min-width: 72px;
+  max-width: 190px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .parallel-member-task-detail {
   margin-bottom: 8px;
   padding: 7px 9px;
@@ -1761,6 +1773,13 @@ a.source-item:hover {
     min-width: 0;
     padding-left: 7px;
     border-left: 1px solid var(--border-color);
+  }
+
+  .parallel-member-head .parallel-member-activity {
+    flex: 0 1 92px;
+    min-width: 54px;
+    max-width: 110px;
+    font-size: 11px;
   }
 
   .parallel-member-detail {

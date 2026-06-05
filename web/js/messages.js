@@ -286,7 +286,7 @@ FKTeamsChat.prototype.ensureParallelPanel = function () {
   panel.className = "parallel-members-panel";
   panel.innerHTML = `
     <div class="dispatch-header dispatch-status-partial parallel-members-header">
-      <span class="parallel-members-title">成员并行处理中</span>
+      <span class="parallel-members-title">成员任务处理中</span>
       <span class="dispatch-progress-counter parallel-members-count" data-total="0" data-done="0">0/0</span>
     </div>
     <div class="dispatch-cards parallel-members-list"></div>
@@ -336,6 +336,7 @@ FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order)
       <span class="parallel-member-task-content" style="display:none">
         <span class="parallel-member-task-text"></span>
       </span>
+      <span class="parallel-member-activity"></span>
       <span class="dispatch-card-ops-count parallel-member-status">运行中</span>
       <span class="dispatch-card-toggle parallel-member-toggle"></span>
     </div>
@@ -358,6 +359,7 @@ FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order)
   const entry = {
     el: card,
     task: card.querySelector(".parallel-member-task-content"),
+    activity: card.querySelector(".parallel-member-activity"),
     taskDetail: card.querySelector(".parallel-member-task-detail"),
     timeline: card.querySelector(".parallel-member-timeline"),
     detail: card.querySelector(".parallel-member-detail"),
@@ -365,8 +367,23 @@ FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order)
   card._memberEntry = entry;
   this.parallelMemberCards[key] = entry;
   if (agentName) this.parallelMemberByAgent[this.normalizedAgentName(agentName)] = key;
+  this.updateMemberActivity(entry, "等待开始");
   this.updateParallelMembersHeader();
   return entry;
+};
+
+FKTeamsChat.prototype.updateMemberActivity = function (entry, text) {
+  if (!entry || !entry.el) return;
+  if (!entry.activity) entry.activity = entry.el.querySelector(".parallel-member-activity");
+  if (!entry.activity) return;
+  const value = String(text || "").trim();
+  if (!value) {
+    entry.activity.textContent = "";
+    entry.activity.style.display = "none";
+    return;
+  }
+  entry.activity.textContent = this.truncateRunes(value, 80);
+  entry.activity.style.display = "";
 };
 
 FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
@@ -384,7 +401,10 @@ FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
   const statusEl = entry.el.querySelector(".parallel-member-status");
   if (statusEl) statusEl.textContent = text;
   if (status === "done" || status === "error") {
+    this.updateMemberActivity(entry, status === "error" ? "执行失败" : "已完成");
     this.finalizeMemberMarkdown(entry);
+  } else if (text) {
+    this.updateMemberActivity(entry, text);
   }
   this.updateParallelMembersHeader();
 };
@@ -429,6 +449,15 @@ FKTeamsChat.prototype.updateParallelMembersHeader = function () {
     counter.dataset.total = String(total);
     counter.dataset.done = String(done);
     counter.textContent = `${done}/${total}`;
+  }
+  const title = this.parallelPanel.querySelector(".parallel-members-title");
+  if (title) {
+    const completed = total > 0 && done === total;
+    if (total > 1) {
+      title.textContent = completed ? "成员并行完成" : "成员并行处理中";
+    } else {
+      title.textContent = completed ? "成员任务完成" : "成员任务处理中";
+    }
   }
   const header = this.parallelPanel.querySelector(".parallel-members-header");
   if (header) {
@@ -492,10 +521,21 @@ FKTeamsChat.prototype.ensureMemberTimelineItem = function (entry, type, title, s
   return item;
 };
 
+FKTeamsChat.prototype.memberActivityText = function (type, title) {
+  if (type === "reasoning") return "正在思考";
+  if (type === "output") return "输出中";
+  if (type === "tool") return title || "工具执行中";
+  if (type === "task") return "任务已分配";
+  if (type === "result") return title || "收到结果";
+  if (type === "action") return title || "状态更新";
+  return title || "";
+};
+
 FKTeamsChat.prototype.appendMemberMarkdownEvent = function (entry, type, title, content, streaming, streamID, chunkIndex, order) {
   if (!entry || !content) return;
   const item = this.ensureMemberTimelineItem(entry, type, title, streaming, streamID, order);
   if (!item) return;
+  this.updateMemberActivity(entry, this.memberActivityText(type, title));
   if (streamID && chunkIndex !== undefined && chunkIndex !== null) {
     if (!entry.streamChunkIndexes) entry.streamChunkIndexes = {};
     const last = entry.streamChunkIndexes[streamID];
@@ -605,6 +645,7 @@ FKTeamsChat.prototype.appendMemberTextEvent = function (entry, type, title, text
   if (!item) return;
   const body = item.querySelector(".parallel-member-event-body");
   if (body) body.textContent = text;
+  this.updateMemberActivity(entry, this.memberActivityText(type, title));
   entry.lastTimelineType = type + ":" + Date.now() + ":" + Math.random();
   entry.currentTimelineItem = null;
   this.updateMemberDetailVisibility(entry);
@@ -664,6 +705,7 @@ FKTeamsChat.prototype.ensureMemberToolFlow = function (entry, key, displayName, 
     resultRaw: "",
   };
   entry.toolFlows[key] = flow;
+  this.updateMemberActivity(entry, `准备调用工具：${displayName || "工具调用"}`);
   this.updateMemberDetailVisibility(entry);
   return flow;
 };
@@ -706,6 +748,7 @@ FKTeamsChat.prototype.updateMemberToolFlowArgs = function (entry, key, displayNa
     flow.args.textContent = this.truncateRunes(flow.argsRaw, 600);
     if (flow.status) flow.status.textContent = "已调用";
   }
+  this.updateMemberActivity(entry, `调用工具：${displayName || "工具调用"}`);
 };
 
 FKTeamsChat.prototype.setMemberFinalOutput = function (entry, content, order) {
@@ -757,6 +800,7 @@ FKTeamsChat.prototype.updateMemberToolFlowResult = function (entry, key, display
     flow.result.textContent = flow.resultRaw;
     if (flow.status) flow.status.textContent = "已完成";
   }
+  this.updateMemberActivity(entry, `工具完成：${displayName || "工具调用"}`);
 };
 
 FKTeamsChat.prototype.extractMemberTaskContent = function (argsText) {
@@ -794,6 +838,7 @@ FKTeamsChat.prototype.updateMemberTaskContent = function (entry, deltaOrText, ap
     entry.taskDetail.style.display = "";
     entry.taskDetail.textContent = taskText;
   }
+  this.updateMemberActivity(entry, "任务已分配");
   this.updateMemberDetailVisibility(entry);
 };
 
@@ -851,12 +896,14 @@ FKTeamsChat.prototype.flushAllMemberInnerToolResults = function () {
 FKTeamsChat.prototype.handleMemberStreamChunk = function (event) {
   const entry = this.memberEntryFromEvent(event);
   this.flushMemberInnerToolResults(entry, event.member_call_id);
+  this.updateMemberActivity(entry, "输出中");
   this.appendMemberStreamEvent(entry, event, "output", "输出");
   this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleMemberReasoningChunk = function (event) {
   const entry = this.memberEntryFromEvent(event);
+  this.updateMemberActivity(entry, "正在思考");
   this.appendMemberStreamEvent(entry, event, "reasoning", "思考过程");
   this.scrollToBottom();
 };
@@ -866,6 +913,7 @@ FKTeamsChat.prototype.handleMemberMessage = function (event) {
   this.flushMemberInnerToolResults(entry, event.member_call_id);
   if (event.reasoning_content) this.appendMemberReasoningFinal(entry, event.reasoning_content, event.sequence);
   if (event.content) this.setMemberFinalOutput(entry, event.content, event.sequence);
+  if (event.content) this.updateMemberActivity(entry, "输出完成");
   this.finalizeMemberMarkdown(entry);
   this.scrollToBottom();
 };
@@ -2308,6 +2356,7 @@ FKTeamsChat.prototype.handleAction = function (event) {
     if (event.action_type === "exit") {
       this.updateMemberStatus(entry, "done", "完成");
     } else if (event.content || event.action_type) {
+      this.updateMemberActivity(entry, event.content || event.action_type);
       this.appendMemberTextEvent(entry, "action", "状态", event.content || event.action_type, event.sequence);
     }
     this.scrollToBottom();
