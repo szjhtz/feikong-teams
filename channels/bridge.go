@@ -2,7 +2,6 @@ package channels
 
 import (
 	"context"
-	"fkteams/agents"
 	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
@@ -95,24 +94,7 @@ func (b *Bridge) getRunner(ctx context.Context) (*adk.Runner, error) {
 		return b.runner, b.runnerErr
 	}
 
-	switch b.mode {
-	case "team":
-		b.runner, b.runnerErr = runner.CreateTeamRunner(ctx)
-	case "roundtable":
-		b.runner, b.runnerErr = runner.CreateLoopAgentRunner(ctx)
-	case "custom":
-		b.runner, b.runnerErr = runner.CreateCustomRunner(ctx)
-	case "deep":
-		b.runner, b.runnerErr = runner.CreateDeepAgentsRunner(ctx)
-	default:
-		// 尝试按名称查找单个智能体
-		info := agents.GetAgentByName(b.mode)
-		if info != nil {
-			b.runner = runner.CreateAgentRunner(ctx, info.Creator(ctx))
-		} else {
-			b.runnerErr = fmt.Errorf("unknown mode or agent: %s", b.mode)
-		}
-	}
+	b.runner, b.runnerErr = runner.Resolve(ctx, b.mode, "")
 	return b.runner, b.runnerErr
 }
 

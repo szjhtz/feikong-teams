@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fkteams/agents"
 	"fkteams/agenttool"
 	"fkteams/chatutil"
 	"fkteams/eventlog"
@@ -14,57 +13,13 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 )
 
-// RunnerCache 基于双重检查锁的 Runner 缓存
-type RunnerCache struct {
-	mu    sync.RWMutex
-	cache map[string]*adk.Runner
-}
-
-// NewRunnerCache 创建 Runner 缓存
-func NewRunnerCache() *RunnerCache {
-	return &RunnerCache{cache: make(map[string]*adk.Runner)}
-}
-
-// GetOrCreate 获取缓存的 Runner，不存在则通过 factory 创建并缓存
-func (c *RunnerCache) GetOrCreate(key string, factory func() (*adk.Runner, error)) (*adk.Runner, error) {
-	c.mu.RLock()
-	if r, exists := c.cache[key]; exists {
-		c.mu.RUnlock()
-		return r, nil
-	}
-	c.mu.RUnlock()
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if r, exists := c.cache[key]; exists {
-		return r, nil
-	}
-
-	r, err := factory()
-	if err != nil {
-		return nil, err
-	}
-
-	c.cache[key] = r
-	return r, nil
-}
-
-// Clear 清除所有缓存
-func (c *RunnerCache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache = make(map[string]*adk.Runner)
-}
-
-var globalRunnerCache = NewRunnerCache()
+var globalRunnerCache = runner.NewCache()
 
 // ClearRunnerCache 清除 runner 缓存
 func ClearRunnerCache() {
@@ -72,41 +27,9 @@ func ClearRunnerCache() {
 	log.Println("runner cache cleared")
 }
 
-// getOrCreateRunner 获取或创建 runner（带缓存）
-func getOrCreateRunner(ctx context.Context, mode string) (*adk.Runner, error) {
-	return globalRunnerCache.GetOrCreate(mode, func() (*adk.Runner, error) {
-		switch mode {
-		case "roundtable":
-			return runner.CreateLoopAgentRunner(ctx)
-		case "custom":
-			return runner.CreateCustomRunner(ctx)
-		case "deep":
-			return runner.CreateDeepAgentsRunner(ctx)
-		case "team", "supervisor":
-			return runner.CreateTeamRunner(ctx)
-		default:
-			return runner.CreateTeamRunner(ctx)
-		}
-	})
-}
-
-// getOrCreateAgentRunner 获取或创建指定智能体的 runner
-func getOrCreateAgentRunner(ctx context.Context, agentName string) (*adk.Runner, error) {
-	return globalRunnerCache.GetOrCreate("agent_"+agentName, func() (*adk.Runner, error) {
-		agentInfo := agents.GetAgentByName(agentName)
-		if agentInfo == nil {
-			return nil, fmt.Errorf("agent not found: %s", agentName)
-		}
-		return runner.CreateAgentRunner(ctx, agentInfo.Creator(ctx)), nil
-	})
-}
-
 // resolveRunner 按 agentName 或 mode 获取 runner
 func resolveRunner(ctx context.Context, mode, agentName string) (*adk.Runner, error) {
-	if agentName != "" {
-		return getOrCreateAgentRunner(ctx, agentName)
-	}
-	return getOrCreateRunner(ctx, mode)
+	return globalRunnerCache.ResolveWithTeamFallback(ctx, mode, agentName)
 }
 
 // --- 聊天输入构建 ---
