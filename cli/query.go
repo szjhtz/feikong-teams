@@ -203,17 +203,11 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	e.view.Start(input)
 	innerCallback := e.view.EventCallback(recorder)
 
-	storeConfigs := []approval.StoreConfig{
-		{Name: approval.StoreCommand},
-		{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
-		{Name: approval.StoreGit, Matcher: approval.DirMatchFunc},
-		{Name: approval.StoreDispatch},
-	}
 	var approvalReg *approval.Registry
 	if len(e.approveStores) > 0 {
-		approvalReg = approval.NewSelectiveRegistry(e.approveStores, storeConfigs...)
+		approvalReg = approval.NewDefaultSelectiveRegistry(e.approveStores)
 	} else {
-		approvalReg = approval.NewRegistry(storeConfigs...)
+		approvalReg = approval.NewDefaultRegistry()
 	}
 
 	var handler engine.InterruptHandler

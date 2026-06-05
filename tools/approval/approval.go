@@ -88,6 +88,15 @@ type StoreConfig struct {
 	Matcher MatchFunc
 }
 
+func DefaultStoreConfigs() []StoreConfig {
+	return []StoreConfig{
+		{Name: StoreCommand},
+		{Name: StoreFile, Matcher: DirMatchFunc},
+		{Name: StoreGit, Matcher: DirMatchFunc},
+		{Name: StoreDispatch},
+	}
+}
+
 func NewRegistry(configs ...StoreConfig) *Registry {
 	r := &Registry{stores: make(map[string]*Store, len(configs))}
 	for _, c := range configs {
@@ -98,19 +107,22 @@ func NewRegistry(configs ...StoreConfig) *Registry {
 
 func (r *Registry) get(name string) *Store { return r.stores[name] }
 
+func NewDefaultRegistry() *Registry {
+	return NewRegistry(DefaultStoreConfigs()...)
+}
+
 // NewAutoApproveRegistry 创建一个所有操作均自动审批通过的 Registry。
 // 用于子任务等无需人工确认的自主执行场景。
 func NewAutoApproveRegistry() *Registry {
-	r := NewRegistry(
-		StoreConfig{Name: StoreCommand},
-		StoreConfig{Name: StoreFile},
-		StoreConfig{Name: StoreGit},
-		StoreConfig{Name: StoreDispatch},
-	)
+	r := NewDefaultRegistry()
 	for _, s := range r.stores {
 		s.setApproveAll()
 	}
 	return r
+}
+
+func NewDefaultSelectiveRegistry(autoApprove []string) *Registry {
+	return NewSelectiveRegistry(autoApprove, DefaultStoreConfigs()...)
 }
 
 // NewSelectiveRegistry 创建选择性自动批准的 Registry。

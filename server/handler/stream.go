@@ -130,12 +130,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 		Recorder:       recorder,
 		OnInterrupt:    interruptHandler,
 		NonInteractive: true,
-		ApprovalReg: approval.NewRegistry(
-			approval.StoreConfig{Name: approval.StoreCommand},
-			approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
-			approval.StoreConfig{Name: approval.StoreGit, Matcher: approval.DirMatchFunc},
-			approval.StoreConfig{Name: approval.StoreDispatch},
-		),
+		ApprovalReg:    approval.NewDefaultRegistry(),
 		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
