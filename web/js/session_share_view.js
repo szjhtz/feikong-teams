@@ -452,6 +452,7 @@
           return compactText(event.content, 72);
         }
         if (event.type === "tool_call" && event.tool_call) {
+          if (isAgentTool(event.tool_call)) continue;
           return event.tool_call.display_name || event.tool_call.name || "工具调用";
         }
         if (event.type === "action" && event.action?.content) {
@@ -471,11 +472,12 @@
 
   function renderMemberMessage(msg) {
     const time = msg.start_time ? new Date(msg.start_time).toLocaleString("zh-CN") : "";
-    const events = (msg.events || []).map(renderEvent).join("");
+    const events = renderEvents(msg.events || []);
+    if (!events) return "";
     return `
       <div class="share-member-message">
         ${time ? `<div class="share-member-time">${escapeHtml(time)}</div>` : ""}
-        ${events || '<div class="share-event">无内容</div>'}
+        ${events}
       </div>
     `;
   }
@@ -483,7 +485,8 @@
   function renderMessage(msg) {
     const agent = msg.member_name || msg.agent_name || "成员";
     const time = msg.start_time ? new Date(msg.start_time).toLocaleString("zh-CN") : "";
-    const events = (msg.events || []).map(renderEvent).join("");
+    const events = renderEvents(msg.events || []);
+    if (!events) return "";
     const roleClass = msg.agent_name === "用户" ? " user" : "";
     return `
       <article class="share-message${roleClass}">
@@ -491,9 +494,13 @@
           <span class="share-agent">${escapeHtml(agent)}</span>
           <span class="share-time">${escapeHtml(time)}</span>
         </div>
-        ${events || '<div class="share-event">无内容</div>'}
+        ${events}
       </article>
     `;
+  }
+
+  function renderEvents(events) {
+    return (events || []).map(renderEvent).filter(Boolean).join("");
   }
 
   function renderEvent(event) {
@@ -505,11 +512,8 @@
       return `<div class="share-event reasoning">${escapeHtml(event.content || "")}</div>`;
     }
     if (event.type === "tool_call" && event.tool_call) {
-      const tool = event.tool_call;
-      const name = tool.display_name || tool.name || "工具调用";
-      const args = tool.arguments ? `<pre>${escapeHtml(tool.arguments)}</pre>` : "";
-      const result = tool.result ? `<pre>${escapeHtml(tool.result)}</pre>` : "";
-      return `<div class="share-event tool"><strong>${escapeHtml(name)}</strong>${args}${result}</div>`;
+      if (isAgentTool(event.tool_call)) return "";
+      return renderToolCall(event.tool_call);
     }
     if (event.type === "action" && event.action) {
       const action = event.action.action_type ? `[${event.action.action_type}] ` : "";
@@ -519,6 +523,38 @@
       return `<div class="share-event error">${escapeHtml(event.content || "执行失败")}</div>`;
     }
     return "";
+  }
+
+  function renderToolCall(tool) {
+    const name = tool.display_name || tool.name || "工具调用";
+    const sections = [];
+    if (tool.arguments) {
+      sections.push(`
+        <div class="share-tool-section">
+          <div class="share-tool-label">参数</div>
+          <pre>${escapeHtml(tool.arguments)}</pre>
+        </div>
+      `);
+    }
+    if (tool.result) {
+      sections.push(`
+        <div class="share-tool-section">
+          <div class="share-tool-label">结果</div>
+          <pre>${escapeHtml(tool.result)}</pre>
+        </div>
+      `);
+    }
+    return `
+      <details class="share-event share-tool-call">
+        <summary>
+          <span class="share-tool-name">${escapeHtml(name)}</span>
+          <span class="share-tool-status">工具详情</span>
+        </summary>
+        <div class="share-tool-detail">
+          ${sections.length > 0 ? sections.join("") : '<div class="share-tool-empty">暂无详情</div>'}
+        </div>
+      </details>
+    `;
   }
 
   if (els.passwordSubmit) {
