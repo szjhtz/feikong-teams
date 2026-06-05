@@ -1064,6 +1064,8 @@ FKTeamsChat.prototype.resetToTeamMode = function () {
 };
 
 FKTeamsChat.prototype.handleServerEvent = function (event) {
+  this.rememberStreamEvent(event);
+
   // 会话隔离：跟踪所有进行中的会话
   const eventSessionId = event.session_id;
   // 只有明确匹配当前 session_id 的事件才视为当前会话的事件
@@ -1108,7 +1110,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
   }
 
   // 首个内容事件到来时移除思考指示器
-  if (!["connected", "processing_start", "pong"].includes(event.type)) {
+  if (!["connected", "processing_start", "pong", "user_message"].includes(event.type)) {
     this.hideThinkingIndicator();
   }
   // resume 后收到内容事件则标记回放成功
@@ -1125,6 +1127,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     case "connected":
       break;
     case "pong":
+      break;
+    case "user_message":
+      this.handleUserMessageEvent(event);
       break;
     case "processing_start":
       this._cancelledSessionId = null;
@@ -1207,6 +1212,19 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     default:
       console.log("Unknown event:", event);
   }
+};
+
+FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
+  const content = event.content || "";
+  if (!content) return;
+
+  const users = this.messagesContainer.querySelectorAll(".message.user .message-body");
+  const last = users.length > 0 ? users[users.length - 1].textContent || "" : "";
+  if (last === content) return;
+
+  const welcomeMsg = this.messagesContainer.querySelector(".welcome-message");
+  if (welcomeMsg) welcomeMsg.remove();
+  this.addUserMessage(content, null);
 };
 
 FKTeamsChat.prototype.trimLeadingWhitespace = function (text) {

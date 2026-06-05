@@ -178,16 +178,22 @@ func GetSessionHandler() gin.HandlerFunc {
 			return
 		}
 
+		stream := GlobalStreams.Get(sessionID)
+		activeTask := stream != nil && stream.Status() == "processing"
+
 		histFile := filepath.Join(sessionDirPath(sessionID), eventlog.HistoryFileName)
 		recorder := eventlog.NewHistoryRecorder()
 		if err := recorder.LoadFromFile(histFile); err != nil {
 			if os.IsNotExist(err) {
-				Fail(c, http.StatusNotFound, "session not found")
+				if !activeTask {
+					Fail(c, http.StatusNotFound, "session not found")
+					return
+				}
 			} else {
 				log.Printf("failed to load history: session=%s, err=%v", sessionID, err)
 				Fail(c, http.StatusInternalServerError, "failed to read history")
+				return
 			}
-			return
 		}
 
 		currentAgent := ""
@@ -200,6 +206,7 @@ func GetSessionHandler() gin.HandlerFunc {
 			"session_id":    sessionID,
 			"current_agent": currentAgent,
 			"messages":      recorder.GetMessages(),
+			"active_task":   activeTask,
 		})
 	}
 }

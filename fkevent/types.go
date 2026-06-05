@@ -67,6 +67,7 @@ type NotifyType string
 const (
 	NotifyProcessingStart  NotifyType = "processing_start"
 	NotifyProcessingEnd    NotifyType = "processing_end"
+	NotifyUserMessage      NotifyType = "user_message"
 	NotifyCancelled        NotifyType = "cancelled"
 	NotifyError            NotifyType = "error"
 	NotifyAskQuestions     NotifyType = "ask_questions"

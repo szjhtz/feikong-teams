@@ -57,24 +57,72 @@ func TestBeginInterruptDrainsStaleDecision(t *testing.T) {
 	}
 }
 
-func TestUnsubscribeWithZeroGraceDoesNotCancelTask(t *testing.T) {
+func TestUnsubscribeDoesNotCancelTask(t *testing.T) {
 	cancelled := make(chan struct{}, 1)
 	s := NewManager().Register(StreamConfig{
-		SessionID:   "test-session",
-		Cancel:      func() { cancelled <- struct{}{} },
-		GracePeriod: 0,
+		SessionID: "test-session",
+		Cancel:    func() { cancelled <- struct{}{} },
 	})
 
-	ok, epoch := s.Subscribe(FuncSubscriber(func(any) error { return nil }))
+	ok, subID := s.Subscribe(FuncSubscriber(func(any) error { return nil }), 0)
 	if !ok {
 		t.Fatal("expected subscribe to succeed")
 	}
 
-	s.Unsubscribe(epoch)
+	s.Unsubscribe(subID)
 
 	select {
 	case <-cancelled:
 		t.Fatal("expected unsubscribe to detach without cancelling task")
 	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestPublishFansOutToMultipleSubscribers(t *testing.T) {
+	s := newTestStream()
+	var first []Event
+	var second []Event
+
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event any) error {
+		first = append(first, event.(Event))
+		return nil
+	}), 0); !ok {
+		t.Fatal("expected first subscribe to succeed")
+	}
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event any) error {
+		second = append(second, event.(Event))
+		return nil
+	}), 0); !ok {
+		t.Fatal("expected second subscribe to succeed")
+	}
+
+	s.Publish(Event{"type": "message", "content": "hello"})
+
+	if len(first) != 1 || first[0]["content"] != "hello" {
+		t.Fatalf("expected first subscriber to receive event, got %#v", first)
+	}
+	if len(second) != 1 || second[0]["content"] != "hello" {
+		t.Fatalf("expected second subscriber to receive event, got %#v", second)
+	}
+	if first[0]["stream_event_id"] != uint64(0) || second[0]["stream_event_id"] != uint64(0) {
+		t.Fatalf("expected stream event id to be attached, got %#v %#v", first[0], second[0])
+	}
+}
+
+func TestSubscribeReplaysEventsFromOffset(t *testing.T) {
+	s := newTestStream()
+	s.Publish(Event{"type": "message", "content": "first"})
+	s.Publish(Event{"type": "message", "content": "second"})
+
+	var replayed []Event
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event any) error {
+		replayed = append(replayed, event.(Event))
+		return nil
+	}), 1); !ok {
+		t.Fatal("expected subscribe to succeed")
+	}
+
+	if len(replayed) != 1 || replayed[0]["content"] != "second" {
+		t.Fatalf("expected replay from offset 1, got %#v", replayed)
 	}
 }

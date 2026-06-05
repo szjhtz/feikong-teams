@@ -24,12 +24,6 @@ func (m *Manager) Register(cfg StreamConfig) *Stream {
 
 	// 取消同一 session 的旧流
 	if old, exists := m.streams[cfg.SessionID]; exists {
-		old.mu.Lock()
-		if old.graceTimer != nil {
-			old.graceTimer.Stop()
-			old.graceTimer = nil
-		}
-		old.mu.Unlock()
 		old.Cancel()
 	}
 
@@ -68,17 +62,16 @@ func (m *Manager) Remove(sessionID string) {
 }
 
 // UnsubscribeAll 批量解绑指定 session 的 Push 订阅者。
-// 调用方需提供每个 session 在 Subscribe 时获得的 epoch，确保不会误解绑新连接的订阅者。
 func (m *Manager) UnsubscribeAll(items []UnsubscribeItem) {
 	for _, item := range items {
-		item.Stream.Unsubscribe(item.Epoch)
+		item.Stream.Unsubscribe(item.ID)
 	}
 }
 
 // UnsubscribeItem 描述一次 Unsubscribe 操作所需的信息
 type UnsubscribeItem struct {
 	Stream *Stream
-	Epoch  uint64
+	ID     SubscriptionID
 }
 
 // CancelAll 取消所有活跃流（服务关闭时调用）
@@ -106,12 +99,6 @@ func (m *Manager) CancelAndRemove(sessionID string) {
 	m.mu.Unlock()
 
 	if s != nil {
-		s.mu.Lock()
-		if s.graceTimer != nil {
-			s.graceTimer.Stop()
-			s.graceTimer = nil
-		}
-		s.mu.Unlock()
 		s.Cancel()
 	}
 }

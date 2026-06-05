@@ -113,6 +113,10 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
         this._processingSessions.has(file.session_id)) ||
       file.status === "processing";
     if (isProcessing) {
+      if (!this._processingSessions) this._processingSessions = new Set();
+      this._processingSessions.add(file.session_id);
+    }
+    if (isProcessing) {
       item.classList.add("processing");
     }
 
@@ -789,6 +793,21 @@ FKTeamsChat.prototype.loadSession = async function (sessionId) {
       current_agent: result.data.current_agent || "",
       messages: result.data.messages || [],
     });
+
+    if (result.data.active_task) {
+      const offset = 0;
+      this.setStreamOffset(sessionId, offset);
+      if (!this._processingSessions) this._processingSessions = new Set();
+      this._processingSessions.add(sessionId);
+      if (this.sessionId === sessionId) {
+        this.isProcessing = true;
+        this.updateStatus("processing", "处理中...");
+        this.updateSendButtonState();
+        this._resumePending = true;
+        this._resumeReplayed = false;
+        this.resumeSessionStream(sessionId, offset);
+      }
+    }
   } catch (error) {
     console.error("Error loading session:", error);
     this.hideChatLoading();

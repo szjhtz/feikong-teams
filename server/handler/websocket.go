@@ -29,6 +29,7 @@ var upgrader = websocket.Upgrader{
 type WSMessage struct {
 	Type        string        `json:"type"`
 	SessionID   string        `json:"session_id,omitempty"`
+	Offset      uint64        `json:"offset,omitempty"`
 	Message     string        `json:"message,omitempty"`
 	Mode        string        `json:"mode,omitempty"`
 	AgentName   string        `json:"agent_name,omitempty"`
@@ -124,11 +125,11 @@ func WebSocketHandler() gin.HandlerFunc {
 				}
 				stream := GlobalStreams.Get(sid)
 				if stream != nil {
-					ok, epoch := stream.Subscribe(taskstream.FuncSubscriber(writeJSON))
+					ok, subID := stream.Subscribe(taskstream.FuncSubscriber(writeJSON), wsMsg.Offset)
 					if ok {
 						// 成功重新绑定并回放事件
 						sm.mu.Lock()
-						sm.tasks[sid] = &sessionTask{cancel: stream.Cancel, stream: stream, subEpoch: epoch}
+						sm.tasks[sid] = &sessionTask{cancel: stream.Cancel, stream: stream, subID: subID}
 						sm.mu.Unlock()
 						log.Printf("task resumed: session=%s", sid)
 					} else {
@@ -291,13 +292,12 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 
 	// 注册到统一 TaskStream（支持断线重连 + Push/Pull 消费）
 	stream := GlobalStreams.Register(taskstream.StreamConfig{
-		SessionID:   sessionID,
-		Cancel:      taskCancel,
-		GracePeriod: 0,
-		CleanupTTL:  5 * time.Minute,
+		SessionID:  sessionID,
+		Cancel:     taskCancel,
+		CleanupTTL: 5 * time.Minute,
 	})
 	// 绑定当前 WS 连接为 Push 订阅者
-	_, subEpoch := stream.Subscribe(taskstream.FuncSubscriber(writeJSON))
+	_, subID := stream.Subscribe(taskstream.FuncSubscriber(writeJSON), 0)
 	defer func() {
 		stream.Done()
 	}()
@@ -307,7 +307,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	sm.mu.Lock()
 	if t, exists := sm.tasks[sessionID]; exists && t.id == taskID {
 		t.stream = stream
-		t.subEpoch = subEpoch
+		t.subID = subID
 	}
 	sm.mu.Unlock()
 	defer sm.removeTask(sessionID, taskID)
@@ -323,6 +323,11 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	// 构建输入消息
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
+	stream.Publish(map[string]any{
+		"type":       fkevent.NotifyUserMessage,
+		"session_id": sessionID,
+		"content":    userDisplayText,
+	})
 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)

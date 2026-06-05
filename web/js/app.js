@@ -33,6 +33,7 @@ class FKTeamsChat {
     this.files = []; // 存储文件列表
     this._sessionDOMCache = {}; // 会话DOM缓存，用于切换时保存/恢复UI状态
     this._sessionEventBuffer = {}; // 非当前会话的事件缓冲，切回时回放
+    this._streamOffsets = this.loadStreamOffsets(); // 每个会话下一次订阅的事件 offset
     this.fileSuggestions = null; // 文件建议弹窗
     this.selectedFileIndex = -1; // 当前选中的文件索引
     this.currentPath = ""; // 当前浏览的路径
@@ -51,6 +52,53 @@ class FKTeamsChat {
   // 获取 auth token
   getToken() {
     return localStorage.getItem("fk_token") || "";
+  }
+
+  loadStreamOffsets() {
+    try {
+      return JSON.parse(localStorage.getItem("fk_stream_offsets") || "{}");
+    } catch (_) {
+      return {};
+    }
+  }
+
+  saveStreamOffsets() {
+    localStorage.setItem("fk_stream_offsets", JSON.stringify(this._streamOffsets || {}));
+  }
+
+  streamOffset(sessionId) {
+    const offset = Number((this._streamOffsets || {})[sessionId]);
+    return Number.isFinite(offset) && offset > 0 ? offset : 0;
+  }
+
+  setStreamOffset(sessionId, offset) {
+    if (!sessionId) return;
+    const next = Number(offset);
+    if (!Number.isFinite(next) || next < 0) return;
+    if (!this._streamOffsets) this._streamOffsets = {};
+    this._streamOffsets[sessionId] = next;
+    this.saveStreamOffsets();
+  }
+
+  rememberStreamEvent(event) {
+    if (!event || !event.session_id) return;
+    const id = Number(event.stream_event_id);
+    if (!Number.isFinite(id) || id < 0) return;
+    const next = id + 1;
+    if (next > this.streamOffset(event.session_id)) {
+      this.setStreamOffset(event.session_id, next);
+    }
+  }
+
+  resumeSessionStream(sessionId, offset = null) {
+    if (!sessionId || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(
+      JSON.stringify({
+        type: "resume",
+        session_id: sessionId,
+        offset: offset === null ? this.streamOffset(sessionId) : offset,
+      }),
+    );
   }
 
   // 带认证的 fetch 封装
@@ -399,12 +447,7 @@ class FKTeamsChat {
         this.resetParallelState();
         this._resumePending = true;
         this._resumeReplayed = false;
-        ws.send(
-          JSON.stringify({
-            type: "resume",
-            session_id: this.sessionId,
-          }),
-        );
+        this.resumeSessionStream(this.sessionId);
         this.updateStatus("processing", "处理中...");
       }
       // 加载侧边栏历史会话列表

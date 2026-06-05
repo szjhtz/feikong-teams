@@ -83,15 +83,19 @@ func StreamStartHandler() gin.HandlerFunc {
 		// 创建任务——统一使用 GlobalStreams
 		taskCtx, taskCancel := context.WithCancel(ctx)
 		stream := GlobalStreams.Register(taskstream.StreamConfig{
-			SessionID:   sessionID,
-			Cancel:      taskCancel,
-			GracePeriod: 0,
-			CleanupTTL:  5 * time.Minute,
-			Mode:        mode,
-			AgentName:   req.AgentName,
+			SessionID:  sessionID,
+			Cancel:     taskCancel,
+			CleanupTTL: 5 * time.Minute,
+			Mode:       mode,
+			AgentName:  req.AgentName,
 		})
 
 		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
+		stream.Publish(map[string]any{
+			"type":       fkevent.NotifyUserMessage,
+			"session_id": sessionID,
+			"content":    userDisplayText,
+		})
 
 		stream.Publish(map[string]any{
 			"type":       fkevent.NotifyProcessingStart,
