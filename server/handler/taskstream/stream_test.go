@@ -1,6 +1,9 @@
 package taskstream
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func newTestStream() *Stream {
 	return NewManager().Register(StreamConfig{
@@ -51,5 +54,27 @@ func TestBeginInterruptDrainsStaleDecision(t *testing.T) {
 	got := <-s.InterruptCh()
 	if got != "fresh" {
 		t.Fatalf("expected stale decision to be drained, got %v", got)
+	}
+}
+
+func TestUnsubscribeWithZeroGraceDoesNotCancelTask(t *testing.T) {
+	cancelled := make(chan struct{}, 1)
+	s := NewManager().Register(StreamConfig{
+		SessionID:   "test-session",
+		Cancel:      func() { cancelled <- struct{}{} },
+		GracePeriod: 0,
+	})
+
+	ok, epoch := s.Subscribe(FuncSubscriber(func(any) error { return nil }))
+	if !ok {
+		t.Fatal("expected subscribe to succeed")
+	}
+
+	s.Unsubscribe(epoch)
+
+	select {
+	case <-cancelled:
+		t.Fatal("expected unsubscribe to detach without cancelling task")
+	case <-time.After(20 * time.Millisecond):
 	}
 }

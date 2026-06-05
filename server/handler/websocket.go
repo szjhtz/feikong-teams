@@ -276,6 +276,15 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		mode = "team"
 	}
 
+	if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
+		_ = writeJSON(map[string]any{
+			"type":       fkevent.NotifyError,
+			"session_id": sessionID,
+			"error":      "session has a running task, cancel it first",
+		})
+		return
+	}
+
 	// 任务 context 独立于连接——断连不会自动取消任务
 	taskCtx, taskCancel := context.WithCancel(context.Background())
 	defer taskCancel()
@@ -284,8 +293,8 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	stream := GlobalStreams.Register(taskstream.StreamConfig{
 		SessionID:   sessionID,
 		Cancel:      taskCancel,
-		GracePeriod: 60 * time.Second,
-		CleanupTTL:  60 * time.Second,
+		GracePeriod: 0,
+		CleanupTTL:  5 * time.Minute,
 	})
 	// 绑定当前 WS 连接为 Push 订阅者
 	_, subEpoch := stream.Subscribe(taskstream.FuncSubscriber(writeJSON))
