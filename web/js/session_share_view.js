@@ -21,10 +21,142 @@
   }
 
   function renderMarkdown(text) {
-    if (window.marked && typeof window.marked.parse === "function") {
-      return window.marked.parse(text || "");
+    if (!text) return "";
+    try {
+      if (window.marked) {
+        const footnotes = extractFootnotes(text);
+        const html = replaceFootnotePlaceholders(
+          markedInstance().parse(footnotes.text),
+          footnotes.definitions,
+          footnotes.orderedNums,
+        );
+        return footnotes.items.length > 0 ? buildSourcesCard(html, footnotes.items) : html;
+      }
+    } catch (err) {
+      console.error("render markdown error:", err);
     }
     return escapeHtml(text || "").replace(/\n/g, "<br>");
+  }
+
+  function markedInstance() {
+    if (state.markedInstance) return state.markedInstance;
+    state.markedInstance = new window.marked.Marked({ breaks: true, gfm: true });
+    state.markedInstance.use({
+      renderer: {
+        link: function (token) {
+          const href = token.href || "";
+          const title = token.title ? ` title="${escapeHtml(token.title)}"` : "";
+          const label = token.text || href;
+          if (href.startsWith("#")) return `<a href="${escapeHtml(href)}"${title}>${label}</a>`;
+          return `<a href="${escapeHtml(href)}"${title} target="_blank" rel="noopener noreferrer">${label}</a>`;
+        },
+      },
+    });
+    return state.markedInstance;
+  }
+
+  function extractFootnotes(text) {
+    const definitions = {};
+    const orderedNums = [];
+
+    String(text || "").replace(/^\[\^(\d+)\]:\s*(.+)$/gm, function (match, num, content) {
+      definitions[num] = parseFootnoteDefinition(content.trim());
+      if (!orderedNums.includes(num)) orderedNums.push(num);
+      return match;
+    });
+
+    if (orderedNums.length === 0) {
+      return { text, items: [], definitions: {}, orderedNums: [] };
+    }
+
+    const cleaned = String(text || "")
+      .replace(/\n*^\[\^(\d+)\]:\s*(.+)$/gm, "")
+      .replace(/\[\^(\d+)\]/g, function (match, num) {
+        if (!definitions[num]) return match;
+        const idx = orderedNums.indexOf(num);
+        return `<!--fnref:${idx}:${num}-->`;
+      });
+
+    return {
+      text: cleaned,
+      items: orderedNums.map((num) => definitions[num]),
+      definitions,
+      orderedNums,
+    };
+  }
+
+  function parseFootnoteDefinition(content) {
+    const mdLink = content.match(/^\[([^\]]*)\]\((https?:\/\/[^)]+)\)(.*)$/);
+    if (mdLink) {
+      return {
+        url: mdLink[2],
+        label: (mdLink[1] + " " + mdLink[3]).trim() || mdLink[2],
+      };
+    }
+    const urlMatch = content.match(/^(https?:\/\/\S+)(?:\s+(.*))?$/);
+    if (urlMatch) {
+      return {
+        url: urlMatch[1],
+        label: urlMatch[2] || urlMatch[1],
+      };
+    }
+    return { url: "", label: content };
+  }
+
+  function replaceFootnotePlaceholders(html, definitions) {
+    return String(html || "").replace(/<!--fnref:(\d+):(\d+)-->/g, function (match, idx, num) {
+      const def = definitions[num];
+      if (!def) return match;
+      const displayNum = parseInt(idx, 10) + 1;
+      if (def.url) {
+        return `<a class="footnote-cite" href="${escapeHtml(def.url)}" data-url="${escapeHtml(def.url)}" target="_blank" rel="noopener noreferrer">${displayNum}</a>`;
+      }
+      return `<span class="footnote-cite">${displayNum}</span>`;
+    });
+  }
+
+  function buildSourcesCard(html, items) {
+    const domains = [];
+    items.forEach((item) => {
+      const domain = sourceDomain(item.url);
+      if (domain && !domains.includes(domain)) domains.push(domain);
+    });
+    const iconsHtml = domains.length > 0
+      ? domains.slice(0, 5).map((domain, index) => (
+        `<img class="source-favicon" src="https://www.google.com/s2/favicons?domain=${escapeHtml(domain)}&sz=32" alt="" style="z-index:${5 - index};margin-left:${index === 0 ? "0" : "-6px"};">`
+      )).join("")
+      : '<span class="source-icon-fallback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
+
+    const listHtml = items.map((item, index) => {
+      const domain = sourceDomain(item.url);
+      const icon = domain
+        ? `<img class="source-item-favicon" src="https://www.google.com/s2/favicons?domain=${escapeHtml(domain)}&sz=16" alt="">`
+        : '<span class="source-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
+      const label = `${index + 1}. ${item.label || item.url || "来源"}`;
+      if (item.url) {
+        return `<a class="source-item" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${icon}<span class="source-item-label">${escapeHtml(label)}</span></a>`;
+      }
+      return `<span class="source-item">${icon}<span class="source-item-label">${escapeHtml(label)}</span></span>`;
+    }).join("");
+
+    return html +
+      '<div class="sources-card">' +
+      '<div class="sources-header" onclick="this.parentElement.classList.toggle(\'expanded\')">' +
+      `<div class="sources-icons">${iconsHtml}</div>` +
+      `<span class="sources-count">参考来源 · ${items.length} 个来源</span>` +
+      '<svg class="sources-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>' +
+      "</div>" +
+      `<div class="sources-list">${listHtml}</div>` +
+      "</div>";
+  }
+
+  function sourceDomain(url) {
+    if (!url || !/^https?:\/\//.test(url)) return "";
+    try {
+      return new URL(url).hostname;
+    } catch (_) {
+      return "";
+    }
   }
 
   function formatUnixTime(value) {
