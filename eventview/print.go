@@ -8,7 +8,6 @@ import (
 	fktui "fkteams/tui"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -113,8 +112,6 @@ type liveResponseStatus struct {
 	lastLines int
 	lastView  string
 }
-
-var ansiSeqRe = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\a]*(?:\a|\x1b\\))`)
 
 func (s *streamBuf) reset() {
 	s.buf.Reset()
@@ -304,30 +301,6 @@ func foldCodeBlocksForStream(content string) string {
 		out.WriteString(responseStatusView(codeProgressContent(code.String()), fktui.TermWidth()))
 	}
 	return out.String()
-}
-
-func renderedScreenLines(s string, width int) int {
-	if s == "" {
-		return 0
-	}
-	if width < 20 {
-		width = 80
-	}
-
-	total := 0
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		if i == len(lines)-1 && line == "" {
-			continue
-		}
-		visibleWidth := runewidth.StringWidth(ansiSeqRe.ReplaceAllString(line, ""))
-		if visibleWidth <= 0 {
-			total++
-			continue
-		}
-		total += (visibleWidth-1)/width + 1
-	}
-	return total
 }
 
 func codeProgressContent(content string) string {

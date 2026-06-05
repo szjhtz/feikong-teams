@@ -208,10 +208,6 @@ func welcomePanelStyle(width int) lipgloss.Style {
 		Inline(false)
 }
 
-func welcomeBrandStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
-}
-
 func welcomeMarkStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 }

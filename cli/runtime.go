@@ -2596,22 +2596,6 @@ func runtimeAgentToolDisplay(name string) (agenttool.ToolDisplay, bool) {
 	return display, false
 }
 
-func runtimeAgentTaskFromArgs(args string) string {
-	args = strings.TrimSpace(args)
-	if args == "" {
-		return ""
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(args), &payload); err == nil {
-		for _, key := range []string{"request", "task", "goal", "objective", "description"} {
-			if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
-				return strings.TrimSpace(value)
-			}
-		}
-	}
-	return args
-}
-
 func runtimeAgentTaskFromCompleteArgs(args string) string {
 	args = strings.TrimSpace(args)
 	if args == "" {
