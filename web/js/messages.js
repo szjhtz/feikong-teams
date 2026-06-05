@@ -184,6 +184,11 @@ FKTeamsChat.prototype.migrateMemberCard = function (fromKey, toKey) {
   const existing = this.parallelMemberCards[toKey];
   const pending = this.parallelMemberCards[fromKey];
   if (!pending) return;
+  if (!existing && this.isStalePendingMemberEntry(fromKey, pending)) {
+    if (this.parallelPanel === pending.panel) this.parallelPanel = null;
+    delete this.parallelMemberCards[fromKey];
+    return;
+  }
   if (existing) {
     if (pending.timeline && existing.timeline) {
       while (pending.timeline.firstChild) existing.timeline.appendChild(pending.timeline.firstChild);
@@ -200,7 +205,7 @@ FKTeamsChat.prototype.migrateMemberCard = function (fromKey, toKey) {
     if (pending.el) pending.el.remove();
     delete this.parallelMemberCards[fromKey];
     this.updateMemberDetailVisibility(existing);
-    this.updateParallelMembersHeader();
+    this.updateParallelMembersHeader(existing.panel);
     return;
   }
   this.parallelMemberCards[toKey] = pending;
@@ -253,6 +258,28 @@ FKTeamsChat.prototype.memberInnerResultKey = function (event) {
   return [event.member_call_id || "", event.tool_call_id || event.tool_call_index || ""].join(":");
 };
 
+FKTeamsChat.prototype.parallelEntriesForPanel = function (panel) {
+  if (!panel) return [];
+  return Object.values(this.parallelMemberCards || {}).filter((entry) => entry?.el?.isConnected && panel.contains(entry.el));
+};
+
+FKTeamsChat.prototype.parallelPanelCompleted = function (panel) {
+  const entries = this.parallelEntriesForPanel(panel);
+  if (entries.length === 0) return false;
+  return entries.every((entry) =>
+    entry.el.classList.contains("parallel-member-done") ||
+    entry.el.classList.contains("parallel-member-error")
+  );
+};
+
+FKTeamsChat.prototype.isStalePendingMemberEntry = function (key, entry) {
+  if (!entry || !entry.el) return false;
+  const isPendingKey = key.startsWith("pending:") || key.startsWith("fallback:");
+  if (!isPendingKey) return false;
+  if (!entry.panel) entry.panel = entry.el.closest(".parallel-members-panel");
+  return this.parallelPanelCompleted(entry.panel);
+};
+
 FKTeamsChat.prototype.registerMemberToolFlowAlias = function (entry, toolName, key) {
   if (!entry || !toolName || !key) return;
   if (!entry.toolFlowKeyByName) entry.toolFlowKeyByName = {};
@@ -286,7 +313,9 @@ FKTeamsChat.prototype.truncateRunes = function (text, maxLen) {
 };
 
 FKTeamsChat.prototype.ensureParallelPanel = function () {
-  if (this.parallelPanel && this.parallelPanel.isConnected) return this.parallelPanel;
+  if (this.parallelPanel && this.parallelPanel.isConnected && !this.parallelPanelCompleted(this.parallelPanel)) {
+    return this.parallelPanel;
+  }
   const panel = document.createElement("div");
   panel.className = "parallel-members-panel";
   panel.innerHTML = `
@@ -322,11 +351,16 @@ FKTeamsChat.prototype.insertMemberCardByOrder = function (list, card, order) {
 FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order) {
   const existing = this.parallelMemberCards[key];
   if (existing && existing.el && existing.el.isConnected) {
-    if (order !== undefined && order !== null) {
-      const list = existing.el.parentElement;
-      if (list) this.insertMemberCardByOrder(list, existing.el, order);
+    if (this.isStalePendingMemberEntry(key, existing)) {
+      if (this.parallelPanel === existing.panel) this.parallelPanel = null;
+      delete this.parallelMemberCards[key];
+    } else {
+      if (order !== undefined && order !== null) {
+        const list = existing.el.parentElement;
+        if (list) this.insertMemberCardByOrder(list, existing.el, order);
+      }
+      return existing;
     }
-    return existing;
   }
 
   const panel = this.ensureParallelPanel();
@@ -365,6 +399,7 @@ FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order)
   this.insertMemberCardByOrder(list, card, order);
   const entry = {
     el: card,
+    panel,
     task: card.querySelector(".parallel-member-task-content"),
     activity: card.querySelector(".parallel-member-activity"),
     taskDetail: card.querySelector(".parallel-member-task-detail"),
@@ -375,7 +410,7 @@ FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order)
   this.parallelMemberCards[key] = entry;
   if (agentName) this.parallelMemberByAgent[this.normalizedAgentName(agentName)] = key;
   this.updateMemberActivity(entry, "等待开始");
-  this.updateParallelMembersHeader();
+  this.updateParallelMembersHeader(panel);
   return entry;
 };
 
@@ -413,7 +448,7 @@ FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
   } else if (text) {
     this.updateMemberActivity(entry, text);
   }
-  this.updateParallelMembersHeader();
+  this.updateParallelMembersHeader(entry.panel);
 };
 
 FKTeamsChat.prototype.finalizeMemberMarkdown = function (entry) {
@@ -445,21 +480,22 @@ FKTeamsChat.prototype.updateMemberDetailVisibility = function (entry) {
   }
 };
 
-FKTeamsChat.prototype.updateParallelMembersHeader = function () {
-  if (!this.parallelPanel) return;
-  const entries = Object.values(this.parallelMemberCards || {});
+FKTeamsChat.prototype.updateParallelMembersHeader = function (panel) {
+  const targetPanel = panel || this.parallelPanel;
+  if (!targetPanel) return;
+  const entries = this.parallelEntriesForPanel(targetPanel);
   const total = entries.length;
   const done = entries.filter((entry) =>
     entry?.el?.classList.contains("parallel-member-done") ||
     entry?.el?.classList.contains("parallel-member-error")
   ).length;
-  const counter = this.parallelPanel.querySelector(".parallel-members-count");
+  const counter = targetPanel.querySelector(".parallel-members-count");
   if (counter) {
     counter.dataset.total = String(total);
     counter.dataset.done = String(done);
     counter.textContent = `${done}/${total}`;
   }
-  const title = this.parallelPanel.querySelector(".parallel-members-title");
+  const title = targetPanel.querySelector(".parallel-members-title");
   if (title) {
     const completed = total > 0 && done === total;
     if (total > 1) {
@@ -468,7 +504,7 @@ FKTeamsChat.prototype.updateParallelMembersHeader = function () {
       title.textContent = completed ? "成员任务完成" : "成员任务处理中";
     }
   }
-  const header = this.parallelPanel.querySelector(".parallel-members-header");
+  const header = targetPanel.querySelector(".parallel-members-header");
   if (header) {
     header.classList.toggle("dispatch-status-ok", total > 0 && done === total);
     header.classList.toggle("dispatch-status-partial", !(total > 0 && done === total));
@@ -1765,10 +1801,12 @@ FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
 
   const callIndex = event.tool_call_index ?? event.detail ?? "0";
   const key = event.tool_call_ref ? "ref:" + event.tool_call_ref : event.tool_call_id ? "id:" + event.tool_call_id : "idx:" + callIndex;
+  const pendingMemberKey = "pending:" + callIndex;
+  const pendingMemberEntry = this.parallelMemberCards[pendingMemberKey];
   const memberKey = event.tool_call_id && this.parallelToolMemberByID[event.tool_call_id]
     ? this.parallelToolMemberByID[event.tool_call_id]
-    : this.parallelMemberCards["pending:" + callIndex]
-      ? "pending:" + callIndex
+    : pendingMemberEntry && !this.isStalePendingMemberEntry(pendingMemberKey, pendingMemberEntry)
+      ? pendingMemberKey
       : "";
   if (memberKey) {
     const entry = this.parallelMemberCards[memberKey];
