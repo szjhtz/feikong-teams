@@ -298,58 +298,101 @@
 
 .sidebar-session-actions {
     position: absolute;
-    right: 8px;
+    right: 7px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
-    gap: 2px;
     opacity: 0;
     transition: opacity 0.15s ease;
     pointer-events: none;
-    padding: 2px;
-    border-radius: 8px;
-    background: linear-gradient(90deg, transparent 0%, var(--bg-tertiary) 18%, var(--bg-tertiary) 100%);
+    z-index: 3;
 }
 
 .sidebar-session-item:hover .sidebar-session-actions,
-.sidebar-session-item.active .sidebar-session-actions {
+.sidebar-session-item.active .sidebar-session-actions,
+.sidebar-session-item.menu-open .sidebar-session-actions {
     opacity: 1;
     pointer-events: auto;
 }
 
-.sidebar-session-action-btn {
-    width: 24px;
-    height: 24px;
+.sidebar-session-menu-trigger {
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: 7px;
     cursor: pointer;
     color: var(--text-tertiary);
     transition: all var(--transition);
     padding: 0;
 }
 
-.sidebar-session-action-btn:hover {
+.sidebar-session-menu-trigger:hover,
+.sidebar-session-item.menu-open .sidebar-session-menu-trigger {
     background: var(--bg-hover);
     color: var(--text-primary);
 }
 
-.sidebar-session-action-btn.delete-action:hover {
+.sidebar-session-menu-trigger svg {
+    width: 15px;
+    height: 15px;
+}
+
+.sidebar-session-menu {
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    min-width: 112px;
+    display: none;
+    padding: 5px;
+    border: 1.5px solid var(--border-color);
+    border-radius: 9px;
+    background: var(--bg-secondary);
+    box-shadow: 2px 4px 0 rgba(60, 50, 30, 0.12);
+    z-index: 20;
+}
+
+.sidebar-session-item.menu-open .sidebar-session-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sidebar-session-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 7px 8px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.2;
+    text-align: left;
+    white-space: nowrap;
+    transition: all var(--transition);
+}
+
+.sidebar-session-menu-item:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.sidebar-session-menu-item.delete-action:hover {
     color: var(--error);
     background: var(--error-light);
 }
 
-.sidebar-session-action-btn.share-action:hover {
-    color: var(--info);
-    background: rgba(107, 165, 198, 0.12);
-}
-
-.sidebar-session-action-btn svg {
+.sidebar-session-menu-item svg {
     width: 13px;
     height: 13px;
+    flex-shrink: 0;
 }
 
 /* 会话状态标签 */

@@ -349,7 +349,7 @@
         pointer-events: auto;
     }
 
-    .sidebar-session-action-btn {
+    .sidebar-session-menu-trigger {
         min-width: 36px;
         min-height: 36px;
     }

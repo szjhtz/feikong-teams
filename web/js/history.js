@@ -85,6 +85,10 @@ FKTeamsChat.prototype._doLoadSidebarHistory = async function () {
 
 FKTeamsChat.prototype.renderSidebarSessions = function (files) {
   if (!this.sidebarSessionList) return;
+  if (!this._sidebarMenuOutsideBound) {
+    this._sidebarMenuOutsideBound = true;
+    document.addEventListener("click", () => this.closeSidebarSessionMenus());
+  }
 
   if (!files || files.length === 0) {
     this.sidebarSessionList.innerHTML =
@@ -138,55 +142,85 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
                 <div class="sidebar-session-time">${this.formatTime(file.mod_time)}${statusHtml ? " · " + statusHtml : ""}</div>
             </div>
             <div class="sidebar-session-actions">
-                <button class="sidebar-session-action-btn share-action" data-tooltip="分享会话">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="18" cy="5" r="3"/>
-                        <circle cx="6" cy="12" r="3"/>
-                        <circle cx="18" cy="19" r="3"/>
-                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                <button class="sidebar-session-menu-trigger" data-tooltip="更多操作" aria-label="更多操作">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="12" cy="5" r="1.8"/>
+                        <circle cx="12" cy="12" r="1.8"/>
+                        <circle cx="12" cy="19" r="1.8"/>
                     </svg>
                 </button>
-                <button class="sidebar-session-action-btn rename-action">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                    </svg>
-                </button>
-                <button class="sidebar-session-action-btn delete-action">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    </svg>
-                </button>
+                <div class="sidebar-session-menu">
+                    <button class="sidebar-session-menu-item share-action">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="18" cy="5" r="3"/>
+                            <circle cx="6" cy="12" r="3"/>
+                            <circle cx="18" cy="19" r="3"/>
+                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                        </svg>
+                        <span>分享</span>
+                    </button>
+                    <button class="sidebar-session-menu-item rename-action">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                        </svg>
+                        <span>重命名</span>
+                    </button>
+                    <button class="sidebar-session-menu-item delete-action">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                        <span>删除</span>
+                    </button>
+                </div>
             </div>
         `;
 
     // 点击加载会话
     item.addEventListener("click", (e) => {
       // 如果点击的是操作按钮，不加载会话
-      if (e.target.closest(".sidebar-session-action-btn")) return;
+      if (e.target.closest(".sidebar-session-actions")) return;
       this.loadSidebarSession(file.session_id);
+    });
+
+    const menuTrigger = item.querySelector(".sidebar-session-menu-trigger");
+    menuTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = item.classList.contains("menu-open");
+      this.closeSidebarSessionMenus();
+      item.classList.toggle("menu-open", !isOpen);
     });
 
     // 分享按钮
     item.querySelector(".share-action").addEventListener("click", (e) => {
       e.stopPropagation();
+      this.closeSidebarSessionMenus();
       this.showSessionShareModal(file.session_id, file.title);
     });
 
     // 重命名按钮
     item.querySelector(".rename-action").addEventListener("click", (e) => {
       e.stopPropagation();
+      this.closeSidebarSessionMenus();
       this.renameSession(file.session_id, file.title);
     });
 
     // 删除按钮
     item.querySelector(".delete-action").addEventListener("click", (e) => {
       e.stopPropagation();
+      this.closeSidebarSessionMenus();
       this.deleteSession(file.session_id);
     });
 
     this.sidebarSessionList.appendChild(item);
+  });
+};
+
+FKTeamsChat.prototype.closeSidebarSessionMenus = function () {
+  if (!this.sidebarSessionList) return;
+  this.sidebarSessionList.querySelectorAll(".sidebar-session-item.menu-open").forEach((item) => {
+    item.classList.remove("menu-open");
   });
 };
 
