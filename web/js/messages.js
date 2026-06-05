@@ -32,6 +32,7 @@ FKTeamsChat.prototype.resetParallelState = function () {
   this.parallelMemberResultChunks = {};
   this.parallelMemberInnerResultChunks = {};
   this.parallelMemberToolFlows = {};
+  this.parallelPanelBatchMode = false;
   this.lastToolName = "";
 };
 
@@ -313,7 +314,11 @@ FKTeamsChat.prototype.truncateRunes = function (text, maxLen) {
 };
 
 FKTeamsChat.prototype.ensureParallelPanel = function () {
-  if (this.parallelPanel && this.parallelPanel.isConnected && !this.parallelPanelCompleted(this.parallelPanel)) {
+  if (
+    this.parallelPanel &&
+    this.parallelPanel.isConnected &&
+    (this.parallelPanelBatchMode || !this.parallelPanelCompleted(this.parallelPanel))
+  ) {
     return this.parallelPanel;
   }
   const panel = document.createElement("div");

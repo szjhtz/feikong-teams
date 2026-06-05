@@ -291,6 +291,7 @@ FKTeamsChat.prototype._saveSessionDOM = function () {
     parallelMemberCards: this.parallelMemberCards,
     parallelMemberByAgent: this.parallelMemberByAgent,
     parallelToolMemberByID: this.parallelToolMemberByID,
+    parallelPanelBatchMode: this.parallelPanelBatchMode,
     hasToolCallAfterMessage: this.hasToolCallAfterMessage,
     userQuestions: [...this.userQuestions],
     currentAgent: this.currentAgent,
@@ -314,6 +315,7 @@ FKTeamsChat.prototype._restoreSessionDOM = function (sessionId) {
   this.parallelMemberCards = cached.parallelMemberCards || {};
   this.parallelMemberByAgent = cached.parallelMemberByAgent || {};
   this.parallelToolMemberByID = cached.parallelToolMemberByID || {};
+  this.parallelPanelBatchMode = cached.parallelPanelBatchMode || false;
   this.hasToolCallAfterMessage = cached.hasToolCallAfterMessage;
   this.userQuestions = cached.userQuestions || [];
   this.setCurrentAgent(cached.currentAgent || null, false); // 从缓存还原，仅更新 UI
@@ -1092,6 +1094,7 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
     parallelToolMemberByID: this.parallelToolMemberByID,
     parallelMemberResultChunks: this.parallelMemberResultChunks,
     parallelMemberInnerResultChunks: this.parallelMemberInnerResultChunks,
+    parallelPanelBatchMode: this.parallelPanelBatchMode,
     lastToolName: this.lastToolName,
   };
 
@@ -1106,6 +1109,7 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
   this.parallelToolMemberByID = {};
   this.parallelMemberResultChunks = {};
   this.parallelMemberInnerResultChunks = {};
+  this.parallelPanelBatchMode = true;
   this.lastToolName = "";
 
   messages.forEach((msg, index) => {
@@ -1178,6 +1182,7 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
   this.parallelToolMemberByID = saved.parallelToolMemberByID;
   this.parallelMemberResultChunks = saved.parallelMemberResultChunks;
   this.parallelMemberInnerResultChunks = saved.parallelMemberInnerResultChunks;
+  this.parallelPanelBatchMode = saved.parallelPanelBatchMode;
   this.lastToolName = saved.lastToolName;
 };
 

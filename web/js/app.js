@@ -18,6 +18,7 @@ class FKTeamsChat {
     this.parallelMemberCards = {};
     this.parallelMemberByAgent = {};
     this.parallelToolMemberByID = {};
+    this.parallelPanelBatchMode = false;
     this.hasToolCallAfterMessage = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
