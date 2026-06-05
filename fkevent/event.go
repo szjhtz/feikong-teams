@@ -45,7 +45,6 @@ var toolCallRefsByID sync.Map
 var toolCallOrdersByID sync.Map
 var toolCallSpansByID sync.Map
 var toolCallSpansByRef sync.Map
-var eventDispatchMu sync.Mutex
 
 func isInternalToolName(name string) bool {
 	return name == internalContinueToolName
@@ -1051,9 +1050,6 @@ func isContextCanceled(ctx context.Context, err error) bool {
 
 // handleEvent 分发事件到 context 中的回调。
 func handleEvent(ctx context.Context, event Event) error {
-	eventDispatchMu.Lock()
-	defer eventDispatchMu.Unlock()
-
 	event = normalizeEvent(event)
 	if cb := getCallback(ctx); cb != nil {
 		return cb(event)
