@@ -286,7 +286,7 @@ cat error.log | ./fkteams agent -n coder -q "分析这个错误日志"
 | `--query`   | `-q` | 直接查询模式，执行完查询后退出                                                 |
 | `--resume`  | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用                                     |
 | `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令                             |
-| `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`dispatch`，逗号分隔）            |
+| `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`git`/`dispatch`，逗号分隔）      |
 | `--version` | `-v` | 显示版本信息                                                                   |
 
 ### 管道输入
@@ -322,7 +322,7 @@ curl -s https://example.com/api | ./fkteams -q "解析这个 API 响应"
 | `--query`   | `-q` | 直接查询模式，执行完查询后退出                                      |
 | `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令                  |
 | `--format`  |      | 输出格式: `default`（格式化）或 `json`（原始JSON）                  |
-| `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`dispatch`，逗号分隔） |
+| `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`git`/`dispatch`，逗号分隔） |
 
 会话默认保存，可通过全局 `--resume` 恢复；如需额外导出 HTML，请在交互模式内执行 `save_chat_history_to_html`。
 

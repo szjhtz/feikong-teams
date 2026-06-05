@@ -106,7 +106,7 @@ fkteams -r "20260302_091249" -q "继续上次的分析"  # 恢复后直接查询
 | `--query` | `-q` | 直接查询模式，执行后退出 |
 | `--resume` | `-r` | 恢复指定会话 ID |
 | `--temporary` | `--temp` | 临时会话，不保存历史 |
-| `--approve` | | 自动批准工具调用：`all` / `command` / `file` / `dispatch`（逗号分隔） |
+| `--approve` | | 自动批准工具调用：`all` / `command` / `file` / `git` / `dispatch`（逗号分隔） |
 
 ---
 
@@ -189,7 +189,7 @@ fkteams agent -n researcher -q "搜索 AI 新闻" --temporary
 | `--query` | `-q` | 直接查询模式 |
 | `--temporary` | `--temp` | 临时会话，不保存历史 |
 | `--format` | | 输出格式：`default`（格式化）或 `json`（原始事件） |
-| `--approve` | | 自动批准：`all` / `command` / `file` / `dispatch` |
+| `--approve` | | 自动批准：`all` / `command` / `file` / `git` / `dispatch` |
 
 交互模式下，输入 `@` 符号后自动显示智能体列表供选择。
 

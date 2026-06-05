@@ -334,6 +334,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		ApprovalReg: approval.NewRegistry(
 			approval.StoreConfig{Name: approval.StoreCommand},
 			approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+			approval.StoreConfig{Name: approval.StoreGit, Matcher: approval.DirMatchFunc},
 			approval.StoreConfig{Name: approval.StoreDispatch},
 		),
 		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {

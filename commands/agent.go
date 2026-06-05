@@ -73,7 +73,7 @@ func agentCommand() *ucli.Command {
 			},
 			&ucli.StringFlag{
 				Name:  "approve",
-				Usage: "自动批准指定操作类别 (all/command/file/dispatch，逗号分隔)",
+				Usage: "自动批准指定操作类别 (all/command/file/git/dispatch，逗号分隔)",
 			},
 		},
 		Action: agentAction,

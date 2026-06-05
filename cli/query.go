@@ -206,6 +206,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	storeConfigs := []approval.StoreConfig{
 		{Name: approval.StoreCommand},
 		{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+		{Name: approval.StoreGit, Matcher: approval.DirMatchFunc},
 		{Name: approval.StoreDispatch},
 	}
 	var approvalReg *approval.Registry

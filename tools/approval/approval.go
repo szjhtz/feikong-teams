@@ -3,7 +3,9 @@ package approval
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 )
@@ -11,6 +13,7 @@ import (
 const (
 	StoreCommand  = "command"
 	StoreFile     = "file"
+	StoreGit      = "git"
 	StoreDispatch = "dispatch"
 )
 
@@ -22,6 +25,19 @@ const (
 )
 
 var ErrRejected = errors.New("user rejected the operation")
+
+type OperationDetail struct {
+	Name  string
+	Value string
+}
+
+type Operation struct {
+	StoreName string
+	Key       string
+	Title     string
+	Target    string
+	Details   []OperationDetail
+}
 
 type MatchFunc func(key string, approved map[string]bool) bool
 
@@ -88,6 +104,7 @@ func NewAutoApproveRegistry() *Registry {
 	r := NewRegistry(
 		StoreConfig{Name: StoreCommand},
 		StoreConfig{Name: StoreFile},
+		StoreConfig{Name: StoreGit},
 		StoreConfig{Name: StoreDispatch},
 	)
 	for _, s := range r.stores {
@@ -161,4 +178,39 @@ func Require(ctx context.Context, storeName, key, info string) error {
 	}
 
 	return tool.Interrupt(ctx, info)
+}
+
+// RequireOperation 使用统一格式发起一次人工审批。
+func RequireOperation(ctx context.Context, op Operation) error {
+	return Require(ctx, op.StoreName, op.Key, op.Info())
+}
+
+func (op Operation) Info() string {
+	title := op.Title
+	if title == "" {
+		title = "Operation requires approval"
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s", title)
+	if op.Target != "" {
+		fmt.Fprintf(&sb, "\n  Target: %s", op.Target)
+	}
+	for _, detail := range op.Details {
+		if detail.Name == "" || detail.Value == "" {
+			continue
+		}
+		fmt.Fprintf(&sb, "\n  %s: %s", detail.Name, detail.Value)
+	}
+	return sb.String()
+}
+
+func RejectedMessage(err error, message string) (string, bool) {
+	if errors.Is(err, ErrRejected) {
+		if message == "" {
+			message = ErrRejected.Error()
+		}
+		return message, true
+	}
+	return "", false
 }

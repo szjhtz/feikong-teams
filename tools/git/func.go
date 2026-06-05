@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"fkteams/tools/approval"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -69,6 +71,24 @@ func (gt *GitTools) validatePath(userPath string) (string, error) {
 	return absPath, nil
 }
 
+func requireGitApproval(ctx context.Context, repoPath, action, detail string) error {
+	details := []approval.OperationDetail{{Name: "Operation", Value: action}}
+	if detail != "" {
+		details = append(details, approval.OperationDetail{Name: "Detail", Value: detail})
+	}
+	return approval.RequireOperation(ctx, approval.Operation{
+		StoreName: approval.StoreGit,
+		Key:       filepath.Join(repoPath, action),
+		Title:     "Git operation requires approval",
+		Target:    repoPath,
+		Details:   details,
+	})
+}
+
+func gitApprovalError(err error) (string, bool) {
+	return approval.RejectedMessage(err, "git operation rejected by user")
+}
+
 // --- Git Init ---
 
 // GitInitRequest 初始化仓库请求
@@ -91,6 +111,13 @@ func (gt *GitTools) GitInit(ctx context.Context, req *GitInitRequest) (*GitInitR
 		return &GitInitResponse{
 			ErrorMessage: err.Error(),
 		}, nil
+	}
+
+	if err := requireGitApproval(ctx, path, "init", fmt.Sprintf("bare=%t", req.Bare)); err != nil {
+		if msg, ok := gitApprovalError(err); ok {
+			return &GitInitResponse{ErrorMessage: msg}, nil
+		}
+		return nil, err
 	}
 
 	// 确保目录存在
@@ -246,6 +273,13 @@ func (gt *GitTools) GitAdd(ctx context.Context, req *GitAddRequest) (*GitAddResp
 		}, nil
 	}
 
+	if err := requireGitApproval(ctx, path, "add", strings.Join(req.Files, ", ")); err != nil {
+		if msg, ok := gitApprovalError(err); ok {
+			return &GitAddResponse{ErrorMessage: msg}, nil
+		}
+		return nil, err
+	}
+
 	repo, err := git.PlainOpen(path)
 	if err != nil {
 		return &GitAddResponse{
@@ -308,6 +342,13 @@ func (gt *GitTools) GitCommit(ctx context.Context, req *GitCommitRequest) (*GitC
 		return &GitCommitResponse{
 			ErrorMessage: "提交信息不能为空",
 		}, nil
+	}
+
+	if err := requireGitApproval(ctx, path, "commit", fmt.Sprintf("all=%t", req.All)); err != nil {
+		if msg, ok := gitApprovalError(err); ok {
+			return &GitCommitResponse{ErrorMessage: msg}, nil
+		}
+		return nil, err
 	}
 
 	repo, err := git.PlainOpen(path)
@@ -486,8 +527,20 @@ func (gt *GitTools) GitBranch(ctx context.Context, req *GitBranchRequest) (*GitB
 	case "list":
 		return gt.listBranches(repo)
 	case "create":
+		if err := requireGitApproval(ctx, path, "branch:create", req.Name); err != nil {
+			if msg, ok := gitApprovalError(err); ok {
+				return &GitBranchResponse{ErrorMessage: msg}, nil
+			}
+			return nil, err
+		}
 		return gt.createBranch(repo, req.Name, req.StartPoint)
 	case "delete":
+		if err := requireGitApproval(ctx, path, "branch:delete", req.Name); err != nil {
+			if msg, ok := gitApprovalError(err); ok {
+				return &GitBranchResponse{ErrorMessage: msg}, nil
+			}
+			return nil, err
+		}
 		return gt.deleteBranch(repo, req.Name)
 	default:
 		return &GitBranchResponse{
@@ -645,6 +698,17 @@ func (gt *GitTools) GitCheckout(ctx context.Context, req *GitCheckoutRequest) (*
 		}, nil
 	}
 
+	detail := req.Branch
+	if detail == "" {
+		detail = req.Hash
+	}
+	if err := requireGitApproval(ctx, path, "checkout", detail); err != nil {
+		if msg, ok := gitApprovalError(err); ok {
+			return &GitCheckoutResponse{ErrorMessage: msg}, nil
+		}
+		return nil, err
+	}
+
 	opts := &git.CheckoutOptions{
 		Force:  req.Force,
 		Create: req.Create,
@@ -755,6 +819,13 @@ func (gt *GitTools) GitReset(ctx context.Context, req *GitResetRequest) (*GitRes
 		}, nil
 	}
 
+	if err := requireGitApproval(ctx, path, "reset", strings.ToLower(req.Mode)); err != nil {
+		if msg, ok := gitApprovalError(err); ok {
+			return &GitResetResponse{ErrorMessage: msg}, nil
+		}
+		return nil, err
+	}
+
 	opts := &git.ResetOptions{
 		Commit: commitHash,
 		Mode:   mode,
@@ -829,8 +900,20 @@ func (gt *GitTools) GitTag(ctx context.Context, req *GitTagRequest) (*GitTagResp
 	case "list":
 		return gt.listTags(repo)
 	case "create":
+		if err := requireGitApproval(ctx, path, "tag:create", req.Name); err != nil {
+			if msg, ok := gitApprovalError(err); ok {
+				return &GitTagResponse{ErrorMessage: msg}, nil
+			}
+			return nil, err
+		}
 		return gt.createTag(repo, req.Name, req.Message, req.Commit)
 	case "delete":
+		if err := requireGitApproval(ctx, path, "tag:delete", req.Name); err != nil {
+			if msg, ok := gitApprovalError(err); ok {
+				return &GitTagResponse{ErrorMessage: msg}, nil
+			}
+			return nil, err
+		}
 		return gt.deleteTag(repo, req.Name)
 	default:
 		return &GitTagResponse{
@@ -1098,6 +1181,13 @@ func (gt *GitTools) GitClean(ctx context.Context, req *GitCleanRequest) (*GitCle
 		}, nil
 	}
 
+	if err := requireGitApproval(ctx, path, "clean", fmt.Sprintf("directories=%t", req.Directories)); err != nil {
+		if msg, ok := gitApprovalError(err); ok {
+			return &GitCleanResponse{ErrorMessage: msg}, nil
+		}
+		return nil, err
+	}
+
 	// 实际删除文件
 	err = worktree.Clean(&git.CleanOptions{
 		Dir: req.Directories,
@@ -1142,6 +1232,13 @@ func (gt *GitTools) GitRemove(ctx context.Context, req *GitRemoveRequest) (*GitR
 		return &GitRemoveResponse{
 			ErrorMessage: "请指定要移除的文件",
 		}, nil
+	}
+
+	if err := requireGitApproval(ctx, path, "remove", strings.Join(req.Files, ", ")); err != nil {
+		if msg, ok := gitApprovalError(err); ok {
+			return &GitRemoveResponse{ErrorMessage: msg}, nil
+		}
+		return nil, err
 	}
 
 	repo, err := git.PlainOpen(path)
@@ -1281,6 +1378,12 @@ func (gt *GitTools) GitConfig(ctx context.Context, req *GitConfigRequest) (*GitC
 				ErrorMessage: "请指定配置键名和值",
 			}, nil
 		}
+		if err := requireGitApproval(ctx, path, "config:set", req.Key); err != nil {
+			if msg, ok := gitApprovalError(err); ok {
+				return &GitConfigResponse{ErrorMessage: msg}, nil
+			}
+			return nil, err
+		}
 		switch req.Key {
 		case "user.name":
 			cfg.User.Name = req.Value
@@ -1379,6 +1482,12 @@ func (gt *GitTools) GitRemote(ctx context.Context, req *GitRemoteRequest) (*GitR
 				ErrorMessage: "请指定远程仓库名称和URL",
 			}, nil
 		}
+		if err := requireGitApproval(ctx, path, "remote:add", req.Name); err != nil {
+			if msg, ok := gitApprovalError(err); ok {
+				return &GitRemoteResponse{ErrorMessage: msg}, nil
+			}
+			return nil, err
+		}
 		_, err := repo.CreateRemote(&config.RemoteConfig{
 			Name: req.Name,
 			URLs: []string{req.URL},
@@ -1397,6 +1506,12 @@ func (gt *GitTools) GitRemote(ctx context.Context, req *GitRemoteRequest) (*GitR
 			return &GitRemoteResponse{
 				ErrorMessage: "请指定远程仓库名称",
 			}, nil
+		}
+		if err := requireGitApproval(ctx, path, "remote:remove", req.Name); err != nil {
+			if msg, ok := gitApprovalError(err); ok {
+				return &GitRemoteResponse{ErrorMessage: msg}, nil
+			}
+			return nil, err
 		}
 		err := repo.DeleteRemote(req.Name)
 		if err != nil {
