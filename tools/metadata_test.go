@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/tools/approval"
+	"fkteams/tools/search"
 	"testing"
 )
 
@@ -93,6 +94,41 @@ func TestDocumentToolNamesUsePolicy(t *testing.T) {
 	}
 }
 
+func TestSearchAndAskToolNamesUsePolicy(t *testing.T) {
+	for _, name := range []string{"search", "fetch", "ask_questions"} {
+		policy := mustPolicy(t, name)
+		if !policy.ReadOnly {
+			t.Fatalf("%s should be read-only", name)
+		}
+		if policy.Destructive {
+			t.Fatalf("%s should not be destructive", name)
+		}
+	}
+	if _, ok := PolicyForTool("duckduckgo_text_search"); ok {
+		t.Fatal("unregistered search constructor default should not be classified as a builtin policy")
+	}
+}
+
+func TestSearchPolicyMatchesActualBuiltinToolName(t *testing.T) {
+	searchTools, err := search.GetTools()
+	if err != nil {
+		t.Fatalf("get search tools: %v", err)
+	}
+	if len(searchTools) != 1 {
+		t.Fatalf("expected one search tool, got %d", len(searchTools))
+	}
+	info, err := searchTools[0].Info(context.Background())
+	if err != nil {
+		t.Fatalf("get search tool info: %v", err)
+	}
+	if info.Name != "search" {
+		t.Fatalf("unexpected search tool name: %s", info.Name)
+	}
+	if _, ok := PolicyForTool(info.Name); !ok {
+		t.Fatalf("missing policy for actual search tool name: %s", info.Name)
+	}
+}
+
 func TestPolicyIncludesApprovalAndExternalPath(t *testing.T) {
 	filePolicy := mustPolicy(t, "file_read")
 	if got := filePolicy.ApprovalStore; got != approval.StoreFile {
@@ -111,7 +147,9 @@ func TestPolicyIncludesApprovalAndExternalPath(t *testing.T) {
 
 func TestClassifyToolSetsMetadata(t *testing.T) {
 	readTool := stubTool{info: &agentcore.ToolInfo{Name: "git_status"}}
-	ClassifyTool(readTool)
+	if err := ClassifyTool(readTool); err != nil {
+		t.Fatalf("classify read tool: %v", err)
+	}
 	if readTool.info.Extra[metaReadOnly] != true {
 		t.Fatalf("expected read-only metadata for git_status")
 	}
@@ -120,7 +158,9 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 	}
 
 	writeTool := stubTool{info: &agentcore.ToolInfo{Name: "git_clean"}}
-	ClassifyTool(writeTool)
+	if err := ClassifyTool(writeTool); err != nil {
+		t.Fatalf("classify write tool: %v", err)
+	}
 	if writeTool.info.Extra[metaReadOnly] == true {
 		t.Fatalf("did not expect read-only metadata for git_clean")
 	}
@@ -131,7 +171,9 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 
 func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
 	fileTool := stubTool{info: &agentcore.ToolInfo{Name: "file_read"}}
-	ClassifyTool(fileTool)
+	if err := ClassifyTool(fileTool); err != nil {
+		t.Fatalf("classify file tool: %v", err)
+	}
 	if fileTool.info.Extra[metaReadOnly] != true {
 		t.Fatal("expected read-only metadata")
 	}
@@ -143,11 +185,30 @@ func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
 	}
 
 	scriptTool := stubTool{info: &agentcore.ToolInfo{Name: "bun_run_script"}}
-	ClassifyTool(scriptTool)
+	if err := ClassifyTool(scriptTool); err != nil {
+		t.Fatalf("classify script tool: %v", err)
+	}
 	if scriptTool.info.Extra[metaDestructive] != true {
 		t.Fatal("expected destructive metadata")
 	}
 	if scriptTool.info.Extra[metaSerialize] != true {
 		t.Fatal("expected serialize metadata")
+	}
+}
+
+func TestClassifyToolRequiresPolicyWhenMarked(t *testing.T) {
+	tool := stubTool{info: &agentcore.ToolInfo{Name: "new_builtin_tool"}}
+	if err := MarkPolicyRequired([]agentcore.Tool{tool}); err != nil {
+		t.Fatalf("mark policy required: %v", err)
+	}
+	if err := ClassifyTool(tool); err == nil {
+		t.Fatal("expected missing policy error")
+	}
+}
+
+func TestClassifyToolAllowsUnmarkedExternalTool(t *testing.T) {
+	tool := stubTool{info: &agentcore.ToolInfo{Name: "external_tool"}}
+	if err := ClassifyTool(tool); err != nil {
+		t.Fatalf("external tool should not require policy: %v", err)
 	}
 }

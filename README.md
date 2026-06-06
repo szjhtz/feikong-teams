@@ -182,6 +182,13 @@ docker compose up -d
 
 > 通过 `[[custom.agents]]` 定义的[自定义智能体](./docs/custom-agents.md)也会自动注册，在任意模式下可通过 `@` 或 `agent` 子命令使用。
 
+## 架构与安全边界
+
+- `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
+- Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；执行失败会保存为 `error` 会话状态，HTTP 同步接口会返回错误响应。
+- Runner 可被入口层缓存复用，checkpoint store 为并发安全实现；配置更新会重建 Agent 注册表并清空 Runner/MCP/通道缓存。
+- 内置工具必须在工具策略表中声明只读、破坏性、串行化和审批元数据；MCP 和成员智能体工具作为外部扩展，不强制使用内置策略表。
+
 ## 文档导航
 
 | 文档                                    | 说明                                     |

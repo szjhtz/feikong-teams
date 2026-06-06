@@ -246,7 +246,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
-	engine.NewSession(r, sessionID).
+	_, runErr := engine.NewSession(r, sessionID).
 		WithInput(turnInput).
 		OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
@@ -258,6 +258,11 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
+				recorder.RecordEvent(events.Event{
+					Type:    events.EventError,
+					Content: err.Error(),
+					Error:   err.Error(),
+				})
 			}
 			recorder.FinalizeCurrent()
 			rc.flush()
@@ -265,7 +270,11 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			if err := recorder.SaveToFile(historyFile); err != nil {
 				log.Printf("[bridge] save history failed: session=%s, err=%v", sessionID, err)
 			}
-			saveChannelSessionMetadata(sessionID, combinedInput)
+			status := "completed"
+			if err != nil {
+				status = "error"
+			}
+			saveChannelSessionMetadata(sessionID, combinedInput, status)
 			if g.MemoryManager != nil {
 				g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
 			}
@@ -274,10 +283,16 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			}
 		}).
 		Run(ctx)
+	if runErr != nil {
+		log.Printf("[bridge] task failed: session=%s, err=%v", sessionID, runErr)
+	}
 }
 
 // saveChannelSessionMetadata 保存通道会话的元数据
-func saveChannelSessionMetadata(sessionID, userInput string) {
+func saveChannelSessionMetadata(sessionID, userInput, status string) {
+	if status == "" {
+		status = "completed"
+	}
 	sessionDir := filepath.Join(channelHistoryDir, sessionID)
 	now := time.Now()
 	meta, err := eventlog.LoadMetadata(sessionDir)
@@ -293,13 +308,13 @@ func saveChannelSessionMetadata(sessionID, userInput string) {
 		meta = &eventlog.SessionMetadata{
 			ID:        sessionID,
 			Title:     title,
-			Status:    "completed",
+			Status:    status,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
 	} else {
 		meta.UpdatedAt = now
-		meta.Status = "completed"
+		meta.Status = status
 	}
 	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
 		log.Printf("[bridge] save metadata failed: session=%s, err=%v", sessionID, err)

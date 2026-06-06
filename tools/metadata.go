@@ -4,14 +4,16 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/tools/approval"
+	"fmt"
 )
 
 const (
-	metaReadOnly      = "fkteams:readOnly"
-	metaDestructive   = "fkteams:destructive"
-	metaSerialize     = "fkteams:serialize"
-	metaApprovalStore = "fkteams:approvalStore"
-	metaExternalPath  = "fkteams:externalPath"
+	metaReadOnly       = "fkteams:readOnly"
+	metaDestructive    = "fkteams:destructive"
+	metaSerialize      = "fkteams:serialize"
+	metaApprovalStore  = "fkteams:approvalStore"
+	metaExternalPath   = "fkteams:externalPath"
+	metaPolicyRequired = "fkteams:policyRequired"
 )
 
 type ToolPolicy struct {
@@ -95,13 +97,14 @@ var toolPolicies = map[string]ToolPolicy{
 	"todo_batch_delete": destructivePolicy("", false),
 	"todo_clear":        destructivePolicy("", false),
 
-	// search / fetch / doc
+	// search / fetch / doc / ask
 	"search":                 readOnlyPolicy("", false),
 	"fetch":                  readOnlyPolicy("", false),
 	"get_document_info":      readOnlyPolicy("", false),
 	"read_document_smart":    readOnlyPolicy("", false),
 	"read_document_by_pages": readOnlyPolicy("", false),
 	"read_document_by_lines": readOnlyPolicy("", false),
+	"ask_questions":          readOnlyPolicy("", false),
 
 	// excel read
 	"excel_open_workbook":       readOnlyPolicy("", false),
@@ -176,19 +179,38 @@ func ShouldSerializeTool(toolName string) bool {
 	return ok && policy.Serialize
 }
 
+// MarkPolicyRequired 标记工具必须在策略表中声明安全策略。
+func MarkPolicyRequired(tools []agentcore.Tool) error {
+	for _, t := range tools {
+		info, err := t.Info(context.Background())
+		if err != nil {
+			return err
+		}
+		if info.Extra == nil {
+			info.Extra = make(map[string]any)
+		}
+		info.Extra[metaPolicyRequired] = true
+	}
+	return nil
+}
+
 // ClassifyTool 为工具设置策略元数据
-func ClassifyTool(t agentcore.Tool) {
+func ClassifyTool(t agentcore.Tool) error {
 	info, err := t.Info(context.Background())
 	if err != nil {
-		return
+		return err
 	}
 	if info.Extra == nil {
 		info.Extra = make(map[string]any)
 	}
+	policyRequired, _ := info.Extra[metaPolicyRequired].(bool)
 
 	policy, ok := PolicyForTool(info.Name)
 	if !ok {
-		return
+		if policyRequired {
+			return fmt.Errorf("missing tool policy: %s", info.Name)
+		}
+		return nil
 	}
 	if policy.ReadOnly {
 		info.Extra[metaReadOnly] = true
@@ -205,11 +227,16 @@ func ClassifyTool(t agentcore.Tool) {
 	if policy.ExternalPath {
 		info.Extra[metaExternalPath] = true
 	}
+	delete(info.Extra, metaPolicyRequired)
+	return nil
 }
 
 // ClassifyTools 批量为工具列表设置元数据
-func ClassifyTools(tools []agentcore.Tool) {
+func ClassifyTools(tools []agentcore.Tool) error {
 	for _, t := range tools {
-		ClassifyTool(t)
+		if err := ClassifyTool(t); err != nil {
+			return err
+		}
 	}
+	return nil
 }

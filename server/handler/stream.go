@@ -119,7 +119,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
-	engine.NewSession(r, sessionID).
+	_, runErr := engine.NewSession(r, sessionID).
 		WithInput(turnInput).
 		OnEvent(func(event events.Event) error {
 			if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
@@ -155,6 +155,8 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 					"session_id": sessionID,
 					"error":      err.Error(),
 				})
+				finishErrorChat(recorder, sessionID, userDisplayText, err)
+				return
 			} else {
 				stream.SetStatus("completed")
 				stream.Publish(map[string]any{
@@ -166,6 +168,9 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			finishChat(recorder, sessionID, userDisplayText)
 		}).
 		Run(ctx)
+	if runErr != nil && !isConnectionClosed(ctx, runErr) {
+		log.Printf("stream task failed: session=%s, err=%v", sessionID, runErr)
+	}
 }
 
 // StreamStopHandler 停止正在运行的流式任务

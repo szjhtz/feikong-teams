@@ -20,7 +20,7 @@ type AgentInfo struct {
 	Name        string
 	Description string
 	Aliases     []string
-	Creator     func(ctx context.Context) agentcore.Agent
+	Creator     func(ctx context.Context) (agentcore.Agent, error)
 }
 
 var (
@@ -78,15 +78,12 @@ func buildRegistry() {
 			pterm.Warning.Printfln("初始化智能体 %s 失败: %v", c.name, err)
 			continue
 		}
+		creator := c.creator
 		Registry = append(Registry, AgentInfo{
 			Name:        agent.Name(),
 			Description: agent.Description(),
 			Aliases:     c.aliases,
-			Creator: func(cachedAgent agentcore.Agent) func(ctx context.Context) agentcore.Agent {
-				return func(ctx context.Context) agentcore.Agent {
-					return cachedAgent
-				}
-			}(agent),
+			Creator:     creator,
 		})
 	}
 
@@ -127,6 +124,7 @@ func loadCustomAgents(ctx context.Context) {
 			}
 		}
 
+		agentCfg := agentCfg
 		agent, err := custom.NewAgent(ctx, custom.Config{
 			Name:         agentCfg.Name,
 			Description:  agentCfg.Desc,
@@ -140,13 +138,27 @@ func loadCustomAgents(ctx context.Context) {
 		}
 
 		Registry = append(Registry, AgentInfo{
-			Name:        agentCfg.Name,
-			Description: agentCfg.Desc,
-			Creator: func(cachedAgent agentcore.Agent) func(ctx context.Context) agentcore.Agent {
-				return func(ctx context.Context) agentcore.Agent {
-					return cachedAgent
+			Name:        agent.Name(),
+			Description: agent.Description(),
+			Creator: func(ctx context.Context) (agentcore.Agent, error) {
+				mc := config.Get().ResolveModel(agentCfg.Model)
+				var model custom.Model
+				if mc != nil {
+					model = custom.Model{
+						Provider: mc.Provider,
+						Name:     mc.Model,
+						APIKey:   mc.APIKey,
+						BaseURL:  mc.BaseURL,
+					}
 				}
-			}(agent),
+				return custom.NewAgent(ctx, custom.Config{
+					Name:         agentCfg.Name,
+					Description:  agentCfg.Desc,
+					SystemPrompt: agentCfg.SystemPrompt,
+					Model:        model,
+					ToolNames:    agentCfg.Tools,
+				})
+			},
 		})
 	}
 }
@@ -156,7 +168,9 @@ func GetRegistry() []AgentInfo {
 	initRegistry()
 	registryMu.RLock()
 	defer registryMu.RUnlock()
-	return Registry
+	result := make([]AgentInfo, len(Registry))
+	copy(result, Registry)
+	return result
 }
 
 // GetAgentByName 根据名字获取智能体
@@ -178,17 +192,21 @@ func GetAgentByName(name string) *AgentInfo {
 }
 
 // GetTeamAgents 获取团队模式的智能体列表
-func GetTeamAgents(ctx context.Context) []agentcore.Agent {
+func GetTeamAgents(ctx context.Context) ([]agentcore.Agent, error) {
 	initRegistry()
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
 	var subAgents []agentcore.Agent
 	for _, agentInfo := range Registry {
-		subAgents = append(subAgents, agentInfo.Creator(ctx))
+		agent, err := agentInfo.Creator(ctx)
+		if err != nil {
+			return nil, err
+		}
+		subAgents = append(subAgents, agent)
 	}
 
-	return subAgents
+	return subAgents, nil
 }
 
 // ReloadRegistry 重新构建智能体注册表（配置变更后调用）

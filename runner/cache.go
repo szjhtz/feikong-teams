@@ -125,7 +125,11 @@ func resolveFactory(ctx context.Context, mode, agentName string, fallbackToTeam 
 			return "", nil, fmt.Errorf("unknown mode or agent: %s", mode)
 		}
 		return agentCacheKey(mode), func() (agentcore.Runner, error) {
-			return CreateAgentRunner(ctx, info.Creator(ctx))
+			agent, err := info.Creator(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("create agent %s: %w", mode, err)
+			}
+			return CreateAgentRunner(ctx, agent)
 		}, nil
 	}
 }
@@ -135,7 +139,11 @@ func createAgentRunnerByName(ctx context.Context, agentName string) (agentcore.R
 	if agentInfo == nil {
 		return nil, fmt.Errorf("agent not found: %s", agentName)
 	}
-	return CreateAgentRunner(ctx, agentInfo.Creator(ctx))
+	agent, err := agentInfo.Creator(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create agent %s: %w", agentName, err)
+	}
+	return CreateAgentRunner(ctx, agent)
 }
 
 func agentCacheKey(agentName string) string {

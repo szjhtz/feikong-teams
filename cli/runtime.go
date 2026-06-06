@@ -111,7 +111,10 @@ func (r *Runtime) switchAgent(agentName string) (string, error) {
 	if agentInfo == nil {
 		return "", fmt.Errorf("agent not found: %s", agentName)
 	}
-	newAgent := agentInfo.Creator(r.ctx)
+	newAgent, err := agentInfo.Creator(r.ctx)
+	if err != nil {
+		return "", fmt.Errorf("create agent %s: %w", agentName, err)
+	}
 	newRunner, err := runner.CreateAgentRunner(r.ctx, newAgent)
 	if err != nil {
 		return "", err

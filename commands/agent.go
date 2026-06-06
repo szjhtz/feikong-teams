@@ -140,8 +140,11 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 
 	var agentRunner agentcore.Runner
 	app.OnSetup(func(ctx context.Context) error {
-		agent := agentInfo.Creator(ctx)
 		var err error
+		agent, err := agentInfo.Creator(ctx)
+		if err != nil {
+			return fmt.Errorf("create agent %s: %w", agentName, err)
+		}
 		agentRunner, err = runner.CreateAgentRunner(ctx, agent)
 		return err
 	})

@@ -81,7 +81,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
-	engine.NewSession(r, sessionID).
+	_, runErr := engine.NewSession(r, sessionID).
 		WithInput(turnInput).
 		OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
@@ -99,6 +99,11 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 					return
 				}
 				log.Printf("error processing event: %v", err)
+				finishErrorChat(recorder, sessionID, userDisplayText, err)
+				data, _ := json.Marshal(map[string]string{"type": string(events.NotifyError), "error": err.Error()})
+				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+				c.Writer.Flush()
+				return
 			}
 			finishChat(recorder, sessionID, userDisplayText)
 			data, _ := json.Marshal(map[string]string{"type": string(events.NotifyProcessingEnd), "message": "处理完成"})
@@ -106,6 +111,9 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 			c.Writer.Flush()
 		}).
 		Run(taskCtx)
+	if runErr != nil && !isConnectionClosed(taskCtx, runErr) {
+		log.Printf("stream chat failed: session=%s, err=%v", sessionID, runErr)
+	}
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
@@ -115,7 +123,7 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 
 	var collectedEvents []events.Event
 
-	engine.NewSession(r, sessionID).
+	_, runErr := engine.NewSession(r, sessionID).
 		WithInput(turnInput).
 		OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
@@ -126,10 +134,16 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
+				finishErrorChat(recorder, sessionID, userDisplayText, err)
+				return
 			}
 			finishChat(recorder, sessionID, userDisplayText)
 		}).
 		Run(taskCtx)
+	if runErr != nil {
+		Fail(c, http.StatusInternalServerError, runErr.Error())
+		return
+	}
 
 	var content strings.Builder
 	for _, e := range collectedEvents {

@@ -331,7 +331,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
-	engine.NewSession(r, sessionID).
+	_, runErr := engine.NewSession(r, sessionID).
 		WithInput(turnInput).
 		OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)).
 		WithHistory(recorder).
@@ -357,6 +357,8 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 				log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
 				stream.SetStatus("error")
 				stream.Publish(map[string]any{"type": events.NotifyError, "session_id": sessionID, "error": err.Error()})
+				finishErrorChat(recorder, sessionID, userDisplayText, err)
+				return
 			} else {
 				stream.SetStatus("completed")
 				stream.Publish(map[string]any{
@@ -368,4 +370,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			finishChat(recorder, sessionID, userDisplayText)
 		}).
 		Run(taskCtx)
+	if runErr != nil && taskCtx.Err() == nil {
+		log.Printf("websocket task failed: session=%s, err=%v", sessionID, runErr)
+	}
 }

@@ -96,6 +96,19 @@ func finishCancelledChat(recorder *eventlog.HistoryRecorder, sessionID, userInpu
 	ensureSessionMetadataWithStatus(sessionID, userInput, "cancelled")
 }
 
+func finishErrorChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, err error) {
+	if err != nil {
+		recorder.RecordEvent(events.Event{
+			Type:    events.EventError,
+			Content: err.Error(),
+			Error:   err.Error(),
+		})
+	}
+	recorder.FinalizeCurrent()
+	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+	ensureSessionMetadataWithStatus(sessionID, userInput, "error")
+}
+
 func ensureSessionMetadataWithStatus(sessionID, userInput, status string) {
 	sessionDir := sessionDirPath(sessionID)
 	now := time.Now()

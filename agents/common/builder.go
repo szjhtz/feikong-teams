@@ -128,16 +128,24 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	// 通过名称解析工具
+	toolList := append([]agentcore.Tool(nil), b.tools...)
 	for _, name := range b.toolNames {
 		resolved, err := tools.GetToolsByName(name)
 		if err != nil {
 			return nil, fmt.Errorf("init tool %s: %w", name, err)
 		}
-		b.tools = append(b.tools, resolved...)
+		if !strings.HasPrefix(name, "mcp-") {
+			if err := tools.MarkPolicyRequired(resolved); err != nil {
+				return nil, fmt.Errorf("mark tool policy %s: %w", name, err)
+			}
+		}
+		toolList = append(toolList, resolved...)
 	}
 
 	// 工具元数据分类
-	tools.ClassifyTools(b.tools)
+	if err := tools.ClassifyTools(toolList); err != nil {
+		return nil, fmt.Errorf("classify tools: %w", err)
+	}
 
 	// 构建配置
 	cfg := &agentcore.ChatAgentConfig{
@@ -145,7 +153,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		Description:        b.description,
 		Instruction:        instruction,
 		Model:              coreModel,
-		Tools:              b.tools,
+		Tools:              toolList,
 		ToolMiddlewares:    []agentcore.ToolMiddleware{engine.NewDestructiveGuardMiddleware()},
 		UnknownToolHandler: unknownToolsHandler,
 		ModelRetryConfig:   rootcommon.NewModelRetryConfig(),
@@ -197,13 +205,17 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	if b.enableDispatch {
-		if b.dispatchConfig == nil {
-			b.dispatchConfig = &agentcore.DispatchConfig{}
+		dispatchConfig := b.dispatchConfig
+		if dispatchConfig == nil {
+			dispatchConfig = &agentcore.DispatchConfig{}
+		} else {
+			copied := *dispatchConfig
+			dispatchConfig = &copied
 		}
-		if b.dispatchConfig.Model == nil {
-			b.dispatchConfig.Model = coreModel
+		if dispatchConfig.Model == nil {
+			dispatchConfig.Model = coreModel
 		}
-		dispatchMiddleware, err := engine.NewDispatchMiddleware(ctx, b.dispatchConfig)
+		dispatchMiddleware, err := engine.NewDispatchMiddleware(ctx, dispatchConfig)
 		if err != nil {
 			return nil, fmt.Errorf("init dispatch middleware: %w", err)
 		}
