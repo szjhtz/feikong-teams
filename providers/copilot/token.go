@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"fkteams/common"
-	"fkteams/providers/internal"
+	"fkteams/providers/providerkit"
 
 	"github.com/google/uuid"
 )
@@ -115,7 +115,7 @@ func exchangeCopilotToken(ctx context.Context, githubToken string) (*Token, erro
 		req.Header.Set(k, v)
 	}
 
-	resp, err := internal.NewHTTPClient().Do(req)
+	resp, err := providerkit.NewHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -29,6 +29,65 @@ func AdaptChatModelForRunner(m agentcore.ChatModel) (model.ToolCallingChatModel,
 	return &nativeChatModelAdapter{inner: nativeModel}, nil
 }
 
+func WrapChatModel(inner model.ToolCallingChatModel) agentcore.NativeChatModel {
+	return &runtimeChatModelAdapter{inner: inner}
+}
+
+type runtimeChatModelAdapter struct {
+	inner model.ToolCallingChatModel
+}
+
+func (m *runtimeChatModelAdapter) RuntimeModel() any {
+	if m == nil {
+		return nil
+	}
+	return m.inner
+}
+
+func (m *runtimeChatModelAdapter) Generate(ctx context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.Message, error) {
+	msg, err := m.inner.Generate(ctx, adaptMessagesForRunner(input), adaptModelOptionsForRunner(opts)...)
+	if err != nil {
+		return agentcore.Message{}, err
+	}
+	return adaptMessageFromRunner(msg), nil
+}
+
+func (m *runtimeChatModelAdapter) Stream(ctx context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.MessageStream, error) {
+	stream, err := m.inner.Stream(ctx, adaptMessagesForRunner(input), adaptModelOptionsForRunner(opts)...)
+	if err != nil {
+		return nil, err
+	}
+	return &runtimeMessageStreamAdapter{inner: stream}, nil
+}
+
+func (m *runtimeChatModelAdapter) WithTools(tools []agentcore.ToolInfo) (agentcore.ChatModel, error) {
+	runnerTools := make([]*schema.ToolInfo, 0, len(tools))
+	for _, t := range tools {
+		runnerTools = append(runnerTools, &schema.ToolInfo{Name: t.Name, Desc: t.Desc, Extra: t.Extra})
+	}
+	next, err := m.inner.WithTools(runnerTools)
+	if err != nil {
+		return nil, err
+	}
+	return WrapChatModel(next), nil
+}
+
+type runtimeMessageStreamAdapter struct {
+	inner *schema.StreamReader[*schema.Message]
+}
+
+func (s *runtimeMessageStreamAdapter) Recv() (agentcore.Message, error) {
+	msg, err := s.inner.Recv()
+	if err != nil {
+		return agentcore.Message{}, err
+	}
+	return adaptMessageFromRunner(msg), nil
+}
+
+func (s *runtimeMessageStreamAdapter) Close() {
+	s.inner.Close()
+}
+
 type nativeChatModelAdapter struct {
 	inner agentcore.NativeChatModel
 }
@@ -106,6 +165,20 @@ func adaptModelOptions(opts []model.Option) []agentcore.ModelOption {
 	result := make([]agentcore.ModelOption, 0, len(opts))
 	for _, opt := range opts {
 		result = append(result, agentcore.ModelOption{Runtime: opt})
+	}
+	return result
+}
+
+func adaptModelOptionsForRunner(opts []agentcore.ModelOption) []model.Option {
+	result := make([]model.Option, 0, len(opts))
+	for _, opt := range opts {
+		if opt.Runtime == nil {
+			continue
+		}
+		runnerOpt, ok := opt.Runtime.(model.Option)
+		if ok {
+			result = append(result, runnerOpt)
+		}
 	}
 	return result
 }

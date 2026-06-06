@@ -3,7 +3,7 @@ package skills
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/agents/middlewares/fkfs"
+	"fkteams/agentcore/eino/middlewares/fkfs"
 	"fkteams/common"
 	"fmt"
 	"os"

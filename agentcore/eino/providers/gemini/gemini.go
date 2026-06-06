@@ -4,25 +4,30 @@ import (
 	"context"
 
 	geminiModel "github.com/cloudwego/eino-ext/components/model/gemini"
-	"github.com/cloudwego/eino/components/model"
 	"google.golang.org/genai"
 
-	"fkteams/providers/internal"
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
+	"fkteams/providers/providerkit"
 )
 
 // New 创建 Google Gemini 的聊天模型
-func New(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel, error) {
+func New(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error) {
 	clientCfg := &genai.ClientConfig{
 		APIKey:     cfg.APIKey,
 		Backend:    genai.BackendGeminiAPI,
-		HTTPClient: internal.HTTPClientWithHeaders(cfg.ExtraHeaders),
+		HTTPClient: providerkit.HTTPClientWithHeaders(cfg.ExtraHeaders),
 	}
 	client, err := genai.NewClient(ctx, clientCfg)
 	if err != nil {
 		return nil, err
 	}
-	return geminiModel.NewChatModel(ctx, &geminiModel.Config{
+	chatModel, err := geminiModel.NewChatModel(ctx, &geminiModel.Config{
 		Client: client,
 		Model:  cfg.Model,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return einoruntime.WrapChatModel(chatModel), nil
 }

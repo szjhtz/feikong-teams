@@ -11,10 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	openaiModel "github.com/cloudwego/eino-ext/components/model/openai"
-	"github.com/cloudwego/eino/components/model"
-
-	"fkteams/providers/internal"
+	"fkteams/providers/providerkit"
 )
 
 type contextKey int
@@ -58,28 +55,11 @@ func GetTokenManager() *TokenManager {
 	return globalTM
 }
 
-// New 创建 Copilot 聊天模型（OpenAI 兼容）
-func New(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel, error) {
-	tm := GetTokenManager()
-
-	// 确保有有效 token
-	if _, err := tm.GetToken(ctx); err != nil {
-		return nil, err
-	}
-
-	modelCfg := &openaiModel.ChatModelConfig{
-		BaseURL:    copilotBaseURL,
-		Model:      cfg.Model,
-		HTTPClient: newCopilotHTTPClient(tm),
-	}
-	return openaiModel.NewChatModel(ctx, modelCfg)
-}
-
 // newCopilotHTTPClient 创建带有 Copilot 认证和 X-Initiator 逻辑的 HTTP 客户端
 func newCopilotHTTPClient(tm *TokenManager) *http.Client {
 	return &http.Client{
 		Transport: &copilotTransport{
-			base: internal.NewHTTPClient().Transport,
+			base: providerkit.NewHTTPClient().Transport,
 			tm:   tm,
 		},
 	}
@@ -224,7 +204,7 @@ func detectVision(body []byte) bool {
 }
 
 // ListModels 获取 Copilot 可用的模型列表
-func ListModels(ctx context.Context, _ *internal.Config) ([]internal.ModelInfo, error) {
+func ListModels(ctx context.Context, _ *providerkit.Config) ([]providerkit.ModelInfo, error) {
 	tm := GetTokenManager()
 	token, err := tm.GetToken(ctx)
 	if err != nil {
@@ -240,7 +220,7 @@ func ListModels(ctx context.Context, _ *internal.Config) ([]internal.ModelInfo, 
 		req.Header.Set(k, v)
 	}
 
-	client := internal.NewHTTPClient()
+	client := providerkit.NewHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("请求 copilot 模型列表失败: %w", err)
@@ -261,10 +241,10 @@ func ListModels(ctx context.Context, _ *internal.Config) ([]internal.ModelInfo, 
 		return nil, err
 	}
 
-	var models []internal.ModelInfo
+	var models []providerkit.ModelInfo
 	for _, m := range result.Data {
 		if m.ModelPickerEnabled {
-			models = append(models, internal.ModelInfo{ID: m.ID})
+			models = append(models, providerkit.ModelInfo{ID: m.ID})
 		}
 	}
 	return models, nil

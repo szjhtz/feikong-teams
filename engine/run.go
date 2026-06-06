@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/agents/middlewares/summary"
+	"fkteams/agentcore/eino/middlewares/summary"
 	"fkteams/common"
 	"fkteams/fkevent"
 )

@@ -18,71 +18,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/compose"
 )
 
 var validToolNameChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
-
-// wrapErrorSafe 将子智能体列表中的每个智能体包装为错误安全版本。
-func wrapErrorSafe(subAgents []adk.Agent) []adk.Agent {
-	wrapped := make([]adk.Agent, len(subAgents))
-	for i, agent := range subAgents {
-		wrapped[i] = einoruntime.WrapErrorSafe(agent)
-	}
-	return wrapped
-}
-
-type agentToolNameAgent struct {
-	inner       adk.Agent
-	toolName    string
-	displayName string
-}
-
-func (a *agentToolNameAgent) Name(context.Context) string {
-	return a.toolName
-}
-
-func (a *agentToolNameAgent) Description(ctx context.Context) string {
-	desc := a.inner.Description(ctx)
-	if desc == "" {
-		return fmt.Sprintf("指派给 %s 处理一个独立子任务。", a.displayName)
-	}
-	return fmt.Sprintf(`指派给 %s 处理一个独立子任务。
-
-使用原则：
-- 仅当该成员能力明显匹配，或任务需要并行/专业工具/独立视角时调用。
-- request 中写清任务目标、必要上下文、期望输出和完成标准。
-- 派发后等待其结果，不要同时重复执行同一子任务。
-- 成员最终消息只返回给 coordinator，不直接展示给用户；你需要阅读、筛选并整合。
-
-能力描述：%s`, a.displayName, desc)
-}
-
-func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
-	innerIter := a.inner.Run(ctx, input, opts...)
-	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
-	scope := einoruntime.MemberScope{
-		CallID:   compose.GetToolCallID(ctx),
-		ToolName: a.toolName,
-		Name:     a.displayName,
-	}
-
-	go func() {
-		defer gen.Close()
-		for {
-			event, ok := innerIter.Next()
-			if !ok {
-				return
-			}
-			einoruntime.RegisterAgentEventScope(event, scope)
-			gen.Send(event)
-		}
-	}()
-
-	return iter
-}
 
 func agentToolName(name string, index int, used map[string]bool) string {
 	normalized := strings.ToLower(validToolNameChars.ReplaceAllString(name, "_"))
@@ -101,24 +39,13 @@ func agentToolName(name string, index int, used map[string]bool) string {
 }
 
 func buildAgentTools(ctx context.Context, subAgents []agentcore.Agent) ([]agentcore.Tool, error) {
-	runnerAgents, err := einoruntime.AdaptAgentsForRunner(subAgents)
-	if err != nil {
-		return nil, err
-	}
-	runnerAgents = wrapErrorSafe(runnerAgents)
-	agentTools := make([]agentcore.Tool, 0, len(runnerAgents))
 	usedNames := make(map[string]bool, len(subAgents))
-	for i, subAgent := range runnerAgents {
-		displayName := subAgent.Name(ctx)
-		wrapped := &agentToolNameAgent{
-			inner:       subAgent,
-			toolName:    agentToolName(displayName, i, usedNames),
-			displayName: displayName,
-		}
-		agenttool.RegisterAgentToolDisplay(wrapped.toolName, displayName)
-		agentTools = append(agentTools, agentcore.WrapRuntimeTool(adk.NewAgentTool(ctx, wrapped)))
-	}
-	return agentTools, nil
+	return einoruntime.NewAgentTools(ctx, subAgents, einoruntime.AgentToolConfig{
+		ToolName: func(displayName string, index int) string {
+			return agentToolName(displayName, index, usedNames)
+		},
+		RegisterDisplay: agenttool.RegisterAgentToolDisplay,
+	})
 }
 
 // resolveCustomModel 从配置文件解析自定义智能体的模型配置
@@ -137,15 +64,11 @@ func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Mod
 
 // newRunner 用共享配置创建 Runner
 func newRunner(ctx context.Context, agent agentcore.Agent) (agentcore.Runner, error) {
-	runnerAgent, err := einoruntime.AdaptAgentForRunner(agent)
-	if err != nil {
-		return nil, err
-	}
-	return einoruntime.NewRunner(adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           runnerAgent,
+	return einoruntime.NewRunnerFromConfig(ctx, einoruntime.RunnerConfig{
+		Agent:           agent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
-	})), nil
+	})
 }
 
 // CreateBackgroundTaskRunner 创建后台定时任务专用 Runner（任务官单智能体，独立执行）
@@ -201,22 +124,17 @@ func CreateLoopAgentRunner(ctx context.Context) (agentcore.Runner, error) {
 		}
 		subAgents = append(subAgents, agent)
 	}
-	runnerSubAgents, err := einoruntime.AdaptAgentsForRunner(subAgents)
-	if err != nil {
-		return nil, fmt.Errorf("adapt roundtable agents: %w", err)
-	}
-
-	loopAgent, err := adk.NewLoopAgent(ctx, &adk.LoopAgentConfig{
+	loopAgent, err := einoruntime.NewLoopAgent(ctx, &agentcore.LoopAgentConfig{
 		Name:          "Roundtable",
 		Description:   "多智能体共同讨论并解决问题",
-		SubAgents:     runnerSubAgents,
+		SubAgents:     subAgents,
 		MaxIterations: teamConfig.Roundtable.MaxIterations,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 LoopAgent 失败: %w", err)
 	}
 
-	return newRunner(ctx, einoruntime.WrapNamedAgent("Roundtable", "多智能体共同讨论并解决问题", loopAgent))
+	return newRunner(ctx, loopAgent)
 }
 
 // CreateCustomRunner 创建自定义会议模式 Runner，使用主持人 ChatModelAgent + AgentTool 协作。

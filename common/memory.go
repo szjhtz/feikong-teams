@@ -2,12 +2,11 @@ package common
 
 import (
 	"context"
-
-	"github.com/cloudwego/eino/compose"
+	"fkteams/agentcore"
 )
 
 // NewInMemoryStore 创建基于内存的 CheckPoint 存储
-func NewInMemoryStore() compose.CheckPointStore {
+func NewInMemoryStore() agentcore.CheckPointStore {
 	return &inMemoryStore{
 		mem: map[string][]byte{},
 	}

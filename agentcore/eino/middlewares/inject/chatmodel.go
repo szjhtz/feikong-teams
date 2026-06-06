@@ -4,6 +4,8 @@ package inject
 
 import (
 	"context"
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	rootcommon "fkteams/common"
 	"fkteams/common/typeutil"
 	"fmt"
@@ -30,6 +32,14 @@ func New(inner model.ToolCallingChatModel) model.ToolCallingChatModel {
 		innerHandlesCallbacks = ch.IsCallbacksEnabled()
 	}
 	return &injectChatModel{inner: inner, innerHandlesCallbacks: innerHandlesCallbacks}
+}
+
+func NewForModel(inner agentcore.ChatModel) (agentcore.ChatModel, error) {
+	runnerModel, err := einoruntime.AdaptChatModelForRunner(inner)
+	if err != nil {
+		return nil, err
+	}
+	return agentcore.WrapRuntimeChatModel(New(runnerModel)), nil
 }
 
 func (m *injectChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {

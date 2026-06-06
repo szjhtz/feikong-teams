@@ -3,9 +3,8 @@ package mcp
 import (
 	"context"
 	"fkteams/agentcore"
+	einoMCP "fkteams/agentcore/eino/mcp"
 	"fmt"
-
-	"github.com/cloudwego/eino-ext/components/tool/mcp"
 )
 
 func getAllMCPTools() (dtg DictToolGroup, err error) {
@@ -18,19 +17,14 @@ func getAllMCPTools() (dtg DictToolGroup, err error) {
 
 	dtg = make(DictToolGroup, len(mcpClients))
 	for _, mcpClient := range mcpClients {
-		cli := mcpClient.Client
-		tools, err := mcp.GetTools(ctx, &mcp.Config{Cli: cli})
+		tools, err := einoMCP.GetTools(ctx, mcpClient.Client)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get tools from MCP server %s: %v", mcpClient.Name, err)
-		}
-		wrapped := make([]agentcore.Tool, 0, len(tools))
-		for _, t := range tools {
-			wrapped = append(wrapped, agentcore.WrapRuntimeTool(t))
 		}
 		dtg[mcpClient.Name] = ToolGroup{
 			Name:  mcpClient.Name,
 			Desc:  mcpClient.Desc,
-			Tools: wrapped,
+			Tools: tools,
 		}
 	}
 

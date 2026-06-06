@@ -7,7 +7,7 @@ import (
 
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
-	"fkteams/agents/middlewares/inject"
+	"fkteams/agentcore/eino/middlewares/inject"
 	"fkteams/internal/testmodel"
 
 	"github.com/cloudwego/eino/schema"

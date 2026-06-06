@@ -1,9 +1,48 @@
 package agentcore
 
+import "context"
+
 type Agent interface {
 	Name() string
 	Description() string
 	RuntimeAgent() any
+}
+
+type UnknownToolHandler func(ctx context.Context, name, arguments string) (string, error)
+
+type RetryContext struct {
+	Err error
+}
+
+type RetryDecision struct {
+	Retry        bool
+	RejectReason string
+}
+
+type ModelRetryConfig struct {
+	MaxRetries  int
+	ShouldRetry func(ctx context.Context, retryCtx *RetryContext) *RetryDecision
+}
+
+type ChatAgentConfig struct {
+	Name               string
+	Description        string
+	Instruction        string
+	Model              ChatModel
+	Tools              []Tool
+	ToolMiddlewares    []ToolMiddleware
+	UnknownToolHandler UnknownToolHandler
+	Middlewares        []AgentMiddleware
+	ModelRetryConfig   *ModelRetryConfig
+	MaxIterations      int
+	EmitInternalEvents bool
+}
+
+type LoopAgentConfig struct {
+	Name          string
+	Description   string
+	SubAgents     []Agent
+	MaxIterations int
 }
 
 type runtimeAgent struct {

@@ -1,4 +1,4 @@
-// Package providers 提供统一的模型提供者抽象层，基于 CloudWeGo Eino 框架。
+// Package providers 提供统一的模型提供者抽象层。
 // 通过工厂注册表模式，支持多种模型提供者，并可自动检测类型。
 // 新增提供者只需在对应子包中实现 New 函数，并在此处注册即可。
 package providers
@@ -9,18 +9,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/eino/components/model"
-
-	"fkteams/providers/ark"
-	"fkteams/providers/claude"
+	"fkteams/agentcore/eino/providers/ark"
+	"fkteams/agentcore/eino/providers/claude"
+	einocopilot "fkteams/agentcore/eino/providers/copilot"
+	"fkteams/agentcore/eino/providers/deepseek"
+	"fkteams/agentcore/eino/providers/gemini"
+	"fkteams/agentcore/eino/providers/ollama"
+	"fkteams/agentcore/eino/providers/openai"
+	"fkteams/agentcore/eino/providers/openrouter"
+	"fkteams/agentcore/eino/providers/qwen"
 	"fkteams/providers/copilot"
-	"fkteams/providers/deepseek"
-	"fkteams/providers/gemini"
-	"fkteams/providers/internal"
-	"fkteams/providers/ollama"
-	"fkteams/providers/openai"
-	"fkteams/providers/openrouter"
-	"fkteams/providers/qwen"
+	"fkteams/providers/providerkit"
 )
 
 // Type 模型提供者类型
@@ -48,7 +47,7 @@ type Config struct {
 }
 
 // Factory 模型创建函数类型
-type Factory func(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel, error)
+type Factory func(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error)
 
 var factories = map[Type]Factory{}
 
@@ -61,7 +60,7 @@ func init() {
 	Register(Gemini, gemini.New)
 	Register(Qwen, qwen.New)
 	Register(OpenRouter, openrouter.New)
-	Register(Copilot, copilot.New)
+	Register(Copilot, einocopilot.New)
 }
 
 // Register 注册提供者工厂函数
@@ -81,7 +80,7 @@ func NewChatModel(ctx context.Context, cfg *Config) (agentcore.ChatModel, error)
 		return nil, fmt.Errorf("未知的模型提供者: %s", t)
 	}
 
-	chatModel, err := f(ctx, &internal.Config{
+	chatModel, err := f(ctx, &providerkit.Config{
 		APIKey:       cfg.APIKey,
 		BaseURL:      cfg.BaseURL,
 		Model:        cfg.Model,
@@ -90,7 +89,7 @@ func NewChatModel(ctx context.Context, cfg *Config) (agentcore.ChatModel, error)
 	if err != nil {
 		return nil, err
 	}
-	return agentcore.WrapRuntimeChatModel(chatModel), nil
+	return chatModel, nil
 }
 
 // Detect 从 BaseURL 或模型名称自动检测提供者类型
@@ -120,20 +119,20 @@ func Detect(baseURL, modelName string) Type {
 }
 
 // ModelInfo 模型信息
-type ModelInfo = internal.ModelInfo
+type ModelInfo = providerkit.ModelInfo
 
 // ModelLister 模型列表获取接口
-type ModelLister func(ctx context.Context, cfg *internal.Config) ([]ModelInfo, error)
+type ModelLister func(ctx context.Context, cfg *providerkit.Config) ([]ModelInfo, error)
 
 var modelListers = map[Type]ModelLister{}
 
 func init() {
-	RegisterModelLister(OpenAI, internal.ListOpenAIModels)
-	RegisterModelLister(DeepSeek, internal.ListOpenAIModels)
-	RegisterModelLister(Qwen, internal.ListOpenAIModels)
-	RegisterModelLister(OpenRouter, internal.ListOpenAIModels)
-	RegisterModelLister(Ollama, internal.ListOpenAIModels)
-	RegisterModelLister(Ark, internal.ListOpenAIModels)
+	RegisterModelLister(OpenAI, providerkit.ListOpenAIModels)
+	RegisterModelLister(DeepSeek, providerkit.ListOpenAIModels)
+	RegisterModelLister(Qwen, providerkit.ListOpenAIModels)
+	RegisterModelLister(OpenRouter, providerkit.ListOpenAIModels)
+	RegisterModelLister(Ollama, providerkit.ListOpenAIModels)
+	RegisterModelLister(Ark, providerkit.ListOpenAIModels)
 	RegisterModelLister(Copilot, copilot.ListModels)
 }
 
@@ -174,7 +173,7 @@ func ListModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 		baseURL = defaultBaseURLs[t]
 	}
 
-	return l(ctx, &internal.Config{
+	return l(ctx, &providerkit.Config{
 		APIKey:       cfg.APIKey,
 		BaseURL:      baseURL,
 		Model:        cfg.Model,

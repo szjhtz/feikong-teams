@@ -226,3 +226,8 @@ type RunResult struct {
 type Runner interface {
 	Run(ctx context.Context, input TurnInput, opts RunOptions) (*RunResult, error)
 }
+
+type CheckPointStore interface {
+	Set(ctx context.Context, key string, value []byte) error
+	Get(ctx context.Context, key string) ([]byte, bool, error)
+}

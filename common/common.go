@@ -4,15 +4,14 @@ package common
 import (
 	"context"
 	"errors"
+	"fkteams/agentcore"
 	"fkteams/fkenv"
+	"github.com/google/uuid"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/google/uuid"
 )
 
 // sessionIDKey 会话 ID 的 context key
@@ -115,15 +114,15 @@ func IsRetryAble(ctx context.Context, err error) bool {
 		strings.Contains(msg, "EOF")
 }
 
-// NewModelRetryConfig 返回 Eino ADK 原生模型重试配置。
-func NewModelRetryConfig() *adk.ModelRetryConfig {
-	return &adk.ModelRetryConfig{
+// NewModelRetryConfig 返回核心模型重试配置。
+func NewModelRetryConfig() *agentcore.ModelRetryConfig {
+	return &agentcore.ModelRetryConfig{
 		MaxRetries: MaxRetries,
-		ShouldRetry: func(ctx context.Context, retryCtx *adk.RetryContext) *adk.RetryDecision {
+		ShouldRetry: func(ctx context.Context, retryCtx *agentcore.RetryContext) *agentcore.RetryDecision {
 			if retryCtx == nil || retryCtx.Err == nil || !IsRetryAble(ctx, retryCtx.Err) {
 				return nil
 			}
-			return &adk.RetryDecision{
+			return &agentcore.RetryDecision{
 				Retry:        true,
 				RejectReason: retryCtx.Err.Error(),
 			}

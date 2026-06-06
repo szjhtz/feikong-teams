@@ -3,33 +3,29 @@ package memory
 import (
 	"context"
 	"fkteams/agentcore"
-	einoruntime "fkteams/agentcore/eino"
-
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
+	"fmt"
 
 	"fkteams/providers/copilot"
 )
 
-// einoLLMAdapter 将 Eino ChatModel 适配为 LLMClient 接口
-type einoLLMAdapter struct {
-	model model.BaseChatModel
+type chatModelLLMAdapter struct {
+	model agentcore.NativeChatModel
 }
 
 // NewLLMClient 基于核心模型创建 LLMClient
 func NewLLMClient(m agentcore.ChatModel) (LLMClient, error) {
-	chatModel, err := einoruntime.AdaptChatModelForRunner(m)
-	if err != nil {
-		return nil, err
+	chatModel, ok := m.(agentcore.NativeChatModel)
+	if !ok {
+		return nil, fmt.Errorf("model does not support native generation: %T", m)
 	}
-	return &einoLLMAdapter{model: chatModel}, nil
+	return &chatModelLLMAdapter{model: chatModel}, nil
 }
 
-func (a *einoLLMAdapter) Complete(ctx context.Context, prompt string) (string, error) {
+func (a *chatModelLLMAdapter) Complete(ctx context.Context, prompt string) (string, error) {
 	ctx = copilot.WithAgentInitiator(ctx)
-	resp, err := a.model.Generate(ctx, []*schema.Message{
-		schema.SystemMessage("You are a memory extraction assistant. Respond only in the requested format."),
-		schema.UserMessage(prompt),
+	resp, err := a.model.Generate(ctx, []agentcore.Message{
+		{Role: agentcore.RoleSystem, Content: "You are a memory extraction assistant. Respond only in the requested format."},
+		{Role: agentcore.RoleUser, Content: prompt},
 	})
 	if err != nil {
 		return "", err

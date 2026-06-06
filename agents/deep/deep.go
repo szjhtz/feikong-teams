@@ -4,17 +4,13 @@ import (
 	"context"
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
+	"fkteams/agentcore/eino/middlewares/summary"
 	"fkteams/agents/common"
-	"fkteams/agents/middlewares/summary"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
 	"fkteams/tools"
 	"fmt"
 	"strconv"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/adk/prebuilt/deep"
-	"github.com/cloudwego/eino/compose"
 )
 
 func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent, error) {
@@ -28,22 +24,9 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		}
 		toolList = append(toolList, baseTools...)
 	}
-	runnerTools, err := einoruntime.AdaptToolsForRunner(ctx, toolList)
-	if err != nil {
-		return nil, fmt.Errorf("adapt tools: %w", err)
-	}
-	runnerSubAgents, err := einoruntime.AdaptAgentsForRunner(subAgents)
-	if err != nil {
-		return nil, fmt.Errorf("adapt sub agents: %w", err)
-	}
-
 	chatModel, err := common.NewChatModel()
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
-	}
-	runnerModel, err := einoruntime.AdaptChatModelForRunner(chatModel)
-	if err != nil {
-		return nil, fmt.Errorf("adapt chat model: %w", err)
 	}
 
 	maxTokens := summary.DefaultMaxTokensBeforeSummary
@@ -59,27 +42,14 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 	if err != nil {
 		return nil, fmt.Errorf("init summary middleware: %w", err)
 	}
-	runnerSummaryMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(summaryMiddleware)
-	if err != nil {
-		return nil, fmt.Errorf("adapt summary middleware: %w", err)
-	}
-
-	agent, err := deep.New(ctx, &deep.Config{
+	return einoruntime.NewDeepAgent(ctx, &einoruntime.DeepAgentConfig{
 		Name:             "deep_researcher",
 		Description:      "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
-		ChatModel:        runnerModel,
+		Model:            chatModel,
 		ModelRetryConfig: rootcommon.NewModelRetryConfig(),
-		SubAgents:        runnerSubAgents,
-		MaxIteration:     common.MaxIterations(),
-		Handlers:         []adk.ChatModelAgentMiddleware{runnerSummaryMiddleware},
-		ToolsConfig: adk.ToolsConfig{
-			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: runnerTools,
-			},
-		},
+		SubAgents:        subAgents,
+		Tools:            toolList,
+		MaxIterations:    common.MaxIterations(),
+		Middlewares:      []agentcore.AgentMiddleware{summaryMiddleware},
 	})
-	if err != nil {
-		return nil, err
-	}
-	return einoruntime.WrapNamedAgent("deep_researcher", "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。", agent), nil
 }

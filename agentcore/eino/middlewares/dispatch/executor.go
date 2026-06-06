@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	einoruntime "fkteams/agentcore/eino"
 	rootcommon "fkteams/common"
 	"fkteams/fkevent"
 	"fkteams/providers/copilot"
@@ -169,7 +170,7 @@ func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk
 		Description:      fmt.Sprintf("执行子任务: %s", desc),
 		Instruction:      subAgentInstruction,
 		Model:            m.chatModel,
-		ModelRetryConfig: rootcommon.NewModelRetryConfig(),
+		ModelRetryConfig: einoruntime.AdaptModelRetryConfigForRunner(rootcommon.NewModelRetryConfig()),
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: m.tools},
 		},
