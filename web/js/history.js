@@ -288,7 +288,6 @@ FKTeamsChat.prototype._saveSessionDOM = function () {
     currentMessageElements: this.currentMessageElements,
     pendingToolCalls: this.pendingToolCalls,
     toolCallsByID: this.toolCallsByID,
-    toolCallsByIndex: this.toolCallsByIndex,
     parallelPanel: this.parallelPanel,
     parallelMemberCards: this.parallelMemberCards,
     parallelMemberByAgent: this.parallelMemberByAgent,
@@ -312,7 +311,6 @@ FKTeamsChat.prototype._restoreSessionDOM = function (sessionId) {
   this.currentMessageElements = cached.currentMessageElements || {};
   this.pendingToolCalls = cached.pendingToolCalls || {};
   this.toolCallsByID = cached.toolCallsByID || {};
-  this.toolCallsByIndex = cached.toolCallsByIndex || {};
   this.parallelPanel = cached.parallelPanel || null;
   this.parallelMemberCards = cached.parallelMemberCards || {};
   this.parallelMemberByAgent = cached.parallelMemberByAgent || {};
@@ -948,17 +946,14 @@ FKTeamsChat.prototype.checkAndLoadSessionHistory = async function (sessionId) {
 };
 
 FKTeamsChat.prototype.isLegacyHistoryMemberMessage = function (msg) {
-  const name = msg?.agent_name || "";
-  return /^ask_fkagent_[A-Za-z0-9_-]+$/.test(name);
+  return false;
 };
 
 FKTeamsChat.prototype.isHistoryMemberMessage = function (msg) {
   return !!(
     msg &&
-    (msg.is_member_event ||
-      msg.member_call_id ||
-      msg.member_tool_name ||
-      this.isLegacyHistoryMemberMessage(msg))
+    msg.is_member_event &&
+    msg.member_call_id
   );
 };
 
@@ -1002,20 +997,13 @@ FKTeamsChat.prototype.queueHistoryMemberTask = function (tc) {
   });
 };
 
-FKTeamsChat.prototype.takeHistoryMemberTask = function (msg, fallbackIndex) {
+FKTeamsChat.prototype.takeHistoryMemberTask = function (msg) {
   if (msg?.__historyMemberTask) return msg.__historyMemberTask;
   const tasks = this._historyPendingMemberTasks || [];
   if (tasks.length === 0) return null;
 
   const callID = msg.member_call_id || "";
   let idx = callID ? tasks.findIndex((task) => task.id && task.id === callID) : -1;
-  if (idx < 0 && msg.member_tool_name) {
-    idx = tasks.findIndex((task) => task.name && task.name === msg.member_tool_name);
-  }
-  if (idx < 0 && msg.member_name) {
-    const normalized = this.normalizedAgentName(msg.member_name);
-    idx = tasks.findIndex((task) => this.normalizedAgentName(task.target) === normalized);
-  }
   if (idx < 0) return null;
 
   const task = tasks[idx];
@@ -1050,17 +1038,10 @@ FKTeamsChat.prototype.prepareHistoryMemberTasks = function (messages) {
       });
     });
 
-    members.forEach((msg, fallbackIndex) => {
+    members.forEach((msg) => {
       if (msg.__historyMemberTask) return;
       const callID = msg.member_call_id || "";
       let idx = callID ? tasks.findIndex((task) => task.id && task.id === callID) : -1;
-      if (idx < 0 && msg.member_tool_name) {
-        idx = tasks.findIndex((task) => task.name && task.name === msg.member_tool_name);
-      }
-      if (idx < 0 && msg.member_name) {
-        const normalized = this.normalizedAgentName(msg.member_name);
-        idx = tasks.findIndex((task) => this.normalizedAgentName(task.target) === normalized);
-      }
       if (idx < 0) return;
       msg.__historyMemberTask = tasks[idx];
       tasks.splice(idx, 1);
@@ -1087,7 +1068,6 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
     currentMessageElements: this.currentMessageElements,
     pendingToolCalls: this.pendingToolCalls,
     toolCallsByID: this.toolCallsByID,
-    toolCallsByIndex: this.toolCallsByIndex,
     parallelPanel: this.parallelPanel,
     parallelMemberCards: this.parallelMemberCards,
     parallelMemberByAgent: this.parallelMemberByAgent,
@@ -1102,7 +1082,6 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
   this.currentMessageElements = {};
   this.pendingToolCalls = {};
   this.toolCallsByID = {};
-  this.toolCallsByIndex = {};
   this.parallelPanel = null;
   this.parallelMemberCards = {};
   this.parallelMemberByAgent = {};
@@ -1178,7 +1157,6 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
   this.currentMessageElements = saved.currentMessageElements;
   this.pendingToolCalls = saved.pendingToolCalls;
   this.toolCallsByID = saved.toolCallsByID;
-  this.toolCallsByIndex = saved.toolCallsByIndex;
   this.parallelPanel = saved.parallelPanel;
   this.parallelMemberCards = saved.parallelMemberCards;
   this.parallelMemberByAgent = saved.parallelMemberByAgent;

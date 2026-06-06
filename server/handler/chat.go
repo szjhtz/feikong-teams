@@ -245,7 +245,7 @@ func handlerEventToolCalls(event events.Event) []agentcore.ToolCall {
 	return toolCalls
 }
 
-func toolCallRefForMap(event events.Event, tc agentcore.ToolCall, position, total int) string {
+func toolCallRefForMap(event events.Event, tc agentcore.ToolCall, position int) string {
 	if tc.Index != nil && event.ToolCallRefs != nil {
 		if ref := event.ToolCallRefs[*tc.Index]; ref != "" {
 			return ref
@@ -256,19 +256,7 @@ func toolCallRefForMap(event events.Event, tc agentcore.ToolCall, position, tota
 			return ref
 		}
 	}
-	if event.ToolCallRef == "" {
-		return ""
-	}
-	if total == 1 {
-		return event.ToolCallRef
-	}
-	if tc.ID != "" && tc.ID == event.ToolCallID {
-		return event.ToolCallRef
-	}
-	if tc.Index != nil && event.ToolCallIndex != nil && *tc.Index == *event.ToolCallIndex {
-		return event.ToolCallRef
-	}
-	if position == 0 && event.ToolCallID == "" && event.ToolCallIndex == nil {
+	if event.ToolCall != nil && position == 0 && event.ToolCallRef != "" {
 		return event.ToolCallRef
 	}
 	return ""
@@ -339,7 +327,7 @@ func convertEventToMap(event events.Event) map[string]any {
 			if tc.ID != "" {
 				toolCall["id"] = tc.ID
 			}
-			if ref := toolCallRefForMap(event, tc, i, len(toolCallsFromEvent)); ref != "" {
+			if ref := toolCallRefForMap(event, tc, i); ref != "" {
 				toolCall["ref"] = ref
 			}
 			if tc.Index != nil {

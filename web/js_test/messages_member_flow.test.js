@@ -49,7 +49,7 @@ test("member tool flow key rejects index-only event", () => {
   assert.equal(key, "");
 });
 
-test("tool call normalization merges top-level identity into array calls", () => {
+test("tool call normalization does not spread top-level identity into array calls", () => {
   const chat = newChatWithRecordedMigrations();
 
   const calls = chat.normalizeToolCallsForEvent({
@@ -70,7 +70,7 @@ test("tool call normalization merges top-level identity into array calls", () =>
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], {
     id: "call-1",
-    ref: "ref-1",
+    ref: "",
     index: 2,
     name: "member_echo",
     display_name: "Echo",

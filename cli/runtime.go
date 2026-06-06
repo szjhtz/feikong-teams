@@ -1817,12 +1817,6 @@ func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
 
 func (m *runtimeModel) appendHistoryMemberMessage(msg eventlog.AgentMessage) {
 	key := msg.MemberCallID
-	if key == "" {
-		key = msg.SpanID
-	}
-	if key == "" {
-		key = msg.AgentName + "|" + msg.RunPath
-	}
 	name := msg.MemberName
 	if name == "" {
 		name = msg.AgentName
@@ -1867,17 +1861,11 @@ func (m *runtimeModel) appendHistoryToolCall(tool *eventlog.ToolCallRecord) {
 	}
 	if tool.Kind == toolmeta.ToolKindAgent {
 		key := tool.ID
-		if key == "" {
-			key = tool.Ref
-		}
-		if key == "" {
-			key = tool.SpanID
-		}
 		member := m.ensureHistoryMember(key, tool.Target, runtimeAgentTaskFromCompleteArgs(tool.Arguments), "done")
 		if member == nil {
 			return
 		}
-		m.registerMemberTool(member.Key, tool.Ref, tool.ID, tool.SpanID, tool.Name)
+		m.registerMemberTool(member.Key, tool.ID)
 		if strings.TrimSpace(tool.Result) != "" && len(member.Blocks) == 0 {
 			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockAssistant, Title: member.Name, Content: tool.Result})
 			member.markDirty()
@@ -2143,6 +2131,9 @@ func runtimeMemberToolChainItems(member *runtimeMemberState) []tui.ToolChainItem
 }
 
 func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolStatus) {
+	if key == "" {
+		return
+	}
 	idx := m.findToolBlock(key)
 	if idx < 0 {
 		m.blocks = append(m.blocks, runtimeBlock{
@@ -2165,6 +2156,9 @@ func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolSta
 }
 
 func (m *runtimeModel) upsertToolResult(key, name, result string, status tui.ToolStatus, appendResult bool) {
+	if key == "" {
+		return
+	}
 	idx := m.findToolBlock(key)
 	if idx < 0 {
 		m.blocks = append(m.blocks, runtimeBlock{
@@ -2245,6 +2239,9 @@ func (s *runtimeMemberState) appendReasoning(agent, content string) {
 }
 
 func (s *runtimeMemberState) upsertToolCall(key, name, args string, status tui.ToolStatus) {
+	if key == "" {
+		return
+	}
 	s.markDirty()
 	idx := s.findToolBlock(key)
 	if idx < 0 {
@@ -2269,6 +2266,9 @@ func (s *runtimeMemberState) upsertToolCall(key, name, args string, status tui.T
 }
 
 func (s *runtimeMemberState) upsertToolResult(key, name, result string, status tui.ToolStatus, appendResult bool) {
+	if key == "" {
+		return
+	}
 	s.markDirty()
 	idx := s.findToolBlock(key)
 	if idx < 0 {
@@ -2380,10 +2380,10 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 	case events.EventToolStart:
 		m.activeOutput = -1
 		m.activeReason = -1
-		for _, tool := range runtimeEventToolCalls(event) {
+		for i, tool := range runtimeEventToolCalls(event) {
 			if display, ok := runtimeAgentToolDisplay(tool.Function.Name); ok {
-				aliases := runtimeAgentToolCallAliases(event, tool)
-				key := runtimeAgentToolCallKey(event, tool)
+				aliases := runtimeAgentToolCallAliases(tool)
+				key := runtimeAgentToolCallKey(tool)
 				if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
 					key = mapped
 				}
@@ -2393,7 +2393,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 				continue
 			}
 			display := toolmeta.FormatToolDisplay(tool.Function.Name)
-			key := runtimeToolCallKey(event, tool)
+			key := runtimeToolCallKey(event, tool, i)
 			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
 	case events.EventToolEnd, events.EventToolUpdate:
@@ -2465,8 +2465,8 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 	case events.EventToolStart:
 		member.ActiveOutput = -1
 		member.ActiveReason = -1
-		for _, tool := range runtimeEventToolCalls(event) {
-			key := runtimeToolCallKey(event, tool)
+		for i, tool := range runtimeEventToolCalls(event) {
+			key := runtimeToolCallKey(event, tool, i)
 			display := toolmeta.FormatToolDisplay(tool.Function.Name)
 			member.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
@@ -2620,90 +2620,34 @@ func runtimeAgentTaskFromCompleteArgs(args string) string {
 }
 
 func runtimeAgentToolEventAliases(event events.Event) []string {
-	aliases := []string{
-		event.SpanID,
-		event.ToolCallRef,
-		event.ToolCallID,
-	}
-	if key := runtimeToolEventKey(event); isRuntimeStableToolAlias(key) {
-		aliases = append(aliases, key)
-	}
-	return compactRuntimeAliases(aliases)
+	return compactRuntimeAliases([]string{event.ToolCallID})
 }
 
 func runtimeAgentToolEventKey(event events.Event) string {
-	if event.SpanID != "" {
-		return event.SpanID
-	}
-	if event.ToolCallRef != "" {
-		return event.ToolCallRef
-	}
-	if event.ToolCallID != "" {
-		return event.ToolCallID
-	}
-	if event.ToolCallIndex != nil && event.ParentSpanID != "" {
-		return fmt.Sprintf("%s|idx:%d", event.ParentSpanID, *event.ToolCallIndex)
-	}
-	return ""
+	return event.ToolCallID
 }
 
 func runtimeLikelyPendingAgentToolArgs(event events.Event) bool {
 	if event.Type != events.EventMessageDelta || event.DeltaKind != events.DeltaToolArgs {
 		return false
 	}
-	return event.ToolCallRef != "" || event.ToolCallID != "" || event.SpanID != ""
+	return event.ToolCallID != "" || event.ToolCallRef != ""
 }
 
-func runtimeAgentToolCallAliases(event events.Event, tool agentcore.ToolCall) []string {
-	aliases := []string{
-		tool.ID,
-	}
-	if tool.Index != nil && event.ToolCallSpanIDs != nil {
-		aliases = append(aliases, event.ToolCallSpanIDs[*tool.Index])
-	}
-	if key := runtimeToolCallKey(event, tool); isRuntimeStableToolAlias(key) {
-		aliases = append(aliases, key)
-	}
-	if tool.Index != nil {
-		idx := *tool.Index
-		if event.ToolCallRefs != nil {
-			aliases = append(aliases, event.ToolCallRefs[idx])
-		}
-	}
-	return compactRuntimeAliases(aliases)
+func runtimeAgentToolCallAliases(tool agentcore.ToolCall) []string {
+	return compactRuntimeAliases([]string{tool.ID})
 }
 
-func runtimeAgentToolCallKey(event events.Event, tool agentcore.ToolCall) string {
-	if tool.Index != nil && event.ToolCallSpanIDs != nil {
-		if span := event.ToolCallSpanIDs[*tool.Index]; span != "" {
-			return span
-		}
-	}
-	if tool.ID != "" {
-		return tool.ID
-	}
-	if tool.Index != nil && event.SpanID != "" {
-		return fmt.Sprintf("%s|idx:%d", event.SpanID, *tool.Index)
-	}
-	return runtimeToolCallKey(event, tool)
+func runtimeAgentToolCallKey(tool agentcore.ToolCall) string {
+	return tool.ID
 }
 
 func runtimeDirectToolEventAliases(event events.Event) []string {
-	return compactRuntimeAliases([]string{
-		event.SpanID,
-		event.ToolCallRef,
-		event.ToolCallID,
-	})
-}
-
-func isRuntimeStableToolAlias(alias string) bool {
-	return alias != "" && !strings.HasPrefix(alias, "idx:") && !strings.HasPrefix(alias, "name:")
+	return compactRuntimeAliases([]string{event.ToolCallID})
 }
 
 func runtimeMemberEventAliases(event events.Event) []string {
 	aliases := []string{
-		event.ParentSpanID,
-		event.SpanID,
 		event.MemberCallID,
 		event.ParentToolCallID,
 	}
@@ -2724,53 +2668,30 @@ func compactRuntimeAliases(aliases []string) []string {
 }
 
 func runtimeToolEventKey(event events.Event) string {
-	if event.SpanID != "" {
-		return event.SpanID
-	}
 	if event.ToolCallRef != "" {
 		return event.ToolCallRef
-	}
-	if event.ToolCallID != "" {
-		return event.ToolCallID
-	}
-	if event.ToolCallIndex != nil {
-		return fmt.Sprintf("idx:%d", *event.ToolCallIndex)
-	}
-	if event.ToolName != "" {
-		return "name:" + event.ToolName
 	}
 	return ""
 }
 
-func runtimeToolCallKey(event events.Event, tool agentcore.ToolCall) string {
-	if tool.Index != nil && event.ToolCallSpanIDs != nil {
-		if span := event.ToolCallSpanIDs[*tool.Index]; span != "" {
-			return span
-		}
-	}
+func runtimeToolCallKey(event events.Event, tool agentcore.ToolCall, position int) string {
 	if tool.Index != nil && event.ToolCallRefs != nil {
 		if ref := event.ToolCallRefs[*tool.Index]; ref != "" {
 			return ref
 		}
 	}
-	if tool.ID != "" {
-		return tool.ID
+	if event.ToolCallRefs != nil {
+		if ref := event.ToolCallRefs[position]; ref != "" {
+			return ref
+		}
 	}
-	if tool.Index != nil {
-		return fmt.Sprintf("idx:%d", *tool.Index)
+	if event.ToolCall != nil && position == 0 && event.ToolCallRef != "" {
+		return event.ToolCallRef
 	}
-	return "name:" + tool.Function.Name
+	return ""
 }
 
 func runtimeMemberKey(event events.Event) string {
-	if event.IsMemberEvent {
-		if event.ParentSpanID != "" {
-			return event.ParentSpanID
-		}
-		if event.SpanID != "" {
-			return event.SpanID
-		}
-	}
 	if event.MemberCallID != "" {
 		return event.MemberCallID
 	}

@@ -109,24 +109,80 @@ func adaptInterruptsFromRunner(interrupts []*adk.InterruptCtx) []agentcore.Inter
 }
 
 type converter struct {
-	runID          string
-	turnID         string
-	sink           agentcore.EventSink
-	lastEvent      agentcore.Event
-	toolRefsByID   sync.Map
-	toolOrdersByID sync.Map
-	toolIDsByKey   sync.Map
+	runID                    string
+	turnID                   string
+	sink                     agentcore.EventSink
+	lastEvent                agentcore.Event
+	toolRefsByID             sync.Map
+	toolOrdersByID           sync.Map
+	toolIDsByKey             sync.Map
+	pendingToolResultsByName map[string][]string
+	activeToolResultsByName  map[string]string
 }
 
 func newConverter(runID, turnID string, sink agentcore.EventSink) *converter {
-	return &converter{runID: runID, turnID: turnID, sink: sink}
+	return &converter{
+		runID:                    runID,
+		turnID:                   turnID,
+		sink:                     sink,
+		pendingToolResultsByName: make(map[string][]string),
+		activeToolResultsByName:  make(map[string]string),
+	}
 }
 
 func (c *converter) emit(event agentcore.Event) error {
 	event.RunID = firstNonEmpty(event.RunID, c.runID)
 	event.TurnID = firstNonEmpty(event.TurnID, c.turnID)
 	c.lastEvent = events.NormalizeEvent(event)
+	if err := validateToolEventIdentity(c.lastEvent); err != nil {
+		return err
+	}
 	return c.sink(c.lastEvent)
+}
+
+func validateToolEventIdentity(event agentcore.Event) error {
+	switch event.Type {
+	case agentcore.EventToolStart:
+		if event.ToolCallRef == "" || event.ToolCallID == "" {
+			return fmt.Errorf("tool_start missing stable tool identity")
+		}
+	case agentcore.EventToolUpdate, agentcore.EventToolEnd:
+		if event.ToolCallRef == "" || event.ToolCallID == "" {
+			return fmt.Errorf("%s missing stable tool identity", event.Type)
+		}
+	case agentcore.EventMessageDelta:
+		if event.DeltaKind == agentcore.DeltaToolArgs || event.DeltaKind == agentcore.DeltaToolResult {
+			if event.ToolCallRef == "" || event.ToolCallID == "" {
+				return fmt.Errorf("message_delta %s missing stable tool identity", event.DeltaKind)
+			}
+		}
+	case agentcore.EventMessageEnd:
+		if event.Role == agentcore.RoleTool && (event.ToolCallRef == "" || event.ToolCallID == "") {
+			return fmt.Errorf("tool message_end missing stable tool identity")
+		}
+		for i, tc := range event.ToolCalls {
+			if events.IsInternalToolName(tc.Function.Name) {
+				continue
+			}
+			if tc.ID == "" {
+				return fmt.Errorf("message_end tool call missing id at position %d", i)
+			}
+			if toolCallRefFromMap(event, tc, i) == "" {
+				return fmt.Errorf("message_end tool call missing ref at position %d", i)
+			}
+		}
+	}
+	return nil
+}
+
+func toolCallRefFromMap(event agentcore.Event, tc agentcore.ToolCall, position int) string {
+	if tc.Index != nil && event.ToolCallRefs != nil {
+		return event.ToolCallRefs[*tc.Index]
+	}
+	if event.ToolCallRefs != nil {
+		return event.ToolCallRefs[position]
+	}
+	return ""
 }
 
 func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent]) (*adk.AgentEvent, error) {
@@ -292,15 +348,16 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 	}
 
 	message := adaptMessageFromRunner(msg)
+	message.ToolCallID = toolEvent.ToolCallID
 	message.Content = content
 	messageID := c.messageID(event, "tool")
-	start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: msg.ToolCallID, ToolName: msg.ToolName}
+	start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: toolEvent.ToolCallID, ToolCallRef: toolEvent.ToolCallRef, ToolName: msg.ToolName}
 	c.attachToolIdentity(&start)
 	scope.apply(&start, c)
 	if err := c.emit(start); err != nil {
 		return err
 	}
-	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: msg.ToolCallID, ToolName: msg.ToolName, Content: content}
+	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: toolEvent.ToolCallID, ToolCallRef: toolEvent.ToolCallRef, ToolName: msg.ToolName, Content: content}
 	c.attachToolIdentity(&end)
 	scope.apply(&end, c)
 	return c.emit(end)
@@ -312,6 +369,7 @@ func (c *converter) emitToolStarts(event *adk.AgentEvent, sourceMessageID string
 			continue
 		}
 		ref := c.ensureToolIdentity(sourceMessageID, position, scope, &tc)
+		c.rememberPendingToolResult(tc.Function.Name, tc.ID)
 		nEvent := agentcore.Event{
 			Type:        agentcore.EventToolStart,
 			AgentName:   event.AgentName,
@@ -579,7 +637,13 @@ func (c *converter) syntheticToolKey(sourceMessageID string, position int, scope
 }
 
 func (c *converter) attachToolIdentity(event *agentcore.Event) {
-	if event == nil || event.ToolCallID == "" {
+	if event == nil {
+		return
+	}
+	if event.ToolCallID == "" && event.ToolName != "" {
+		event.ToolCallID = c.toolResultIDByName(event.ToolName, event.Type == agentcore.EventToolEnd)
+	}
+	if event.ToolCallID == "" {
 		return
 	}
 	if ref, ok := c.toolRefsByID.Load(event.ToolCallID); ok {
@@ -591,6 +655,59 @@ func (c *converter) attachToolIdentity(event *agentcore.Event) {
 		if value, ok := order.(int); ok {
 			event.ToolCallIndex = &value
 		}
+	}
+	if event.Type == agentcore.EventToolEnd && event.ToolName != "" {
+		delete(c.activeToolResultsByName, event.ToolName)
+		c.consumePendingToolResult(event.ToolName, event.ToolCallID)
+	}
+}
+
+func (c *converter) rememberPendingToolResult(name, id string) {
+	if name == "" || id == "" {
+		return
+	}
+	c.pendingToolResultsByName[name] = append(c.pendingToolResultsByName[name], id)
+}
+
+func (c *converter) toolResultIDByName(name string, done bool) string {
+	if name == "" {
+		return ""
+	}
+	if id := c.activeToolResultsByName[name]; id != "" {
+		if done {
+			delete(c.activeToolResultsByName, name)
+			c.consumePendingToolResult(name, id)
+		}
+		return id
+	}
+	queue := c.pendingToolResultsByName[name]
+	if len(queue) == 0 {
+		return ""
+	}
+	id := queue[0]
+	if done {
+		c.pendingToolResultsByName[name] = queue[1:]
+	} else {
+		c.activeToolResultsByName[name] = id
+	}
+	return id
+}
+
+func (c *converter) consumePendingToolResult(name, id string) {
+	queue := c.pendingToolResultsByName[name]
+	if len(queue) == 0 {
+		return
+	}
+	if queue[0] == id {
+		c.pendingToolResultsByName[name] = queue[1:]
+		return
+	}
+	for i, queued := range queue {
+		if queued != id {
+			continue
+		}
+		c.pendingToolResultsByName[name] = append(queue[:i], queue[i+1:]...)
+		return
 	}
 }
 

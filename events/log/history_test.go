@@ -13,7 +13,11 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 		Sequence:    1,
 		Type:        EventToolStart,
 		AgentName:   "coordinator",
+		ToolCallID:  "call_1",
 		ToolCallRef: "tool_call:call_1",
+		ToolCallRefs: map[int]string{
+			0: "tool_call:call_1",
+		},
 		ToolCalls: []agentcore.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,

@@ -13,7 +13,6 @@ class FKTeamsChat {
     this.currentMessageElements = {};
     this.pendingToolCalls = {};
     this.toolCallsByID = {};
-    this.toolCallsByIndex = {};
     this.parallelPanel = null;
     this.parallelMemberCards = {};
     this.parallelMemberByAgent = {};

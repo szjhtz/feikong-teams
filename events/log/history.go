@@ -233,26 +233,26 @@ func pendingToolCallFromEvent(spanID, ref, id string, index *int, name, argument
 	}
 }
 
-func toolCallRefFromEvent(event Event, tc agentcore.ToolCall) string {
+func toolCallRefFromEvent(event Event, tc agentcore.ToolCall, position int) string {
 	if tc.Index != nil && event.ToolCallRefs != nil {
 		if ref := event.ToolCallRefs[*tc.Index]; ref != "" {
 			return ref
 		}
 	}
-	if event.ToolCallRef != "" {
+	if event.ToolCall != nil && position == 0 && event.ToolCallRef != "" {
 		return event.ToolCallRef
 	}
 	return ""
 }
 
 func toolCallRefFromEventAt(event Event, tc agentcore.ToolCall, position int) string {
-	if ref := toolCallRefFromEvent(event, tc); ref != "" {
-		return ref
-	}
 	if event.ToolCallRefs != nil {
 		if ref := event.ToolCallRefs[position]; ref != "" {
 			return ref
 		}
+	}
+	if ref := toolCallRefFromEvent(event, tc, position); ref != "" {
+		return ref
 	}
 	return ""
 }
@@ -388,14 +388,6 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 }
 
 func historyActiveKey(event Event) string {
-	if event.IsMemberEvent {
-		if event.ParentSpanID != "" {
-			return event.ParentSpanID
-		}
-		if event.SpanID != "" {
-			return event.SpanID
-		}
-	}
 	if event.MemberCallID != "" {
 		return "member:" + event.MemberCallID
 	}

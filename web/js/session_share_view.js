@@ -295,7 +295,7 @@
 
   function agentMessageWithMemberInsert(msg, messages, renderedMemberIndexes) {
     const refs = agentToolRefs(msg);
-    if (refs.ids.size === 0 && refs.names.size === 0) return null;
+    if (refs.ids.size === 0) return null;
 
     const members = [];
     (messages || []).forEach((candidate, index) => {
@@ -331,18 +331,14 @@
   }
 
   function isLegacyMemberMessage(msg) {
-    const name = msg?.agent_name || "";
-    return /^ask_fkagent_[A-Za-z0-9_-]+$/.test(name);
+    return false;
   }
 
   function isMemberMessage(msg) {
     return !!(
       msg &&
-      (msg.is_member_event ||
-        msg.member_call_id ||
-        msg.member_tool_name ||
-        msg.member_name ||
-        isLegacyMemberMessage(msg))
+      msg.is_member_event &&
+      msg.member_call_id
     );
   }
 
@@ -354,30 +350,22 @@
   }
 
   function agentToolRefs(msg) {
-    const refs = { ids: new Set(), names: new Set() };
+    const refs = { ids: new Set() };
     (msg?.events || []).forEach((event) => {
       if (event.type !== "tool_call" || !isAgentTool(event.tool_call)) return;
       if (event.tool_call.id) refs.ids.add(event.tool_call.id);
-      if (event.tool_call.name) refs.names.add(event.tool_call.name);
     });
     return refs;
   }
 
   function toolInRefs(tool, refs) {
     if (!tool || !refs) return false;
-    return !!(
-      (tool.id && refs.ids.has(tool.id)) ||
-      (tool.name && refs.names.has(tool.name))
-    );
+    return !!(tool.id && refs.ids.has(tool.id));
   }
 
   function memberMatchesRefs(msg, refs) {
     if (!msg || !refs) return false;
-    return !!(
-      (msg.member_call_id && refs.ids.has(msg.member_call_id)) ||
-      (msg.member_tool_name && refs.names.has(msg.member_tool_name)) ||
-      (msg.agent_name && refs.names.has(msg.agent_name))
-    );
+    return !!(msg.member_call_id && refs.ids.has(msg.member_call_id));
   }
 
   function memberLabel(msg) {
@@ -393,7 +381,7 @@
   }
 
   function memberKey(msg, index) {
-    return msg.member_call_id || msg.member_tool_name || memberLabel(msg) || `member-${index}`;
+    return msg.member_call_id || "";
   }
 
   function renderMemberGroup(messages) {
