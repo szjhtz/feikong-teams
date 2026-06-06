@@ -9,12 +9,10 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
-	"github.com/google/uuid"
 )
 
 type Runner struct {
@@ -109,24 +107,19 @@ func adaptInterruptsFromRunner(interrupts []*adk.InterruptCtx) []agentcore.Inter
 }
 
 type converter struct {
-	runID                    string
-	turnID                   string
-	sink                     agentcore.EventSink
-	lastEvent                agentcore.Event
-	toolRefsByID             sync.Map
-	toolOrdersByID           sync.Map
-	toolIDsByKey             sync.Map
-	pendingToolResultsByName map[string][]string
-	activeToolResultsByName  map[string]string
+	runID      string
+	turnID     string
+	sink       agentcore.EventSink
+	lastEvent  agentcore.Event
+	identities *toolIdentityTracker
 }
 
 func newConverter(runID, turnID string, sink agentcore.EventSink) *converter {
 	return &converter{
-		runID:                    runID,
-		turnID:                   turnID,
-		sink:                     sink,
-		pendingToolResultsByName: make(map[string][]string),
-		activeToolResultsByName:  make(map[string]string),
+		runID:      runID,
+		turnID:     turnID,
+		sink:       sink,
+		identities: newToolIdentityTracker(),
 	}
 }
 
@@ -277,7 +270,7 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 			return err
 		}
 	}
-	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: message.Role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: message.ToolCalls, ToolCallRefs: c.toolRefsForToolCalls(message.ToolCalls)}
+	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: message.Role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: message.ToolCalls, ToolCallRefs: c.identities.refsFor(message.ToolCalls)}
 	scope.apply(&end, c)
 	if err := c.emit(end); err != nil {
 		return err
@@ -296,7 +289,7 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 		Content:    content,
 		ToolResult: content,
 	}
-	c.attachToolIdentity(&toolEvent)
+	c.identities.attach(&toolEvent)
 	scope.apply(&toolEvent, c)
 	if err := c.emit(toolEvent); err != nil {
 		return err
@@ -307,13 +300,13 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 	message.Content = content
 	messageID := c.messageID(event, "tool")
 	start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: toolEvent.ToolCallID, ToolCallRef: toolEvent.ToolCallRef, ToolName: msg.ToolName}
-	c.attachToolIdentity(&start)
+	c.identities.attach(&start)
 	scope.apply(&start, c)
 	if err := c.emit(start); err != nil {
 		return err
 	}
 	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: toolEvent.ToolCallID, ToolCallRef: toolEvent.ToolCallRef, ToolName: msg.ToolName, Content: content}
-	c.attachToolIdentity(&end)
+	c.identities.attach(&end)
 	scope.apply(&end, c)
 	return c.emit(end)
 }
@@ -323,8 +316,8 @@ func (c *converter) emitToolStarts(event *adk.AgentEvent, sourceMessageID string
 		if events.IsInternalToolName(tc.Function.Name) {
 			continue
 		}
-		ref := c.ensureToolIdentity(sourceMessageID, position, scope, &tc)
-		c.rememberPendingToolResult(tc.Function.Name, tc.ID)
+		ref := c.identities.ensure(sourceMessageID, position, scope, &tc)
+		c.identities.rememberResult(tc.Function.Name, tc.ID)
 		nEvent := agentcore.Event{
 			Type:        agentcore.EventToolStart,
 			AgentName:   event.AgentName,
@@ -446,7 +439,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 			Delta:      chunk.Content,
 			DeltaKind:  agentcore.DeltaToolResult,
 		}
-		c.attachToolIdentity(&nEvent)
+		c.identities.attach(&nEvent)
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
 	}
@@ -496,7 +489,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		}
 		current.Function.Arguments += tc.Function.Arguments
 		ss.toolArgs[idx] += tc.Function.Arguments
-		ref := c.ensureToolIdentity(ss.messageID, idx, scope, &current)
+		ref := c.identities.ensure(ss.messageID, idx, scope, &current)
 		ss.toolCalls[idx] = current
 		ss.toolRefs[idx] = ref
 		if tc.Function.Arguments != "" {
@@ -521,149 +514,9 @@ func (c *converter) ensureMessageToolIdentities(sourceMessageID string, scope Me
 	result := make([]agentcore.ToolCall, len(toolCalls))
 	copy(result, toolCalls)
 	for i := range result {
-		c.ensureToolIdentity(sourceMessageID, i, scope, &result[i])
+		c.identities.ensure(sourceMessageID, i, scope, &result[i])
 	}
 	return result
-}
-
-func (c *converter) toolRefsForToolCalls(toolCalls []agentcore.ToolCall) map[int]string {
-	if len(toolCalls) == 0 {
-		return nil
-	}
-	refs := make(map[int]string, len(toolCalls))
-	for position, tc := range toolCalls {
-		if tc.ID == "" {
-			continue
-		}
-		ref, ok := c.toolRefsByID.Load(tc.ID)
-		if !ok {
-			continue
-		}
-		value, ok := ref.(string)
-		if !ok || value == "" {
-			continue
-		}
-		key := position
-		if tc.Index != nil {
-			key = *tc.Index
-		}
-		refs[key] = value
-	}
-	if len(refs) == 0 {
-		return nil
-	}
-	return refs
-}
-
-func (c *converter) ensureToolIdentity(sourceMessageID string, position int, scope MemberScope, tc *agentcore.ToolCall) string {
-	if tc == nil {
-		return ""
-	}
-	if tc.ID == "" {
-		key := c.syntheticToolKey(sourceMessageID, position, scope, tc)
-		if existing, ok := c.toolIDsByKey.Load(key); ok {
-			if value, ok := existing.(string); ok && value != "" {
-				tc.ID = value
-			}
-		}
-		if tc.ID == "" {
-			tc.ID = "fk_tool_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-			c.toolIDsByKey.Store(key, tc.ID)
-		}
-	}
-	ref := "tool_call:" + tc.ID
-	c.toolRefsByID.Store(tc.ID, ref)
-	if tc.Index != nil {
-		c.toolOrdersByID.Store(tc.ID, *tc.Index)
-	}
-	return ref
-}
-
-func (c *converter) syntheticToolKey(sourceMessageID string, position int, scope MemberScope, tc *agentcore.ToolCall) string {
-	idx := position
-	if tc != nil && tc.Index != nil {
-		idx = *tc.Index
-	}
-	parts := []string{sourceMessageID, fmt.Sprintf("idx:%d", idx)}
-	if scope.CallID != "" {
-		parts = append(parts, "member:"+scope.CallID)
-	}
-	return strings.Join(parts, "|")
-}
-
-func (c *converter) attachToolIdentity(event *agentcore.Event) {
-	if event == nil {
-		return
-	}
-	if event.ToolCallID == "" && event.ToolName != "" {
-		event.ToolCallID = c.toolResultIDByName(event.ToolName, event.Type == agentcore.EventToolEnd)
-	}
-	if event.ToolCallID == "" {
-		return
-	}
-	if ref, ok := c.toolRefsByID.Load(event.ToolCallID); ok {
-		if value, ok := ref.(string); ok && value != "" {
-			event.ToolCallRef = value
-		}
-	}
-	if order, ok := c.toolOrdersByID.Load(event.ToolCallID); ok {
-		if value, ok := order.(int); ok {
-			event.ToolCallIndex = &value
-		}
-	}
-	if event.Type == agentcore.EventToolEnd && event.ToolName != "" {
-		delete(c.activeToolResultsByName, event.ToolName)
-		c.consumePendingToolResult(event.ToolName, event.ToolCallID)
-	}
-}
-
-func (c *converter) rememberPendingToolResult(name, id string) {
-	if name == "" || id == "" {
-		return
-	}
-	c.pendingToolResultsByName[name] = append(c.pendingToolResultsByName[name], id)
-}
-
-func (c *converter) toolResultIDByName(name string, done bool) string {
-	if name == "" {
-		return ""
-	}
-	if id := c.activeToolResultsByName[name]; id != "" {
-		if done {
-			delete(c.activeToolResultsByName, name)
-			c.consumePendingToolResult(name, id)
-		}
-		return id
-	}
-	queue := c.pendingToolResultsByName[name]
-	if len(queue) == 0 {
-		return ""
-	}
-	id := queue[0]
-	if done {
-		c.pendingToolResultsByName[name] = queue[1:]
-	} else {
-		c.activeToolResultsByName[name] = id
-	}
-	return id
-}
-
-func (c *converter) consumePendingToolResult(name, id string) {
-	queue := c.pendingToolResultsByName[name]
-	if len(queue) == 0 {
-		return
-	}
-	if queue[0] == id {
-		c.pendingToolResultsByName[name] = queue[1:]
-		return
-	}
-	for i, queued := range queue {
-		if queued != id {
-			continue
-		}
-		c.pendingToolResultsByName[name] = append(queue[:i], queue[i+1:]...)
-		return
-	}
 }
 
 func firstNonEmpty(values ...string) string {

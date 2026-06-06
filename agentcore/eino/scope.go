@@ -46,10 +46,8 @@ func (s MemberScope) apply(event *agentcore.Event, c *converter) {
 	event.ParentToolCallID = s.CallID
 	event.ParentToolName = s.ToolName
 	if event.MemberOrder == nil && s.CallID != "" {
-		if order, ok := c.toolOrdersByID.Load(s.CallID); ok {
-			if v, ok := order.(int); ok {
-				event.MemberOrder = intPtr(v)
-			}
+		if order, ok := c.identities.orderForID(s.CallID); ok {
+			event.MemberOrder = intPtr(order)
 		}
 	}
 }
