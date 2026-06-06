@@ -2,32 +2,30 @@ package testmodel
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fmt"
 	"sync"
-
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
 )
 
 type GenerateResult struct {
-	Message *schema.Message
+	Message agentcore.Message
 	Err     error
 }
 
 type StreamResult struct {
-	Chunks []*schema.Message
+	Chunks []agentcore.Message
 	Err    error
 }
 
 type Call struct {
-	Input []*schema.Message
-	Tools []*schema.ToolInfo
-	Opts  []model.Option
+	Input []agentcore.Message
+	Tools []agentcore.ToolInfo
+	Opts  []agentcore.ModelOption
 }
 
 type Model struct {
 	state *state
-	tools []*schema.ToolInfo
+	tools []agentcore.ToolInfo
 }
 
 type state struct {
@@ -36,12 +34,12 @@ type state struct {
 	streamQueue    []StreamResult
 	generateCalls  []Call
 	streamCalls    []Call
-	withToolsCalls [][]*schema.ToolInfo
+	withToolsCalls [][]agentcore.ToolInfo
 }
 
-var _ model.ToolCallingChatModel = (*Model)(nil)
+var _ agentcore.NativeChatModel = (*Model)(nil)
 
-func New(responses ...*schema.Message) *Model {
+func New(responses ...agentcore.Message) *Model {
 	m := &Model{state: &state{}}
 	for _, resp := range responses {
 		m.EnqueueGenerate(resp, nil)
@@ -49,26 +47,39 @@ func New(responses ...*schema.Message) *Model {
 	return m
 }
 
-func (m *Model) EnqueueGenerate(message *schema.Message, err error) *Model {
+func AssistantMessage(content string) agentcore.Message {
+	return agentcore.Message{Role: agentcore.RoleAssistant, Content: content}
+}
+
+func UserMessage(content string) agentcore.Message {
+	return agentcore.Message{Role: agentcore.RoleUser, Content: content}
+}
+
+func (m *Model) RuntimeModel() any {
+	return nil
+}
+
+func (m *Model) EnqueueGenerate(message agentcore.Message, err error) *Model {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 	m.state.generateQueue = append(m.state.generateQueue, GenerateResult{Message: message, Err: err})
 	return m
 }
 
-func (m *Model) EnqueueStream(chunks ...*schema.Message) *Model {
+func (m *Model) EnqueueStream(chunks ...agentcore.Message) *Model {
 	m.EnqueueStreamResult(chunks, nil)
 	return m
 }
 
-func (m *Model) EnqueueStreamResult(chunks []*schema.Message, err error) *Model {
+func (m *Model) EnqueueStreamResult(chunks []agentcore.Message, err error) *Model {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
-	m.state.streamQueue = append(m.state.streamQueue, StreamResult{Chunks: chunks, Err: err})
+	copied := copyMessages(chunks)
+	m.state.streamQueue = append(m.state.streamQueue, StreamResult{Chunks: copied, Err: err})
 	return m
 }
 
-func (m *Model) Generate(_ context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+func (m *Model) Generate(_ context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.Message, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 
@@ -78,7 +89,7 @@ func (m *Model) Generate(_ context.Context, input []*schema.Message, opts ...mod
 		Opts:  copyOptions(opts),
 	})
 	if len(m.state.generateQueue) == 0 {
-		return nil, fmt.Errorf("testmodel: no queued generate response")
+		return agentcore.Message{}, fmt.Errorf("testmodel: no queued generate response")
 	}
 
 	resp := m.state.generateQueue[0]
@@ -86,7 +97,7 @@ func (m *Model) Generate(_ context.Context, input []*schema.Message, opts ...mod
 	return resp.Message, resp.Err
 }
 
-func (m *Model) Stream(_ context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+func (m *Model) Stream(_ context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.MessageStream, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 
@@ -104,10 +115,10 @@ func (m *Model) Stream(_ context.Context, input []*schema.Message, opts ...model
 	if resp.Err != nil {
 		return nil, resp.Err
 	}
-	return schema.StreamReaderFromArray(resp.Chunks), nil
+	return agentcore.NewMessageStream(resp.Chunks), nil
 }
 
-func (m *Model) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+func (m *Model) WithTools(tools []agentcore.ToolInfo) (agentcore.ChatModel, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 	copied := copyTools(tools)
@@ -127,30 +138,30 @@ func (m *Model) StreamCalls() []Call {
 	return copyCalls(m.state.streamCalls)
 }
 
-func (m *Model) WithToolsCalls() [][]*schema.ToolInfo {
+func (m *Model) WithToolsCalls() [][]agentcore.ToolInfo {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
-	calls := make([][]*schema.ToolInfo, len(m.state.withToolsCalls))
+	calls := make([][]agentcore.ToolInfo, len(m.state.withToolsCalls))
 	for i, call := range m.state.withToolsCalls {
 		calls[i] = copyTools(call)
 	}
 	return calls
 }
 
-func copyMessages(in []*schema.Message) []*schema.Message {
-	out := make([]*schema.Message, len(in))
+func copyMessages(in []agentcore.Message) []agentcore.Message {
+	out := make([]agentcore.Message, len(in))
 	copy(out, in)
 	return out
 }
 
-func copyTools(in []*schema.ToolInfo) []*schema.ToolInfo {
-	out := make([]*schema.ToolInfo, len(in))
+func copyTools(in []agentcore.ToolInfo) []agentcore.ToolInfo {
+	out := make([]agentcore.ToolInfo, len(in))
 	copy(out, in)
 	return out
 }
 
-func copyOptions(in []model.Option) []model.Option {
-	out := make([]model.Option, len(in))
+func copyOptions(in []agentcore.ModelOption) []agentcore.ModelOption {
+	out := make([]agentcore.ModelOption, len(in))
 	copy(out, in)
 	return out
 }

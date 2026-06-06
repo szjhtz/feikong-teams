@@ -16,10 +16,10 @@ import (
 
 func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	ctx := context.Background()
-	cm := testmodel.New(schema.AssistantMessage("builder-ok", nil))
+	cm := testmodel.New(testmodel.AssistantMessage("builder-ok"))
 
 	agent, err := agentscommon.NewAgentBuilder("builder_test", "builder test agent").
-		WithModel(agentcore.WrapRuntimeChatModel(cm)).
+		WithModel(cm).
 		WithInstruction("you are a {role}").
 		WithTemplateVar("role", "tester").
 		Build(ctx)
@@ -45,10 +45,10 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	if len(input) < 3 {
 		t.Fatalf("expected system, user and injected context messages, got %#v", input)
 	}
-	if input[0].Role != schema.System || !strings.Contains(input[0].Content, "you are a tester") {
+	if input[0].Role != agentcore.RoleSystem || !strings.Contains(input[0].Content, "you are a tester") {
 		t.Fatalf("expected formatted system prompt, got %#v", input[0])
 	}
-	if input[len(input)-2].Role != schema.User || input[len(input)-2].Content != "ping" {
+	if input[len(input)-2].Role != agentcore.RoleUser || input[len(input)-2].Content != "ping" {
 		t.Fatalf("expected user message before dynamic context, got %#v", input)
 	}
 	assertInjectedContext(t, input[len(input)-1])
@@ -71,10 +71,10 @@ func drainAgent(t *testing.T, agent adk.Agent, messages ...adk.Message) []*adk.A
 	}
 }
 
-func assertInjectedContext(t *testing.T, msg *schema.Message) {
+func assertInjectedContext(t *testing.T, msg agentcore.Message) {
 	t.Helper()
 
-	if msg.Role != schema.User {
+	if msg.Role != agentcore.RoleUser {
 		t.Fatalf("expected injected context to be user message, got %s", msg.Role)
 	}
 	for _, want := range []string{"<system-reminder>", "当前时间", "工作目录"} {

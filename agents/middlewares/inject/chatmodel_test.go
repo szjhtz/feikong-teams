@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fkteams/agents/middlewares/inject"
 	"fkteams/internal/testmodel"
 
@@ -13,8 +15,12 @@ import (
 
 func TestGenerateInjectsDynamicContext(t *testing.T) {
 	ctx := context.Background()
-	cm := testmodel.New(schema.AssistantMessage("ok", nil))
-	wrapped := inject.New(cm)
+	cm := testmodel.New(testmodel.AssistantMessage("ok"))
+	runnerModel, err := einoruntime.AdaptChatModelForRunner(cm)
+	if err != nil {
+		t.Fatalf("adapt model: %v", err)
+	}
+	wrapped := inject.New(runnerModel)
 
 	resp, err := wrapped.Generate(ctx, []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
@@ -34,8 +40,12 @@ func TestGenerateInjectsDynamicContext(t *testing.T) {
 func TestStreamInjectsDynamicContext(t *testing.T) {
 	ctx := context.Background()
 	cm := testmodel.New()
-	cm.EnqueueStream(schema.AssistantMessage("chunk", nil))
-	wrapped := inject.New(cm)
+	cm.EnqueueStream(testmodel.AssistantMessage("chunk"))
+	runnerModel, err := einoruntime.AdaptChatModelForRunner(cm)
+	if err != nil {
+		t.Fatalf("adapt model: %v", err)
+	}
+	wrapped := inject.New(runnerModel)
 
 	stream, err := wrapped.Stream(ctx, []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
@@ -58,7 +68,7 @@ func TestStreamInjectsDynamicContext(t *testing.T) {
 	assertInjectedContext(t, calls[0].Input)
 }
 
-func assertInjectedContext(t *testing.T, input []*schema.Message) {
+func assertInjectedContext(t *testing.T, input []agentcore.Message) {
 	t.Helper()
 
 	if len(input) != 2 {
@@ -68,7 +78,7 @@ func assertInjectedContext(t *testing.T, input []*schema.Message) {
 		t.Fatalf("expected original message to stay first, got %#v", input[0])
 	}
 	injected := input[1]
-	if injected.Role != schema.User {
+	if injected.Role != agentcore.RoleUser {
 		t.Fatalf("expected injected context to be user message, got %s", injected.Role)
 	}
 	for _, want := range []string{"<system-reminder>", "当前时间", "工作目录"} {

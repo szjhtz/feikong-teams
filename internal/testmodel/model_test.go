@@ -5,13 +5,13 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
+	"fkteams/agentcore"
 )
 
 func TestGenerateDequeuesResponsesAndRecordsCalls(t *testing.T) {
-	m := New(schema.AssistantMessage("first", nil), schema.AssistantMessage("second", nil))
+	m := New(AssistantMessage("first"), AssistantMessage("second"))
 
-	resp, err := m.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	resp, err := m.Generate(context.Background(), []agentcore.Message{UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("generate first: %v", err)
 	}
@@ -19,7 +19,7 @@ func TestGenerateDequeuesResponsesAndRecordsCalls(t *testing.T) {
 		t.Fatalf("unexpected first response: %q", resp.Content)
 	}
 
-	resp, err = m.Generate(context.Background(), []*schema.Message{schema.UserMessage("again")})
+	resp, err = m.Generate(context.Background(), []agentcore.Message{UserMessage("again")})
 	if err != nil {
 		t.Fatalf("generate second: %v", err)
 	}
@@ -39,11 +39,11 @@ func TestGenerateDequeuesResponsesAndRecordsCalls(t *testing.T) {
 func TestStreamDequeuesChunks(t *testing.T) {
 	m := New()
 	m.EnqueueStream(
-		schema.AssistantMessage("a", nil),
-		schema.AssistantMessage("b", nil),
+		AssistantMessage("a"),
+		AssistantMessage("b"),
 	)
 
-	sr, err := m.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	sr, err := m.Stream(context.Background(), []agentcore.Message{UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -59,13 +59,17 @@ func TestStreamDequeuesChunks(t *testing.T) {
 }
 
 func TestWithToolsReturnsToolBoundModel(t *testing.T) {
-	m := New(schema.AssistantMessage("ok", nil))
-	bound, err := m.WithTools([]*schema.ToolInfo{{Name: "test_tool"}})
+	m := New(AssistantMessage("ok"))
+	bound, err := m.WithTools([]agentcore.ToolInfo{{Name: "test_tool"}})
 	if err != nil {
 		t.Fatalf("with tools: %v", err)
 	}
 
-	if _, err := bound.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")}); err != nil {
+	native, ok := bound.(agentcore.NativeChatModel)
+	if !ok {
+		t.Fatalf("expected native chat model, got %T", bound)
+	}
+	if _, err := native.Generate(context.Background(), []agentcore.Message{UserMessage("hello")}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
 
@@ -80,7 +84,7 @@ func TestWithToolsReturnsToolBoundModel(t *testing.T) {
 
 func TestGenerateReturnsQueuedError(t *testing.T) {
 	want := errors.New("model failed")
-	m := New().EnqueueGenerate(nil, want)
+	m := New().EnqueueGenerate(agentcore.Message{}, want)
 
 	if _, err := m.Generate(context.Background(), nil); !errors.Is(err, want) {
 		t.Fatalf("expected queued error, got %v", err)
