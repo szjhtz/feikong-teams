@@ -2,6 +2,7 @@ package warperror
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -26,15 +27,15 @@ type Config struct {
 
 // NewHandler 创建 ADK Handler，通过 WrapToolCall 拦截工具调用错误。
 // 将错误转换为成功的工具输出返回给 LLM，避免中断 Agent 流程。
-func NewHandler(cfg *Config) adk.ChatModelAgentMiddleware {
+func NewHandler(cfg *Config) agentcore.AgentMiddleware {
 	handler := defaultErrorHandler
 	if cfg != nil && cfg.Handler != nil {
 		handler = cfg.Handler
 	}
-	return &agentHandler{
+	return agentcore.WrapRuntimeAgentMiddleware(&agentHandler{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 		handler:                      handler,
-	}
+	})
 }
 
 type agentHandler struct {
@@ -117,16 +118,16 @@ func textToolResult(text string) *schema.ToolResult {
 
 // New 创建工具错误处理中间件
 // 拦截工具调用错误，将其转换为成功的工具输出返回给 LLM，避免中断 Agent 流程
-func New(cfg *Config) compose.ToolMiddleware {
+func New(cfg *Config) agentcore.ToolMiddleware {
 	handler := defaultErrorHandler
 	if cfg != nil && cfg.Handler != nil {
 		handler = cfg.Handler
 	}
 
-	return compose.ToolMiddleware{
+	return agentcore.WrapRuntimeToolMiddleware(compose.ToolMiddleware{
 		Invokable:  newInvokable(handler),
 		Streamable: newStreamable(handler),
-	}
+	})
 }
 
 // newInvokable 创建非流式工具调用中间件

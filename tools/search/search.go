@@ -2,16 +2,10 @@ package search
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/eino-contrib/jsonschema"
-	orderedmap "github.com/wk8/go-ordered-map/v2"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/cloudwego/eino/schema"
 )
 
 type Config struct {
@@ -41,7 +35,7 @@ type Config struct {
 	Region Region `json:"region"`
 }
 
-func NewTextSearchTool(ctx context.Context, config *Config) (tool.InvokableTool, error) {
+func NewTextSearchTool(ctx context.Context, config *Config) (agentcore.Tool, error) {
 	if config == nil {
 		config = &Config{}
 	}
@@ -60,75 +54,11 @@ func NewTextSearchTool(ctx context.Context, config *Config) (tool.InvokableTool,
 		return nil, fmt.Errorf("failed to create duckduckgo client: %w", err)
 	}
 
-	searchTool := utils.NewTool(getTextSearchSchema(name, desc), cli.TextSearch)
-
-	return searchTool, nil
+	return agentcore.NewTool(agentcore.ToolInfo{Name: name, Desc: desc}, cli.TextSearch), nil
 }
 
 func NewSearch(ctx context.Context, config *Config) (Search, error) {
 	return buildClient(ctx, config)
-}
-
-func getTextSearchSchema(toolName, toolDesc string) *schema.ToolInfo {
-	sc := &jsonschema.Schema{
-		Type:     string(schema.Object),
-		Required: []string{"query"},
-		Properties: orderedmap.New[string, *jsonschema.Schema](
-			orderedmap.WithInitialData(
-				orderedmap.Pair[string, *jsonschema.Schema]{
-					Key: "query",
-					Value: &jsonschema.Schema{
-						Type:        string(schema.String),
-						Description: "The user's search query. The query is required.",
-					},
-				},
-				orderedmap.Pair[string, *jsonschema.Schema]{
-					Key: "time_range",
-					Value: &jsonschema.Schema{
-						Type:        string(schema.String),
-						Description: "The time range of search results",
-						Default:     "",
-						OneOf: []*jsonschema.Schema{
-							{
-
-								Type:        string(schema.String),
-								Enum:        []any{"d"},
-								Description: "Search information from the past day",
-							},
-							{
-								Type:        string(schema.String),
-								Enum:        []any{"w"},
-								Description: "Search information from the past week",
-							},
-							{
-								Type:        string(schema.String),
-								Enum:        []any{"m"},
-								Description: "Search information from the past month",
-							},
-							{
-								Type:        string(schema.String),
-								Enum:        []any{"y"},
-								Description: "Search information from the past year",
-							},
-							{
-								Type:        string(schema.String),
-								Enum:        []any{""},
-								Description: "Search information at any time",
-							},
-						},
-					},
-				},
-			),
-		),
-	}
-
-	info := &schema.ToolInfo{
-		Name:        toolName,
-		Desc:        toolDesc,
-		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(sc),
-	}
-
-	return info
 }
 
 func buildClient(_ context.Context, config *Config) (Search, error) {

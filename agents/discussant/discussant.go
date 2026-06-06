@@ -6,10 +6,10 @@ import (
 	"fkteams/config"
 	"fmt"
 
-	"github.com/cloudwego/eino/adk"
+	"fkteams/agentcore"
 )
 
-func NewAgent(ctx context.Context, member config.TeamMember) (adk.Agent, error) {
+func NewAgent(ctx context.Context, member config.TeamMember) (agentcore.Agent, error) {
 	cfg := config.Get()
 	modelCfg := cfg.ResolveModel(member.Model)
 	if modelCfg == nil {
@@ -22,7 +22,7 @@ func NewAgent(ctx context.Context, member config.TeamMember) (adk.Agent, error) 
 	}
 
 	return common.NewAgentBuilder(member.Name, member.Desc).
-		WithTemplate(discussantPromptTemplate).
+		WithInstruction(discussantPrompt).
 		WithModel(chatModel).
 		WithSummary().
 		Build(ctx)

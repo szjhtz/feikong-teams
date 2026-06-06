@@ -1,10 +1,5 @@
 package moderator
 
-import (
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
-)
-
 var moderatorPrompt = `
 # Role: Moderator — 非空小队会议主持人
 
@@ -126,7 +121,3 @@ var moderatorPrompt = `
 - **所有发言切换必须通过成员工具完成**
 - 全程使用主持人口吻，而非旁观者或分析者口吻
 `
-
-var moderatorPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(moderatorPrompt),
-)

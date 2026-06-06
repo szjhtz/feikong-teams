@@ -1,13 +1,12 @@
 package doc
 
 import (
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	"fkteams/agentcore"
 )
 
-func GetTools() (tools []tool.BaseTool, err error) {
+func GetTools() (tools []agentcore.Tool, err error) {
 	// 1. 获取文档信息工具
-	getInfoTool, err := utils.InferTool(
+	getInfoTool, err := agentcore.InferTool(
 		"get_document_info",
 		`获取文档的基本信息，包括文件类型、大小、页数、元数据等。支持格式：.docx, .pdf, .xlsx, .pptx, .txt, .csv, .md, .rtf。
 这是读取文档前的第一步，帮助你了解文档结构，决定如何读取。`,
@@ -19,7 +18,7 @@ func GetTools() (tools []tool.BaseTool, err error) {
 	tools = append(tools, getInfoTool)
 
 	// 2. 智能读取工具（推荐首选）
-	smartReadTool, err := utils.InferTool(
+	smartReadTool, err := agentcore.InferTool(
 		"read_document_smart",
 		`智能读取文档内容，自动处理大文档。特点：
 - 自动适配上下文限制（默认50000字符）
@@ -35,7 +34,7 @@ func GetTools() (tools []tool.BaseTool, err error) {
 	tools = append(tools, smartReadTool)
 
 	// 3. 按页读取工具
-	readByPagesTool, err := utils.InferTool(
+	readByPagesTool, err := agentcore.InferTool(
 		"read_document_by_pages",
 		`按页码范围读取文档内容。支持多页文档如 PDF、PPTX。
 参数：
@@ -51,7 +50,7 @@ func GetTools() (tools []tool.BaseTool, err error) {
 	tools = append(tools, readByPagesTool)
 
 	// 4. 按行读取工具
-	readByLinesTool, err := utils.InferTool(
+	readByLinesTool, err := agentcore.InferTool(
 		"read_document_by_lines",
 		`按行号范围读取文档内容。支持指定页面和行范围。
 参数：

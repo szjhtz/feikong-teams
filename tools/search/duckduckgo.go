@@ -2,16 +2,15 @@ package search
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/fkenv"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/cloudwego/eino/components/tool"
 )
 
-func NewDuckDuckGoTool(ctx context.Context) (tool.InvokableTool, error) {
+func NewDuckDuckGoTool(ctx context.Context) (agentcore.Tool, error) {
 	// 1. 获取代理配置
 	proxyStr := fkenv.Get(fkenv.ProxyURL)
 

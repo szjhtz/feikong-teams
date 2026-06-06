@@ -6,7 +6,6 @@ import (
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
 	"fkteams/agents"
-	agentcommon "fkteams/agents/common"
 	"fkteams/agents/coordinator"
 	"fkteams/agents/custom"
 	"fkteams/agents/deep"
@@ -21,7 +20,6 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 )
 
@@ -31,7 +29,7 @@ var validToolNameChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
 func wrapErrorSafe(subAgents []adk.Agent) []adk.Agent {
 	wrapped := make([]adk.Agent, len(subAgents))
 	for i, agent := range subAgents {
-		wrapped[i] = agentcommon.WrapErrorSafe(agent)
+		wrapped[i] = einoruntime.WrapErrorSafe(agent)
 	}
 	return wrapped
 }
@@ -102,10 +100,15 @@ func agentToolName(name string, index int, used map[string]bool) string {
 	return normalized
 }
 
-func buildAgentTools(ctx context.Context, subAgents []adk.Agent) []tool.BaseTool {
-	agentTools := make([]tool.BaseTool, 0, len(subAgents))
+func buildAgentTools(ctx context.Context, subAgents []agentcore.Agent) ([]agentcore.Tool, error) {
+	runnerAgents, err := einoruntime.AdaptAgentsForRunner(subAgents)
+	if err != nil {
+		return nil, err
+	}
+	runnerAgents = wrapErrorSafe(runnerAgents)
+	agentTools := make([]agentcore.Tool, 0, len(runnerAgents))
 	usedNames := make(map[string]bool, len(subAgents))
-	for i, subAgent := range subAgents {
+	for i, subAgent := range runnerAgents {
 		displayName := subAgent.Name(ctx)
 		wrapped := &agentToolNameAgent{
 			inner:       subAgent,
@@ -113,9 +116,9 @@ func buildAgentTools(ctx context.Context, subAgents []adk.Agent) []tool.BaseTool
 			displayName: displayName,
 		}
 		agenttool.RegisterAgentToolDisplay(wrapped.toolName, displayName)
-		agentTools = append(agentTools, adk.NewAgentTool(ctx, wrapped))
+		agentTools = append(agentTools, agentcore.WrapRuntimeTool(adk.NewAgentTool(ctx, wrapped)))
 	}
-	return agentTools
+	return agentTools, nil
 }
 
 // resolveCustomModel 从配置文件解析自定义智能体的模型配置
@@ -133,12 +136,16 @@ func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Mod
 }
 
 // newRunner 用共享配置创建 Runner
-func newRunner(ctx context.Context, agent adk.Agent) agentcore.Runner {
+func newRunner(ctx context.Context, agent agentcore.Agent) (agentcore.Runner, error) {
+	runnerAgent, err := einoruntime.AdaptAgentForRunner(agent)
+	if err != nil {
+		return nil, err
+	}
 	return einoruntime.NewRunner(adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           agent,
+		Agent:           runnerAgent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
-	}))
+	})), nil
 }
 
 // CreateBackgroundTaskRunner 创建后台定时任务专用 Runner（任务官单智能体，独立执行）
@@ -147,43 +154,46 @@ func CreateBackgroundTaskRunner(ctx context.Context) (agentcore.Runner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("创建任务官智能体失败: %w", err)
 	}
-	return newRunner(ctx, agent), nil
+	return newRunner(ctx, agent)
 }
 
 // CreateAgentRunner 创建普通 ReACT 模式的 Runner
-func CreateAgentRunner(ctx context.Context, agent adk.Agent) agentcore.Runner {
+func CreateAgentRunner(ctx context.Context, agent agentcore.Agent) (agentcore.Runner, error) {
 	return newRunner(ctx, agent)
 }
 
 // CreateTeamRunner 创建团队模式 Runner，使用 ChatModelAgent + AgentTool 协作。
 func CreateTeamRunner(ctx context.Context) (agentcore.Runner, error) {
-	agentTools := buildAgentTools(ctx, wrapErrorSafe(agents.GetTeamAgents(ctx)))
+	agentTools, err := buildAgentTools(ctx, agents.GetTeamAgents(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("创建成员工具失败: %w", err)
+	}
 
 	coordinatorAgent, err := coordinator.NewAgent(ctx, agentTools...)
 	if err != nil {
 		return nil, fmt.Errorf("创建 coordinator 智能体失败: %w", err)
 	}
 
-	return newRunner(ctx, coordinatorAgent), nil
+	return newRunner(ctx, coordinatorAgent)
 }
 
 // CreateDeepAgentsRunner 创建 DeepAgents 模式的 Runner
 func CreateDeepAgentsRunner(ctx context.Context) (agentcore.Runner, error) {
-	subAgents := wrapErrorSafe(agents.GetTeamAgents(ctx))
+	subAgents := agents.GetTeamAgents(ctx)
 
 	deepAgent, err := deep.NewAgent(ctx, subAgents)
 	if err != nil {
 		return nil, fmt.Errorf("创建 DeepAgents 失败: %w", err)
 	}
 
-	return newRunner(ctx, deepAgent), nil
+	return newRunner(ctx, deepAgent)
 }
 
 // CreateLoopAgentRunner 创建 LoopAgent 模式的 Runner
 func CreateLoopAgentRunner(ctx context.Context) (agentcore.Runner, error) {
 	teamConfig := config.Get()
 
-	var subAgents []adk.Agent
+	var subAgents []agentcore.Agent
 	for _, member := range teamConfig.Roundtable.Members {
 		agent, err := discussant.NewAgent(ctx, member)
 		if err != nil {
@@ -191,26 +201,30 @@ func CreateLoopAgentRunner(ctx context.Context) (agentcore.Runner, error) {
 		}
 		subAgents = append(subAgents, agent)
 	}
+	runnerSubAgents, err := einoruntime.AdaptAgentsForRunner(subAgents)
+	if err != nil {
+		return nil, fmt.Errorf("adapt roundtable agents: %w", err)
+	}
 
 	loopAgent, err := adk.NewLoopAgent(ctx, &adk.LoopAgentConfig{
 		Name:          "Roundtable",
 		Description:   "多智能体共同讨论并解决问题",
-		SubAgents:     subAgents,
+		SubAgents:     runnerSubAgents,
 		MaxIterations: teamConfig.Roundtable.MaxIterations,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 LoopAgent 失败: %w", err)
 	}
 
-	return newRunner(ctx, loopAgent), nil
+	return newRunner(ctx, einoruntime.WrapNamedAgent("Roundtable", "多智能体共同讨论并解决问题", loopAgent))
 }
 
 // CreateCustomRunner 创建自定义会议模式 Runner，使用主持人 ChatModelAgent + AgentTool 协作。
 func CreateCustomRunner(ctx context.Context) (agentcore.Runner, error) {
 	cfg := config.Get()
 
-	var moderatorAgent adk.Agent
-	var subAgents []adk.Agent
+	var moderatorAgent agentcore.Agent
+	var subAgents []agentcore.Agent
 	var err error
 
 	for _, customAgent := range cfg.Custom.Agents {
@@ -227,7 +241,10 @@ func CreateCustomRunner(ctx context.Context) (agentcore.Runner, error) {
 		subAgents = append(subAgents, agent)
 	}
 
-	agentTools := buildAgentTools(ctx, wrapErrorSafe(subAgents))
+	agentTools, err := buildAgentTools(ctx, subAgents)
+	if err != nil {
+		return nil, fmt.Errorf("创建成员工具失败: %w", err)
+	}
 	if cfg.Custom.Moderator.Name != "" {
 		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
 			Name:         cfg.Custom.Moderator.Name,
@@ -247,7 +264,7 @@ func CreateCustomRunner(ctx context.Context) (agentcore.Runner, error) {
 		}
 	}
 
-	return newRunner(ctx, moderatorAgent), nil
+	return newRunner(ctx, moderatorAgent)
 }
 
 func customModeratorPrompt(systemPrompt string) string {
@@ -267,8 +284,8 @@ func customModeratorPrompt(systemPrompt string) string {
 func PrintCustomAgentsInfo(ctx context.Context) error {
 	cfg := config.Get()
 
-	var moderatorAgent adk.Agent
-	var subAgents []adk.Agent
+	var moderatorAgent agentcore.Agent
+	var subAgents []agentcore.Agent
 	var err error
 
 	if cfg.Custom.Moderator.Name != "" {
@@ -303,11 +320,11 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 		subAgents = append(subAgents, agent)
 	}
 
-	fmt.Printf("本次讨论的主持人: %s\n", moderatorAgent.Name(ctx))
+	fmt.Printf("本次讨论的主持人: %s\n", moderatorAgent.Name())
 	fmt.Printf("本次讨论的成员有: ")
 	var names []string
 	for _, subAgent := range subAgents {
-		names = append(names, subAgent.Name(ctx))
+		names = append(names, subAgent.Name())
 	}
 	fmt.Println(strings.Join(names, ", "))
 	return nil
@@ -317,7 +334,7 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 func PrintLoopAgentsInfo(ctx context.Context) error {
 	teamConfig := config.Get()
 
-	var subAgents []adk.Agent
+	var subAgents []agentcore.Agent
 	for _, member := range teamConfig.Roundtable.Members {
 		agent, err := discussant.NewAgent(ctx, member)
 		if err != nil {
@@ -329,7 +346,7 @@ func PrintLoopAgentsInfo(ctx context.Context) error {
 	fmt.Printf("本次讨论的成员有: ")
 	var names []string
 	for _, subAgent := range subAgents {
-		names = append(names, subAgent.Name(ctx))
+		names = append(names, subAgent.Name())
 	}
 	fmt.Println(strings.Join(names, ", "))
 	return nil

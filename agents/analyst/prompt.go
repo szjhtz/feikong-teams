@@ -1,10 +1,5 @@
 package analyst
 
-import (
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
-)
-
 var analystPrompt = `
 # Role: Analyst - 非空小队数据分析专家
 
@@ -34,7 +29,3 @@ var analystPrompt = `
 - 结构化数据用表格展示，数值保留适当精度
 - 报告结构: 摘要 -> 数据概览 -> 关键发现 -> 结论与建议
 `
-
-var analystPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(analystPrompt),
-)

@@ -112,7 +112,10 @@ func (r *Runtime) switchAgent(agentName string) (string, error) {
 		return "", fmt.Errorf("agent not found: %s", agentName)
 	}
 	newAgent := agentInfo.Creator(r.ctx)
-	newRunner := runner.CreateAgentRunner(r.ctx, newAgent)
+	newRunner, err := runner.CreateAgentRunner(r.ctx, newAgent)
+	if err != nil {
+		return "", err
+	}
 	r.executor.SetRunner(newRunner)
 	r.session.currentAgent = agentName
 	return fmt.Sprintf("已切换到智能体: %s (%s)", agentName, agentInfo.Description), nil

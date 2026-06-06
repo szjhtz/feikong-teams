@@ -1,13 +1,12 @@
 package git
 
 import (
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	"fkteams/agentcore"
 )
 
 // GetTools 返回所有Git相关工具
-func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
-	gitInitTool, err := utils.InferTool(
+func (gt *GitTools) GetTools() ([]agentcore.Tool, error) {
+	gitInitTool, err := agentcore.InferTool(
 		"git_init",
 		"初始化一个新的Git仓库",
 		gt.GitInit,
@@ -16,7 +15,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitStatusTool, err := utils.InferTool(
+	gitStatusTool, err := agentcore.InferTool(
 		"git_status",
 		"获取Git仓库的状态",
 		gt.GitStatus,
@@ -25,7 +24,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitAddTool, err := utils.InferTool(
+	gitAddTool, err := agentcore.InferTool(
 		"git_add",
 		"添加文件到暂存区",
 		gt.GitAdd,
@@ -34,7 +33,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitCommitTool, err := utils.InferTool(
+	gitCommitTool, err := agentcore.InferTool(
 		"git_commit",
 		"创建一个新的提交",
 		gt.GitCommit,
@@ -43,7 +42,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitLogTool, err := utils.InferTool(
+	gitLogTool, err := agentcore.InferTool(
 		"git_log",
 		"查看提交历史",
 		gt.GitLog,
@@ -52,7 +51,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitBranchTool, err := utils.InferTool(
+	gitBranchTool, err := agentcore.InferTool(
 		"git_branch",
 		"分支操作：列出、创建、删除分支",
 		gt.GitBranch,
@@ -61,7 +60,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitCheckoutTool, err := utils.InferTool(
+	gitCheckoutTool, err := agentcore.InferTool(
 		"git_checkout",
 		"切换分支或检出提交",
 		gt.GitCheckout,
@@ -70,7 +69,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitResetTool, err := utils.InferTool(
+	gitResetTool, err := agentcore.InferTool(
 		"git_reset",
 		"重置仓库到指定状态（支持soft/mixed/hard模式）",
 		gt.GitReset,
@@ -79,7 +78,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitTagTool, err := utils.InferTool(
+	gitTagTool, err := agentcore.InferTool(
 		"git_tag",
 		"标签操作：列出、创建、删除标签",
 		gt.GitTag,
@@ -88,7 +87,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitDiffTool, err := utils.InferTool(
+	gitDiffTool, err := agentcore.InferTool(
 		"git_diff",
 		"查看工作区或暂存区的差异",
 		gt.GitDiff,
@@ -97,7 +96,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitCleanTool, err := utils.InferTool(
+	gitCleanTool, err := agentcore.InferTool(
 		"git_clean",
 		"清理未跟踪的文件",
 		gt.GitClean,
@@ -106,7 +105,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitRemoveTool, err := utils.InferTool(
+	gitRemoveTool, err := agentcore.InferTool(
 		"git_remove",
 		"从仓库移除文件",
 		gt.GitRemove,
@@ -115,7 +114,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitConfigTool, err := utils.InferTool(
+	gitConfigTool, err := agentcore.InferTool(
 		"git_config",
 		"Git配置操作：获取、设置、列出配置",
 		gt.GitConfig,
@@ -124,7 +123,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	gitRemoteTool, err := utils.InferTool(
+	gitRemoteTool, err := agentcore.InferTool(
 		"git_remote",
 		"远程仓库操作：列出、添加、移除远程仓库",
 		gt.GitRemote,
@@ -133,7 +132,7 @@ func (gt *GitTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	return []tool.BaseTool{
+	return []agentcore.Tool{
 		gitInitTool,
 		gitStatusTool,
 		gitAddTool,

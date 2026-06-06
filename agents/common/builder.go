@@ -2,6 +2,8 @@ package common
 
 import (
 	"context"
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fkteams/agents/middlewares/autocontinue"
 	"fkteams/agents/middlewares/dispatch"
 	"fkteams/agents/middlewares/inject"
@@ -17,11 +19,9 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 )
 
@@ -29,16 +29,16 @@ import (
 type AgentBuilder struct {
 	name         string
 	description  string
-	tools        []tool.BaseTool
+	tools        []agentcore.Tool
 	toolNames    []string
-	template     prompt.ChatTemplate
+	instruction  string
 	templateVars map[string]any
 
 	// 模型配置
-	chatModel model.ToolCallingChatModel
+	chatModel agentcore.ChatModel
 
 	// 中间件
-	handlers []adk.ChatModelAgentMiddleware
+	handlers []agentcore.AgentMiddleware
 
 	// 便捷中间件标记
 	enableSummary  bool
@@ -61,7 +61,7 @@ func NewAgentBuilder(name, description string) *AgentBuilder {
 }
 
 // WithTools 设置工具列表
-func (b *AgentBuilder) WithTools(tools ...tool.BaseTool) *AgentBuilder {
+func (b *AgentBuilder) WithTools(tools ...agentcore.Tool) *AgentBuilder {
 	b.tools = append(b.tools, tools...)
 	return b
 }
@@ -72,9 +72,8 @@ func (b *AgentBuilder) WithToolNames(names ...string) *AgentBuilder {
 	return b
 }
 
-// WithTemplate 设置提示词模板
-func (b *AgentBuilder) WithTemplate(t prompt.ChatTemplate) *AgentBuilder {
-	b.template = t
+func (b *AgentBuilder) WithInstruction(instruction string) *AgentBuilder {
+	b.instruction = instruction
 	return b
 }
 
@@ -85,13 +84,13 @@ func (b *AgentBuilder) WithTemplateVar(key string, value any) *AgentBuilder {
 }
 
 // WithModel 使用自定义模型（不设置则使用默认环境变量配置）
-func (b *AgentBuilder) WithModel(m model.ToolCallingChatModel) *AgentBuilder {
+func (b *AgentBuilder) WithModel(m agentcore.ChatModel) *AgentBuilder {
 	b.chatModel = m
 	return b
 }
 
-// WithHandler 添加 ChatModelAgentMiddleware
-func (b *AgentBuilder) WithHandler(h ...adk.ChatModelAgentMiddleware) *AgentBuilder {
+// WithHandler 添加智能体中间件
+func (b *AgentBuilder) WithHandler(h ...agentcore.AgentMiddleware) *AgentBuilder {
 	b.handlers = append(b.handlers, h...)
 	return b
 }
@@ -116,25 +115,27 @@ func (b *AgentBuilder) WithDispatch(cfg *dispatch.Config) *AgentBuilder {
 }
 
 // Build 构建智能体
-func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
+func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	// 模型
-	chatModel := b.chatModel
-	if chatModel == nil {
+	coreModel := b.chatModel
+	if coreModel == nil {
 		var err error
-		chatModel, err = NewChatModel()
+		coreModel, err = NewChatModel()
 		if err != nil {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
 	}
+	chatModel, err := einoruntime.AdaptChatModelForRunner(coreModel)
+	if err != nil {
+		return nil, fmt.Errorf("adapt chat model: %w", err)
+	}
 
 	// 提示词
-	var instruction string
-	if b.template != nil {
-		msgs, err := b.template.Format(ctx, b.templateVars)
-		if err != nil {
-			return nil, fmt.Errorf("format prompt: %w", err)
+	instruction := b.instruction
+	if instruction != "" {
+		for key, value := range b.templateVars {
+			instruction = strings.ReplaceAll(instruction, "{"+key+"}", fmt.Sprint(value))
 		}
-		instruction = msgs[0].Content
 	}
 
 	// 通过名称解析工具
@@ -148,6 +149,10 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 
 	// 工具元数据分类
 	tools.ClassifyTools(b.tools)
+	runnerTools, err := einoruntime.AdaptToolsForRunner(ctx, b.tools)
+	if err != nil {
+		return nil, fmt.Errorf("adapt tools: %w", err)
+	}
 
 	// 注入动态上下文
 	chatModel = inject.New(chatModel)
@@ -163,12 +168,15 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	}
 
 	// 工具
-	destructiveGuard := destructiveguard.New()
-	if len(b.tools) > 0 {
+	destructiveGuard, err := einoruntime.AdaptToolMiddlewareForRunner(destructiveguard.New())
+	if err != nil {
+		return nil, fmt.Errorf("adapt destructive guard middleware: %w", err)
+	}
+	if len(runnerTools) > 0 {
 		cfg.ToolsConfig = adk.ToolsConfig{
 			EmitInternalEvents: true,
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools:               b.tools,
+				Tools:               runnerTools,
 				UnknownToolsHandler: unknownToolsHandler,
 				ToolCallMiddlewares: []compose.ToolMiddleware{destructiveGuard},
 			},
@@ -187,18 +195,34 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init patch middleware: %w", err)
 	}
-	cfg.Handlers = append(cfg.Handlers, patchMiddleware)
+	runnerPatchMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(patchMiddleware)
+	if err != nil {
+		return nil, fmt.Errorf("adapt patch middleware: %w", err)
+	}
+	cfg.Handlers = append(cfg.Handlers, runnerPatchMiddleware)
 
 	// 中间件（warperror + autocontinue + trimresult 默认启用）
-	cfg.Handlers = append(cfg.Handlers, warperror.NewHandler(nil))
+	wrapErrorMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(warperror.NewHandler(nil))
+	if err != nil {
+		return nil, fmt.Errorf("adapt tool error middleware: %w", err)
+	}
+	cfg.Handlers = append(cfg.Handlers, wrapErrorMiddleware)
 
 	acMiddleware, err := autocontinue.NewHandler()
 	if err != nil {
 		return nil, fmt.Errorf("init autocontinue middleware: %w", err)
 	}
-	cfg.Handlers = append(cfg.Handlers, acMiddleware)
+	runnerACMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(acMiddleware)
+	if err != nil {
+		return nil, fmt.Errorf("adapt autocontinue middleware: %w", err)
+	}
+	cfg.Handlers = append(cfg.Handlers, runnerACMiddleware)
 
-	cfg.Handlers = append(cfg.Handlers, trimresult.New(nil))
+	trimResultMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(trimresult.New(nil))
+	if err != nil {
+		return nil, fmt.Errorf("adapt trim result middleware: %w", err)
+	}
+	cfg.Handlers = append(cfg.Handlers, trimResultMiddleware)
 
 	if b.enableSummary {
 		maxTokens := summary.DefaultMaxTokensBeforeSummary
@@ -208,13 +232,17 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 			}
 		}
 		summaryMiddleware, err := summary.New(ctx, &summary.Config{
-			Model:                  chatModel,
+			Model:                  coreModel,
 			MaxTokensBeforeSummary: maxTokens,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("init summary middleware: %w", err)
 		}
-		cfg.Handlers = append(cfg.Handlers, summaryMiddleware)
+		runnerSummaryMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(summaryMiddleware)
+		if err != nil {
+			return nil, fmt.Errorf("adapt summary middleware: %w", err)
+		}
+		cfg.Handlers = append(cfg.Handlers, runnerSummaryMiddleware)
 	}
 
 	if b.enableSkills {
@@ -222,7 +250,11 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		if err != nil {
 			return nil, fmt.Errorf("init skills middleware: %w", err)
 		}
-		cfg.Handlers = append(cfg.Handlers, skillsMiddleware)
+		runnerSkillsMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(skillsMiddleware)
+		if err != nil {
+			return nil, fmt.Errorf("adapt skills middleware: %w", err)
+		}
+		cfg.Handlers = append(cfg.Handlers, runnerSkillsMiddleware)
 	}
 
 	if b.enableDispatch {
@@ -230,18 +262,30 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 			b.dispatchConfig = &dispatch.Config{}
 		}
 		if b.dispatchConfig.Model == nil {
-			b.dispatchConfig.Model = chatModel
+			b.dispatchConfig.Model = coreModel
 		}
 		dispatchMiddleware, err := dispatch.New(ctx, b.dispatchConfig)
 		if err != nil {
 			return nil, fmt.Errorf("init dispatch middleware: %w", err)
 		}
-		cfg.Handlers = append(cfg.Handlers, dispatchMiddleware)
+		runnerDispatchMiddleware, err := einoruntime.AdaptAgentMiddlewareForRunner(dispatchMiddleware)
+		if err != nil {
+			return nil, fmt.Errorf("adapt dispatch middleware: %w", err)
+		}
+		cfg.Handlers = append(cfg.Handlers, runnerDispatchMiddleware)
 	}
 
-	cfg.Handlers = append(cfg.Handlers, b.handlers...)
+	runnerHandlers, err := einoruntime.AdaptAgentMiddlewaresForRunner(b.handlers)
+	if err != nil {
+		return nil, fmt.Errorf("adapt custom middleware: %w", err)
+	}
+	cfg.Handlers = append(cfg.Handlers, runnerHandlers...)
 
-	return adk.NewChatModelAgent(ctx, cfg)
+	agent, err := adk.NewChatModelAgent(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return einoruntime.WrapNamedAgent(b.name, b.description, agent), nil
 }
 
 // unknownToolsHandler 处理模型幻觉出的不存在的工具调用，

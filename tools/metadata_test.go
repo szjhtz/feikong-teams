@@ -2,18 +2,25 @@ package tools
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/tools/approval"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 type stubTool struct {
-	info *schema.ToolInfo
+	info *agentcore.ToolInfo
 }
 
-func (t stubTool) Info(context.Context) (*schema.ToolInfo, error) {
+func (t stubTool) Info(context.Context) (*agentcore.ToolInfo, error) {
 	return t.info, nil
+}
+
+func (t stubTool) Handler() any {
+	return nil
+}
+
+func (t stubTool) RuntimeTool() any {
+	return nil
 }
 
 func mustPolicy(t *testing.T, name string) ToolPolicy {
@@ -107,7 +114,7 @@ func TestPolicyIncludesApprovalAndExternalPath(t *testing.T) {
 }
 
 func TestClassifyToolSetsMetadata(t *testing.T) {
-	readTool := stubTool{info: &schema.ToolInfo{Name: "git_status"}}
+	readTool := stubTool{info: &agentcore.ToolInfo{Name: "git_status"}}
 	ClassifyTool(readTool)
 	if readTool.info.Extra[metaReadOnly] != true {
 		t.Fatalf("expected read-only metadata for git_status")
@@ -116,7 +123,7 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 		t.Fatalf("did not expect destructive metadata for git_status")
 	}
 
-	writeTool := stubTool{info: &schema.ToolInfo{Name: "git_clean"}}
+	writeTool := stubTool{info: &agentcore.ToolInfo{Name: "git_clean"}}
 	ClassifyTool(writeTool)
 	if writeTool.info.Extra[metaReadOnly] == true {
 		t.Fatalf("did not expect read-only metadata for git_clean")
@@ -127,7 +134,7 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 }
 
 func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
-	fileTool := stubTool{info: &schema.ToolInfo{Name: "file_read"}}
+	fileTool := stubTool{info: &agentcore.ToolInfo{Name: "file_read"}}
 	ClassifyTool(fileTool)
 	if fileTool.info.Extra[metaReadOnly] != true {
 		t.Fatal("expected read-only metadata")
@@ -139,7 +146,7 @@ func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
 		t.Fatal("expected external path metadata")
 	}
 
-	scriptTool := stubTool{info: &schema.ToolInfo{Name: "bun_run_script"}}
+	scriptTool := stubTool{info: &agentcore.ToolInfo{Name: "bun_run_script"}}
 	ClassifyTool(scriptTool)
 	if scriptTool.info.Extra[metaDestructive] != true {
 		t.Fatal("expected destructive metadata")

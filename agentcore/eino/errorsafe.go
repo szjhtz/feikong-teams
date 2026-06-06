@@ -1,5 +1,4 @@
-// Package common provides shared utilities for agents.
-package common
+package eino
 
 import (
 	"context"
@@ -13,13 +12,11 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// errorSafeAgent 包装子智能体，捕获其运行时的错误（如网络中断、API 超时、超出迭代上限等），
-// 将其转换为文本消息返回，而非让错误穿透终止整个对话。
+// errorSafeAgent 包装子智能体，捕获其运行时错误并转换为文本消息。
 type errorSafeAgent struct {
 	inner adk.Agent
 }
 
-// WrapErrorSafe 将智能体包装为错误安全版本。
 func WrapErrorSafe(agent adk.Agent) adk.Agent {
 	return &errorSafeAgent{inner: agent}
 }

@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	agentscommon "fkteams/agents/common"
 	"fkteams/internal/testmodel"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -18,17 +19,19 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	cm := testmodel.New(schema.AssistantMessage("builder-ok", nil))
 
 	agent, err := agentscommon.NewAgentBuilder("builder_test", "builder test agent").
-		WithModel(cm).
-		WithTemplate(prompt.FromMessages(schema.FString,
-			schema.SystemMessage("you are a {role}"),
-		)).
+		WithModel(agentcore.WrapRuntimeChatModel(cm)).
+		WithInstruction("you are a {role}").
 		WithTemplateVar("role", "tester").
 		Build(ctx)
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	events := drainAgent(t, agent, schema.UserMessage("ping"))
+	runnerAgent, err := einoruntime.AdaptAgentForRunner(agent)
+	if err != nil {
+		t.Fatalf("adapt agent: %v", err)
+	}
+	events := drainAgent(t, runnerAgent, schema.UserMessage("ping"))
 	if len(events) == 0 {
 		t.Fatal("expected at least one event")
 	}

@@ -1,11 +1,11 @@
 package mcp
 
-import "github.com/cloudwego/eino/components/tool"
+import "fkteams/agentcore"
 
 type ToolGroup struct {
 	Name  string
 	Desc  string
-	Tools []tool.BaseTool
+	Tools []agentcore.Tool
 }
 
 type DictToolGroup map[string]ToolGroup

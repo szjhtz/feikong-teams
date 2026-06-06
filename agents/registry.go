@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/agents/analyst"
 	assistantagent "fkteams/agents/assistant"
 	"fkteams/agents/coder"
@@ -11,7 +12,6 @@ import (
 	"fkteams/config"
 	"sync"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/pterm/pterm"
 )
 
@@ -20,7 +20,7 @@ type AgentInfo struct {
 	Name        string
 	Description string
 	Aliases     []string
-	Creator     func(ctx context.Context) adk.Agent
+	Creator     func(ctx context.Context) agentcore.Agent
 }
 
 var (
@@ -45,7 +45,7 @@ func buildRegistry() {
 	type agentCreator struct {
 		name    string
 		aliases []string
-		creator func(ctx context.Context) (adk.Agent, error)
+		creator func(ctx context.Context) (agentcore.Agent, error)
 	}
 
 	// 基础智能体（始终可用）
@@ -79,11 +79,11 @@ func buildRegistry() {
 			continue
 		}
 		Registry = append(Registry, AgentInfo{
-			Name:        agent.Name(ctx),
-			Description: agent.Description(ctx),
+			Name:        agent.Name(),
+			Description: agent.Description(),
 			Aliases:     c.aliases,
-			Creator: func(cachedAgent adk.Agent) func(ctx context.Context) adk.Agent {
-				return func(ctx context.Context) adk.Agent {
+			Creator: func(cachedAgent agentcore.Agent) func(ctx context.Context) agentcore.Agent {
+				return func(ctx context.Context) agentcore.Agent {
 					return cachedAgent
 				}
 			}(agent),
@@ -142,8 +142,8 @@ func loadCustomAgents(ctx context.Context) {
 		Registry = append(Registry, AgentInfo{
 			Name:        agentCfg.Name,
 			Description: agentCfg.Desc,
-			Creator: func(cachedAgent adk.Agent) func(ctx context.Context) adk.Agent {
-				return func(ctx context.Context) adk.Agent {
+			Creator: func(cachedAgent agentcore.Agent) func(ctx context.Context) agentcore.Agent {
+				return func(ctx context.Context) agentcore.Agent {
 					return cachedAgent
 				}
 			}(agent),
@@ -178,12 +178,12 @@ func GetAgentByName(name string) *AgentInfo {
 }
 
 // GetTeamAgents 获取团队模式的智能体列表
-func GetTeamAgents(ctx context.Context) []adk.Agent {
+func GetTeamAgents(ctx context.Context) []agentcore.Agent {
 	initRegistry()
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
-	var subAgents []adk.Agent
+	var subAgents []agentcore.Agent
 	for _, agentInfo := range Registry {
 		subAgents = append(subAgents, agentInfo.Creator(ctx))
 	}

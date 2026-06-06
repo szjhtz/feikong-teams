@@ -2,15 +2,15 @@ package patch
 
 import (
 	"context"
+	"fkteams/agentcore"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/middlewares/patchtoolcalls"
 )
 
-func New(ctx context.Context) (adk.ChatModelAgentMiddleware, error) {
+func New(ctx context.Context) (agentcore.AgentMiddleware, error) {
 	chatModelAgentMiddleware, err := patchtoolcalls.New(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	return chatModelAgentMiddleware, nil
+	return agentcore.WrapRuntimeAgentMiddleware(chatModelAgentMiddleware), nil
 }

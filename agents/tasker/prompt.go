@@ -1,10 +1,5 @@
 package tasker
 
-import (
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
-)
-
 var taskerPrompt = `# Role: Tasker — Autonomous Background Task Executor
 
 ## Identity
@@ -100,7 +95,3 @@ If you genuinely cannot complete the task after exhausting all approaches (outpu
 - **任务结论**: state "无法完成: <原因>"
 - **已尝试方法**: list every approach you tried
 - **建议**: what could help (different timing, different data source, etc.)`
-
-var taskerPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(taskerPrompt),
-)

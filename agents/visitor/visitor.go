@@ -6,10 +6,10 @@ import (
 	"fkteams/config"
 	"fmt"
 
-	"github.com/cloudwego/eino/adk"
+	"fkteams/agentcore"
 )
 
-func NewAgent(ctx context.Context) (adk.Agent, error) {
+func NewAgent(ctx context.Context) (agentcore.Agent, error) {
 	sshCfg := config.Get().Agents.SSHVisitor
 
 	if sshCfg.Host == "" || sshCfg.Username == "" || sshCfg.Password == "" {
@@ -19,7 +19,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 	fmt.Printf("[tips] SSH 访问者智能体已初始化，连接到: %s (用户: %s)\n", sshCfg.Host, sshCfg.Username)
 
 	return common.NewAgentBuilder("remote", "远程运维专家，负责通过 SSH 管理服务器、执行命令和传输文件。").
-		WithTemplate(visitorPromptTemplate).
+		WithInstruction(visitorPrompt).
 		WithTemplateVar("ssh_host", sshCfg.Host).
 		WithTemplateVar("ssh_username", sshCfg.Username).
 		WithToolNames("ssh").

@@ -1,7 +1,7 @@
 package tools
 
 import (
-	"context"
+	"fkteams/agentcore"
 	"fkteams/common"
 	"fkteams/config"
 	"fkteams/g"
@@ -23,8 +23,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/cloudwego/eino/components/tool"
 )
 
 var cmdCleanupOnce sync.Once
@@ -39,7 +37,7 @@ func runtimeDir() string {
 	return filepath.Join(common.AppDir(), "runtime")
 }
 
-func GetToolsByName(name string) ([]tool.BaseTool, error) {
+func GetToolsByName(name string) ([]agentcore.Tool, error) {
 	switch name {
 	case "file":
 		fileTools, err := file.NewFileTools(workspacePath())
@@ -98,8 +96,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		}
 		return s.GetTools()
 	case "search":
-		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
-		return []tool.BaseTool{duckduckgoTool}, err
+		return search.GetTools()
 	case "fetch":
 		return fetch.GetTools()
 	case "doc":

@@ -1,10 +1,5 @@
 package discussant
 
-import (
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
-)
-
 var discussantPrompt = `
 # Role: 圆桌讨论者 (Roundtable Discussant)
 
@@ -95,6 +90,3 @@ var discussantPrompt = `
 - 自信表达观点，同时接受被反驳的可能。
 - 将“追求更好答案”置于“保持一致”之上。
 `
-var discussantPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(discussantPrompt),
-)

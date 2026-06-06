@@ -4,10 +4,8 @@ package ask
 import (
 	"context"
 	"encoding/gob"
+	"fkteams/agentcore"
 	"fmt"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
 )
 
 func init() {
@@ -58,11 +56,11 @@ func AskQuestions(ctx context.Context, req *AskRequest) (*AskResult, error) {
 	}
 
 	// 检查是否从中断恢复
-	wasInterrupted, _, _ := tool.GetInterruptState[any](ctx)
+	wasInterrupted, _, _ := agentcore.GetInterruptState(ctx)
 	if wasInterrupted {
-		isTarget, hasData, resp := tool.GetResumeContext[*AskResponse](ctx)
+		isTarget, hasData, resp := agentcore.GetResumeContext[*AskResponse](ctx)
 		if !isTarget {
-			return nil, tool.Interrupt(ctx, nil)
+			return nil, agentcore.RequestInterrupt(ctx, nil)
 		}
 		if hasData && resp != nil {
 			return &AskResult{
@@ -74,12 +72,12 @@ func AskQuestions(ctx context.Context, req *AskRequest) (*AskResult, error) {
 	}
 
 	// 首次调用，触发中断
-	return nil, tool.Interrupt(ctx, info)
+	return nil, agentcore.RequestInterrupt(ctx, info)
 }
 
 // GetTools 返回 askQuestions 工具
-func GetTools() ([]tool.BaseTool, error) {
-	askTool, err := utils.InferTool(
+func GetTools() ([]agentcore.Tool, error) {
+	askTool, err := agentcore.InferTool(
 		"ask_questions",
 		`向用户提出问题，收集用户输入、观点或让用户做出选择。
 
@@ -101,5 +99,5 @@ func GetTools() ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []tool.BaseTool{askTool}, nil
+	return []agentcore.Tool{askTool}, nil
 }

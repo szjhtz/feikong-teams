@@ -5,16 +5,17 @@ import (
 	"context"
 	"sync"
 
+	"fkteams/agentcore"
 	"fkteams/tools"
 
 	"github.com/cloudwego/eino/compose"
 )
 
-// New 创建 ToolMiddleware，破坏性工具通过互斥锁串行执行
-func New() compose.ToolMiddleware {
+// New 创建工具中间件，破坏性工具通过互斥锁串行执行
+func New() agentcore.ToolMiddleware {
 	var mu sync.Mutex
 
-	return compose.ToolMiddleware{
+	return agentcore.WrapRuntimeToolMiddleware(compose.ToolMiddleware{
 		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 				if tools.ShouldSerializeTool(input.Name) {
@@ -24,5 +25,5 @@ func New() compose.ToolMiddleware {
 				return next(ctx, input)
 			}
 		},
-	}
+	})
 }

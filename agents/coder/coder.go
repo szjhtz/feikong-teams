@@ -4,12 +4,12 @@ import (
 	"context"
 	"fkteams/agents/common"
 
-	"github.com/cloudwego/eino/adk"
+	"fkteams/agentcore"
 )
 
-func NewAgent(ctx context.Context) (adk.Agent, error) {
+func NewAgent(ctx context.Context) (agentcore.Agent, error) {
 	return common.NewAgentBuilder("coder", "软件工程师，负责代码实现、调试、重构和工程验证。").
-		WithTemplate(coderPromptTemplate).
+		WithInstruction(coderPrompt).
 		WithToolNames("file", "command").
 		WithSummary().
 		WithSkills().

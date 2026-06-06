@@ -3,11 +3,10 @@ package approval
 import (
 	"context"
 	"errors"
+	"fkteams/agentcore"
 	"fmt"
 	"path/filepath"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
 )
 
 const (
@@ -170,11 +169,11 @@ func Require(ctx context.Context, storeName, key, info string) error {
 		return nil
 	}
 
-	wasInterrupted, _, _ := tool.GetInterruptState[any](ctx)
+	wasInterrupted, _, _ := agentcore.GetInterruptState(ctx)
 	if wasInterrupted {
-		isTarget, hasData, decision := tool.GetResumeContext[int](ctx)
+		isTarget, hasData, decision := agentcore.GetResumeContext[int](ctx)
 		if !isTarget {
-			return tool.Interrupt(ctx, nil)
+			return agentcore.RequestInterrupt(ctx, nil)
 		}
 		if hasData {
 			switch decision {
@@ -195,7 +194,7 @@ func Require(ctx context.Context, storeName, key, info string) error {
 		return ErrRejected
 	}
 
-	return tool.Interrupt(ctx, info)
+	return agentcore.RequestInterrupt(ctx, info)
 }
 
 // RequireOperation 使用统一格式发起一次人工审批。

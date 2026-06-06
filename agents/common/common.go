@@ -3,12 +3,11 @@ package common
 
 import (
 	"context"
+	"fkteams/agentcore"
 	rootcommon "fkteams/common"
 	"fkteams/config"
 	"fkteams/providers"
 	"fmt"
-
-	"github.com/cloudwego/eino/components/model"
 )
 
 // MaxIterations 返回智能体最大迭代次数
@@ -27,7 +26,7 @@ func WorkspaceDir() string {
 }
 
 // NewChatModel 使用配置文件的 default 模型创建聊天模型
-func NewChatModel() (model.ToolCallingChatModel, error) {
+func NewChatModel() (agentcore.ChatModel, error) {
 	cfg := config.Get()
 	modelCfg := cfg.ResolveModel("default")
 	if modelCfg != nil && (modelCfg.APIKey != "" || modelCfg.Provider != "") {
@@ -37,7 +36,7 @@ func NewChatModel() (model.ToolCallingChatModel, error) {
 }
 
 // NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
-func NewChatModelWithModelConfig(mc *config.ModelConfig) (model.ToolCallingChatModel, error) {
+func NewChatModelWithModelConfig(mc *config.ModelConfig) (agentcore.ChatModel, error) {
 	return providers.NewChatModel(context.Background(), &providers.Config{
 		Provider:     providers.Type(mc.Provider),
 		APIKey:       mc.APIKey,
@@ -48,7 +47,7 @@ func NewChatModelWithModelConfig(mc *config.ModelConfig) (model.ToolCallingChatM
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型
-func NewChatModelWithConfig(cfg *providers.Config) (model.ToolCallingChatModel, error) {
+func NewChatModelWithConfig(cfg *providers.Config) (agentcore.ChatModel, error) {
 	return providers.NewChatModel(context.Background(), cfg)
 }
 

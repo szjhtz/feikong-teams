@@ -4,6 +4,8 @@ package dispatch
 
 import (
 	"context"
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fmt"
 	"time"
 
@@ -22,11 +24,11 @@ const (
 
 // Config 分发中间件配置。未指定工具时子智能体自动继承父智能体的工具。
 type Config struct {
-	Model          model.ToolCallingChatModel // 子智能体模型（由 AgentBuilder 自动填充）
-	ToolNames      []string                   // 工具名称，通过 tools.GetToolsByName 解析
-	Tools          []tool.BaseTool            // 工具实例，与 ToolNames 合并
-	MaxConcurrency int                        // 最大并发数（默认 3）
-	TaskTimeout    time.Duration              // 单任务超时（默认 30min）
+	Model          agentcore.ChatModel // 子智能体模型（由 AgentBuilder 自动填充）
+	ToolNames      []string            // 工具名称，通过 tools.GetToolsByName 解析
+	Tools          []agentcore.Tool    // 工具实例，与 ToolNames 合并
+	MaxConcurrency int                 // 最大并发数（默认 3）
+	TaskTimeout    time.Duration       // 单任务超时（默认 30min）
 }
 
 func (c *Config) defaults() {
@@ -39,13 +41,17 @@ func (c *Config) defaults() {
 }
 
 // New 创建分发中间件
-func New(_ context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
+func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 	if cfg.Model == nil {
 		return nil, fmt.Errorf("dispatch: Model is required")
 	}
 	cfg.defaults()
+	chatModel, err := einoruntime.AdaptChatModelForRunner(cfg.Model)
+	if err != nil {
+		return nil, fmt.Errorf("dispatch: adapt model: %w", err)
+	}
 
-	var resolved []tool.BaseTool
+	var resolved []agentcore.Tool
 	for _, name := range cfg.ToolNames {
 		t, err := tools.GetToolsByName(name)
 		if err != nil {
@@ -54,12 +60,18 @@ func New(_ context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
 		resolved = append(resolved, t...)
 	}
 
-	return &middleware{
-		chatModel:      cfg.Model,
-		tools:          append(resolved, cfg.Tools...),
+	coreTools := append(resolved, cfg.Tools...)
+	runnerTools, err := einoruntime.AdaptToolsForRunner(ctx, coreTools)
+	if err != nil {
+		return nil, fmt.Errorf("dispatch: adapt tools: %w", err)
+	}
+
+	return agentcore.WrapRuntimeAgentMiddleware(&middleware{
+		chatModel:      chatModel,
+		tools:          runnerTools,
 		maxConcurrency: int64(cfg.MaxConcurrency),
 		taskTimeout:    cfg.TaskTimeout,
-	}, nil
+	}), nil
 }
 
 type middleware struct {

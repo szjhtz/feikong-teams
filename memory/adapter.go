@@ -2,6 +2,8 @@ package memory
 
 import (
 	"context"
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -14,9 +16,13 @@ type einoLLMAdapter struct {
 	model model.BaseChatModel
 }
 
-// NewLLMClient 基于 Eino BaseChatModel 创建 LLMClient
-func NewLLMClient(m model.BaseChatModel) LLMClient {
-	return &einoLLMAdapter{model: m}
+// NewLLMClient 基于核心模型创建 LLMClient
+func NewLLMClient(m agentcore.ChatModel) (LLMClient, error) {
+	chatModel, err := einoruntime.AdaptChatModelForRunner(m)
+	if err != nil {
+		return nil, err
+	}
+	return &einoLLMAdapter{model: chatModel}, nil
 }
 
 func (a *einoLLMAdapter) Complete(ctx context.Context, prompt string) (string, error) {

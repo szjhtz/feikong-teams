@@ -125,7 +125,7 @@ func resolveFactory(ctx context.Context, mode, agentName string, fallbackToTeam 
 			return "", nil, fmt.Errorf("unknown mode or agent: %s", mode)
 		}
 		return agentCacheKey(mode), func() (agentcore.Runner, error) {
-			return CreateAgentRunner(ctx, info.Creator(ctx)), nil
+			return CreateAgentRunner(ctx, info.Creator(ctx))
 		}, nil
 	}
 }
@@ -135,7 +135,7 @@ func createAgentRunnerByName(ctx context.Context, agentName string) (agentcore.R
 	if agentInfo == nil {
 		return nil, fmt.Errorf("agent not found: %s", agentName)
 	}
-	return CreateAgentRunner(ctx, agentInfo.Creator(ctx)), nil
+	return CreateAgentRunner(ctx, agentInfo.Creator(ctx))
 }
 
 func agentCacheKey(agentName string) string {

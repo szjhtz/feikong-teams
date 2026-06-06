@@ -2,6 +2,7 @@ package destructiveguard
 
 import (
 	"context"
+	einoruntime "fkteams/agentcore/eino"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,7 +12,7 @@ import (
 )
 
 func TestDestructiveToolsSerialized(t *testing.T) {
-	guard := New()
+	guard := newRunnerGuard(t)
 
 	var concurrentCount int32
 	var maxConcurrent int32
@@ -48,7 +49,7 @@ func TestDestructiveToolsSerialized(t *testing.T) {
 }
 
 func TestReadOnlyToolsParallel(t *testing.T) {
-	guard := New()
+	guard := newRunnerGuard(t)
 
 	var concurrentCount int32
 	var maxConcurrent int32
@@ -85,7 +86,7 @@ func TestReadOnlyToolsParallel(t *testing.T) {
 }
 
 func TestMixedReadWrite(t *testing.T) {
-	guard := New()
+	guard := newRunnerGuard(t)
 
 	var concurrentCount int32
 	var maxConcurrent int32
@@ -120,4 +121,14 @@ func TestMixedReadWrite(t *testing.T) {
 		t.Errorf("reads should be parallel with writes pending: maxConcurrent=%d", maxConcurrent)
 	}
 	t.Logf("OK: mixed reads parallel (max=%d), writes serialized", maxConcurrent)
+}
+
+func newRunnerGuard(t *testing.T) compose.ToolMiddleware {
+	t.Helper()
+
+	guard, err := einoruntime.AdaptToolMiddlewareForRunner(New())
+	if err != nil {
+		t.Fatalf("adapt guard: %v", err)
+	}
+	return guard
 }

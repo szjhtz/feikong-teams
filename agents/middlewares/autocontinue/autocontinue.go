@@ -6,6 +6,7 @@ package autocontinue
 import (
 	"context"
 	"encoding/json"
+	"fkteams/agentcore"
 	"fmt"
 	"strings"
 
@@ -55,21 +56,29 @@ func continueTool(_ context.Context, input *continueToolInput) (string, error) {
 	return continueTextPrompt, nil
 }
 
-// ContinueTool 返回 continue_output 工具实例
-func ContinueTool() (tool.BaseTool, error) {
+func newContinueTool() (tool.BaseTool, error) {
 	return utils.InferTool(toolName, toolDesc, continueTool)
 }
 
-// NewHandler 创建自动续接中间件，包含工具注册和 AfterModel 钩子。
-func NewHandler() (adk.ChatModelAgentMiddleware, error) {
-	t, err := ContinueTool()
+// ContinueTool 返回 continue_output 工具实例
+func ContinueTool() (agentcore.Tool, error) {
+	t, err := newContinueTool()
 	if err != nil {
 		return nil, err
 	}
-	return &handler{
+	return agentcore.WrapRuntimeTool(t), nil
+}
+
+// NewHandler 创建自动续接中间件，包含工具注册和 AfterModel 钩子。
+func NewHandler() (agentcore.AgentMiddleware, error) {
+	t, err := newContinueTool()
+	if err != nil {
+		return nil, err
+	}
+	return agentcore.WrapRuntimeAgentMiddleware(&handler{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 		continueTool:                 t,
-	}, nil
+	}), nil
 }
 
 type handler struct {

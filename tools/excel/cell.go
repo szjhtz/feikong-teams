@@ -11,10 +11,10 @@ import (
 
 // SetCellValueRequest 设置单元格值请求
 type SetCellValueRequest struct {
-	Path      string      `json:"path" jsonschema:"description=工作簿文件路径,required"`
-	SheetName string      `json:"sheet_name" jsonschema:"description=工作表名称,required"`
-	Cell      string      `json:"cell" jsonschema:"description=单元格坐标(如A1),required"`
-	Value     any `json:"value" jsonschema:"description=单元格值,required"`
+	Path      string `json:"path" jsonschema:"description=工作簿文件路径,required"`
+	SheetName string `json:"sheet_name" jsonschema:"description=工作表名称,required"`
+	Cell      string `json:"cell" jsonschema:"description=单元格坐标(如A1),required"`
+	Value     any    `json:"value" jsonschema:"description=单元格值,required"`
 }
 
 // SetCellValueResponse 设置单元格值响应

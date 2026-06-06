@@ -2,14 +2,10 @@ package custom
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/agents/common"
 	"fkteams/providers"
 	"fmt"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 type Model struct {
@@ -25,16 +21,12 @@ type Config struct {
 	SystemPrompt string
 	Model        Model
 	ToolNames    []string
-	Tools        []tool.BaseTool
+	Tools        []agentcore.Tool
 }
 
-func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error) {
-	customPromptTemplate := prompt.FromMessages(schema.FString,
-		schema.SystemMessage(cfg.SystemPrompt),
-	)
-
+func NewAgent(ctx context.Context, cfg Config) (agentcore.Agent, error) {
 	builder := common.NewAgentBuilder(cfg.Name, cfg.Description).
-		WithTemplate(customPromptTemplate).
+		WithInstruction(cfg.SystemPrompt).
 		WithTools(cfg.Tools...).
 		WithToolNames(cfg.ToolNames...).
 		WithSummary().

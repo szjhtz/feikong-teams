@@ -167,7 +167,12 @@ func resetMemoryLLM() {
 		log.Printf("[memory] 重建模型失败，记忆服务继续使用旧模型: %v", err)
 		return
 	}
-	g.MemoryManager.ResetLLM(memory.NewLLMClient(chatModel))
+	llmClient, err := memory.NewLLMClient(chatModel)
+	if err != nil {
+		log.Printf("[memory] 适配模型失败，记忆服务继续使用旧模型: %v", err)
+		return
+	}
+	g.MemoryManager.ResetLLM(llmClient)
 	log.Println("[memory] 记忆服务模型已更新")
 }
 

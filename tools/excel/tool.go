@@ -1,14 +1,13 @@
 package excel
 
 import (
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	"fkteams/agentcore"
 )
 
 // GetTools 返回所有Excel相关工具
-func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
+func (et *ExcelTools) GetTools() ([]agentcore.Tool, error) {
 	// 工作簿操作
-	createWorkbookTool, err := utils.InferTool(
+	createWorkbookTool, err := agentcore.InferTool(
 		"excel_create_workbook",
 		"创建新的Excel工作簿",
 		et.CreateWorkbook,
@@ -17,7 +16,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	openWorkbookTool, err := utils.InferTool(
+	openWorkbookTool, err := agentcore.InferTool(
 		"excel_open_workbook",
 		"打开Excel工作簿并获取信息",
 		et.OpenWorkbook,
@@ -26,7 +25,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	saveWorkbookTool, err := utils.InferTool(
+	saveWorkbookTool, err := agentcore.InferTool(
 		"excel_save_workbook",
 		"保存Excel工作簿",
 		et.SaveWorkbook,
@@ -35,7 +34,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setWorkbookPropsTool, err := utils.InferTool(
+	setWorkbookPropsTool, err := agentcore.InferTool(
 		"excel_set_workbook_props",
 		"设置Excel工作簿属性",
 		et.SetWorkbookProps,
@@ -45,7 +44,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 	}
 
 	// 工作表操作
-	createSheetTool, err := utils.InferTool(
+	createSheetTool, err := agentcore.InferTool(
 		"excel_create_sheet",
 		"创建新工作表",
 		et.CreateSheet,
@@ -54,7 +53,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	deleteSheetTool, err := utils.InferTool(
+	deleteSheetTool, err := agentcore.InferTool(
 		"excel_delete_sheet",
 		"删除工作表",
 		et.DeleteSheet,
@@ -63,7 +62,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	renameSheetTool, err := utils.InferTool(
+	renameSheetTool, err := agentcore.InferTool(
 		"excel_rename_sheet",
 		"重命名工作表",
 		et.RenameSheet,
@@ -72,7 +71,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	copySheetTool, err := utils.InferTool(
+	copySheetTool, err := agentcore.InferTool(
 		"excel_copy_sheet",
 		"复制工作表",
 		et.CopySheet,
@@ -81,7 +80,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setActiveSheetTool, err := utils.InferTool(
+	setActiveSheetTool, err := agentcore.InferTool(
 		"excel_set_active_sheet",
 		"设置活动工作表",
 		et.SetActiveSheet,
@@ -90,7 +89,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setSheetVisibleTool, err := utils.InferTool(
+	setSheetVisibleTool, err := agentcore.InferTool(
 		"excel_set_sheet_visible",
 		"设置工作表可见性",
 		et.SetSheetVisible,
@@ -100,7 +99,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 	}
 
 	// 单元格操作
-	setCellValueTool, err := utils.InferTool(
+	setCellValueTool, err := agentcore.InferTool(
 		"excel_set_cell_value",
 		"设置单元格值",
 		et.SetCellValue,
@@ -109,7 +108,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	getCellValueTool, err := utils.InferTool(
+	getCellValueTool, err := agentcore.InferTool(
 		"excel_get_cell_value",
 		"获取单元格值",
 		et.GetCellValue,
@@ -118,7 +117,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setCellFormulaTool, err := utils.InferTool(
+	setCellFormulaTool, err := agentcore.InferTool(
 		"excel_set_cell_formula",
 		"设置单元格公式",
 		et.SetCellFormula,
@@ -127,7 +126,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	mergeCellsTool, err := utils.InferTool(
+	mergeCellsTool, err := agentcore.InferTool(
 		"excel_merge_cells",
 		"合并单元格",
 		et.MergeCells,
@@ -136,7 +135,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	unmergeCellsTool, err := utils.InferTool(
+	unmergeCellsTool, err := agentcore.InferTool(
 		"excel_unmerge_cells",
 		"取消合并单元格",
 		et.UnmergeCells,
@@ -145,7 +144,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setCellStyleTool, err := utils.InferTool(
+	setCellStyleTool, err := agentcore.InferTool(
 		"excel_set_cell_style",
 		"设置单元格样式",
 		et.SetCellStyle,
@@ -155,7 +154,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 	}
 
 	// 数据操作
-	getRowsTool, err := utils.InferTool(
+	getRowsTool, err := agentcore.InferTool(
 		"excel_get_rows",
 		"获取工作表所有行数据",
 		et.GetRows,
@@ -164,7 +163,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	getRowTool, err := utils.InferTool(
+	getRowTool, err := agentcore.InferTool(
 		"excel_get_row",
 		"获取指定行的数据",
 		et.GetRow,
@@ -173,7 +172,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	getColTool, err := utils.InferTool(
+	getColTool, err := agentcore.InferTool(
 		"excel_get_col",
 		"获取指定列的数据",
 		et.GetCol,
@@ -182,7 +181,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	getSheetDataTool, err := utils.InferTool(
+	getSheetDataTool, err := agentcore.InferTool(
 		"excel_get_sheet_data",
 		"获取指定工作表的所有数据",
 		et.GetSheetData,
@@ -191,7 +190,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	getAllSheetsDataTool, err := utils.InferTool(
+	getAllSheetsDataTool, err := agentcore.InferTool(
 		"excel_get_all_sheets_data",
 		"获取所有工作表的数据",
 		et.GetAllSheetsData,
@@ -200,7 +199,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setRowHeightTool, err := utils.InferTool(
+	setRowHeightTool, err := agentcore.InferTool(
 		"excel_set_row_height",
 		"设置行高",
 		et.SetRowHeight,
@@ -209,7 +208,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setColWidthTool, err := utils.InferTool(
+	setColWidthTool, err := agentcore.InferTool(
 		"excel_set_col_width",
 		"设置列宽",
 		et.SetColWidth,
@@ -218,7 +217,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	insertRowTool, err := utils.InferTool(
+	insertRowTool, err := agentcore.InferTool(
 		"excel_insert_row",
 		"插入行",
 		et.InsertRow,
@@ -227,7 +226,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	removeRowTool, err := utils.InferTool(
+	removeRowTool, err := agentcore.InferTool(
 		"excel_remove_row",
 		"删除行",
 		et.RemoveRow,
@@ -236,7 +235,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	insertColTool, err := utils.InferTool(
+	insertColTool, err := agentcore.InferTool(
 		"excel_insert_col",
 		"插入列",
 		et.InsertCol,
@@ -245,7 +244,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	removeColTool, err := utils.InferTool(
+	removeColTool, err := agentcore.InferTool(
 		"excel_remove_col",
 		"删除列",
 		et.RemoveCol,
@@ -255,7 +254,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 	}
 
 	// 样式操作
-	createStyleTool, err := utils.InferTool(
+	createStyleTool, err := agentcore.InferTool(
 		"excel_create_style",
 		"创建单元格样式",
 		et.CreateStyle,
@@ -264,7 +263,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	setConditionalFormatTool, err := utils.InferTool(
+	setConditionalFormatTool, err := agentcore.InferTool(
 		"excel_set_conditional_format",
 		"设置条件格式",
 		et.SetConditionalFormat,
@@ -274,7 +273,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 	}
 
 	// 图片和图表操作
-	addPictureTool, err := utils.InferTool(
+	addPictureTool, err := agentcore.InferTool(
 		"excel_add_picture",
 		"添加图片到工作表",
 		et.AddPicture,
@@ -283,7 +282,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	addChartTool, err := utils.InferTool(
+	addChartTool, err := agentcore.InferTool(
 		"excel_add_chart",
 		"添加图表到工作表",
 		et.AddChart,
@@ -293,7 +292,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 	}
 
 	// 批量操作
-	batchCreateSheetsTool, err := utils.InferTool(
+	batchCreateSheetsTool, err := agentcore.InferTool(
 		"excel_batch_create_sheets",
 		"批量创建工作表",
 		et.BatchCreateSheets,
@@ -302,7 +301,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchDeleteSheetsTool, err := utils.InferTool(
+	batchDeleteSheetsTool, err := agentcore.InferTool(
 		"excel_batch_delete_sheets",
 		"批量删除工作表",
 		et.BatchDeleteSheets,
@@ -311,7 +310,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchSetCellValuesTool, err := utils.InferTool(
+	batchSetCellValuesTool, err := agentcore.InferTool(
 		"excel_batch_set_cell_values",
 		"批量设置单元格值",
 		et.BatchSetCellValues,
@@ -320,7 +319,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchFillRowsTool, err := utils.InferTool(
+	batchFillRowsTool, err := agentcore.InferTool(
 		"excel_batch_fill_rows",
 		"批量填充行数据",
 		et.BatchFillRows,
@@ -329,7 +328,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchFillColsTool, err := utils.InferTool(
+	batchFillColsTool, err := agentcore.InferTool(
 		"excel_batch_fill_cols",
 		"批量填充列数据",
 		et.BatchFillCols,
@@ -338,7 +337,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchInsertRowsTool, err := utils.InferTool(
+	batchInsertRowsTool, err := agentcore.InferTool(
 		"excel_batch_insert_rows",
 		"批量插入行",
 		et.BatchInsertRows,
@@ -347,7 +346,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchRemoveRowsTool, err := utils.InferTool(
+	batchRemoveRowsTool, err := agentcore.InferTool(
 		"excel_batch_remove_rows",
 		"批量删除行",
 		et.BatchRemoveRows,
@@ -356,7 +355,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchInsertColsTool, err := utils.InferTool(
+	batchInsertColsTool, err := agentcore.InferTool(
 		"excel_batch_insert_cols",
 		"批量插入列",
 		et.BatchInsertCols,
@@ -365,7 +364,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchRemoveColsTool, err := utils.InferTool(
+	batchRemoveColsTool, err := agentcore.InferTool(
 		"excel_batch_remove_cols",
 		"批量删除列",
 		et.BatchRemoveCols,
@@ -374,7 +373,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	batchSetCellStylesTool, err := utils.InferTool(
+	batchSetCellStylesTool, err := agentcore.InferTool(
 		"excel_batch_set_cell_styles",
 		"批量设置单元格样式",
 		et.BatchSetCellStyles,
@@ -383,7 +382,7 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
-	return []tool.BaseTool{
+	return []agentcore.Tool{
 		// 工作簿
 		createWorkbookTool,
 		openWorkbookTool,

@@ -2,9 +2,8 @@ package tools
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/tools/approval"
-
-	"github.com/cloudwego/eino/components/tool"
 )
 
 const (
@@ -178,7 +177,7 @@ func ShouldSerializeTool(toolName string) bool {
 }
 
 // ClassifyTool 为工具设置策略元数据
-func ClassifyTool(t tool.BaseTool) {
+func ClassifyTool(t agentcore.Tool) {
 	info, err := t.Info(context.Background())
 	if err != nil {
 		return
@@ -209,7 +208,7 @@ func ClassifyTool(t tool.BaseTool) {
 }
 
 // ClassifyTools 批量为工具列表设置元数据
-func ClassifyTools(tools []tool.BaseTool) {
+func ClassifyTools(tools []agentcore.Tool) {
 	for _, t := range tools {
 		ClassifyTool(t)
 	}

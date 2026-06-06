@@ -2,12 +2,13 @@ package summary
 
 import (
 	"context"
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fkteams/fkevent"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/middlewares/summarization"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -25,10 +26,10 @@ func WithSummaryPersistCallback(ctx context.Context, cb SummaryPersistCallback) 
 
 type Config struct {
 	MaxTokensBeforeSummary int
-	Model                  model.BaseChatModel
+	Model                  agentcore.ChatModel
 }
 
-func New(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
+func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -40,9 +41,13 @@ func New(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error)
 	if cfg.MaxTokensBeforeSummary > 0 {
 		maxBefore = cfg.MaxTokensBeforeSummary
 	}
+	chatModel, err := einoruntime.AdaptChatModelForRunner(cfg.Model)
+	if err != nil {
+		return nil, err
+	}
 
-	return summarization.New(ctx, &summarization.Config{
-		Model: cfg.Model,
+	handler, err := summarization.New(ctx, &summarization.Config{
+		Model: chatModel,
 		Trigger: &summarization.TriggerCondition{
 			ContextTokens: maxBefore,
 		},
@@ -61,6 +66,10 @@ func New(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error)
 			return nil
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return agentcore.WrapRuntimeAgentMiddleware(handler), nil
 }
 
 func latestSummaryText(messages []*schema.Message) string {

@@ -5,6 +5,7 @@ package providers
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fmt"
 	"strings"
 
@@ -69,7 +70,7 @@ func Register(t Type, f Factory) {
 }
 
 // NewChatModel 根据配置创建聊天模型
-func NewChatModel(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
+func NewChatModel(ctx context.Context, cfg *Config) (agentcore.ChatModel, error) {
 	t := cfg.Provider
 	if t == "" {
 		t = Detect(cfg.BaseURL, cfg.Model)
@@ -80,12 +81,16 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ToolCallingChatModel,
 		return nil, fmt.Errorf("未知的模型提供者: %s", t)
 	}
 
-	return f(ctx, &internal.Config{
+	chatModel, err := f(ctx, &internal.Config{
 		APIKey:       cfg.APIKey,
 		BaseURL:      cfg.BaseURL,
 		Model:        cfg.Model,
 		ExtraHeaders: cfg.ExtraHeaders,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return agentcore.WrapRuntimeChatModel(chatModel), nil
 }
 
 // Detect 从 BaseURL 或模型名称自动检测提供者类型

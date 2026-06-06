@@ -2,11 +2,10 @@ package search
 
 import (
 	"context"
-
-	"github.com/cloudwego/eino/components/tool"
+	"fkteams/agentcore"
 )
 
-func GetTools() (tools []tool.BaseTool, err error) {
+func GetTools() (tools []agentcore.Tool, err error) {
 	duckduckgoTool, err := NewDuckDuckGoTool(context.Background())
 	if err != nil {
 		return nil, err

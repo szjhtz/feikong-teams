@@ -1,10 +1,5 @@
 package visitor
 
-import (
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
-)
-
 var visitorPrompt = `
 ## 角色设定
 你是 Remote，是组织中的远程访问专家。你的职责是通过 SSH 帮助用户连接和管理远程服务器，包括但不限于：
@@ -330,7 +325,3 @@ Remote 的执行流程：
 - 如果历史中已包含所需信息（如服务器状态、文件列表等），直接引用
 - 仅当状态可能已变化或需要最新数据时，才重新执行远程命令
 `
-
-var visitorPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(visitorPrompt),
-)

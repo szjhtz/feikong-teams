@@ -141,8 +141,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	var agentRunner agentcore.Runner
 	app.OnSetup(func(ctx context.Context) error {
 		agent := agentInfo.Creator(ctx)
-		agentRunner = runner.CreateAgentRunner(ctx, agent)
-		return nil
+		var err error
+		agentRunner, err = runner.CreateAgentRunner(ctx, agent)
+		return err
 	})
 
 	var session *cli.Session

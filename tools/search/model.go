@@ -78,10 +78,10 @@ const (
 
 type TextSearchRequest struct {
 	// Query is the user's search query
-	Query string `json:"query"`
+	Query string `json:"query" jsonschema:"description=The user's search query. The query is required.,required"`
 	// TimeRange is the search time range
 	// Default: TimeRangeAny
-	TimeRange TimeRange `json:"time_range"`
+	TimeRange TimeRange `json:"time_range,omitempty" jsonschema:"description=The time range of search results: d for past day; w for past week; m for past month; y for past year; empty for any time"`
 }
 
 // TextSearchResult represents a single search result.

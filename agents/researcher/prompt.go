@@ -1,10 +1,5 @@
 package researcher
 
-import (
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
-)
-
 var researcherPrompt = `
 # Role: Researcher - 非空小队情报搜索专家
 
@@ -58,7 +53,3 @@ var researcherPrompt = `
 - 如果历史中已包含所需信息，直接引用该结果，不再重复调用
 - 仅当信息明确过时、不完整或需要补充验证时，才重新调用工具
 `
-
-var researcherPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(researcherPrompt),
-)

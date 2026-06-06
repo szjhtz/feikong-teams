@@ -1,10 +1,5 @@
 package coordinator
 
-import (
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
-)
-
 var coordinatorPrompt = `
 # Coordinator — 非空小队核心工程智能体
 
@@ -120,7 +115,3 @@ var coordinatorPrompt = `
 
 重要提示：此背景信息可能与你的任务相关，也可能不相关。除非与任务高度相关，否则你不应针对此背景信息进行回应。
 `
-
-var coordinatorPromptTemplate = prompt.FromMessages(schema.FString,
-	schema.SystemMessage(coordinatorPrompt),
-)
