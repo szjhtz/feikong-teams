@@ -321,24 +321,25 @@ FKTeamsChat.prototype.registerMemberToolFlowAlias = function (entry, toolName, k
   entry.toolFlowKeyByName[toolName] = key;
 };
 
-FKTeamsChat.prototype.resolveMemberToolFlowKey = function (entry, event) {
-  if (event.tool_call_ref) {
-    const refKey = "ref:" + event.tool_call_ref;
-    if (event.tool_call_id) this.migrateMemberToolFlow(entry, "id:" + event.tool_call_id, refKey);
-    if (event.tool_call_index !== undefined && event.tool_call_index !== null) this.migrateMemberToolFlow(entry, "idx:" + event.tool_call_index, refKey);
-    const aliasKey = event.tool_name && entry?.toolFlowKeyByName ? entry.toolFlowKeyByName[event.tool_name] : "";
-    if (aliasKey && aliasKey !== refKey) this.migrateMemberToolFlow(entry, aliasKey, refKey);
-    return refKey;
-  }
-  const idKey = event.tool_call_id ? "id:" + event.tool_call_id : "";
-  const idxKey = event.tool_call_index !== undefined && event.tool_call_index !== null ? "idx:" + event.tool_call_index : "";
-  if (idKey) {
-    if (idxKey) this.migrateMemberToolFlow(entry, idxKey, idKey);
-    const aliasKey = event.tool_name && entry?.toolFlowKeyByName ? entry.toolFlowKeyByName[event.tool_name] : "";
-    if (aliasKey && aliasKey !== idKey) this.migrateMemberToolFlow(entry, aliasKey, idKey);
-    return idKey;
-  }
-  return idxKey || "idx:" + (event.detail ?? "0");
+FKTeamsChat.prototype.resolveMemberToolFlowKey = function (entry, event, toolCall, fallbackIndex) {
+  const finalKey = this.memberToolFlowKey(event, toolCall, fallbackIndex);
+  const aliases = [];
+  const pushAlias = (key) => {
+    if (key && key !== finalKey && !aliases.includes(key)) aliases.push(key);
+  };
+
+  if (toolCall?.id) pushAlias("id:" + toolCall.id);
+  if (event?.tool_call_id) pushAlias("id:" + event.tool_call_id);
+  if (toolCall?.index !== undefined && toolCall?.index !== null) pushAlias("idx:" + toolCall.index);
+  if (event?.tool_call_index !== undefined && event?.tool_call_index !== null) pushAlias("idx:" + event.tool_call_index);
+  if (fallbackIndex !== undefined && fallbackIndex !== null) pushAlias("fallback:" + fallbackIndex);
+  if (event?.detail !== undefined && event?.detail !== null) pushAlias("idx:" + event.detail);
+  const toolName = toolCall?.name || event?.tool_name || "";
+  const aliasKey = toolName && entry?.toolFlowKeyByName ? entry.toolFlowKeyByName[toolName] : "";
+  pushAlias(aliasKey);
+
+  aliases.forEach((key) => this.migrateMemberToolFlow(entry, key, finalKey));
+  return finalKey;
 };
 
 FKTeamsChat.prototype.truncateRunes = function (text, maxLen) {
@@ -1969,7 +1970,7 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
       const display = this.getToolDisplay(toolCall);
       if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
       if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
-      const flowKey = this.memberToolFlowKey(event, toolCall, i);
+      const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, i);
       this.registerMemberToolFlowAlias(entry, toolCall.name, flowKey);
       this.ensureMemberToolFlow(entry, flowKey, display.displayName, event.sequence);
     });
@@ -2056,10 +2057,7 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
       const display = this.getToolDisplay(toolCall);
       if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
       if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
-      const flowKey = this.memberToolFlowKey(event, toolCall, i);
-      if (toolCall.id && toolCall.index !== undefined && toolCall.index !== null) {
-        this.migrateMemberToolFlow(entry, "idx:" + toolCall.index, "id:" + toolCall.id);
-      }
+      const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, i);
       this.registerMemberToolFlowAlias(entry, toolCall.name, flowKey);
       this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, toolCall.arguments || "", false, event.sequence);
     });
