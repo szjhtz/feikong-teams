@@ -1253,6 +1253,11 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     case "user_message":
       this.handleUserMessageEvent(event);
       break;
+    case "agent_start":
+    case "agent_end":
+    case "turn_start":
+    case "turn_end":
+      break;
     case "processing_start":
       this._cancelledSessionId = null;
       this._resumePending = false;
@@ -1283,34 +1288,29 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     case "cancelled":
       this.handleCancelled(event);
       break;
-    case "stream_chunk":
+    case "message_start":
       if (this._cancelledSessionId === eventSessionId) break;
-      this.handleStreamChunk(event);
+      this.handleCoreMessageStart(event);
       break;
-    case "reasoning_chunk":
+    case "message_delta":
       if (this._cancelledSessionId === eventSessionId) break;
-      this.handleReasoningChunk(event);
+      this.handleCoreMessageDelta(event);
       break;
-    case "message":
+    case "message_end":
       if (this._cancelledSessionId === eventSessionId) break;
-      this.handleMessage(event);
+      this.handleCoreMessageEnd(event);
       break;
-    case "tool_calls_preparing":
+    case "tool_start":
       if (this._cancelledSessionId === eventSessionId) break;
-      this.handleToolCallsPreparing(event);
+      this.handleCoreToolStart(event);
       break;
-    case "tool_calls_args_delta":
+    case "tool_update":
       if (this._cancelledSessionId === eventSessionId) break;
-      this.handleToolCallsArgsDelta(event);
+      this.handleCoreToolUpdate(event);
       break;
-    case "tool_calls":
+    case "tool_end":
       if (this._cancelledSessionId === eventSessionId) break;
-      this.handleToolCalls(event);
-      break;
-    case "tool_result":
-    case "tool_result_chunk":
-      if (this._cancelledSessionId === eventSessionId) break;
-      this.handleToolResult(event);
+      this.handleCoreToolEnd(event);
       break;
     case "action":
       if (this._cancelledSessionId === eventSessionId) break;
@@ -1610,6 +1610,131 @@ FKTeamsChat.prototype._finalizeFootnotes = function () {
     // 标记已完成脚注渲染，后续不再重复处理
     body.setAttribute("data-fn-done", "1");
   }
+};
+
+FKTeamsChat.prototype.coreToolCallFromEvent = function (event) {
+  const toolCall = {
+    id: event.tool_call_id || "",
+    ref: event.tool_call_ref || "",
+    index: event.tool_call_index,
+    name: event.tool_name || "",
+    display_name: event.tool_display_name || "",
+    kind: event.tool_kind || "",
+    target: event.tool_target || "",
+    arguments: event.tool_args || event.delta || event.content || "",
+  };
+  if (toolCall.index === undefined || toolCall.index === null) {
+    toolCall.index = event.detail !== undefined ? event.detail : 0;
+  }
+  return toolCall;
+};
+
+FKTeamsChat.prototype.coreToolEventKey = function (event) {
+  if (event.tool_call_ref) return "ref:" + event.tool_call_ref;
+  if (event.tool_call_id) return "id:" + event.tool_call_id;
+  if (event.tool_call_index !== undefined && event.tool_call_index !== null) return "idx:" + event.tool_call_index;
+  return "idx:" + (event.detail !== undefined ? event.detail : 0);
+};
+
+FKTeamsChat.prototype.migrateCoreToolEventKey = function (event, toolCall) {
+  if (this.isMemberRunEvent(event) || !event.tool_call_ref) return;
+  const refKey = "ref:" + event.tool_call_ref;
+  if (event.tool_call_id) this.migrateToolCallCard("id:" + event.tool_call_id, refKey, toolCall);
+  if (event.tool_call_index !== undefined && event.tool_call_index !== null) {
+    this.migrateToolCallCard("idx:" + event.tool_call_index, refKey, toolCall);
+  }
+};
+
+FKTeamsChat.prototype.handleCoreMessageStart = function (event) {
+  if (event.role === "user") return;
+  if (event.role === "tool") return;
+  if (this.isMemberRunEvent(event)) {
+    const entry = this.memberEntryFromEvent(event);
+    this.updateMemberActivity(entry, event.delta_kind === "reasoning" ? "正在思考" : "准备输出");
+    this.scrollToBottom();
+    return;
+  }
+  this.finalizeParallelMemberResults();
+  this.getMessageElementForEvent(event);
+  this.scrollToBottom();
+};
+
+FKTeamsChat.prototype.handleCoreMessageDelta = function (event) {
+  if (event.role === "user") return;
+  const content = event.delta || event.content || "";
+  if (!content) return;
+
+  if (event.role === "tool" || event.delta_kind === "tool_result") {
+    this.handleCoreToolUpdate(event);
+    return;
+  }
+  if (event.delta_kind === "tool_args") {
+    this.handleCoreToolArgsDelta(event);
+    return;
+  }
+  if (event.delta_kind === "reasoning") {
+    this.handleReasoningChunk({ ...event, content });
+    return;
+  }
+  this.handleStreamChunk({ ...event, content });
+};
+
+FKTeamsChat.prototype.handleCoreMessageEnd = function (event) {
+  if (event.role === "user") return;
+  if (event.role === "tool") {
+    this.handleCoreToolEnd(event);
+    return;
+  }
+
+  if (event.reasoning_content || event.content) {
+    this.handleMessage(event);
+  }
+
+  if (event.tool_calls && event.tool_calls.length > 0) {
+    this.handleToolCallsPreparing(event);
+    this.handleToolCalls(event);
+  }
+};
+
+FKTeamsChat.prototype.handleCoreToolStart = function (event) {
+  const toolCall = event.tool_call || this.coreToolCallFromEvent(event);
+  this.migrateCoreToolEventKey(event, toolCall);
+  const nextEvent = { ...event, tool_calls: [toolCall] };
+  this.handleToolCallsPreparing(nextEvent);
+  if (toolCall.arguments) {
+    this.handleToolCalls(nextEvent);
+  }
+};
+
+FKTeamsChat.prototype.handleCoreToolArgsDelta = function (event) {
+  const content = event.delta || event.content || "";
+  if (!content) return;
+
+  if (!this.isMemberRunEvent(event)) {
+    const toolCall = this.coreToolCallFromEvent({ ...event, content: "" });
+    this.migrateCoreToolEventKey(event, toolCall);
+    const key = this.coreToolEventKey(event);
+    const toolDisplay = this.getToolDisplay(toolCall);
+    this.ensureToolCallCard(toolCall, key, toolDisplay, "准备参数", "参数准备中...");
+  }
+
+  this.handleToolCallsArgsDelta({ ...event, content });
+};
+
+FKTeamsChat.prototype.handleCoreToolUpdate = function (event) {
+  const content = event.delta || event.tool_result || event.content || "";
+  if (event.delta_kind === "tool_args") {
+    this.handleCoreToolArgsDelta(event);
+    return;
+  }
+  if (!content) return;
+  this.handleToolResult({ ...event, type: "tool_result_chunk", content });
+};
+
+FKTeamsChat.prototype.handleCoreToolEnd = function (event) {
+  const content = event.tool_result || event.content || "";
+  if (!content) return;
+  this.handleToolResult({ ...event, type: "tool_result", content });
 };
 
 FKTeamsChat.prototype.handleStreamChunk = function (event) {
