@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"fkteams/tools/approval"
 	"testing"
 )
@@ -33,7 +33,7 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 	messages := []agentcore.Message{{Role: agentcore.RoleUser, Content: "hello"}}
 	history := &historySinkStub{}
 	approvalReg := approval.NewDefaultRegistry()
-	eventHandler := func(fkevent.Event) error { return nil }
+	eventHandler := func(events.Event) error { return nil }
 	startHandler := func(context.Context) {}
 	interruptHandler := FixedDecisionHandler(approval.Reject)
 	finishHandler := func(context.Context, *agentcore.RunResult, error) {}

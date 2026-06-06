@@ -2,7 +2,7 @@ package memory
 
 import (
 	"context"
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"fkteams/log"
 	"path/filepath"
 	"sort"

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fkteams/agentcore"
 	"fkteams/engine"
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/events"
+	"fkteams/events/log"
 	"fkteams/server/handler/taskstream"
 	"fkteams/server/origin"
 	"fkteams/tools/approval"
@@ -83,7 +83,7 @@ func WebSocketHandler() gin.HandlerFunc {
 		}
 
 		_ = writeJSON(map[string]any{
-			"type":    fkevent.NotifyConnected,
+			"type":    events.NotifyConnected,
 			"message": "欢迎连接到非空小队",
 		})
 
@@ -98,13 +98,13 @@ func WebSocketHandler() gin.HandlerFunc {
 
 			var wsMsg WSMessage
 			if err := json.Unmarshal(msgBytes, &wsMsg); err != nil {
-				_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "invalid message format"})
+				_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "invalid message format"})
 				continue
 			}
 
 			// chat 消息二次校验 token，防止 WS 长时间连接后 token 过期仍可操作
 			if wsMsg.Type == "chat" && authEnabled && !ValidateToken(wsToken) {
-				_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "登录已过期，请重新登录"})
+				_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "登录已过期，请重新登录"})
 				conn.Close()
 				break
 			}
@@ -112,7 +112,7 @@ func WebSocketHandler() gin.HandlerFunc {
 			switch wsMsg.Type {
 			case "chat":
 				if wsMsg.SessionID == "" {
-					_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "session_id is required"})
+					_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
 					continue
 				}
 				go handleChatMessage(sm, wsMsg, writeJSON)
@@ -120,7 +120,7 @@ func WebSocketHandler() gin.HandlerFunc {
 			case "resume":
 				sid := wsMsg.SessionID
 				if sid == "" {
-					_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "session_id is required"})
+					_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
 					continue
 				}
 				stream := GlobalStreams.Get(sid)
@@ -134,14 +134,14 @@ func WebSocketHandler() gin.HandlerFunc {
 						log.Printf("task resumed: session=%s", sid)
 					} else {
 						_ = writeJSON(map[string]any{
-							"type":       fkevent.NotifyProcessingEnd,
+							"type":       events.NotifyProcessingEnd,
 							"session_id": sid,
 							"message":    "任务已完成或不存在",
 						})
 					}
 				} else {
 					_ = writeJSON(map[string]any{
-						"type":       fkevent.NotifyProcessingEnd,
+						"type":       events.NotifyProcessingEnd,
 						"session_id": sid,
 						"message":    "任务已完成或不存在",
 					})
@@ -153,7 +153,7 @@ func WebSocketHandler() gin.HandlerFunc {
 					GlobalStreams.CancelAndRemove(sid)
 					sm.cancelTask(sid)
 				}
-				_ = writeJSON(map[string]any{"type": fkevent.NotifyCancelled, "session_id": sid, "message": "任务已取消"})
+				_ = writeJSON(map[string]any{"type": events.NotifyCancelled, "session_id": sid, "message": "任务已取消"})
 
 			case "approval":
 				sid := wsMsg.SessionID
@@ -172,10 +172,10 @@ func WebSocketHandler() gin.HandlerFunc {
 				}
 
 			case "ping":
-				_ = writeJSON(map[string]any{"type": fkevent.NotifyPong})
+				_ = writeJSON(map[string]any{"type": events.NotifyPong})
 
 			default:
-				_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "unknown message type"})
+				_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "unknown message type"})
 			}
 		}
 	}
@@ -192,13 +192,13 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 			stream.BeginInterrupt(taskstream.InterruptAsk)
 			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
 
-			recorder.RecordEvent(fkevent.Event{
-				Type:       fkevent.EventAction,
-				ActionType: fkevent.ActionAskQuestions,
+			recorder.RecordEvent(events.Event{
+				Type:       events.EventAction,
+				ActionType: events.ActionAskQuestions,
 				Content:    info.Question,
 			})
 			payload := map[string]any{
-				"type":         fkevent.NotifyAskQuestions,
+				"type":         events.NotifyAskQuestions,
 				"session_id":   sessionID,
 				"question":     info.Question,
 				"options":      info.Options,
@@ -209,9 +209,9 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 			result, err := channelHandler(ctx, interrupts)
 
 			if err == nil {
-				recorder.RecordEvent(fkevent.Event{
-					Type:       fkevent.EventAction,
-					ActionType: fkevent.ActionAskResponse,
+				recorder.RecordEvent(events.Event{
+					Type:       events.EventAction,
+					ActionType: events.ActionAskResponse,
 					Content:    askResponseText(result),
 				})
 			}
@@ -224,13 +224,13 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 		stream.BeginInterrupt(taskstream.InterruptApproval)
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
-		recorder.RecordEvent(fkevent.Event{
-			Type:       fkevent.EventAction,
-			ActionType: fkevent.ActionApprovalRequired,
+		recorder.RecordEvent(events.Event{
+			Type:       events.EventAction,
+			ActionType: events.ActionApprovalRequired,
 			Content:    msg,
 		})
 		_ = writeJSON(map[string]any{
-			"type":       fkevent.NotifyApprovalRequired,
+			"type":       events.NotifyApprovalRequired,
 			"session_id": sessionID,
 			"message":    msg,
 		})
@@ -239,9 +239,9 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
-				recorder.RecordEvent(fkevent.Event{
-					Type:       fkevent.EventAction,
-					ActionType: fkevent.ActionApprovalDecision,
+				recorder.RecordEvent(events.Event{
+					Type:       events.EventAction,
+					ActionType: events.ActionApprovalDecision,
 					Content:    text,
 				})
 			}
@@ -254,9 +254,9 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 // --- WebSocket 事件回调 ---
 
 // wsEventCallbackBuffered 构建支持断线缓冲的事件回调
-func wsEventCallbackBuffered(recorder *eventlog.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(fkevent.Event) error {
-	return func(event fkevent.Event) error {
-		if event.Type == fkevent.EventAction && event.ActionType == fkevent.ActionInterrupted {
+func wsEventCallbackBuffered(recorder *eventlog.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(events.Event) error {
+	return func(event events.Event) error {
+		if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 			return nil
 		}
 		recorder.RecordEvent(event)
@@ -279,7 +279,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 
 	if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
 		_ = writeJSON(map[string]any{
-			"type":       fkevent.NotifyError,
+			"type":       events.NotifyError,
 			"session_id": sessionID,
 			"error":      "session has a running task, cancel it first",
 		})
@@ -316,7 +316,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
-		stream.Publish(map[string]any{"type": fkevent.NotifyError, "session_id": sessionID, "error": err.Error()})
+		stream.Publish(map[string]any{"type": events.NotifyError, "session_id": sessionID, "error": err.Error()})
 		return
 	}
 
@@ -324,7 +324,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
 	stream.Publish(map[string]any{
-		"type":       fkevent.NotifyUserMessage,
+		"type":       events.NotifyUserMessage,
 		"session_id": sessionID,
 		"content":    userDisplayText,
 	})
@@ -338,7 +338,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		OnStart(func(ctx context.Context) {
 			updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 			stream.Publish(map[string]any{
-				"type":       fkevent.NotifyProcessingStart,
+				"type":       events.NotifyProcessingStart,
 				"session_id": sessionID,
 				"message":    "开始处理您的请求...",
 			})
@@ -356,11 +356,11 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 				}
 				log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
 				stream.SetStatus("error")
-				stream.Publish(map[string]any{"type": fkevent.NotifyError, "session_id": sessionID, "error": err.Error()})
+				stream.Publish(map[string]any{"type": events.NotifyError, "session_id": sessionID, "error": err.Error()})
 			} else {
 				stream.SetStatus("completed")
 				stream.Publish(map[string]any{
-					"type":       fkevent.NotifyProcessingEnd,
+					"type":       events.NotifyProcessingEnd,
 					"session_id": sessionID,
 					"message":    "处理完成",
 				})

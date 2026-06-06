@@ -10,7 +10,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"fmt"
 	"strings"
 

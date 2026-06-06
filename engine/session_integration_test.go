@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"testing"
 )
 
@@ -32,11 +32,11 @@ func TestSessionRunsCoreRunner(t *testing.T) {
 	ctx := context.Background()
 	r := &recordingRunner{}
 
-	var events []fkevent.Event
+	var collectedEvents []events.Event
 	_, err := NewSession(r, "test-session").
 		WithInput(TurnInput{Message: agentcore.Message{Role: agentcore.RoleUser, Content: "ping"}}).
-		OnEvent(func(event fkevent.Event) error {
-			events = append(events, event)
+		OnEvent(func(event events.Event) error {
+			collectedEvents = append(collectedEvents, event)
 			return nil
 		}).
 		Run(ctx)
@@ -50,13 +50,13 @@ func TestSessionRunsCoreRunner(t *testing.T) {
 	}
 
 	found := false
-	for _, event := range events {
+	for _, event := range collectedEvents {
 		if event.Content == "pong" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected pong event, got %#v", events)
+		t.Fatalf("expected pong event, got %#v", collectedEvents)
 	}
 }

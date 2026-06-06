@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"fkteams/agentcore"
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"fkteams/fkenv"
 
 	"github.com/gin-gonic/gin"

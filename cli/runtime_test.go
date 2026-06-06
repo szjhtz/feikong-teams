@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"fkteams/tui"
 	"os"
 	"strings"
@@ -296,8 +296,8 @@ func TestRuntimeReasoningChunksAreMerged(t *testing.T) {
 		exitSignals: make(chan os.Signal, 1),
 	})
 
-	model.applyEvent(fkevent.Event{Type: fkevent.EventMessageDelta, DeltaKind: fkevent.DeltaReasoning, Content: "用户"})
-	model.applyEvent(fkevent.Event{Type: fkevent.EventMessageDelta, DeltaKind: fkevent.DeltaReasoning, Content: "问好"})
+	model.applyEvent(events.Event{Type: events.EventMessageDelta, DeltaKind: events.DeltaReasoning, Content: "用户"})
+	model.applyEvent(events.Event{Type: events.EventMessageDelta, DeltaKind: events.DeltaReasoning, Content: "问好"})
 
 	var reasoningBlocks []runtimeBlock
 	for _, block := range model.blocks {
@@ -374,8 +374,8 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 	firstIndex := 0
 	secondIndex := 1
 
-	model.applyEvent(fkevent.Event{
-		Type:      fkevent.EventToolStart,
+	model.applyEvent(events.Event{
+		Type:      events.EventToolStart,
 		AgentName: "coordinator",
 		ToolCalls: []agentcore.ToolCall{
 			{
@@ -396,17 +396,17 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 			},
 		},
 	})
-	model.applyEvent(fkevent.Event{
-		Type:         fkevent.EventMessageDelta,
-		DeltaKind:    fkevent.DeltaOutput,
+	model.applyEvent(events.Event{
+		Type:         events.EventMessageDelta,
+		DeltaKind:    events.DeltaOutput,
 		AgentName:    "researcher",
 		Content:      "second output",
 		MemberCallID: "call_second",
 		MemberName:   "researcher",
 	})
-	model.applyEvent(fkevent.Event{
-		Type:         fkevent.EventMessageDelta,
-		DeltaKind:    fkevent.DeltaOutput,
+	model.applyEvent(events.Event{
+		Type:         events.EventMessageDelta,
+		DeltaKind:    events.DeltaOutput,
 		AgentName:    "researcher",
 		Content:      "first output",
 		MemberCallID: "call_first",
@@ -440,17 +440,17 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 	})
 	callIndex := 0
 
-	model.applyEvent(fkevent.Event{
-		Type:          fkevent.EventMessageDelta,
-		DeltaKind:     fkevent.DeltaToolArgs,
+	model.applyEvent(events.Event{
+		Type:          events.EventMessageDelta,
+		DeltaKind:     events.DeltaToolArgs,
 		ToolName:      "ask_fkagent_researcher",
 		ToolCallID:    "call_full",
 		ToolCallIndex: &callIndex,
 		Content:       "{",
 	})
-	model.applyEvent(fkevent.Event{
-		Type:          fkevent.EventMessageDelta,
-		DeltaKind:     fkevent.DeltaToolArgs,
+	model.applyEvent(events.Event{
+		Type:          events.EventMessageDelta,
+		DeltaKind:     events.DeltaToolArgs,
 		ToolName:      "ask_fkagent_researcher",
 		ToolCallID:    "call_full",
 		ToolCallIndex: &callIndex,
@@ -460,8 +460,8 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 		t.Fatalf("partial agent tool args should not create members, got %#v", model.members)
 	}
 
-	model.applyEvent(fkevent.Event{
-		Type:      fkevent.EventToolStart,
+	model.applyEvent(events.Event{
+		Type:      events.EventToolStart,
 		AgentName: "coordinator",
 		ToolCalls: []agentcore.ToolCall{{
 			ID:    "call_full",
@@ -490,9 +490,9 @@ func TestRuntimeUnnamedAgentArgsDeltaDoesNotRenderToolBlock(t *testing.T) {
 	})
 	blockCount := len(model.blocks)
 
-	model.applyEvent(fkevent.Event{
-		Type:        fkevent.EventMessageDelta,
-		DeltaKind:   fkevent.DeltaToolArgs,
+	model.applyEvent(events.Event{
+		Type:        events.EventMessageDelta,
+		DeltaKind:   events.DeltaToolArgs,
 		ToolCallRef: "tool|stream|seq:1|coordinator|idx:0",
 		Content:     `{"request":"partial`,
 	})

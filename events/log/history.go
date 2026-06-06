@@ -3,10 +3,10 @@ package eventlog
 import (
 	"encoding/json"
 	"fkteams/agentcore"
-	"fkteams/agenttool"
+	"fkteams/agents/toolmeta"
 	"fkteams/common"
 	"fkteams/common/atomicfile"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"fmt"
 	"io"
 	"os"
@@ -17,19 +17,19 @@ import (
 	"time"
 )
 
-type Event = fkevent.Event
-type ActionType = fkevent.ActionType
+type Event = events.Event
+type ActionType = events.ActionType
 
 const (
-	EventMessageDelta = fkevent.EventMessageDelta
-	EventToolStart    = fkevent.EventToolStart
-	EventToolUpdate   = fkevent.EventToolUpdate
-	EventToolEnd      = fkevent.EventToolEnd
-	EventAction       = fkevent.EventAction
-	EventUsage        = fkevent.EventUsage
-	EventError        = fkevent.EventError
+	EventMessageDelta = events.EventMessageDelta
+	EventToolStart    = events.EventToolStart
+	EventToolUpdate   = events.EventToolUpdate
+	EventToolEnd      = events.EventToolEnd
+	EventAction       = events.EventAction
+	EventUsage        = events.EventUsage
+	EventError        = events.EventError
 
-	ActionContextCompress = fkevent.ActionContextCompress
+	ActionContextCompress = events.ActionContextCompress
 )
 
 const HistoryFileName = "history.jsonl"
@@ -199,7 +199,7 @@ func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord
 		Result:      result,
 	}
 	if record.DisplayName == "" || record.Kind == "" {
-		display := agenttool.FormatToolDisplay(tc.Name)
+		display := toolmeta.FormatToolDisplay(tc.Name)
 		if record.DisplayName == "" {
 			record.DisplayName = display.DisplayName
 		}
@@ -218,7 +218,7 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 }
 
 func pendingToolCallFromEvent(spanID, ref, id string, index *int, name, arguments string) pendingToolCall {
-	display := agenttool.FormatToolDisplay(name)
+	display := toolmeta.FormatToolDisplay(name)
 	return pendingToolCall{
 		SpanID:      spanID,
 		Ref:         ref,
@@ -419,7 +419,7 @@ func (h *HistoryRecorder) sortedActiveKeysLocked() []string {
 
 // RecordEvent 记录事件
 func (h *HistoryRecorder) RecordEvent(event Event) {
-	event = fkevent.NormalizeEvent(event)
+	event = events.NormalizeEvent(event)
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -452,7 +452,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 		ctx := h.ensureMessageContext(event)
 		switch event.DeltaKind {
-		case fkevent.DeltaReasoning:
+		case events.DeltaReasoning:
 			// 合并连续推理事件
 			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning {
 				ctx.msg.Events[n-1].Content += content
@@ -462,7 +462,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 					Content: content,
 				})
 			}
-		case fkevent.DeltaOutput, "":
+		case events.DeltaOutput, "":
 			// 合并连续文本事件
 			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeText {
 				ctx.msg.Events[n-1].Content += content
@@ -472,8 +472,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 					Content: content,
 				})
 			}
-		case fkevent.DeltaToolResult:
-			if fkevent.IsInternalContinueContent(content) {
+		case events.DeltaToolResult:
+			if events.IsInternalContinueContent(content) {
 				return
 			}
 			if key := toolResultKey(event); key != "" {
@@ -498,7 +498,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}}
 		}
 		for _, tc := range toolCalls {
-			if fkevent.IsInternalToolName(tc.Function.Name) {
+			if events.IsInternalToolName(tc.Function.Name) {
 				continue
 			}
 			if tc.Function.Name == "" {
@@ -537,7 +537,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		if content == "" {
 			content = event.ToolResult
 		}
-		if fkevent.IsInternalContinueContent(content) {
+		if events.IsInternalContinueContent(content) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
@@ -550,7 +550,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		if content == "" {
 			content = event.Content
 		}
-		if fkevent.IsInternalContinueContent(content) {
+		if events.IsInternalContinueContent(content) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
@@ -590,7 +590,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		if idx >= 0 {
 			tc := ctx.pendingToolCalls[idx]
 			ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
-			if fkevent.IsInternalToolName(tc.Name) {
+			if events.IsInternalToolName(tc.Name) {
 				return
 			}
 			if !h.updateToolCallEvent(ctx, tc, content) {
@@ -604,7 +604,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				return
 			}
 			pending := pendingToolCallFromEvent(event.SpanID, event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
-			if !fkevent.IsInternalToolName(pending.Name) {
+			if !events.IsInternalToolName(pending.Name) {
 				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 					Type:     MsgTypeToolCall,
 					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(pending, content)),
@@ -658,7 +658,7 @@ func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 		}
 		tc := ctx.pendingToolCalls[idx]
 		ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
-		if !fkevent.IsInternalToolName(tc.Name) {
+		if !events.IsInternalToolName(tc.Name) {
 			if !h.updateToolCallEvent(ctx, tc, content) {
 				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 					Type:     MsgTypeToolCall,
@@ -1149,7 +1149,7 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 			case MsgTypeToolCall:
 				if event.ToolCall != nil {
-					display := agenttool.FormatToolDisplay(event.ToolCall.Name)
+					display := toolmeta.FormatToolDisplay(event.ToolCall.Name)
 					fmt.Fprintf(&md, "> **工具调用**: %s\n", display.DisplayName)
 					if event.ToolCall.Arguments != "" {
 						fmt.Fprintf(&md, "> - **参数**: `%s`\n", event.ToolCall.Arguments)

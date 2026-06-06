@@ -1,4 +1,4 @@
-package fkevent
+package events
 
 import (
 	"context"

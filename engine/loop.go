@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/fkevent"
+	"fkteams/events"
 )
 
 // runLoop drives one engine-neutral runner invocation.
@@ -11,7 +11,7 @@ func (e *core) runLoop(ctx context.Context, input agentcore.TurnInput, handler I
 	return e.runner.Run(ctx, input, agentcore.RunOptions{
 		RunID:            e.checkpointID,
 		CheckpointID:     e.checkpointID,
-		Sink:             fkevent.Dispatch(ctx),
+		Sink:             events.Dispatch(ctx),
 		InterruptHandler: agentcore.InterruptHandler(handler),
 	})
 }

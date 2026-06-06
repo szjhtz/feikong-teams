@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"fkteams/tui"
 	"fmt"
 	"os"

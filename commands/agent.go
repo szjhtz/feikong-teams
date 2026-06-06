@@ -11,7 +11,7 @@ import (
 	"fkteams/cli"
 	commonPkg "fkteams/common"
 	"fkteams/config"
-	"fkteams/eventview"
+	"fkteams/events/view"
 	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/runner"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fkteams/agentcore"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"fmt"
 	"io"
 	"strings"
@@ -122,7 +122,7 @@ func newConverter(runID, turnID string, sink agentcore.EventSink) *converter {
 func (c *converter) emit(event agentcore.Event) error {
 	event.RunID = firstNonEmpty(event.RunID, c.runID)
 	event.TurnID = firstNonEmpty(event.TurnID, c.turnID)
-	c.lastEvent = fkevent.NormalizeEvent(event)
+	c.lastEvent = events.NormalizeEvent(event)
 	return c.sink(c.lastEvent)
 }
 
@@ -235,7 +235,7 @@ func (c *converter) handleMessageOutput(ctx context.Context, event *adk.AgentEve
 
 func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Message, scope MemberScope) error {
 	if msg.Role == schema.Tool {
-		if fkevent.IsInternalToolName(msg.ToolName) || fkevent.IsInternalContinueContent(msg.Content) {
+		if events.IsInternalToolName(msg.ToolName) || events.IsInternalContinueContent(msg.Content) {
 			return nil
 		}
 		return c.emitToolResultMessage(event, msg, scope)
@@ -302,7 +302,7 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 
 func (c *converter) emitToolStarts(event *adk.AgentEvent, toolCalls []agentcore.ToolCall, scope MemberScope) error {
 	for _, tc := range toolCalls {
-		if fkevent.IsInternalToolName(tc.Function.Name) {
+		if events.IsInternalToolName(tc.Function.Name) {
 			continue
 		}
 		ref := c.toolCallRef(event, scope, tc)
@@ -411,7 +411,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		}
 	}
 	if chunk.Role == schema.Tool {
-		if fkevent.IsInternalToolName(chunk.ToolName) || fkevent.IsInternalContinueContent(chunk.Content) {
+		if events.IsInternalToolName(chunk.ToolName) || events.IsInternalContinueContent(chunk.Content) {
 			return nil
 		}
 		nEvent := agentcore.Event{
@@ -456,7 +456,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		}
 	}
 	for _, tc := range chunk.ToolCalls {
-		if fkevent.IsInternalToolName(tc.Function.Name) {
+		if events.IsInternalToolName(tc.Function.Name) {
 			continue
 		}
 		idx := 0

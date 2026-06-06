@@ -3,11 +3,11 @@ package channels
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/events"
+	"fkteams/events/chat"
+	"fkteams/events/log"
 	"fkteams/g"
 	"fkteams/log"
 	"fkteams/runner"
@@ -242,13 +242,13 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	}
 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
-	turnInput := chatutil.BuildTurnInput(recorder, combinedInput)
+	turnInput := chat.BuildTurnInput(recorder, combinedInput)
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
 	engine.NewSession(r, sessionID).
 		WithInput(turnInput).
-		OnEvent(func(event fkevent.Event) error {
+		OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
 			return rc.handleEvent(event)
 		}).
@@ -342,7 +342,7 @@ type pendingToolCall struct {
 	args string
 }
 
-func channelEventToolCalls(event fkevent.Event) []agentcore.ToolCall {
+func channelEventToolCalls(event events.Event) []agentcore.ToolCall {
 	if event.ToolCall == nil {
 		return event.ToolCalls
 	}
@@ -363,10 +363,10 @@ func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector
 }
 
 // handleEvent 处理引擎产生的各类事件
-func (rc *replyCollector) handleEvent(event fkevent.Event) error {
+func (rc *replyCollector) handleEvent(event events.Event) error {
 	switch event.Type {
-	case fkevent.EventMessageDelta:
-		if event.DeltaKind != "" && event.DeltaKind != fkevent.DeltaOutput {
+	case events.EventMessageDelta:
+		if event.DeltaKind != "" && event.DeltaKind != events.DeltaOutput {
 			return nil
 		}
 		// 流式文本块：累积，检测到 agent 切换时 flush
@@ -382,12 +382,12 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 			rc.pendingParts = append(rc.pendingParts, event.Content)
 		}
 		rc.mu.Unlock()
-	case fkevent.EventAction:
+	case events.EventAction:
 		// 智能体切换时 flush
-		if event.ActionType == fkevent.ActionTransfer {
+		if event.ActionType == events.ActionTransfer {
 			rc.flush()
 		}
-	case fkevent.EventToolStart:
+	case events.EventToolStart:
 		// 工具调用：flush 之前的文本，按 ToolCall.ID 记录所有工具调用
 		rc.flush()
 		rc.mu.Lock()
@@ -398,7 +398,7 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 			}
 		}
 		rc.mu.Unlock()
-	case fkevent.EventToolEnd:
+	case events.EventToolEnd:
 		// 工具调用完成：按 ToolCallID 匹配调用，发送摘要
 		rc.mu.Lock()
 		call, found := rc.pendingCalls[event.ToolCallID]
@@ -420,7 +420,7 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 			summary := "[" + call.name + "] " + call.args + "\n-> " + result
 			rc.send(summary)
 		}
-	case fkevent.EventToolUpdate:
+	case events.EventToolUpdate:
 		rc.mu.Lock()
 		if event.ToolCallID != "" {
 			rc.resultChunks[event.ToolCallID] += event.Content

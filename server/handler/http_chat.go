@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fkteams/agentcore"
 	"fkteams/engine"
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/events"
+	"fkteams/events/log"
 	"fmt"
 	"log"
 	"net/http"
@@ -83,7 +83,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 
 	engine.NewSession(r, sessionID).
 		WithInput(turnInput).
-		OnEvent(func(event fkevent.Event) error {
+		OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
 			data, _ := json.Marshal(convertEventToMap(event))
 			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
@@ -101,7 +101,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 				log.Printf("error processing event: %v", err)
 			}
 			finishChat(recorder, sessionID, userDisplayText)
-			data, _ := json.Marshal(map[string]string{"type": string(fkevent.NotifyProcessingEnd), "message": "处理完成"})
+			data, _ := json.Marshal(map[string]string{"type": string(events.NotifyProcessingEnd), "message": "处理完成"})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 		}).
@@ -113,13 +113,13 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
-	var events []fkevent.Event
+	var collectedEvents []events.Event
 
 	engine.NewSession(r, sessionID).
 		WithInput(turnInput).
-		OnEvent(func(event fkevent.Event) error {
+		OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
-			events = append(events, event)
+			collectedEvents = append(collectedEvents, event)
 			return nil
 		}).
 		WithHistory(recorder).
@@ -132,7 +132,7 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 		Run(taskCtx)
 
 	var content strings.Builder
-	for _, e := range events {
+	for _, e := range collectedEvents {
 		if e.Content != "" {
 			content.WriteString(e.Content)
 		}
@@ -141,6 +141,6 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 	OK(c, gin.H{
 		"session_id": sessionID,
 		"content":    content.String(),
-		"events":     events,
+		"events":     collectedEvents,
 	})
 }

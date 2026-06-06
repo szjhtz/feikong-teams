@@ -3,7 +3,7 @@ package middleware
 import (
 	"crypto/hmac"
 	"fkteams/config"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"net/http"
 	"strings"
 
@@ -18,7 +18,7 @@ func APIKeyAuth() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": gin.H{
 					"message": "API key not configured, please set [[openai_api]].api_keys in config.toml",
-					"type":    fkevent.NotifyInvalidAPIKey,
+					"type":    events.NotifyInvalidAPIKey,
 				},
 			})
 			return
@@ -29,7 +29,7 @@ func APIKeyAuth() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": gin.H{
 					"message": "invalid API key",
-					"type":    fkevent.NotifyInvalidAPIKey,
+					"type":    events.NotifyInvalidAPIKey,
 				},
 			})
 			return
@@ -47,7 +47,7 @@ func APIKeyAuth() gin.HandlerFunc {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 			"error": gin.H{
 				"message": "invalid API key",
-				"type":    fkevent.NotifyInvalidAPIKey,
+				"type":    events.NotifyInvalidAPIKey,
 			},
 		})
 	}

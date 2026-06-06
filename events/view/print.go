@@ -3,9 +3,9 @@ package eventview
 import (
 	"encoding/json"
 	"fkteams/agentcore"
-	"fkteams/agenttool"
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/agents/toolmeta"
+	"fkteams/events"
+	"fkteams/events/log"
 	fktui "fkteams/tui"
 	"fmt"
 	"os"
@@ -19,31 +19,31 @@ import (
 	"golang.org/x/term"
 )
 
-const agentToolPrefix = agenttool.AgentToolPrefix
+const agentToolPrefix = toolmeta.AgentToolPrefix
 
-type Event = fkevent.Event
+type Event = events.Event
 
 const (
-	EventMessageDelta = fkevent.EventMessageDelta
-	EventMessageEnd   = fkevent.EventMessageEnd
-	EventToolStart    = fkevent.EventToolStart
-	EventToolUpdate   = fkevent.EventToolUpdate
-	EventToolEnd      = fkevent.EventToolEnd
-	EventAction       = fkevent.EventAction
-	EventUsage        = fkevent.EventUsage
-	EventError        = fkevent.EventError
+	EventMessageDelta = events.EventMessageDelta
+	EventMessageEnd   = events.EventMessageEnd
+	EventToolStart    = events.EventToolStart
+	EventToolUpdate   = events.EventToolUpdate
+	EventToolEnd      = events.EventToolEnd
+	EventAction       = events.EventAction
+	EventUsage        = events.EventUsage
+	EventError        = events.EventError
 
-	ActionTransfer             = fkevent.ActionTransfer
-	ActionContextCompressStart = fkevent.ActionContextCompressStart
-	ActionContextCompress      = fkevent.ActionContextCompress
+	ActionTransfer             = events.ActionTransfer
+	ActionContextCompressStart = events.ActionContextCompressStart
+	ActionContextCompress      = events.ActionContextCompress
 )
 
 func isInternalToolName(name string) bool {
-	return fkevent.IsInternalToolName(name)
+	return events.IsInternalToolName(name)
 }
 
 func isInternalContinueContent(content string) bool {
-	return fkevent.IsInternalContinueContent(content)
+	return events.IsInternalContinueContent(content)
 }
 
 func eventToolCalls(event Event) []agentcore.ToolCall {
@@ -56,8 +56,8 @@ func eventToolCalls(event Event) []agentcore.ToolCall {
 	return toolCalls
 }
 
-func FormatToolDisplay(name string) agenttool.ToolDisplay {
-	return agenttool.FormatToolDisplay(name)
+func FormatToolDisplay(name string) toolmeta.ToolDisplay {
+	return toolmeta.FormatToolDisplay(name)
 }
 
 var (
@@ -874,7 +874,7 @@ func newPrintEvent() (func(Event), func()) {
 		switch event.Type {
 		case EventMessageDelta:
 			switch event.DeltaKind {
-			case fkevent.DeltaReasoning:
+			case events.DeltaReasoning:
 				if isMemberEvent(event) {
 					key, name := memberFromEvent(event)
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
@@ -897,7 +897,7 @@ func newPrintEvent() (func(Event), func()) {
 				rw.writeChunk(event.Content)
 				return
 
-			case fkevent.DeltaToolArgs:
+			case events.DeltaToolArgs:
 				if isMemberEvent(event) {
 					key, name := memberFromEvent(event)
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, agentcore.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
@@ -1763,7 +1763,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 	callback = func(event Event) error {
 		switch event.Type {
 		case EventMessageDelta:
-			if event.DeltaKind != "" && event.DeltaKind != fkevent.DeltaOutput {
+			if event.DeltaKind != "" && event.DeltaKind != events.DeltaOutput {
 				return nil
 			}
 			if lastAgent != event.AgentName {

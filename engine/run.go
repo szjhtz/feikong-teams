@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/common"
-	"fkteams/fkevent"
+	"fkteams/events"
 )
 
 // run 执行查询，处理事件和 HITL 中断。
@@ -13,7 +13,7 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, er
 	ctx = common.WithSessionID(ctx, e.checkpointID)
 
 	if cfg.EventCallback != nil {
-		ctx = fkevent.WithCallback(ctx, cfg.EventCallback)
+		ctx = events.WithCallback(ctx, cfg.EventCallback)
 	}
 
 	if cfg.Recorder != nil {
@@ -27,7 +27,7 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, er
 	}
 
 	if cfg.NonInteractive {
-		ctx = fkevent.WithNonInteractive(ctx)
+		ctx = events.WithNonInteractive(ctx)
 	}
 
 	for _, hook := range cfg.ContextHooks {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fkteams/common"
 	"fkteams/common/atomicfile"
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"fmt"
 	"log"
 	"net/http"

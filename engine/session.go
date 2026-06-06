@@ -3,10 +3,10 @@ package engine
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/fkevent"
+	"fkteams/events"
 )
 
-type EventHandler func(fkevent.Event) error
+type EventHandler func(events.Event) error
 type StartHandler func(context.Context)
 type FinishHandler func(context.Context, *agentcore.RunResult, error)
 

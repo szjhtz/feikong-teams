@@ -1,10 +1,10 @@
-// Package chatutil 提供 CLI 和 Web 共享的聊天工具函数
-package chatutil
+// Package chat 提供 CLI 和 Web 共享的聊天工具函数
+package chat
 
 import (
 	"fkteams/agentcore"
 	"fkteams/engine"
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"fkteams/fkenv"
 	"fkteams/g"
 	"fkteams/log"

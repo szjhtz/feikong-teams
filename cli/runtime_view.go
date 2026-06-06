@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/events"
+	"fkteams/events/log"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,8 +16,8 @@ func (v *runtimeQueryView) Start(input string) {
 	v.send(runtimeQueryStartedMsg{input: input})
 }
 
-func (v *runtimeQueryView) EventCallback(recorder *eventlog.HistoryRecorder) func(fkevent.Event) error {
-	return func(event fkevent.Event) error {
+func (v *runtimeQueryView) EventCallback(recorder *eventlog.HistoryRecorder) func(events.Event) error {
+	return func(event events.Event) error {
 		recorder.RecordEvent(event)
 		v.send(runtimeAgentEventMsg{event: event})
 		return nil
@@ -57,7 +57,7 @@ type runtimeQueryStartedMsg struct {
 }
 
 type runtimeAgentEventMsg struct {
-	event fkevent.Event
+	event events.Event
 }
 
 type runtimeCancellingMsg struct{}

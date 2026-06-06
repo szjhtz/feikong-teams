@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fkteams/agentcore"
 	"fkteams/engine"
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/events"
+	"fkteams/events/log"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -92,13 +92,13 @@ func StreamStartHandler() gin.HandlerFunc {
 
 		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 		stream.Publish(map[string]any{
-			"type":       fkevent.NotifyUserMessage,
+			"type":       events.NotifyUserMessage,
 			"session_id": sessionID,
 			"content":    userDisplayText,
 		})
 
 		stream.Publish(map[string]any{
-			"type":       fkevent.NotifyProcessingStart,
+			"type":       events.NotifyProcessingStart,
 			"session_id": sessionID,
 			"message":    "开始处理您的请求...",
 		})
@@ -121,8 +121,8 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
 	engine.NewSession(r, sessionID).
 		WithInput(turnInput).
-		OnEvent(func(event fkevent.Event) error {
-			if event.Type == fkevent.EventAction && event.ActionType == fkevent.ActionInterrupted {
+		OnEvent(func(event events.Event) error {
+			if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 				return nil
 			}
 			recorder.RecordEvent(event)
@@ -141,7 +141,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 					log.Printf("stream task cancelled: session=%s", sessionID)
 					stream.SetStatus("cancelled")
 					stream.Publish(map[string]any{
-						"type":       fkevent.NotifyCancelled,
+						"type":       events.NotifyCancelled,
 						"session_id": sessionID,
 						"message":    "任务已取消",
 					})
@@ -151,14 +151,14 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				log.Printf("stream task error: session=%s, err=%v", sessionID, err)
 				stream.SetStatus("error")
 				stream.Publish(map[string]any{
-					"type":       fkevent.NotifyError,
+					"type":       events.NotifyError,
 					"session_id": sessionID,
 					"error":      err.Error(),
 				})
 			} else {
 				stream.SetStatus("completed")
 				stream.Publish(map[string]any{
-					"type":       fkevent.NotifyProcessingEnd,
+					"type":       events.NotifyProcessingEnd,
 					"session_id": sessionID,
 					"message":    "处理完成",
 				})
@@ -425,13 +425,13 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 			stream.BeginInterrupt(taskstream.InterruptAsk)
 			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
 
-			recorder.RecordEvent(fkevent.Event{
-				Type:       fkevent.EventAction,
-				ActionType: fkevent.ActionAskQuestions,
+			recorder.RecordEvent(events.Event{
+				Type:       events.EventAction,
+				ActionType: events.ActionAskQuestions,
 				Content:    info.Question,
 			})
 			stream.Publish(map[string]any{
-				"type":         fkevent.NotifyAskQuestions,
+				"type":         events.NotifyAskQuestions,
 				"session_id":   sessionID,
 				"question":     info.Question,
 				"options":      info.Options,
@@ -440,9 +440,9 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 
 			result, err := channelHandler(ctx, interrupts)
 			if err == nil {
-				recorder.RecordEvent(fkevent.Event{
-					Type:       fkevent.EventAction,
-					ActionType: fkevent.ActionAskResponse,
+				recorder.RecordEvent(events.Event{
+					Type:       events.EventAction,
+					ActionType: events.ActionAskResponse,
 					Content:    askResponseText(result),
 				})
 			}
@@ -455,13 +455,13 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 		stream.BeginInterrupt(taskstream.InterruptApproval)
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
-		recorder.RecordEvent(fkevent.Event{
-			Type:       fkevent.EventAction,
-			ActionType: fkevent.ActionApprovalRequired,
+		recorder.RecordEvent(events.Event{
+			Type:       events.EventAction,
+			ActionType: events.ActionApprovalRequired,
 			Content:    msg,
 		})
 		stream.Publish(map[string]any{
-			"type":       fkevent.NotifyApprovalRequired,
+			"type":       events.NotifyApprovalRequired,
 			"session_id": sessionID,
 			"message":    msg,
 		})
@@ -469,9 +469,9 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 		result, err := channelHandler(ctx, interrupts)
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
-				recorder.RecordEvent(fkevent.Event{
-					Type:       fkevent.EventAction,
-					ActionType: fkevent.ActionApprovalDecision,
+				recorder.RecordEvent(events.Event{
+					Type:       events.EventAction,
+					ActionType: events.ActionApprovalDecision,
 					Content:    text,
 				})
 			}

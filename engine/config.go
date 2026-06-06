@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/fkevent"
+	"fkteams/events"
 )
 
 type ContextHook func(context.Context) context.Context
@@ -23,7 +23,7 @@ type runConfig struct {
 	Input agentcore.TurnInput
 
 	// EventCallback 接收智能体执行期间的事件
-	EventCallback func(fkevent.Event) error
+	EventCallback func(events.Event) error
 
 	// Recorder 会话历史接收器。设置后 Engine 自动配置摘要持久化回调
 	Recorder HistorySink

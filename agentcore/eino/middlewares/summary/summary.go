@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -44,10 +44,10 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 			if cb, ok := agentcore.SummaryPersistCallbackFromContext(ctx); ok {
 				cb(summaryText)
 			}
-			_ = fkevent.DispatchEvent(ctx, fkevent.Event{
-				Type:       fkevent.EventAction,
+			_ = events.DispatchEvent(ctx, events.Event{
+				Type:       events.EventAction,
 				AgentName:  "系统",
-				ActionType: fkevent.ActionContextCompress,
+				ActionType: events.ActionContextCompress,
 				Content:    "对话上下文已压缩，旧消息已被总结摘要替代",
 				Detail:     summaryText,
 			})

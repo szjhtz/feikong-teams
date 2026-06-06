@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"fkteams/agentcore"
-	"fkteams/agentruntime"
+	agentruntime "fkteams/agentcore/runtime"
 	agentscommon "fkteams/agents/common"
 	rootcommon "fkteams/common"
 	"fkteams/internal/testmodel"

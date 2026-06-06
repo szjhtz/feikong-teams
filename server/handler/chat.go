@@ -3,11 +3,11 @@ package handler
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/agenttool"
-	"fkteams/chatutil"
+	"fkteams/agents/toolmeta"
 	"fkteams/engine"
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/events"
+	"fkteams/events/chat"
+	"fkteams/events/log"
 	"fkteams/g"
 	"fkteams/runner"
 	"fkteams/tools/ask"
@@ -37,14 +37,14 @@ func resolveRunner(ctx context.Context, mode, agentName string) (agentcore.Runne
 func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart) (input engine.TurnInput, displayText string) {
 	if len(contents) > 0 {
 		parts := convertContentParts(contents)
-		displayText = chatutil.ExtractTextFromParts(parts)
+		displayText = chat.ExtractTextFromParts(parts)
 		if displayText == "" {
 			displayText = message
 		}
-		input = chatutil.BuildMultimodalTurnInput(recorder, displayText, parts)
+		input = chat.BuildMultimodalTurnInput(recorder, displayText, parts)
 	} else {
 		displayText = message
-		input = chatutil.BuildTurnInput(recorder, message)
+		input = chat.BuildTurnInput(recorder, message)
 	}
 	return
 }
@@ -222,7 +222,7 @@ func extractAskInfo(interrupts []agentcore.Interrupt) *ask.AskInfo {
 	return nil
 }
 
-func handlerEventToolCalls(event fkevent.Event) []agentcore.ToolCall {
+func handlerEventToolCalls(event events.Event) []agentcore.ToolCall {
 	if event.ToolCall == nil {
 		return event.ToolCalls
 	}
@@ -235,7 +235,7 @@ func handlerEventToolCalls(event fkevent.Event) []agentcore.ToolCall {
 // --- 事件/内容转换 ---
 
 // convertEventToMap 将事件转换为前端可用的格式
-func convertEventToMap(event fkevent.Event) map[string]any {
+func convertEventToMap(event events.Event) map[string]any {
 	result := map[string]any{
 		"type":       event.Type,
 		"agent_name": event.AgentName,
@@ -282,7 +282,7 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if toolCallsFromEvent := handlerEventToolCalls(event); len(toolCallsFromEvent) > 0 {
 		toolCalls := make([]map[string]any, 0, len(toolCallsFromEvent))
 		for _, tc := range toolCallsFromEvent {
-			display := agenttool.FormatToolDisplay(tc.Function.Name)
+			display := toolmeta.FormatToolDisplay(tc.Function.Name)
 			toolCall := map[string]any{
 				"name":         tc.Function.Name,
 				"display_name": display.DisplayName,
@@ -383,7 +383,7 @@ func convertContentParts(parts []ContentPart) []agentcore.ContentPart {
 	for _, p := range parts {
 		switch p.Type {
 		case "text":
-			result = append(result, chatutil.TextPart(p.Text))
+			result = append(result, chat.TextPart(p.Text))
 		case "image_url":
 			detail := "auto"
 			switch p.Detail {
@@ -392,19 +392,19 @@ func convertContentParts(parts []ContentPart) []agentcore.ContentPart {
 			case "low":
 				detail = "low"
 			}
-			result = append(result, chatutil.ImageURLPart(p.URL, detail))
+			result = append(result, chat.ImageURLPart(p.URL, detail))
 		case "image_base64":
 			mimeType := p.MIMEType
 			if mimeType == "" {
 				mimeType = "image/png"
 			}
-			result = append(result, chatutil.ImageBase64Part(p.Base64Data, mimeType))
+			result = append(result, chat.ImageBase64Part(p.Base64Data, mimeType))
 		case "audio_url":
-			result = append(result, chatutil.AudioURLPart(p.URL))
+			result = append(result, chat.AudioURLPart(p.URL))
 		case "video_url":
-			result = append(result, chatutil.VideoURLPart(p.URL))
+			result = append(result, chat.VideoURLPart(p.URL))
 		case "file_url":
-			result = append(result, chatutil.FileURLPart(p.URL))
+			result = append(result, chat.FileURLPart(p.URL))
 		}
 	}
 	return result

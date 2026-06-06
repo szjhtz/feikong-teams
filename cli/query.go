@@ -4,11 +4,11 @@ package cli
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
-	"fkteams/eventlog"
-	"fkteams/fkevent"
+	"fkteams/events"
+	"fkteams/events/chat"
+	"fkteams/events/log"
 	"fkteams/g"
 	"fkteams/report"
 	"fkteams/tools/approval"
@@ -125,7 +125,7 @@ func (e *QueryExecutor) SetRunner(runner agentcore.Runner) {
 }
 
 // SetCallbackBuilder 设置事件回调构造器，用于 JSON 等非默认输出格式。
-func (e *QueryExecutor) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(fkevent.Event) error) {
+func (e *QueryExecutor) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(events.Event) error) {
 	e.view = callbackQueryView{callbackBuilder: cb}
 }
 
@@ -184,7 +184,7 @@ func getCliRecorder() *eventlog.HistoryRecorder {
 // BuildTurnInput 构建一轮输入（包含历史对话，支持上下文压缩摘要）
 func BuildTurnInput(input string) engine.TurnInput {
 	recorder := getCliRecorder()
-	return chatutil.BuildTurnInput(recorder, input)
+	return chat.BuildTurnInput(recorder, input)
 }
 
 // Execute 执行查询
@@ -226,7 +226,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	startTime := time.Now()
 	_, err := engine.NewSession(e.runner, activeSessionID).
 		WithInput(turnInput).
-		OnEvent(func(event fkevent.Event) error {
+		OnEvent(func(event events.Event) error {
 			return innerCallback(event)
 		}).
 		WithHistory(recorder).

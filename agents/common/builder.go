@@ -3,7 +3,7 @@ package common
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/agentruntime"
+	agentruntime "fkteams/agentcore/runtime"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
 	"fkteams/tools"

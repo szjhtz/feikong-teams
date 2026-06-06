@@ -6,7 +6,7 @@ import (
 	"errors"
 	einoruntime "fkteams/agentcore/eino"
 	rootcommon "fkteams/common"
-	"fkteams/fkevent"
+	"fkteams/events"
 	"fkteams/providers/copilot"
 	"fkteams/tools/approval"
 	"fmt"
@@ -109,7 +109,7 @@ func (m *middleware) executeTasks(ctx context.Context, input *dispatchInput) (st
 	}()
 
 	// 非交互模式（如 Web 服务）：跳过 Bubble Tea，将事件通过 fkevent 转发
-	if fkevent.IsNonInteractive(ctx) {
+	if events.IsNonInteractive(ctx) {
 		forwardEvents(ctx, input.Tasks, eventCh)
 	} else if cancelled := runDispatchView(input.Tasks, eventCh); cancelled {
 		cancelTasks()
@@ -283,9 +283,9 @@ func forwardEvents(ctx context.Context, tasks []taskItem, eventCh <-chan viewEve
 			"event_type":   e.Type,
 			"event_detail": e.Content,
 		})
-		_ = fkevent.DispatchEvent(ctx, fkevent.Event{
-			Type:       fkevent.EventMemberUpdate,
-			ActionType: fkevent.ActionType(e.Type),
+		_ = events.DispatchEvent(ctx, events.Event{
+			Type:       events.EventMemberUpdate,
+			ActionType: events.ActionType(e.Type),
 			Content:    e.Content,
 			Detail:     string(detail),
 		})

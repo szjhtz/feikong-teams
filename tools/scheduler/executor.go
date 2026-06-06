@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/engine"
-	"fkteams/eventview"
+	"fkteams/events/view"
 	"fmt"
 	"os"
 	"path/filepath"

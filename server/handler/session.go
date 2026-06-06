@@ -3,7 +3,7 @@ package handler
 import (
 	"errors"
 	"fkteams/common"
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"log"
 	"net/http"
 	"os"

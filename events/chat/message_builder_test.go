@@ -1,8 +1,8 @@
-package chatutil
+package chat
 
 import (
 	"fkteams/agentcore"
-	"fkteams/eventlog"
+	"fkteams/events/log"
 	"strings"
 	"testing"
 )

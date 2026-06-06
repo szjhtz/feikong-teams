@@ -4,7 +4,7 @@ package runner
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/agentruntime"
+	agentruntime "fkteams/agentcore/runtime"
 	"fkteams/agents"
 	"fkteams/agents/coordinator"
 	"fkteams/agents/custom"
@@ -12,7 +12,7 @@ import (
 	"fkteams/agents/discussant"
 	"fkteams/agents/moderator"
 	"fkteams/agents/tasker"
-	"fkteams/agenttool"
+	"fkteams/agents/toolmeta"
 	"fkteams/common"
 	"fkteams/config"
 	"fmt"
@@ -28,7 +28,7 @@ func agentToolName(name string, index int, used map[string]bool) string {
 	if normalized == "" || (normalized[0] >= '0' && normalized[0] <= '9') {
 		normalized = fmt.Sprintf("member_%d", index+1)
 	}
-	normalized = agenttool.AgentToolPrefix + normalized
+	normalized = toolmeta.AgentToolPrefix + normalized
 
 	base := normalized
 	for suffix := 2; used[normalized]; suffix++ {
@@ -44,7 +44,7 @@ func buildAgentTools(ctx context.Context, subAgents []agentcore.Agent) ([]agentc
 		ToolName: func(displayName string, index int) string {
 			return agentToolName(displayName, index, usedNames)
 		},
-		RegisterDisplay: agenttool.RegisterAgentToolDisplay,
+		RegisterDisplay: toolmeta.RegisterAgentToolDisplay,
 	})
 }
 

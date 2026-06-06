@@ -1,5 +1,5 @@
-// Package fkevent provides the engine-neutral event dispatch layer.
-package fkevent
+// Package events provides the engine-neutral event dispatch layer.
+package events
 
 import (
 	"context"
