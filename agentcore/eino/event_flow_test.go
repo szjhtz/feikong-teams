@@ -130,6 +130,22 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 	requireBefore(t, events, toolStartIdx, toolEndIdx, "tool start", "tool end")
 	requireBefore(t, events, toolEndIdx, toolMessageIdx, "tool end", "tool message")
 	requireBefore(t, events, toolMessageIdx, finalIdx, "tool message", "final output")
+
+	firstArgs := events[firstArgsIdx]
+	secondArgs := events[secondArgsIdx]
+	messageEnd := events[messageEndIdx]
+	if firstArgs.ToolCallRef == "" {
+		t.Fatalf("first tool args delta missing tool_call_ref: %#v", firstArgs)
+	}
+	if secondArgs.ToolCallRef != firstArgs.ToolCallRef {
+		t.Fatalf("tool args refs changed: first=%q second=%q", firstArgs.ToolCallRef, secondArgs.ToolCallRef)
+	}
+	if messageEnd.ToolCallRefs[0] != firstArgs.ToolCallRef {
+		t.Fatalf("message_end tool call ref = %q, want %q", messageEnd.ToolCallRefs[0], firstArgs.ToolCallRef)
+	}
+	if toolStart.ToolCallRef != firstArgs.ToolCallRef {
+		t.Fatalf("tool_start ref = %q, want args ref %q", toolStart.ToolCallRef, firstArgs.ToolCallRef)
+	}
 }
 
 func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {

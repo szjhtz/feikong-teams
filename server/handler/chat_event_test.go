@@ -103,6 +103,56 @@ func TestConvertEventToMapOmitsStreamMetadataForNonDeltaEvents(t *testing.T) {
 	}
 }
 
+func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) {
+	toolIndex := 0
+	got := convertEventToMap(events.Event{
+		Type:          events.EventToolStart,
+		ToolCallID:    "tool-call-1",
+		ToolCallRef:   "ref-tool-call-1",
+		ToolName:      "single_tool",
+		ToolCallIndex: &toolIndex,
+		ToolCall: &agentcore.ToolCall{
+			ID:    "tool-call-1",
+			Index: &toolIndex,
+			Type:  "function",
+			Function: agentcore.FunctionCall{
+				Name:      "single_tool",
+				Arguments: `{"ok":true}`,
+			},
+		},
+	})
+
+	toolCalls, ok := got["tool_calls"].([]map[string]any)
+	if !ok || len(toolCalls) != 1 {
+		t.Fatalf("expected one tool call map, got %#v", got["tool_calls"])
+	}
+	requireMapValue(t, toolCalls[0], "ref", "ref-tool-call-1")
+	requireMapValue(t, toolCalls[0], "arguments", `{"ok":true}`)
+	toolCall, ok := got["tool_call"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected singular tool_call for one call, got %#v", got["tool_call"])
+	}
+	requireMapValue(t, toolCall, "ref", "ref-tool-call-1")
+}
+
+func TestConvertEventToMapDoesNotExposeSingularToolCallForMultipleCalls(t *testing.T) {
+	got := convertEventToMap(events.Event{
+		Type: events.EventMessageEnd,
+		ToolCalls: []agentcore.ToolCall{
+			{ID: "tool-call-1", Function: agentcore.FunctionCall{Name: "first_tool"}},
+			{ID: "tool-call-2", Function: agentcore.FunctionCall{Name: "second_tool"}},
+		},
+	})
+
+	if _, ok := got["tool_call"]; ok {
+		t.Fatalf("tool_call should be omitted for multiple calls: %#v", got)
+	}
+	toolCalls, ok := got["tool_calls"].([]map[string]any)
+	if !ok || len(toolCalls) != 2 {
+		t.Fatalf("expected two tool call maps, got %#v", got["tool_calls"])
+	}
+}
+
 func requireMapValue(t *testing.T, got map[string]any, key string, want any) {
 	t.Helper()
 	if got[key] != want {

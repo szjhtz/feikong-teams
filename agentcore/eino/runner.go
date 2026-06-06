@@ -7,6 +7,7 @@ import (
 	"fkteams/events"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -340,6 +341,7 @@ type streamState struct {
 	reasoning      strings.Builder
 	toolCalls      map[int]agentcore.ToolCall
 	toolArgs       map[int]string
+	toolRefs       map[int]string
 	toolStarted    map[int]bool
 }
 
@@ -349,6 +351,7 @@ func newStreamState(event *adk.AgentEvent) *streamState {
 		role:        agentcore.RoleAssistant,
 		toolCalls:   make(map[int]agentcore.ToolCall),
 		toolArgs:    make(map[int]string),
+		toolRefs:    make(map[int]string),
 		toolStarted: make(map[int]bool),
 	}
 }
@@ -376,10 +379,15 @@ func (c *converter) handleStreamingMessage(ctx context.Context, event *adk.Agent
 			Content:          ss.content.String(),
 			ReasoningContent: ss.reasoning.String(),
 		}
-		for _, tc := range ss.toolCalls {
-			message.ToolCalls = append(message.ToolCalls, tc)
+		indexes := make([]int, 0, len(ss.toolCalls))
+		for idx := range ss.toolCalls {
+			indexes = append(indexes, idx)
 		}
-		end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: message.Content, ReasoningContent: message.ReasoningContent, ToolCalls: message.ToolCalls}
+		sort.Ints(indexes)
+		for _, idx := range indexes {
+			message.ToolCalls = append(message.ToolCalls, ss.toolCalls[idx])
+		}
+		end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: message.Content, ReasoningContent: message.ReasoningContent, ToolCalls: message.ToolCalls, ToolCallRefs: ss.toolRefs}
 		scope.apply(&end, c)
 		if err := c.emit(end); err != nil {
 			return err
@@ -475,8 +483,16 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		current.Function.Arguments += tc.Function.Arguments
 		ss.toolCalls[idx] = current
 		ss.toolArgs[idx] += tc.Function.Arguments
+		ref := c.toolCallRef(event, scope, current)
+		ss.toolRefs[idx] = ref
+		if current.ID != "" {
+			c.toolRefsByID.Store(current.ID, ref)
+			if current.Index != nil {
+				c.toolOrdersByID.Store(current.ID, *current.Index)
+			}
+		}
 		if tc.Function.Arguments != "" {
-			nEvent := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), DeltaKind: agentcore.DeltaToolArgs, Content: tc.Function.Arguments, Delta: tc.Function.Arguments, ToolCallID: current.ID, ToolName: current.Function.Name, ToolCallIndex: current.Index}
+			nEvent := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), DeltaKind: agentcore.DeltaToolArgs, Content: tc.Function.Arguments, Delta: tc.Function.Arguments, ToolCallID: current.ID, ToolCallRef: ref, ToolName: current.Function.Name, ToolCallIndex: current.Index}
 			scope.apply(&nEvent, c)
 			if err := c.emit(nEvent); err != nil {
 				return err

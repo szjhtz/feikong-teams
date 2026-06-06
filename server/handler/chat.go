@@ -245,6 +245,30 @@ func handlerEventToolCalls(event events.Event) []agentcore.ToolCall {
 	return toolCalls
 }
 
+func toolCallRefForMap(event events.Event, tc agentcore.ToolCall, position, total int) string {
+	if tc.Index != nil && event.ToolCallRefs != nil {
+		if ref := event.ToolCallRefs[*tc.Index]; ref != "" {
+			return ref
+		}
+	}
+	if event.ToolCallRef == "" {
+		return ""
+	}
+	if total == 1 {
+		return event.ToolCallRef
+	}
+	if tc.ID != "" && tc.ID == event.ToolCallID {
+		return event.ToolCallRef
+	}
+	if tc.Index != nil && event.ToolCallIndex != nil && *tc.Index == *event.ToolCallIndex {
+		return event.ToolCallRef
+	}
+	if position == 0 && event.ToolCallID == "" && event.ToolCallIndex == nil {
+		return event.ToolCallRef
+	}
+	return ""
+}
+
 // --- 事件/内容转换 ---
 
 // convertEventToMap 将事件转换为前端可用的格式
@@ -300,7 +324,7 @@ func convertEventToMap(event events.Event) map[string]any {
 	}
 	if toolCallsFromEvent := handlerEventToolCalls(event); len(toolCallsFromEvent) > 0 {
 		toolCalls := make([]map[string]any, 0, len(toolCallsFromEvent))
-		for _, tc := range toolCallsFromEvent {
+		for i, tc := range toolCallsFromEvent {
 			display := toolmeta.FormatToolDisplay(tc.Function.Name)
 			toolCall := map[string]any{
 				"name":         tc.Function.Name,
@@ -310,11 +334,11 @@ func convertEventToMap(event events.Event) map[string]any {
 			if tc.ID != "" {
 				toolCall["id"] = tc.ID
 			}
+			if ref := toolCallRefForMap(event, tc, i, len(toolCallsFromEvent)); ref != "" {
+				toolCall["ref"] = ref
+			}
 			if tc.Index != nil {
 				toolCall["index"] = *tc.Index
-				if event.ToolCallRefs != nil && event.ToolCallRefs[*tc.Index] != "" {
-					toolCall["ref"] = event.ToolCallRefs[*tc.Index]
-				}
 				if event.ToolCallSpanIDs != nil && event.ToolCallSpanIDs[*tc.Index] != "" {
 					toolCall["span_id"] = event.ToolCallSpanIDs[*tc.Index]
 				}
@@ -328,6 +352,9 @@ func convertEventToMap(event events.Event) map[string]any {
 			toolCalls = append(toolCalls, toolCall)
 		}
 		result["tool_calls"] = toolCalls
+		if len(toolCalls) == 1 {
+			result["tool_call"] = toolCalls[0]
+		}
 	}
 	if event.ActionType != "" {
 		result["action_type"] = event.ActionType

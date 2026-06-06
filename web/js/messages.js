@@ -15,6 +15,40 @@ FKTeamsChat.prototype.getToolDisplay = function (toolCall) {
   return { name, displayName: name, kind: "tool", target: "" };
 };
 
+FKTeamsChat.prototype.normalizeToolCallForEvent = function (event, toolCall, fallbackIndex) {
+  const source = toolCall || {};
+  const index = source.index !== undefined && source.index !== null
+    ? source.index
+    : event?.tool_call_index !== undefined && event?.tool_call_index !== null
+      ? event.tool_call_index
+      : event?.detail !== undefined && event?.detail !== null
+        ? event.detail
+        : fallbackIndex;
+  return {
+    id: source.id || event?.tool_call_id || "",
+    ref: source.ref || event?.tool_call_ref || "",
+    index,
+    name: source.name || event?.tool_name || "",
+    display_name: source.display_name || event?.tool_display_name || "",
+    kind: source.kind || event?.tool_kind || "",
+    target: source.target || event?.tool_target || "",
+    arguments: source.arguments || event?.tool_args || (event?.delta_kind === "tool_args" ? event?.delta || event?.content || "" : ""),
+  };
+};
+
+FKTeamsChat.prototype.normalizeToolCallsForEvent = function (event) {
+  const rawCalls = [];
+  if (Array.isArray(event?.tool_calls) && event.tool_calls.length > 0) {
+    rawCalls.push(...event.tool_calls);
+  } else if (event?.tool_call) {
+    rawCalls.push(event.tool_call);
+  }
+  if (rawCalls.length === 0 && (event?.tool_name || event?.tool_call_id || event?.tool_call_ref || event?.tool_call_index !== undefined)) {
+    rawCalls.push(null);
+  }
+  return rawCalls.map((toolCall, i) => this.normalizeToolCallForEvent(event, toolCall, i));
+};
+
 FKTeamsChat.prototype.getStreamKey = function (event) {
   return [event.agent_name || "", event.run_path || ""].join("|");
 };
@@ -806,6 +840,8 @@ FKTeamsChat.prototype.ensureMemberToolFlow = function (entry, key, displayName, 
   if (!entry.toolFlows) entry.toolFlows = {};
   const existing = entry.toolFlows[key];
   if (existing && existing.el && existing.el.isConnected) {
+    const title = existing.el.querySelector(".parallel-member-tool-title");
+    if (title && displayName) title.textContent = displayName;
     this.insertMemberTimelineItem(entry, existing.el, existing.el.getAttribute("data-event-order"));
     return existing;
   }
@@ -813,8 +849,9 @@ FKTeamsChat.prototype.ensureMemberToolFlow = function (entry, key, displayName, 
   entry.currentTimelineItem = null;
   const item = document.createElement("div");
   item.className = "parallel-member-event parallel-member-event-tool parallel-member-tool-flow";
+  item.setAttribute("data-tool-flow-key", key);
   item.innerHTML = `
-    <details>
+    <details open>
       <summary>
         <span class="parallel-member-tool-title">${this.escapeHtml(displayName || "工具调用")}</span>
         <span class="parallel-member-tool-status">准备参数</span>
@@ -855,6 +892,7 @@ FKTeamsChat.prototype.migrateMemberToolFlow = function (entry, fromKey, toKey) {
   if (!to) {
     entry.toolFlows[toKey] = from;
     delete entry.toolFlows[fromKey];
+    if (from.el) from.el.setAttribute("data-tool-flow-key", toKey);
     return;
   }
   if ((from.argsRaw || "") && !(to.argsRaw || "")) {
@@ -1757,7 +1795,7 @@ FKTeamsChat.prototype.handleCoreMessageEnd = function (event) {
 };
 
 FKTeamsChat.prototype.handleCoreToolStart = function (event) {
-  const toolCall = event.tool_call || (Array.isArray(event.tool_calls) && event.tool_calls[0]) || this.coreToolCallFromEvent(event);
+  const toolCall = this.normalizeToolCallsForEvent(event)[0] || this.coreToolCallFromEvent(event);
   this.migrateCoreToolEventKey(event, toolCall);
   const nextEvent = { ...event, tool_calls: [toolCall] };
   this.handleToolCallsPreparing(nextEvent);
@@ -1771,7 +1809,7 @@ FKTeamsChat.prototype.handleCoreToolArgsDelta = function (event) {
   if (!content) return;
 
   if (!this.isMemberRunEvent(event)) {
-    const toolCall = this.coreToolCallFromEvent({ ...event, content: "" });
+    const toolCall = this.normalizeToolCallForEvent({ ...event, content: "" }, null, 0);
     this.migrateCoreToolEventKey(event, toolCall);
     const key = this.coreToolEventKey(event);
     const toolDisplay = this.getToolDisplay(toolCall);
@@ -1962,11 +2000,12 @@ FKTeamsChat.prototype.handleMessage = function (event) {
 };
 
 FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
-  if (!event.tool_calls || event.tool_calls.length === 0) return;
+  const toolCalls = this.normalizeToolCallsForEvent(event);
+  if (toolCalls.length === 0) return;
 
   if (this.isMemberRunEvent(event)) {
     const entry = this.memberEntryFromEvent(event);
-    event.tool_calls.forEach((toolCall, i) => {
+    toolCalls.forEach((toolCall, i) => {
       const display = this.getToolDisplay(toolCall);
       if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
       if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
@@ -1979,7 +2018,7 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
   }
 
   this.hasToolCallAfterMessage = true;
-  event.tool_calls.forEach((toolCall, i) => {
+  toolCalls.forEach((toolCall, i) => {
     this.lastToolName = toolCall.name;
     const key = this.toolCallKey(toolCall, i);
     const toolDisplay = this.getToolDisplay(toolCall);
@@ -2006,9 +2045,11 @@ FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
 
   if (this.isMemberRunEvent(event)) {
     const entry = this.memberEntryFromEvent(event);
-    const flowKey = this.resolveMemberToolFlowKey(entry, event);
-    this.registerMemberToolFlowAlias(entry, event.tool_name, flowKey);
-    this.updateMemberToolFlowArgs(entry, flowKey, event.tool_display_name || event.tool_name || "工具调用", event.content, true, event.sequence);
+    const toolCall = this.normalizeToolCallForEvent(event, null, 0);
+    const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, 0);
+    const display = this.getToolDisplay(toolCall);
+    this.registerMemberToolFlowAlias(entry, toolCall.name, flowKey);
+    this.updateMemberToolFlowArgs(entry, flowKey, display.displayName || "工具调用", event.content, true, event.sequence);
     this.scrollToBottom();
     return;
   }
@@ -2049,11 +2090,12 @@ FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
 };
 
 FKTeamsChat.prototype.handleToolCalls = function (event) {
-  if (!event.tool_calls || event.tool_calls.length === 0) return;
+  const toolCalls = this.normalizeToolCallsForEvent(event);
+  if (toolCalls.length === 0) return;
 
   if (this.isMemberRunEvent(event)) {
     const entry = this.memberEntryFromEvent(event);
-    event.tool_calls.forEach((toolCall, i) => {
+    toolCalls.forEach((toolCall, i) => {
       const display = this.getToolDisplay(toolCall);
       if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
       if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
@@ -2066,9 +2108,10 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
   }
 
   // dispatch_tasks: 暂存任务列表，卡片在审批通过后由 dispatch_progress 触发创建
-  if (event.tool_calls[0].name === "dispatch_tasks" && event.tool_calls[0].arguments) {
+  const dispatchToolCall = toolCalls.find((toolCall) => toolCall.name === "dispatch_tasks" && toolCall.arguments);
+  if (dispatchToolCall) {
     try {
-      const args = JSON.parse(event.tool_calls[0].arguments);
+      const args = JSON.parse(dispatchToolCall.arguments);
       if (args.tasks && args.tasks.length > 0) {
         this._pendingDispatchTasks = args.tasks;
         // 移除 tool-call 占位
@@ -2083,7 +2126,7 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
     }
   }
 
-  event.tool_calls.forEach((toolCall, i) => {
+  toolCalls.forEach((toolCall, i) => {
     this.lastToolName = toolCall.name;
     const key = this.toolCallKey(toolCall, i);
     if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
@@ -2141,12 +2184,14 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
   let content = event.content || "";
   if (this.isMemberRunEvent(event)) {
     const entry = this.memberEntryFromEvent(event);
-    const flowKey = this.resolveMemberToolFlowKey(entry, event);
-    this.registerMemberToolFlowAlias(entry, event.tool_name, flowKey);
+    const toolCall = this.normalizeToolCallForEvent(event, null, 0);
+    const display = this.getToolDisplay(toolCall);
+    const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, 0);
+    this.registerMemberToolFlowAlias(entry, toolCall.name, flowKey);
     if (event.type === "tool_result_chunk") {
       const key = this.memberInnerResultKey(event);
       if (key) this.parallelMemberInnerResultChunks[key] = (this.parallelMemberInnerResultChunks[key] || "") + content;
-      this.updateMemberToolFlowResult(entry, flowKey, event.tool_display_name || event.tool_name || "工具调用", content, true, event.sequence);
+      this.updateMemberToolFlowResult(entry, flowKey, display.displayName || "工具调用", content, true, event.sequence);
       return;
     }
     const key = this.memberInnerResultKey(event);
@@ -2155,7 +2200,7 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
       content = content && !chunked.includes(content) ? chunked + content : chunked || content;
       delete this.parallelMemberInnerResultChunks[key];
     }
-    if (content) this.updateMemberToolFlowResult(entry, flowKey, event.tool_display_name || event.tool_name || "工具调用", content, false, event.sequence);
+    if (content) this.updateMemberToolFlowResult(entry, flowKey, display.displayName || "工具调用", content, false, event.sequence);
     this.scrollToBottom();
     return;
   }

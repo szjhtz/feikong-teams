@@ -58,3 +58,50 @@ test("member tool flow key resolves index-only event without inventing another c
   assert.equal(key, "idx:0");
   assert.deepEqual(chat.migrations, [["fallback:0", "idx:0"]]);
 });
+
+test("tool call normalization merges top-level identity into array calls", () => {
+  const chat = newChatWithRecordedMigrations();
+
+  const calls = chat.normalizeToolCallsForEvent({
+    tool_call_id: "call-1",
+    tool_call_ref: "ref-1",
+    tool_call_index: 2,
+    tool_name: "member_echo",
+    tool_display_name: "Echo",
+    tool_kind: "tool",
+    tool_calls: [{
+      id: "call-1",
+      index: 2,
+      name: "member_echo",
+      arguments: "{\"text\":\"hello\"}",
+    }],
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], {
+    id: "call-1",
+    ref: "ref-1",
+    index: 2,
+    name: "member_echo",
+    display_name: "Echo",
+    kind: "tool",
+    target: "",
+    arguments: "{\"text\":\"hello\"}",
+  });
+});
+
+test("dispatch task handling does not assume the first tool call", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  chat.isMemberRunEvent = () => false;
+  chat.messagesContainer = { querySelectorAll: () => [] };
+  chat.scrollToBottom = () => {};
+
+  chat.handleToolCalls({
+    tool_calls: [
+      { name: "other_tool", arguments: "{\"x\":1}" },
+      { name: "dispatch_tasks", arguments: "{\"tasks\":[{\"title\":\"task\"}]}" },
+    ],
+  });
+
+  assert.deepEqual(chat._pendingDispatchTasks, [{ title: "task" }]);
+});
