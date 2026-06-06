@@ -952,7 +952,6 @@ FKTeamsChat.prototype.isLegacyHistoryMemberMessage = function (msg) {
 FKTeamsChat.prototype.isHistoryMemberMessage = function (msg) {
   return !!(
     msg &&
-    msg.is_member_event &&
     msg.member_call_id
   );
 };

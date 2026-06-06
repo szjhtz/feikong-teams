@@ -252,12 +252,6 @@ func convertEventToMap(event events.Event) map[string]any {
 	if !event.CreatedAt.IsZero() {
 		result["created_at"] = event.CreatedAt
 	}
-	if event.SpanID != "" {
-		result["span_id"] = event.SpanID
-	}
-	if event.ParentSpanID != "" {
-		result["parent_span_id"] = event.ParentSpanID
-	}
 	if event.TurnID != "" {
 		result["turn_id"] = event.TurnID
 	}
@@ -276,8 +270,8 @@ func convertEventToMap(event events.Event) map[string]any {
 			result["chunk_index"] = event.Sequence
 		}
 	}
-	if event.Delta != "" {
-		result["delta"] = event.Delta
+	if event.Type == events.EventMessageDelta && event.Content != "" {
+		result["delta"] = event.Content
 	}
 	if event.RunPath != "" {
 		result["run_path"] = event.RunPath
@@ -305,9 +299,6 @@ func convertEventToMap(event events.Event) map[string]any {
 			}
 			if tc.Index != nil {
 				toolCall["index"] = *tc.Index
-				if event.ToolCallSpanIDs != nil && event.ToolCallSpanIDs[*tc.Index] != "" {
-					toolCall["span_id"] = event.ToolCallSpanIDs[*tc.Index]
-				}
 			}
 			if display.Target != "" {
 				toolCall["target"] = display.Target
@@ -328,9 +319,6 @@ func convertEventToMap(event events.Event) map[string]any {
 	if event.ToolCallID != "" {
 		result["tool_call_id"] = event.ToolCallID
 	}
-	if event.ExternalCallID != "" {
-		result["external_call_id"] = event.ExternalCallID
-	}
 	if event.ToolCallRef != "" {
 		result["tool_call_ref"] = event.ToolCallRef
 	}
@@ -346,7 +334,7 @@ func convertEventToMap(event events.Event) map[string]any {
 	if event.ToolCallIndex != nil {
 		result["tool_call_index"] = *event.ToolCallIndex
 	}
-	if event.IsMemberEvent {
+	if events.IsMemberEvent(event) {
 		result["is_member_event"] = true
 	}
 	if event.MemberCallID != "" {

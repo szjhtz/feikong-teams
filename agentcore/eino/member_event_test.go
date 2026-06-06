@@ -83,8 +83,7 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 			event.ToolCallRef != ""
 	}, "parent member tool start")
 	memberReasoningIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.IsMemberEvent &&
-			event.MemberCallID == "parent-member-call" &&
+		return event.MemberCallID == "parent-member-call" &&
 			event.ParentToolCallID == "parent-member-call" &&
 			event.MemberToolName == "ask_fkagent_member" &&
 			event.MemberName == "member" &&
@@ -92,8 +91,7 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 			strings.Contains(event.Content, "member-thinking")
 	}, "member-scoped reasoning")
 	memberToolStartIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.IsMemberEvent &&
-			event.MemberCallID == "parent-member-call" &&
+		return event.MemberCallID == "parent-member-call" &&
 			event.Type == agentcore.EventToolStart &&
 			event.ToolName == "member_echo" &&
 			event.ToolCallRef != "" &&
@@ -101,8 +99,7 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 			*event.ToolCallIndex == 0
 	}, "member-scoped tool start")
 	memberToolResultIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.IsMemberEvent &&
-			event.MemberCallID == "parent-member-call" &&
+		return event.MemberCallID == "parent-member-call" &&
 			(event.Type == agentcore.EventToolUpdate || event.Type == agentcore.EventToolEnd) &&
 			event.ToolName == "member_echo" &&
 			event.ToolCallRef != ""

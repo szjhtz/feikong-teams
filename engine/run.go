@@ -10,7 +10,23 @@ import (
 // run 执行查询，处理事件和 HITL 中断。
 // 根据 runConfig 自动装配 context（session ID、事件回调、摘要持久化、审批注册表等）。
 func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, error) {
-	ctx = common.WithSessionID(ctx, e.checkpointID)
+	ctx = cfg.prepareContext(ctx, e.checkpointID)
+
+	if cfg.OnStart != nil {
+		cfg.OnStart(ctx)
+	}
+
+	result, err := e.runLoop(ctx, cfg.Input, cfg.interruptHandler())
+
+	if cfg.OnFinish != nil {
+		cfg.OnFinish(ctx, result, err)
+	}
+
+	return result, err
+}
+
+func (cfg runConfig) prepareContext(ctx context.Context, checkpointID string) context.Context {
+	ctx = common.WithSessionID(ctx, checkpointID)
 
 	if cfg.EventCallback != nil {
 		ctx = events.WithCallback(ctx, cfg.EventCallback)
@@ -35,21 +51,12 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, er
 			ctx = hook(ctx)
 		}
 	}
+	return ctx
+}
 
-	if cfg.OnStart != nil {
-		cfg.OnStart(ctx)
+func (cfg runConfig) interruptHandler() InterruptHandler {
+	if cfg.OnInterrupt != nil {
+		return cfg.OnInterrupt
 	}
-
-	handler := cfg.OnInterrupt
-	if handler == nil {
-		handler = FixedDecisionHandler(0)
-	}
-
-	result, err := e.runLoop(ctx, cfg.Input, handler)
-
-	if cfg.OnFinish != nil {
-		cfg.OnFinish(ctx, result, err)
-	}
-
-	return result, err
+	return FixedDecisionHandler(0)
 }

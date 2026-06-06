@@ -1,6 +1,6 @@
 # fkteams
 
-基于 CloudWeGo Eino ADK 的多智能体协作系统，支持 CLI、Web UI 和消息通道（Discord/QQ/微信）三种交互方式。
+基于 CloudWeGo Eino ADK 的多智能体协作系统，支持 CLI、Web UI、纯 API 服务和消息通道（Discord/QQ/微信）多种交互方式。
 
 ## 构建与运行
 
@@ -13,7 +13,7 @@ go run . web                            # 启动 Web 服务（默认 :23456）
 go run . serve                          # 启动纯 API 服务
 
 # 构建
-make native                             # 当前平台 -> release/fkteams_os_arch
+make native                             # 当前平台 -> release/fkteams_<goos>_<goarch>
 make all                                # 预设平台（darwin/arm64, windows/amd64, linux/amd64）
 make build t=linux:amd64                # 指定平台
 make clean                              # 清理 release/
@@ -32,22 +32,33 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
   session.go, agent.go      #   会话和智能体管理
   skill/                    #   技能安装、移除、搜索
 engine/                     # 统一执行引擎
-  session.go                #   NewSession() — 面向入口层的会话执行接口（WithMessages / OnEvent / WithHistory / Run）
+  session.go                #   NewSession() — 面向入口层的会话执行接口
+                            #   （WithText / WithMessage / WithInput / OnEvent / WithHistory / Run）
   config.go                 #   runConfig — 包内执行配置，集中管理 context 装配和回调
                             #   （OnStart → OnInterrupt → OnFinish），各入口通过 Session 装配
-  run.go                    #   core.run() — 装配 context 后调用 runLoop
-  loop.go                   #   runLoop() — Runner 事件循环，处理迭代和 HITL 中断/恢复
+  run.go                    #   core.run() — 装配 context、默认 HITL handler 后调用 runLoop
+  loop.go                   #   runLoop() — 将 engine.TurnInput 和 RunOptions 委托给 Runner
   interrupt.go              #   HITL 中断处理器（FixedDecisionHandler / ChannelHandler / InfoHandler）
+agentcore/                  # 运行时无关核心接口
+  types.go                  #   Message / ToolCall / Event / RunOptions / Runner 等协议类型
+  agent.go                  #   Agent / Engine 抽象和 ChatAgentConfig / RunnerConfig
+  model.go, tool.go         #   ChatModel / Tool 抽象
+  runtime/runtime.go        #   默认 runtime engine（当前为 Eino）注册和获取
+  eino/                     #   CloudWeGo Eino ADK 适配层
+    runner.go               #     ADK AgentEvent -> events 协议转换，HITL resume 适配
+    engine/engine.go        #     agentcore.Engine 的 Eino 实现
+    middlewares/            #     autocontinue / summary / skills / dispatch / inject / fkfs
+    middlewares/tools/      #     warperror / trimresult / patch / destructiveguard
+    providers/              #     OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot
 agents/                     # 智能体系统
   registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
-  common/builder.go         #   AgentBuilder 流式构建器（WithTools / WithTemplate / WithSummary / Build）
+  common/builder.go         #   AgentBuilder 构建器（WithTools / WithToolNames / WithSummary / WithSkills / Build）
   common/common.go          #   NewChatModel / MaxIterations
-  middlewares/              #   中间件（autocontinue / summary / skills / dispatch / inject）
-  middlewares/tools/        #   工具中间件（warperror / trimresult / patch / destructiveguard）
-  retry/                    #   模型调用自动重试
+  toolmeta/                 #   成员智能体工具前缀、显示名和分类注册
 runner/                     # Runner 工厂 — 根据 mode 创建不同 Runner
   runner.go                 #   CreateTeamRunner / CreateDeepAgentsRunner /
-                            #   CreateLoopAgentRunner / CreateCustomRunner
+                            #   CreateLoopAgentRunner / CreateCustomRunner / CreateBackgroundTaskRunner
+  cache.go                  #   Runner 缓存和 mode/agentName 解析
 tools/                      # 工具系统
   tools.go                  #   GetToolsByName() — 按名称返回工具列表
   metadata.go               #   ClassifyTools() — 标记只读/破坏性工具
@@ -61,19 +72,16 @@ server/                     # HTTP 服务（Gin）
 channels/                   # 消息通道桥接
   channel.go                #   Channel 接口 + Manager 管理器 + Factory 工厂注册
   bridge.go                 #   Bridge — 连接通道和引擎，goroutine 串行处理会话消息
-fkevent/                    # 事件系统
-  types.go                  #   类型常量：EventType / ActionType / NotifyType（禁止字符串字面量）
-  event.go                  #   ProcessAgentEvent() — ADK 事件转换与回调分发
-  scope.go                  #   子智能体事件归属标记
-eventlog/                   # 事件日志与会话历史
-  history.go                #   HistoryRecorder — 会话历史记录和摘要持久化
-  session_manager.go        #   会话 metadata 与全局历史记录器管理
-agenttool/                  # 成员智能体工具元数据
-  tool_display.go           #   成员工具前缀、显示名和工具分类注册
-eventview/                  # 事件展示层
-  print.go                  #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
+events/                     # 事件协议与展示/历史
+  types.go                  #   agentcore 事件类型别名和常量导出
+  event.go                  #   context 事件回调、NormalizeEvent、DispatchEvent
+  emitter.go                #   Emitter + Agent/Turn/Message/Tool 事件构造函数
+  protocol.go               #   工具调用身份协议校验与兼容辅助
+  log/                      #   HistoryRecorder、会话 metadata、全局历史记录器管理
+  view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
+  chat/                     #   历史消息构建器
 config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
-providers/                  # 模型提供者（OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot）
+providers/                  # agentcore 外层模型提供者注册、检测和模型列表获取
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
 web/                        # 内嵌前端（//go:embed）
 g/                          # 全局变量（MemoryManager / ProcessCleaner）
@@ -88,7 +96,9 @@ bootstrap/                  # 应用目录初始化
 
 ### 数据目录
 
-`~/.fkteams/{workspace,scheduler,sessions,history,config,log}`
+默认应用目录为 `~/.fkteams`，可用 `FEIKONG_APP_DIR` 覆盖。常用子目录：
+
+`{workspace,scheduler,sessions,history,config,log,share}`
 
 ## 代码风格
 
@@ -98,7 +108,7 @@ bootstrap/                  # 应用目录初始化
 4. **用 `any` 替代 `interface{}`**
 5. **工具函数不返回 error**：将错误信息放入响应的 `ErrorMessage` 字段并返回 nil
 6. **初始化函数必须返回 error**，不使用 `log.Fatal`
-7. **禁止事件类型的字符串字面量**：始终使用 `fkevent/types.go` 中的类型常量
+7. **禁止事件类型的字符串字面量**：始终使用 `events/types.go`（底层为 `agentcore/types.go`）中的类型常量
 
 ## 开发约定
 
@@ -125,8 +135,11 @@ bootstrap/                  # 应用目录初始化
 
 ### 事件
 
-- 事件处理使用 `fkevent/types.go` 中的类型常量，禁止使用字符串字面量
-- 新增事件类型/动作类型/通知类型必须先在 `types.go` 中定义常量
+- 事件处理使用 `events/types.go` / `agentcore/types.go` 中的类型常量，禁止使用字符串字面量
+- 新增事件类型/动作类型/通知类型必须先在 `agentcore/types.go` 中定义常量，并由 `events/types.go` 导出别名
+- 运行时适配器发事件优先使用 `events.Emitter` 和 `events.AgentStart` / `events.MessageDelta` / `events.ToolStart` 等构造函数
+- 流式事件的规范增量载荷使用 `Content`；不要在核心事件或历史存储中重复维护 `Delta`
+- 工具调用事件必须通过 `tool_call_ref` 保持 `message_delta(tool_args)`、`message_end.tool_calls[]`、`tool_start/update/end` 的稳定关联
 
 ### 通道
 

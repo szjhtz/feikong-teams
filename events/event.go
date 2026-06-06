@@ -49,16 +49,11 @@ func NormalizeEvent(event Event) Event {
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()
 	}
-	if event.Delta == "" {
-		event.Delta = event.Content
-	}
-	if event.RunID == "" {
-		event.RunID = event.SpanID
-	}
-	if event.MemberCallID != "" {
-		event.IsMemberEvent = true
-	}
 	return event
+}
+
+func IsMemberEvent(event Event) bool {
+	return event.MemberCallID != ""
 }
 
 // DispatchEvent normalizes and sends an event to the context callback.

@@ -25,6 +25,18 @@ func (s *Session) WithInput(input TurnInput) *Session {
 	return s
 }
 
+func (s *Session) WithMessage(message agentcore.Message) *Session {
+	s.cfg.Input.Message = message
+	return s
+}
+
+func (s *Session) WithText(text string) *Session {
+	return s.WithMessage(agentcore.Message{
+		Role:    agentcore.RoleUser,
+		Content: text,
+	})
+}
+
 func (s *Session) WithMessages(messages []agentcore.Message) *Session {
 	s.cfg.Input.Context = messages
 	return s

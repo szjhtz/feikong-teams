@@ -22,12 +22,10 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 		Role:             agentcore.RoleAssistant,
 		DeltaKind:        events.DeltaToolArgs,
 		Content:          `{"request":`,
-		Delta:            `{"request":`,
 		ToolCallID:       "tool-call-1",
 		ToolCallRef:      "ref-tool-call-1",
 		ToolName:         toolName,
 		ToolCallIndex:    &toolIndex,
-		IsMemberEvent:    true,
 		MemberCallID:     "member-call-1",
 		MemberToolName:   "ask_fkagent_parent_member",
 		MemberName:       "Event Flow Member",
@@ -43,8 +41,7 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 				Arguments: `{"request":"hello"}`,
 			},
 		}},
-		ToolCallRefs:    map[int]string{0: "ref-tool-call-1"},
-		ToolCallSpanIDs: map[int]string{0: "span-tool-call-1"},
+		ToolCallRefs: map[int]string{0: "ref-tool-call-1"},
 	})
 
 	got := convertEventToMap(event)
@@ -78,7 +75,6 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 	requireMapValue(t, toolCalls[0], "id", "tool-call-1")
 	requireMapValue(t, toolCalls[0], "index", 0)
 	requireMapValue(t, toolCalls[0], "ref", "ref-tool-call-1")
-	requireMapValue(t, toolCalls[0], "span_id", "span-tool-call-1")
 	requireMapValue(t, toolCalls[0], "name", toolName)
 	requireMapValue(t, toolCalls[0], "display_name", "指派给 Event Flow Member")
 	requireMapValue(t, toolCalls[0], "kind", toolmeta.ToolKindAgent)

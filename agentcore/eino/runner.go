@@ -27,41 +27,36 @@ func (r *Runner) Run(ctx context.Context, input agentcore.TurnInput, opts agentc
 	if r == nil || r.inner == nil {
 		return nil, fmt.Errorf("runner is nil")
 	}
-	if opts.Sink == nil {
-		opts.Sink = func(agentcore.Event) error { return nil }
-	}
-
+	opts = opts.WithDefaults(opts.CheckpointID)
 	runID := opts.RunID
-	if runID == "" {
-		runID = opts.CheckpointID
-	}
-	turnID := fmt.Sprintf("%s:turn:1", runID)
+	turnID := events.TurnID(runID, 1)
+	emitter := events.NewEmitter(runID, turnID, opts.Sink)
 
-	if err := opts.Sink(agentcore.Event{Type: agentcore.EventAgentStart, RunID: runID}); err != nil {
+	if err := emitter.Emit(events.AgentStart(runID)); err != nil {
 		return nil, err
 	}
-	if err := opts.Sink(agentcore.Event{Type: agentcore.EventTurnStart, RunID: runID, TurnID: turnID}); err != nil {
+	if err := emitter.Emit(events.TurnStart(runID, turnID)); err != nil {
 		return nil, err
 	}
 	if !input.Message.IsEmpty() && input.Message.Role == agentcore.RoleUser {
 		userMessage := input.Message
-		displayText := userMessage.DisplayText()
 		messageID := fmt.Sprintf("%s:user", turnID)
-		if err := opts.Sink(agentcore.Event{Type: agentcore.EventMessageStart, RunID: runID, TurnID: turnID, MessageID: messageID, Role: agentcore.RoleUser, Message: &userMessage, Content: displayText}); err != nil {
+		start, end := events.UserMessagePair(runID, turnID, messageID, userMessage)
+		if err := emitter.Emit(start); err != nil {
 			return nil, err
 		}
-		if err := opts.Sink(agentcore.Event{Type: agentcore.EventMessageEnd, RunID: runID, TurnID: turnID, MessageID: messageID, Role: agentcore.RoleUser, Message: &userMessage, Content: displayText}); err != nil {
+		if err := emitter.Emit(end); err != nil {
 			return nil, err
 		}
 	}
 
 	iter := r.inner.Run(ctx, adaptMessagesForRunner(input.AllMessages()), adk.WithCheckPointID(opts.CheckpointID))
-	converter := newConverter(runID, turnID, opts.Sink)
+	converter := newConverter(emitter)
 	for {
 		lastEvent, err := converter.drain(ctx, iter)
 		if err != nil {
-			_ = opts.Sink(agentcore.Event{Type: agentcore.EventAgentEnd, RunID: runID, Error: err.Error()})
-			return &agentcore.RunResult{LastEvent: converter.lastEvent}, err
+			_ = emitter.Emit(events.AgentError(runID, err))
+			return &agentcore.RunResult{LastEvent: converter.lastEvent()}, err
 		}
 
 		if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {
@@ -69,14 +64,14 @@ func (r *Runner) Run(ctx context.Context, input agentcore.TurnInput, opts agentc
 			if len(interrupts) > 0 && opts.InterruptHandler != nil {
 				targets, handlerErr := opts.InterruptHandler(ctx, interrupts)
 				if handlerErr != nil {
-					_ = opts.Sink(agentcore.Event{Type: agentcore.EventAgentEnd, RunID: runID, Error: handlerErr.Error()})
-					return &agentcore.RunResult{LastEvent: converter.lastEvent}, handlerErr
+					_ = emitter.Emit(events.AgentError(runID, handlerErr))
+					return &agentcore.RunResult{LastEvent: converter.lastEvent()}, handlerErr
 				}
 				resumeIter, resumeErr := r.inner.ResumeWithParams(ctx, opts.CheckpointID, &adk.ResumeParams{Targets: targets})
 				if resumeErr != nil {
 					err := fmt.Errorf("resume failed: %w", resumeErr)
-					_ = opts.Sink(agentcore.Event{Type: agentcore.EventAgentEnd, RunID: runID, Error: err.Error()})
-					return &agentcore.RunResult{LastEvent: converter.lastEvent}, err
+					_ = emitter.Emit(events.AgentError(runID, err))
+					return &agentcore.RunResult{LastEvent: converter.lastEvent()}, err
 				}
 				iter = resumeIter
 				continue
@@ -85,13 +80,13 @@ func (r *Runner) Run(ctx context.Context, input agentcore.TurnInput, opts agentc
 		break
 	}
 
-	if err := opts.Sink(agentcore.Event{Type: agentcore.EventTurnEnd, RunID: runID, TurnID: turnID}); err != nil {
+	if err := emitter.Emit(events.TurnEnd(runID, turnID)); err != nil {
 		return nil, err
 	}
-	if err := opts.Sink(agentcore.Event{Type: agentcore.EventAgentEnd, RunID: runID}); err != nil {
+	if err := emitter.Emit(events.AgentEnd(runID)); err != nil {
 		return nil, err
 	}
-	return &agentcore.RunResult{LastEvent: converter.lastEvent}, nil
+	return &agentcore.RunResult{LastEvent: converter.lastEvent()}, nil
 }
 
 func adaptInterruptsFromRunner(interrupts []*adk.InterruptCtx) []agentcore.Interrupt {
@@ -107,30 +102,23 @@ func adaptInterruptsFromRunner(interrupts []*adk.InterruptCtx) []agentcore.Inter
 }
 
 type converter struct {
-	runID      string
-	turnID     string
-	sink       agentcore.EventSink
-	lastEvent  agentcore.Event
+	emitter    *events.Emitter
 	identities *toolIdentityTracker
 }
 
-func newConverter(runID, turnID string, sink agentcore.EventSink) *converter {
+func newConverter(emitter *events.Emitter) *converter {
 	return &converter{
-		runID:      runID,
-		turnID:     turnID,
-		sink:       sink,
+		emitter:    emitter,
 		identities: newToolIdentityTracker(),
 	}
 }
 
 func (c *converter) emit(event agentcore.Event) error {
-	event.RunID = firstNonEmpty(event.RunID, c.runID)
-	event.TurnID = firstNonEmpty(event.TurnID, c.turnID)
-	c.lastEvent = events.NormalizeEvent(event)
-	if err := events.ValidateEventContract(c.lastEvent); err != nil {
-		return err
-	}
-	return c.sink(c.lastEvent)
+	return c.emitter.Emit(event)
+}
+
+func (c *converter) lastEvent() agentcore.Event {
+	return c.emitter.LastEvent()
 }
 
 func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent]) (*adk.AgentEvent, error) {
@@ -161,12 +149,7 @@ func (c *converter) process(ctx context.Context, event *adk.AgentEvent) error {
 		if isContextCanceled(ctx, event.Err) {
 			return nil
 		}
-		nEvent := agentcore.Event{
-			Type:      agentcore.EventError,
-			AgentName: event.AgentName,
-			RunPath:   formatRunPath(event.RunPath),
-			Error:     event.Err.Error(),
-		}
+		nEvent := events.Error(event.AgentName, formatRunPath(event.RunPath), event.Err)
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
 	}
@@ -186,13 +169,7 @@ func (c *converter) process(ctx context.Context, event *adk.AgentEvent) error {
 func (c *converter) handleAction(event *adk.AgentEvent, scope MemberScope) error {
 	action := event.Action
 	if action.TransferToAgent != nil {
-		nEvent := agentcore.Event{
-			Type:       agentcore.EventAction,
-			AgentName:  event.AgentName,
-			RunPath:    formatRunPath(event.RunPath),
-			ActionType: agentcore.ActionTransfer,
-			Content:    fmt.Sprintf("Transfer to agent: %s", action.TransferToAgent.DestAgentName),
-		}
+		nEvent := events.Action(event.AgentName, formatRunPath(event.RunPath), agentcore.ActionTransfer, fmt.Sprintf("Transfer to agent: %s", action.TransferToAgent.DestAgentName))
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
 	}
@@ -202,13 +179,7 @@ func (c *converter) handleAction(event *adk.AgentEvent, scope MemberScope) error
 			if stringer, ok := ic.Info.(fmt.Stringer); ok {
 				content = stringer.String()
 			}
-			nEvent := agentcore.Event{
-				Type:       agentcore.EventAction,
-				AgentName:  event.AgentName,
-				RunPath:    formatRunPath(event.RunPath),
-				ActionType: agentcore.ActionInterrupted,
-				Content:    content,
-			}
+			nEvent := events.Action(event.AgentName, formatRunPath(event.RunPath), agentcore.ActionInterrupted, content)
 			scope.apply(&nEvent, c)
 			if err := c.emit(nEvent); err != nil {
 				return err
@@ -216,13 +187,7 @@ func (c *converter) handleAction(event *adk.AgentEvent, scope MemberScope) error
 		}
 	}
 	if action.Exit {
-		nEvent := agentcore.Event{
-			Type:       agentcore.EventAction,
-			AgentName:  event.AgentName,
-			RunPath:    formatRunPath(event.RunPath),
-			ActionType: agentcore.ActionExit,
-			Content:    "Agent execution completed",
-		}
+		nEvent := events.Action(event.AgentName, formatRunPath(event.RunPath), agentcore.ActionExit, "Agent execution completed")
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
 	}
@@ -251,26 +216,42 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 	messageID := c.messageID(event, "assistant")
 	message := adaptMessageFromRunner(msg)
 	message.ToolCalls = c.ensureMessageToolIdentities(messageID, scope, message.ToolCalls)
-	start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: messageID, Role: message.Role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message}
+	messageMeta := events.MessageEvent{
+		MessageID: messageID,
+		Role:      message.Role,
+		AgentName: event.AgentName,
+		RunPath:   formatRunPath(event.RunPath),
+		Message:   &message,
+	}
+	start := events.MessageStart(messageMeta)
 	scope.apply(&start, c)
 	if err := c.emit(start); err != nil {
 		return err
 	}
 	if msg.ReasoningContent != "" {
-		delta := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: messageID, Role: message.Role, DeltaKind: agentcore.DeltaReasoning, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Content: msg.ReasoningContent, Delta: msg.ReasoningContent}
+		deltaMeta := messageMeta
+		deltaMeta.DeltaKind = agentcore.DeltaReasoning
+		delta := events.MessageDelta(deltaMeta, msg.ReasoningContent)
 		scope.apply(&delta, c)
 		if err := c.emit(delta); err != nil {
 			return err
 		}
 	}
 	if msg.Content != "" {
-		delta := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: messageID, Role: message.Role, DeltaKind: agentcore.DeltaOutput, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Content: msg.Content, Delta: msg.Content}
+		deltaMeta := messageMeta
+		deltaMeta.DeltaKind = agentcore.DeltaOutput
+		delta := events.MessageDelta(deltaMeta, msg.Content)
 		scope.apply(&delta, c)
 		if err := c.emit(delta); err != nil {
 			return err
 		}
 	}
-	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: message.Role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: message.ToolCalls, ToolCallRefs: c.identities.refsFor(message.ToolCalls)}
+	endMeta := messageMeta
+	endMeta.Content = msg.Content
+	endMeta.ReasoningContent = msg.ReasoningContent
+	endMeta.ToolCalls = message.ToolCalls
+	endMeta.ToolCallRefs = c.identities.refsFor(message.ToolCalls)
+	end := events.MessageEnd(endMeta)
 	scope.apply(&end, c)
 	if err := c.emit(end); err != nil {
 		return err
@@ -280,15 +261,13 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 
 func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Message, scope MemberScope) error {
 	content := normalizeToolResultContent(msg.Content)
-	toolEvent := agentcore.Event{
-		Type:       agentcore.EventToolEnd,
+	toolEvent := events.ToolEnd(events.ToolEvent{
 		AgentName:  event.AgentName,
 		RunPath:    formatRunPath(event.RunPath),
 		ToolCallID: msg.ToolCallID,
 		ToolName:   msg.ToolName,
-		Content:    content,
 		ToolResult: content,
-	}
+	})
 	c.identities.attach(&toolEvent)
 	scope.apply(&toolEvent, c)
 	if err := c.emit(toolEvent); err != nil {
@@ -299,13 +278,24 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 	message.ToolCallID = toolEvent.ToolCallID
 	message.Content = content
 	messageID := c.messageID(event, "tool")
-	start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: toolEvent.ToolCallID, ToolCallRef: toolEvent.ToolCallRef, ToolName: msg.ToolName}
+	toolMessageMeta := events.MessageEvent{
+		MessageID:   messageID,
+		Role:        agentcore.RoleTool,
+		AgentName:   event.AgentName,
+		RunPath:     formatRunPath(event.RunPath),
+		Message:     &message,
+		ToolCallID:  toolEvent.ToolCallID,
+		ToolCallRef: toolEvent.ToolCallRef,
+		ToolName:    msg.ToolName,
+	}
+	start := events.MessageStart(toolMessageMeta)
 	c.identities.attach(&start)
 	scope.apply(&start, c)
 	if err := c.emit(start); err != nil {
 		return err
 	}
-	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: toolEvent.ToolCallID, ToolCallRef: toolEvent.ToolCallRef, ToolName: msg.ToolName, Content: content}
+	toolMessageMeta.Content = content
+	end := events.MessageEnd(toolMessageMeta)
 	c.identities.attach(&end)
 	scope.apply(&end, c)
 	return c.emit(end)
@@ -318,20 +308,16 @@ func (c *converter) emitToolStarts(event *adk.AgentEvent, sourceMessageID string
 		}
 		ref := c.identities.ensure(sourceMessageID, position, scope, &tc)
 		c.identities.rememberResult(tc.Function.Name, tc.ID)
-		nEvent := agentcore.Event{
-			Type:        agentcore.EventToolStart,
-			AgentName:   event.AgentName,
-			RunPath:     formatRunPath(event.RunPath),
-			ToolCallID:  tc.ID,
-			ToolCallRef: ref,
-			ToolName:    tc.Function.Name,
-			ToolArgs:    tc.Function.Arguments,
-			Content:     tc.Function.Arguments,
-			ToolCall:    &tc,
-		}
-		if tc.Index != nil {
-			nEvent.ToolCallIndex = tc.Index
-		}
+		nEvent := events.ToolStart(events.ToolEvent{
+			AgentName:     event.AgentName,
+			RunPath:       formatRunPath(event.RunPath),
+			ToolCallID:    tc.ID,
+			ToolCallRef:   ref,
+			ToolName:      tc.Function.Name,
+			ToolArgs:      tc.Function.Arguments,
+			ToolCall:      &tc,
+			ToolCallIndex: tc.Index,
+		})
 		scope.apply(&nEvent, c)
 		if err := c.emit(nEvent); err != nil {
 			return err
@@ -394,7 +380,17 @@ func (c *converter) handleStreamingMessage(ctx context.Context, event *adk.Agent
 		for _, idx := range indexes {
 			message.ToolCalls = append(message.ToolCalls, ss.toolCalls[idx])
 		}
-		end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: message.Content, ReasoningContent: message.ReasoningContent, ToolCalls: message.ToolCalls, ToolCallRefs: ss.toolRefs}
+		end := events.MessageEnd(events.MessageEvent{
+			MessageID:        ss.messageID,
+			Role:             ss.role,
+			AgentName:        event.AgentName,
+			RunPath:          formatRunPath(event.RunPath),
+			Message:          &message,
+			Content:          message.Content,
+			ReasoningContent: message.ReasoningContent,
+			ToolCalls:        message.ToolCalls,
+			ToolCallRefs:     ss.toolRefs,
+		})
 		scope.apply(&end, c)
 		if err := c.emit(end); err != nil {
 			return err
@@ -412,14 +408,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 	}
 	if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
 		usage := chunk.ResponseMeta.Usage
-		usageEvent := agentcore.Event{
-			Type:             agentcore.EventUsage,
-			AgentName:        event.AgentName,
-			RunPath:          formatRunPath(event.RunPath),
-			PromptTokens:     usage.PromptTokens,
-			CompletionTokens: usage.CompletionTokens,
-			TotalTokens:      usage.TotalTokens,
-		}
+		usageEvent := events.Usage(event.AgentName, formatRunPath(event.RunPath), usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 		scope.apply(&usageEvent, c)
 		if err := c.emit(usageEvent); err != nil {
 			return err
@@ -429,16 +418,13 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		if events.IsInternalToolName(chunk.ToolName) || events.IsInternalContinueContent(chunk.Content) {
 			return nil
 		}
-		nEvent := agentcore.Event{
-			Type:       agentcore.EventToolUpdate,
+		nEvent := events.ToolUpdate(events.ToolEvent{
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
 			ToolCallID: chunk.ToolCallID,
 			ToolName:   chunk.ToolName,
 			Content:    chunk.Content,
-			Delta:      chunk.Content,
-			DeltaKind:  agentcore.DeltaToolResult,
-		}
+		})
 		c.identities.attach(&nEvent)
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
@@ -448,7 +434,12 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		if chunk.Role != "" {
 			ss.role = adaptRoleFromRunner(chunk.Role)
 		}
-		start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath)}
+		start := events.MessageStart(events.MessageEvent{
+			MessageID: ss.messageID,
+			Role:      ss.role,
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+		})
 		scope.apply(&start, c)
 		if err := c.emit(start); err != nil {
 			return err
@@ -456,7 +447,13 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 	}
 	if chunk.ReasoningContent != "" {
 		ss.reasoning.WriteString(chunk.ReasoningContent)
-		nEvent := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), DeltaKind: agentcore.DeltaReasoning, Content: chunk.ReasoningContent, Delta: chunk.ReasoningContent}
+		nEvent := events.MessageDelta(events.MessageEvent{
+			MessageID: ss.messageID,
+			Role:      ss.role,
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+			DeltaKind: agentcore.DeltaReasoning,
+		}, chunk.ReasoningContent)
 		scope.apply(&nEvent, c)
 		if err := c.emit(nEvent); err != nil {
 			return err
@@ -464,7 +461,13 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 	}
 	if chunk.Content != "" {
 		ss.content.WriteString(chunk.Content)
-		nEvent := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), DeltaKind: agentcore.DeltaOutput, Content: chunk.Content, Delta: chunk.Content}
+		nEvent := events.MessageDelta(events.MessageEvent{
+			MessageID: ss.messageID,
+			Role:      ss.role,
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+			DeltaKind: agentcore.DeltaOutput,
+		}, chunk.Content)
 		scope.apply(&nEvent, c)
 		if err := c.emit(nEvent); err != nil {
 			return err
@@ -493,7 +496,17 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		ss.toolCalls[idx] = current
 		ss.toolRefs[idx] = ref
 		if tc.Function.Arguments != "" {
-			nEvent := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), DeltaKind: agentcore.DeltaToolArgs, Content: tc.Function.Arguments, Delta: tc.Function.Arguments, ToolCallID: current.ID, ToolCallRef: ref, ToolName: current.Function.Name, ToolCallIndex: current.Index}
+			nEvent := events.MessageDelta(events.MessageEvent{
+				MessageID:   ss.messageID,
+				Role:        ss.role,
+				AgentName:   event.AgentName,
+				RunPath:     formatRunPath(event.RunPath),
+				DeltaKind:   agentcore.DeltaToolArgs,
+				ToolCallID:  current.ID,
+				ToolCallRef: ref,
+				ToolName:    current.Function.Name,
+			}, tc.Function.Arguments)
+			nEvent.ToolCallIndex = current.Index
 			scope.apply(&nEvent, c)
 			if err := c.emit(nEvent); err != nil {
 				return err
@@ -517,15 +530,6 @@ func (c *converter) ensureMessageToolIdentities(sourceMessageID string, scope Me
 		c.identities.ensure(sourceMessageID, i, scope, &result[i])
 	}
 	return result
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func formatRunPath(runPath []adk.RunStep) string {

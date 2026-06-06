@@ -39,7 +39,6 @@ func (s MemberScope) apply(event *agentcore.Event, c *converter) {
 	if event == nil || s.CallID == "" {
 		return
 	}
-	event.IsMemberEvent = true
 	event.MemberCallID = s.CallID
 	event.MemberToolName = s.ToolName
 	event.MemberName = s.Name

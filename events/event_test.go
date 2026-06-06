@@ -51,7 +51,7 @@ func TestDispatchEventDoesNotSerializeCallbacksGlobally(t *testing.T) {
 }
 
 func TestNormalizeEventFillsCommonMetadata(t *testing.T) {
-	event := NormalizeEvent(Event{Type: EventMessageDelta, SpanID: "span_1", Content: "hello"})
+	event := NormalizeEvent(Event{Type: EventMessageDelta, RunID: "run_1", Content: "hello"})
 	if event.EventID == "" {
 		t.Fatal("event id was not set")
 	}
@@ -61,17 +61,14 @@ func TestNormalizeEventFillsCommonMetadata(t *testing.T) {
 	if event.CreatedAt.IsZero() {
 		t.Fatal("created_at was not set")
 	}
-	if event.Delta != "hello" {
-		t.Fatalf("delta = %q, want hello", event.Delta)
-	}
-	if event.RunID != "span_1" {
-		t.Fatalf("run id = %q, want span_1", event.RunID)
+	if event.RunID != "run_1" {
+		t.Fatalf("run id = %q, want run_1", event.RunID)
 	}
 }
 
-func TestNormalizeEventMarksMemberEvents(t *testing.T) {
+func TestIsMemberEventUsesMemberCallID(t *testing.T) {
 	event := NormalizeEvent(Event{Type: EventMessageDelta, MemberCallID: "call_1"})
-	if !event.IsMemberEvent {
-		t.Fatal("member event was not marked")
+	if !IsMemberEvent(event) {
+		t.Fatal("member event was not detected")
 	}
 }

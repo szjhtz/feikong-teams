@@ -35,7 +35,6 @@ const (
 const HistoryFileName = "history.jsonl"
 
 type ToolCallRecord struct {
-	SpanID      string `json:"span_id,omitempty"`
 	Ref         string `json:"ref,omitempty"`
 	ID          string `json:"id"`
 	Index       *int   `json:"index,omitempty"`
@@ -65,14 +64,11 @@ type HistoryLine struct {
 	Type           string       `json:"type"`
 	MessageID      string       `json:"message_id"`
 	EventIndex     int          `json:"event_index"`
-	SpanID         string       `json:"span_id,omitempty"`
-	ParentSpanID   string       `json:"parent_span_id,omitempty"`
 	AgentName      string       `json:"agent_name"`
 	RunPath        string       `json:"run_path,omitempty"`
 	MemberCallID   string       `json:"member_call_id,omitempty"`
 	MemberToolName string       `json:"member_tool_name,omitempty"`
 	MemberName     string       `json:"member_name,omitempty"`
-	IsMemberEvent  bool         `json:"is_member_event,omitempty"`
 	StartTime      time.Time    `json:"start_time"`
 	EndTime        time.Time    `json:"end_time"`
 	Event          MessageEvent `json:"event"`
@@ -103,14 +99,11 @@ type MessageEvent struct {
 
 // AgentMessage 代理的一次完整发言
 type AgentMessage struct {
-	SpanID         string         `json:"span_id,omitempty"`
-	ParentSpanID   string         `json:"parent_span_id,omitempty"`
 	AgentName      string         `json:"agent_name"`
 	RunPath        string         `json:"run_path"`
 	MemberCallID   string         `json:"member_call_id,omitempty"`
 	MemberToolName string         `json:"member_tool_name,omitempty"`
 	MemberName     string         `json:"member_name,omitempty"`
-	IsMemberEvent  bool           `json:"is_member_event,omitempty"`
 	StartTime      time.Time      `json:"start_time"`
 	EndTime        time.Time      `json:"end_time"`
 	Events         []MessageEvent `json:"events"`
@@ -147,7 +140,6 @@ const maxErrorContentLen = 1200
 
 // pendingToolCall 待匹配的工具调用
 type pendingToolCall struct {
-	SpanID      string
 	Ref         string
 	ID          string
 	Index       *int
@@ -169,25 +161,16 @@ type activeMessageContext struct {
 
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
-	mu                sync.RWMutex
-	messages          []AgentMessage
-	activeMessages    map[string]*activeMessageContext
-	activeOrder       []string
-	currentAgent      string
-	currentRunPath    string
-	currentMemberID   string
-	currentMemberTool string
-	currentMemberName string
-	currentEvents     []MessageEvent
-	pendingToolCalls  []pendingToolCall // 按 ID 匹配工具调用与结果
-	toolResultChunks  map[string]string // 按 ID 累积流式工具结果
-	summary           string            // 上下文压缩摘要
-	summarizedCount   int               // 已被摘要覆盖的消息数量
+	mu              sync.RWMutex
+	messages        []AgentMessage
+	activeMessages  map[string]*activeMessageContext
+	activeOrder     []string
+	summary         string // 上下文压缩摘要
+	summarizedCount int    // 已被摘要覆盖的消息数量
 }
 
 func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord {
 	record := ToolCallRecord{
-		SpanID:      tc.SpanID,
 		Ref:         tc.Ref,
 		ID:          tc.ID,
 		Index:       tc.Index,
@@ -217,10 +200,9 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 	return &record
 }
 
-func pendingToolCallFromEvent(spanID, ref, id string, index *int, name, arguments string) pendingToolCall {
+func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string) pendingToolCall {
 	display := toolmeta.FormatToolDisplay(name)
 	return pendingToolCall{
-		SpanID:      spanID,
 		Ref:         ref,
 		ID:          id,
 		Index:       index,
@@ -231,15 +213,6 @@ func pendingToolCallFromEvent(spanID, ref, id string, index *int, name, argument
 		Target:      display.Target,
 		Arguments:   arguments,
 	}
-}
-
-func toolCallSpanFromEvent(event Event, tc agentcore.ToolCall) string {
-	if tc.Index != nil && event.ToolCallSpanIDs != nil {
-		if span := event.ToolCallSpanIDs[*tc.Index]; span != "" {
-			return span
-		}
-	}
-	return event.SpanID
 }
 
 func (h *HistoryRecorder) appendToolCallEvent(ctx *activeMessageContext, tc pendingToolCall) int {
@@ -265,11 +238,9 @@ func (h *HistoryRecorder) updateToolCallEvent(ctx *activeMessageContext, tc pend
 
 func NewHistoryRecorder() *HistoryRecorder {
 	return &HistoryRecorder{
-		activeMessages:   make(map[string]*activeMessageContext),
-		activeOrder:      make([]string, 0),
-		messages:         make([]AgentMessage, 0),
-		currentEvents:    make([]MessageEvent, 0),
-		toolResultChunks: make(map[string]string),
+		activeMessages: make(map[string]*activeMessageContext),
+		activeOrder:    make([]string, 0),
+		messages:       make([]AgentMessage, 0),
 	}
 }
 
@@ -293,9 +264,6 @@ func toolResultKey(event Event) string {
 
 func toolResultContentFromEvent(event Event) string {
 	content := event.ToolResult
-	if content == "" {
-		content = event.Delta
-	}
 	if content == "" {
 		content = event.Content
 	}
@@ -354,7 +322,7 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 	if event.ToolName == "" || event.ToolCallRef == "" {
 		return
 	}
-	pending := pendingToolCallFromEvent(event.SpanID, event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
+	pending := pendingToolCallFromEvent(event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
 	if !events.IsInternalToolName(pending.Name) {
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Type:     MsgTypeToolCall,
@@ -390,14 +358,11 @@ func (h *HistoryRecorder) ensureMessageContext(event Event) *activeMessageContex
 	}
 	ctx := &activeMessageContext{
 		msg: AgentMessage{
-			SpanID:         event.SpanID,
-			ParentSpanID:   event.ParentSpanID,
 			AgentName:      event.AgentName,
 			RunPath:        event.RunPath,
 			MemberCallID:   event.MemberCallID,
 			MemberToolName: event.MemberToolName,
 			MemberName:     event.MemberName,
-			IsMemberEvent:  event.MemberCallID != "",
 			StartTime:      time.Now(),
 			Events:         make([]MessageEvent, 0),
 		},
@@ -480,10 +445,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		if event.Role == agentcore.RoleUser {
 			return
 		}
-		content := event.Delta
-		if content == "" {
-			content = event.Content
-		}
+		content := event.Content
 		if content == "" {
 			return
 		}
@@ -587,17 +549,14 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				}
 			}
 			if !updated {
-				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending := pendingToolCallFromEvent(ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
 				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
 		}
 
 	case EventToolUpdate:
-		content := event.Delta
-		if content == "" {
-			content = event.Content
-		}
+		content := event.Content
 		if content == "" {
 			content = event.ToolResult
 		}
@@ -711,11 +670,6 @@ func (h *HistoryRecorder) RecordUserMessage(message agentcore.Message) {
 		},
 	})
 
-	h.currentAgent = ""
-	h.currentRunPath = ""
-	h.currentMemberID = ""
-	h.currentMemberTool = ""
-	h.currentMemberName = ""
 }
 
 // RecordCancelled 记录用户取消任务事件，并标记当前仍活跃的消息。
@@ -762,14 +716,6 @@ func (h *HistoryRecorder) FinalizeCurrent() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.finalizeAllActiveMessages()
-	h.currentAgent = ""
-	h.currentRunPath = ""
-	h.currentMemberID = ""
-	h.currentMemberTool = ""
-	h.currentMemberName = ""
-	h.currentEvents = make([]MessageEvent, 0)
-	h.pendingToolCalls = nil
-	h.toolResultChunks = make(map[string]string)
 	h.activeMessages = make(map[string]*activeMessageContext)
 	h.activeOrder = nil
 }
@@ -818,12 +764,7 @@ func (h *HistoryRecorder) GetCurrentMessage() (agentName, content string) {
 	if builder.Len() > 0 {
 		return agentName, builder.String()
 	}
-	for _, event := range h.currentEvents {
-		if event.Type == MsgTypeText {
-			builder.WriteString(event.Content)
-		}
-	}
-	return h.currentAgent, builder.String()
+	return "", ""
 }
 
 func (h *HistoryRecorder) GetFullHistory() string {
@@ -873,14 +814,6 @@ func (h *HistoryRecorder) Clear() {
 	defer h.mu.Unlock()
 
 	h.messages = make([]AgentMessage, 0)
-	h.currentEvents = make([]MessageEvent, 0)
-	h.currentAgent = ""
-	h.currentRunPath = ""
-	h.currentMemberID = ""
-	h.currentMemberTool = ""
-	h.currentMemberName = ""
-	h.pendingToolCalls = nil
-	h.toolResultChunks = make(map[string]string)
 	h.activeMessages = make(map[string]*activeMessageContext)
 	h.activeOrder = nil
 	h.summary = ""
@@ -1002,14 +935,11 @@ func marshalMessagesJSONL(messages []AgentMessage) ([]byte, error) {
 				Type:           historyLineTypeMessageEvent,
 				MessageID:      messageID,
 				EventIndex:     eventIndex,
-				SpanID:         msg.SpanID,
-				ParentSpanID:   msg.ParentSpanID,
 				AgentName:      msg.AgentName,
 				RunPath:        msg.RunPath,
 				MemberCallID:   msg.MemberCallID,
 				MemberToolName: msg.MemberToolName,
 				MemberName:     msg.MemberName,
-				IsMemberEvent:  msg.IsMemberEvent,
 				StartTime:      msg.StartTime,
 				EndTime:        msg.EndTime,
 				Event:          event,
@@ -1046,14 +976,6 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	h.reconstructSummaryFromEvents()
 
 	// 替换当前数据
-	h.currentAgent = ""
-	h.currentEvents = make([]MessageEvent, 0)
-	h.currentRunPath = ""
-	h.currentMemberID = ""
-	h.currentMemberTool = ""
-	h.currentMemberName = ""
-	h.pendingToolCalls = nil
-	h.toolResultChunks = make(map[string]string)
 	h.activeMessages = make(map[string]*activeMessageContext)
 	h.activeOrder = nil
 
@@ -1083,14 +1005,11 @@ func loadMessagesJSONL(file *os.File) ([]AgentMessage, error) {
 		if !exists {
 			messageIndex[line.MessageID] = len(messages)
 			messages = append(messages, AgentMessage{
-				SpanID:         line.SpanID,
-				ParentSpanID:   line.ParentSpanID,
 				AgentName:      line.AgentName,
 				RunPath:        line.RunPath,
 				MemberCallID:   line.MemberCallID,
 				MemberToolName: line.MemberToolName,
 				MemberName:     line.MemberName,
-				IsMemberEvent:  line.IsMemberEvent,
 				StartTime:      line.StartTime,
 				EndTime:        line.EndTime,
 				Events:         make([]MessageEvent, 0),

@@ -168,29 +168,23 @@ type Event struct {
 	MessageID        string         `json:"message_id,omitempty"`
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
 	ToolCallRef      string         `json:"tool_call_ref,omitempty"`
-	ExternalCallID   string         `json:"external_call_id,omitempty"`
 	ParentToolCallID string         `json:"parent_tool_call_id,omitempty"`
 	ParentToolName   string         `json:"parent_tool_name,omitempty"`
-	SpanID           string         `json:"span_id,omitempty"`
-	ParentSpanID     string         `json:"parent_span_id,omitempty"`
 	AgentName        string         `json:"agent_name,omitempty"`
 	RunPath          string         `json:"run_path,omitempty"`
 	Role             MessageRole    `json:"role,omitempty"`
 	DeltaKind        DeltaKind      `json:"delta_kind,omitempty"`
 	Content          string         `json:"content,omitempty"`
-	Delta            string         `json:"delta,omitempty"`
 	Detail           string         `json:"detail,omitempty"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
 	Message          *Message       `json:"message,omitempty"`
 	ToolCall         *ToolCall      `json:"tool_call,omitempty"`
 	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
-	ToolCallSpanIDs  map[int]string `json:"tool_call_span_ids,omitempty"`
 	ToolCallRefs     map[int]string `json:"tool_call_refs,omitempty"`
 	ToolName         string         `json:"tool_name,omitempty"`
 	ToolArgs         string         `json:"tool_args,omitempty"`
 	ToolResult       string         `json:"tool_result,omitempty"`
 	ToolCallIndex    *int           `json:"tool_call_index,omitempty"`
-	IsMemberEvent    bool           `json:"is_member_event,omitempty"`
 	MemberCallID     string         `json:"member_call_id,omitempty"`
 	MemberToolName   string         `json:"member_tool_name,omitempty"`
 	MemberName       string         `json:"member_name,omitempty"`
@@ -217,6 +211,23 @@ type RunOptions struct {
 	CheckpointID     string
 	Sink             EventSink
 	InterruptHandler InterruptHandler
+}
+
+func (opts RunOptions) WithDefaults(defaultRunID string) RunOptions {
+	if opts.RunID == "" {
+		opts.RunID = opts.CheckpointID
+	}
+	if opts.RunID == "" {
+		opts.RunID = defaultRunID
+	}
+	if opts.Sink == nil {
+		opts.Sink = NoopEventSink
+	}
+	return opts
+}
+
+func NoopEventSink(Event) error {
+	return nil
 }
 
 type RunResult struct {

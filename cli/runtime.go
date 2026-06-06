@@ -1771,7 +1771,7 @@ func (m *runtimeModel) appendLoadedHistory() {
 }
 
 func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
-	if msg.IsMemberEvent || msg.MemberCallID != "" {
+	if msg.MemberCallID != "" {
 		m.appendHistoryMemberMessage(msg)
 		return
 	}
@@ -2342,7 +2342,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 	if event.TotalTokens > 0 {
 		m.totalTokens = event.TotalTokens
 	}
-	if event.IsMemberEvent || event.MemberCallID != "" || event.MemberName != "" {
+	if event.MemberCallID != "" || event.MemberName != "" {
 		m.applyMemberEvent(event)
 		return
 	}

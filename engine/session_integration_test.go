@@ -18,7 +18,6 @@ func (r *recordingRunner) Run(_ context.Context, input agentcore.TurnInput, opts
 		Role:      agentcore.RoleAssistant,
 		DeltaKind: agentcore.DeltaOutput,
 		Content:   "pong",
-		Delta:     "pong",
 	}
 	if opts.Sink != nil {
 		if err := opts.Sink(event); err != nil {

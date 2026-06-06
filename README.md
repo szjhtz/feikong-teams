@@ -1,6 +1,6 @@
 # fkteams 非空小队
 
-fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI 助手，旨在通过多个专业智能体的协同工作来完成复杂的任务。它支持两种交互界面：现代化的 Web 界面和传统的命令行界面，满足不同用户的使用习惯和场景需求。
+fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI 助手，旨在通过多个专业智能体的协同工作来完成复杂任务。它支持 CLI、Web UI、OpenAI 兼容 API 和消息通道（Discord / QQ / 微信）多种交互方式，满足不同用户的使用习惯和场景需求。
 
 ![非空小队架构简介](./docs/images/fkteams.png)
 
@@ -42,11 +42,11 @@ fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI
 
 - **多智能体协作**：内置多个专业智能体（代码、搜索、数据分析、SSH、通用执行等），由 coordinator 智能调度
 - **四种工作模式**：团队模式、深度模式、圆桌会议模式、自定义模式
-- **双界面支持**：现代化 Web 界面 + 命令行界面
+- **多入口支持**：现代化 Web 界面、命令行界面、纯 API 服务和消息通道
 - **MCP 工具生态**：完整支持 MCP 协议，轻松接入外部工具
 - **自定义智能体**：通过配置文件灵活创建专业智能体
 - **OpenAI 兼容 API**：对外提供 OpenAI 格式接口，任意客户端配置地址和密钥即可使用已配置的模型
-- **聊天通道集成**：支持接入 QQ、Discord 等即时通讯平台
+- **聊天通道集成**：支持接入 QQ、Discord、微信等即时通讯平台
 - **长期记忆**：跨会话自动记忆，助手越用越顺手
 - **多模态输入**：支持文本、图片、音频、视频和文件
 - **推理模型支持**：流式展示思考过程（DeepSeek-R1、o1/o3 等）
@@ -140,7 +140,7 @@ model = "gpt-4o"
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)
 
-运行期数据默认保存在 `~/.fkteams/` 下，文件分享链接元数据位于 `~/.fkteams/share/`。
+运行期数据默认保存在 `~/.fkteams/` 下，可通过 `FEIKONG_APP_DIR` 覆盖；常用子目录包括 `workspace`、`sessions`、`scheduler`、`history`、`config`、`log`、`share`。
 
 ### 2. 运行
 
@@ -150,6 +150,9 @@ fkteams web
 
 # 命令行模式
 fkteams
+
+# 纯 API 服务
+fkteams serve
 ```
 
 启动后访问 `http://localhost:23456` 即可使用。
@@ -162,7 +165,11 @@ fkteams
 # 从源码构建
 git clone https://github.com/wsshow/feikong-teams.git
 cd feikong-teams
-make build
+make native
+
+# 或指定平台 / 构建预设平台
+make build t=linux:amd64
+make all
 
 # Docker 部署
 docker compose up -d
@@ -184,9 +191,10 @@ docker compose up -d
 
 ## 架构与安全边界
 
-- `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
+- `agentcore` 定义运行时无关的 Agent、Runner、Message、Tool、Event 等核心接口；`agentcore/eino` 是当前 CloudWeGo Eino ADK 适配实现，负责模型、工具、中间件、AgentTool 和 HITL resume 的具体落地。
+- `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理，并提供 `WithText` / `WithMessage` / `WithInput` 三种输入入口；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
 - Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；执行失败会保存为 `error` 会话状态，HTTP 同步接口会返回错误响应。
-- 流式事件保留 `message_id`、成员智能体作用域、分片顺序和稳定 `tool_call_ref`；Web 前端据此将子智能体思考、工具调用和输出归并到同一成员卡片。
+- 流式事件通过 `events.Emitter` 统一归一化和校验，`events/log` 负责会话历史与元数据，`events/view` 负责终端展示；事件保留 `message_id`、成员智能体作用域、分片顺序和稳定 `tool_call_ref`，Web 前端据此将子智能体思考、工具调用和输出归并到同一成员卡片。
 - Runner 可被入口层缓存复用，checkpoint store 为并发安全实现；配置更新会重建 Agent 注册表并清空 Runner/MCP/通道缓存。
 - 内置工具必须在工具策略表中声明只读、破坏性、串行化和审批元数据；MCP 和成员智能体工具作为外部扩展，不强制使用内置策略表。
 

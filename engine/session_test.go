@@ -89,3 +89,22 @@ func TestSessionBuilderConfiguresTurnInput(t *testing.T) {
 		t.Fatalf("input message = %q, want hello", session.cfg.Input.Message.Content)
 	}
 }
+
+func TestSessionBuilderConfiguresPromptMessage(t *testing.T) {
+	session := NewSession(&runnerStub{}, "session-1").
+		WithMessages([]agentcore.Message{{Role: agentcore.RoleSystem, Content: "context"}}).
+		WithText("hello")
+
+	if session.cfg.Input.Message.Role != agentcore.RoleUser {
+		t.Fatalf("input role = %q, want user", session.cfg.Input.Message.Role)
+	}
+	if session.cfg.Input.Message.Content != "hello" {
+		t.Fatalf("input message = %q, want hello", session.cfg.Input.Message.Content)
+	}
+
+	message := agentcore.Message{Role: agentcore.RoleUser, Content: "override"}
+	session.WithMessage(message)
+	if session.cfg.Input.Message.Content != "override" {
+		t.Fatalf("input message = %q, want override", session.cfg.Input.Message.Content)
+	}
+}

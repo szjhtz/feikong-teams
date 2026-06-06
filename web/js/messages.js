@@ -231,7 +231,7 @@ FKTeamsChat.prototype.memberCallIDFromEvent = function (event) {
 };
 
 FKTeamsChat.prototype.isMemberRunEvent = function (event) {
-  return !!(event && event.is_member_event && this.memberCallIDFromEvent(event));
+  return !!(event && this.memberCallIDFromEvent(event));
 };
 
 FKTeamsChat.prototype.memberKeyFromEvent = function (event) {

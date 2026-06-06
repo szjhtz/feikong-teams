@@ -1,10 +1,12 @@
 # 事件协议
 
-fkteams 的 CLI、Web、HTTP Stream、WebSocket 和聊天通道共用统一事件协议。事件由 `event_id`、`sequence`、`created_at` 标识顺序和时间，由 `phase`、`is_partial`、`is_final` 表示生命周期阶段。
+fkteams 的 CLI、Web、HTTP Stream、WebSocket 和聊天通道共用统一事件协议。事件由 `event_id`、`sequence`、`created_at` 标识顺序和时间，由 `type` 表示生命周期节点：`agent_start/end`、`turn_start/end`、`message_start/delta/end`、`tool_start/update/end`、`action`、`usage`、`error`。
 
 ## 核心约定
 
+- 运行时适配器通过 `events.Emitter` 和事件构造函数发出生命周期事件；适配器负责把底层框架事件翻译为协议事件，不直接把结构体字段拼装逻辑扩散到入口层。
 - 流式分片事件只表示增量，不代表任务完成；消费者需要等待完整事件或会话收尾后再归档结果。
+- `message_delta` / `tool_update` 的规范增量载荷是 `content`；HTTP 转换层可按需派生兼容字段 `delta`，核心事件与历史存储不重复保存同一份文本。
 - 工具调用优先使用 `tool_call_ref` 关联；流式 `tool_args` 增量、`message_end.tool_calls[]`、`tool_start`、`tool_update`、`tool_end` 必须保持同一个 ref，`tool_call_id` 和 `tool_call_index` 仅作为辅助身份。
 - 展示端必须遍历 `tool_calls[]`；`tool_call` 只在单个工具调用事件中作为兼容字段存在，不得把 `tool_calls[0]` 当成协议入口。
 - AgentTool 必须在工具调用事件中带上 `kind=agent`、`display_name`、`target`，展示端不得通过工具名称前缀判断成员工具。

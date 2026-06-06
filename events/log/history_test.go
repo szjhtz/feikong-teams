@@ -34,7 +34,6 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 		DeltaKind:      agentcore.DeltaOutput,
 		AgentName:      "researcher",
 		Content:        "结果",
-		Delta:          "结果",
 		MemberCallID:   "call_1",
 		MemberToolName: "ask_fkagent_researcher",
 		MemberName:     "Researcher",
@@ -67,7 +66,6 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 		DeltaKind: agentcore.DeltaOutput,
 		AgentName: "coordinator",
 		Content:   "ok",
-		Delta:     "ok",
 	})
 	recorder.RecordEvent(Event{
 		Sequence:         2,
@@ -123,7 +121,6 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 		DeltaKind:      agentcore.DeltaReasoning,
 		AgentName:      "researcher",
 		Content:        "working",
-		Delta:          "working",
 		MemberCallID:   "call_1",
 		MemberToolName: "ask_fkagent_researcher",
 		MemberName:     "Researcher",
