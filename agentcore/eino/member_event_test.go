@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"fkteams/agentcore"
-	"fkteams/common"
 	"fkteams/internal/testmodel"
 )
 
@@ -75,51 +74,43 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 		t.Fatalf("create parent agent: %v", err)
 	}
 
-	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
-		Agent:           parentAgent,
-		EnableStreaming: true,
-		CheckPointStore: common.NewInMemoryStore(),
-	})
-	if err != nil {
-		t.Fatalf("create runner: %v", err)
-	}
+	got := runAgentForTest(t, ctx, parentAgent, true)
 
-	var got []agentcore.Event
-	_, err = runner.Run(ctx, agentcore.TurnInput{
-		Message: agentcore.Message{Role: agentcore.RoleUser, Content: "start"},
-	}, agentcore.RunOptions{
-		RunID:        "member-scope-test",
-		CheckpointID: "member-scope-test",
-		Sink: func(event agentcore.Event) error {
-			got = append(got, event)
-			return nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("run parent: %v", err)
-	}
+	parentStartIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventToolStart &&
+			event.ToolCallID == "parent-member-call" &&
+			event.ToolName == "ask_fkagent_member" &&
+			event.ToolCallRef != ""
+	}, "parent member tool start")
+	memberReasoningIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.IsMemberEvent &&
+			event.MemberCallID == "parent-member-call" &&
+			event.ParentToolCallID == "parent-member-call" &&
+			event.MemberToolName == "ask_fkagent_member" &&
+			event.MemberName == "member" &&
+			event.DeltaKind == agentcore.DeltaReasoning &&
+			strings.Contains(event.Content, "member-thinking")
+	}, "member-scoped reasoning")
+	memberToolStartIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.IsMemberEvent &&
+			event.MemberCallID == "parent-member-call" &&
+			event.Type == agentcore.EventToolStart &&
+			event.ToolName == "member_echo" &&
+			event.ToolCallRef != "" &&
+			event.ToolCallIndex != nil &&
+			*event.ToolCallIndex == 0
+	}, "member-scoped tool start")
+	memberToolResultIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.IsMemberEvent &&
+			event.MemberCallID == "parent-member-call" &&
+			(event.Type == agentcore.EventToolUpdate || event.Type == agentcore.EventToolEnd) &&
+			event.ToolName == "member_echo" &&
+			event.ToolCallRef != ""
+	}, "member-scoped tool result")
 
-	var sawMemberReasoning, sawMemberToolStart, sawMemberToolResult bool
-	for _, event := range got {
-		if event.MemberCallID == "parent-member-call" && event.DeltaKind == agentcore.DeltaReasoning && strings.Contains(event.Content, "member-thinking") {
-			sawMemberReasoning = true
-		}
-		if event.MemberCallID == "parent-member-call" && event.Type == agentcore.EventToolStart && event.ToolName == "member_echo" && event.ToolCallRef != "" {
-			sawMemberToolStart = true
-		}
-		if event.MemberCallID == "parent-member-call" && (event.Type == agentcore.EventToolUpdate || event.Type == agentcore.EventToolEnd) && event.ToolName == "member_echo" && event.ToolCallRef != "" {
-			sawMemberToolResult = true
-		}
-	}
-	if !sawMemberReasoning {
-		t.Fatalf("missing member-scoped reasoning event; events=%#v", got)
-	}
-	if !sawMemberToolStart {
-		t.Fatalf("missing member-scoped tool start event; events=%#v", got)
-	}
-	if !sawMemberToolResult {
-		t.Fatalf("missing member-scoped tool result event; events=%#v", got)
-	}
+	requireBefore(t, got, parentStartIdx, memberReasoningIdx, "parent member tool start", "member reasoning")
+	requireBefore(t, got, memberReasoningIdx, memberToolStartIdx, "member reasoning", "member tool start")
+	requireBefore(t, got, memberToolStartIdx, memberToolResultIdx, "member tool start", "member tool result")
 }
 
 type memberEchoRequest struct {
