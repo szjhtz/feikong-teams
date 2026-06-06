@@ -10,9 +10,10 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 	toolIndex := 0
 
 	recorder.RecordEvent(Event{
-		Sequence:  1,
-		Type:      EventToolStart,
-		AgentName: "coordinator",
+		Sequence:    1,
+		Type:        EventToolStart,
+		AgentName:   "coordinator",
+		ToolCallRef: "tool_call:call_1",
 		ToolCalls: []agentcore.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,
@@ -98,9 +99,10 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 	toolIndex := 0
 
 	recorder.RecordEvent(Event{
-		Sequence:  1,
-		Type:      EventToolStart,
-		AgentName: "coordinator",
+		Sequence:    1,
+		Type:        EventToolStart,
+		AgentName:   "coordinator",
+		ToolCallRef: "tool_call:call_1",
 		ToolCalls: []agentcore.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,
@@ -138,6 +140,137 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 	}
 	if messages[2].AgentName != "系统" || !hasEventType(messages[2], MsgTypeCancelled) {
 		t.Fatalf("system message = %#v, want cancelled notice", messages[2])
+	}
+}
+
+func TestHistoryRecorderRecordsToolRoleMessageEndAsToolResult(t *testing.T) {
+	recorder := NewHistoryRecorder()
+	toolIndex := 0
+
+	recorder.RecordEvent(Event{
+		Sequence:      1,
+		Type:          EventToolStart,
+		AgentName:     "assistant",
+		ToolCallID:    "call_1",
+		ToolCallRef:   "ref_1",
+		ToolName:      "echo",
+		ToolArgs:      `{"text":"hello"}`,
+		ToolCallIndex: &toolIndex,
+	})
+	recorder.RecordEvent(Event{
+		Sequence:    2,
+		Type:        agentcore.EventMessageEnd,
+		Role:        agentcore.RoleTool,
+		AgentName:   "assistant",
+		ToolCallID:  "call_1",
+		ToolCallRef: "ref_1",
+		ToolName:    "echo",
+		Content:     "echo: hello",
+	})
+	recorder.FinalizeCurrent()
+
+	messages := recorder.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	if len(messages[0].Events) != 1 || messages[0].Events[0].ToolCall == nil {
+		t.Fatalf("events = %#v, want one tool call", messages[0].Events)
+	}
+	toolCall := messages[0].Events[0].ToolCall
+	if toolCall.Result != "echo: hello" {
+		t.Fatalf("tool result = %q, want echo: hello", toolCall.Result)
+	}
+}
+
+func TestHistoryRecorderUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.T) {
+	recorder := NewHistoryRecorder()
+
+	recorder.RecordEvent(Event{
+		Sequence:  1,
+		Type:      agentcore.EventMessageEnd,
+		Role:      agentcore.RoleAssistant,
+		AgentName: "assistant",
+		ToolCalls: []agentcore.ToolCall{
+			{
+				ID: "call_1",
+				Function: agentcore.FunctionCall{
+					Name:      "echo",
+					Arguments: `{"text":"hello"}`,
+				},
+			},
+		},
+		ToolCallRefs: map[int]string{0: "tool_call:call_1"},
+	})
+	recorder.RecordEvent(Event{
+		Sequence:    2,
+		Type:        agentcore.EventMessageEnd,
+		Role:        agentcore.RoleTool,
+		AgentName:   "assistant",
+		ToolCallID:  "call_1",
+		ToolCallRef: "tool_call:call_1",
+		ToolName:    "echo",
+		Content:     "echo: hello",
+	})
+	recorder.FinalizeCurrent()
+
+	messages := recorder.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	if len(messages[0].Events) != 1 || messages[0].Events[0].ToolCall == nil {
+		t.Fatalf("events = %#v, want one tool call", messages[0].Events)
+	}
+	toolCall := messages[0].Events[0].ToolCall
+	if toolCall.Ref != "tool_call:call_1" {
+		t.Fatalf("tool ref = %q, want tool_call:call_1", toolCall.Ref)
+	}
+	if toolCall.Result != "echo: hello" {
+		t.Fatalf("tool result = %q, want echo: hello", toolCall.Result)
+	}
+}
+
+func TestHistoryRecorderDoesNotDuplicateToolEndAndToolRoleMessageEnd(t *testing.T) {
+	recorder := NewHistoryRecorder()
+	toolIndex := 0
+
+	recorder.RecordEvent(Event{
+		Sequence:      1,
+		Type:          EventToolStart,
+		AgentName:     "assistant",
+		ToolCallID:    "call_1",
+		ToolCallRef:   "ref_1",
+		ToolName:      "echo",
+		ToolArgs:      `{"text":"hello"}`,
+		ToolCallIndex: &toolIndex,
+	})
+	recorder.RecordEvent(Event{
+		Sequence:    2,
+		Type:        EventToolEnd,
+		AgentName:   "assistant",
+		ToolCallID:  "call_1",
+		ToolCallRef: "ref_1",
+		ToolName:    "echo",
+		Content:     "echo: hello",
+		ToolResult:  "echo: hello",
+	})
+	recorder.RecordEvent(Event{
+		Sequence:    3,
+		Type:        agentcore.EventMessageEnd,
+		Role:        agentcore.RoleTool,
+		AgentName:   "assistant",
+		ToolCallID:  "call_1",
+		ToolCallRef: "ref_1",
+		ToolName:    "echo",
+		Content:     "echo: hello",
+	})
+	recorder.FinalizeCurrent()
+
+	messages := recorder.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	if len(messages[0].Events) != 1 {
+		t.Fatalf("event count = %d, want 1: %#v", len(messages[0].Events), messages[0].Events)
 	}
 }
 

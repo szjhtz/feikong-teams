@@ -6,46 +6,17 @@ require("../js/messages.js");
 
 function newChatWithRecordedMigrations() {
   const chat = Object.create(FKTeamsChat.prototype);
-  chat.migrations = [];
-  chat.migrateMemberToolFlow = function (_entry, fromKey, toKey) {
-    if (fromKey && toKey && fromKey !== toKey) this.migrations.push([fromKey, toKey]);
-  };
   return chat;
 }
 
-function fakeToolFlow(connected) {
-  const el = {
-    isConnected: connected,
-    removed: false,
-    attrs: {},
-    setAttribute(name, value) {
-      this.attrs[name] = value;
-    },
-    remove() {
-      this.removed = true;
-      this.isConnected = false;
-    },
-  };
-  return {
-    el,
-    status: { textContent: "" },
-    argsWrap: { style: { display: "none" } },
-    args: { textContent: "" },
-    resultWrap: { style: { display: "none" } },
-    result: { textContent: "" },
-    argsRaw: "",
-    resultRaw: "",
-  };
-}
-
-test("member tool flow key resolves idx and id aliases to final ref key", () => {
+test("member tool flow key uses only canonical ref", () => {
   const chat = newChatWithRecordedMigrations();
-  const entry = { toolFlowKeyByName: { member_echo: "idx:0" } };
+  const entry = {};
 
   const key = chat.resolveMemberToolFlowKey(
     entry,
     {
-      tool_call_ref: "tool|member|idx:0",
+      tool_call_ref: "tool_call:member-tool-call",
       tool_call_id: "member-tool-call",
       tool_call_index: 0,
       tool_name: "member_echo",
@@ -58,15 +29,10 @@ test("member tool flow key resolves idx and id aliases to final ref key", () => 
     0,
   );
 
-  assert.equal(key, "ref:tool|member|idx:0");
-  assert.deepEqual(chat.migrations, [
-    ["id:member-tool-call", "ref:tool|member|idx:0"],
-    ["idx:0", "ref:tool|member|idx:0"],
-    ["fallback:0", "ref:tool|member|idx:0"],
-  ]);
+  assert.equal(key, "ref:tool_call:member-tool-call");
 });
 
-test("member tool flow key resolves index-only event without inventing another card", () => {
+test("member tool flow key rejects index-only event", () => {
   const chat = newChatWithRecordedMigrations();
   const entry = {};
 
@@ -80,8 +46,7 @@ test("member tool flow key resolves index-only event without inventing another c
     0,
   );
 
-  assert.equal(key, "idx:0");
-  assert.deepEqual(chat.migrations, [["fallback:0", "idx:0"]]);
+  assert.equal(key, "");
 });
 
 test("tool call normalization merges top-level identity into array calls", () => {
@@ -115,6 +80,82 @@ test("tool call normalization merges top-level identity into array calls", () =>
   });
 });
 
+test("tool key rejects non-canonical span identity", () => {
+  const chat = newChatWithRecordedMigrations();
+
+  const calls = chat.normalizeToolCallsForEvent({
+    type: "tool_update",
+    span_id: "span-tool-1",
+    tool_name: "member_echo",
+    delta_kind: "tool_result",
+    delta: "chunk",
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(chat.toolCallKey(calls[0], 0), "");
+});
+
+test("member tool flow rejects id-only event even when name alias exists", () => {
+  const chat = newChatWithRecordedMigrations();
+  const entry = {};
+
+  const key = chat.resolveMemberToolFlowKey(
+    entry,
+    {
+      tool_call_id: "member-tool-call",
+      tool_name: "member_echo",
+    },
+    {
+      id: "member-tool-call",
+      name: "member_echo",
+    },
+    0,
+  );
+
+  assert.equal(key, "");
+});
+
+test("role tool message delta is routed as tool result update", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let routed = null;
+  chat.handleCoreToolUpdate = (event) => {
+    routed = event;
+  };
+
+  chat.handleCoreMessageDelta({
+    role: "tool",
+    tool_call_id: "call-1",
+    tool_call_ref: "tool_call:call-1",
+    tool_name: "member_echo",
+    content: "stream chunk",
+  });
+
+  assert.equal(routed.tool_call_id, "call-1");
+  assert.equal(routed.tool_call_ref, "tool_call:call-1");
+  assert.equal(routed.delta_kind, "tool_result");
+  assert.equal(routed.content, "stream chunk");
+});
+
+test("role tool message end is routed as tool result end", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let routed = null;
+  chat.handleCoreToolEnd = (event) => {
+    routed = event;
+  };
+
+  chat.handleCoreMessageEnd({
+    role: "tool",
+    tool_call_id: "call-1",
+    tool_call_ref: "tool_call:call-1",
+    tool_name: "member_echo",
+    content: "done",
+  });
+
+  assert.equal(routed.tool_call_id, "call-1");
+  assert.equal(routed.tool_call_ref, "tool_call:call-1");
+  assert.equal(routed.content, "done");
+});
+
 test("dispatch task handling does not assume the first tool call", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   chat.isMemberRunEvent = () => false;
@@ -129,28 +170,4 @@ test("dispatch task handling does not assume the first tool call", () => {
   });
 
   assert.deepEqual(chat._pendingDispatchTasks, [{ title: "task" }]);
-});
-
-test("member tool flow migration keeps visible source when target is stale", () => {
-  const chat = Object.create(FKTeamsChat.prototype);
-  chat.updateMemberDetailVisibility = () => {};
-  const source = fakeToolFlow(true);
-  const staleTarget = fakeToolFlow(false);
-  const entry = {
-    toolFlows: {
-      "idx:0": source,
-      "ref:stale": staleTarget,
-    },
-    toolFlowKeyByName: {
-      member_echo: "idx:0",
-    },
-  };
-
-  chat.migrateMemberToolFlow(entry, "idx:0", "ref:stale");
-
-  assert.equal(entry.toolFlows["ref:stale"], source);
-  assert.equal(entry.toolFlows["idx:0"], undefined);
-  assert.equal(source.el.removed, false);
-  assert.equal(source.el.attrs["data-tool-flow-key"], "ref:stale");
-  assert.equal(entry.toolFlowKeyByName.member_echo, "ref:stale");
 });

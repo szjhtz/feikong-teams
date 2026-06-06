@@ -14,6 +14,7 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 )
 
 type Runner struct {
@@ -114,6 +115,7 @@ type converter struct {
 	lastEvent      agentcore.Event
 	toolRefsByID   sync.Map
 	toolOrdersByID sync.Map
+	toolIDsByKey   sync.Map
 }
 
 func newConverter(runID, turnID string, sink agentcore.EventSink) *converter {
@@ -242,8 +244,9 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 		return c.emitToolResultMessage(event, msg, scope)
 	}
 
-	message := adaptMessageFromRunner(msg)
 	messageID := c.messageID(event, "assistant")
+	message := adaptMessageFromRunner(msg)
+	message.ToolCalls = c.ensureMessageToolIdentities(messageID, scope, message.ToolCalls)
 	start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: messageID, Role: message.Role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message}
 	scope.apply(&start, c)
 	if err := c.emit(start); err != nil {
@@ -263,12 +266,12 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 			return err
 		}
 	}
-	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: message.Role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: message.ToolCalls}
+	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: message.Role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: message.ToolCalls, ToolCallRefs: c.toolRefsForToolCalls(message.ToolCalls)}
 	scope.apply(&end, c)
 	if err := c.emit(end); err != nil {
 		return err
 	}
-	return c.emitToolStarts(event, message.ToolCalls, scope)
+	return c.emitToolStarts(event, messageID, message.ToolCalls, scope)
 }
 
 func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Message, scope MemberScope) error {
@@ -292,21 +295,23 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 	message.Content = content
 	messageID := c.messageID(event, "tool")
 	start := agentcore.Event{Type: agentcore.EventMessageStart, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: msg.ToolCallID, ToolName: msg.ToolName}
+	c.attachToolIdentity(&start)
 	scope.apply(&start, c)
 	if err := c.emit(start); err != nil {
 		return err
 	}
 	end := agentcore.Event{Type: agentcore.EventMessageEnd, MessageID: messageID, Role: agentcore.RoleTool, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), Message: &message, ToolCallID: msg.ToolCallID, ToolName: msg.ToolName, Content: content}
+	c.attachToolIdentity(&end)
 	scope.apply(&end, c)
 	return c.emit(end)
 }
 
-func (c *converter) emitToolStarts(event *adk.AgentEvent, toolCalls []agentcore.ToolCall, scope MemberScope) error {
-	for _, tc := range toolCalls {
+func (c *converter) emitToolStarts(event *adk.AgentEvent, sourceMessageID string, toolCalls []agentcore.ToolCall, scope MemberScope) error {
+	for position, tc := range toolCalls {
 		if events.IsInternalToolName(tc.Function.Name) {
 			continue
 		}
-		ref := c.toolCallRef(event, scope, tc)
+		ref := c.ensureToolIdentity(sourceMessageID, position, scope, &tc)
 		nEvent := agentcore.Event{
 			Type:        agentcore.EventToolStart,
 			AgentName:   event.AgentName,
@@ -320,10 +325,6 @@ func (c *converter) emitToolStarts(event *adk.AgentEvent, toolCalls []agentcore.
 		}
 		if tc.Index != nil {
 			nEvent.ToolCallIndex = tc.Index
-			c.toolOrdersByID.Store(tc.ID, *tc.Index)
-		}
-		if tc.ID != "" {
-			c.toolRefsByID.Store(tc.ID, ref)
 		}
 		scope.apply(&nEvent, c)
 		if err := c.emit(nEvent); err != nil {
@@ -392,7 +393,7 @@ func (c *converter) handleStreamingMessage(ctx context.Context, event *adk.Agent
 		if err := c.emit(end); err != nil {
 			return err
 		}
-		if err := c.emitToolStarts(event, message.ToolCalls, scope); err != nil {
+		if err := c.emitToolStarts(event, ss.messageID, message.ToolCalls, scope); err != nil {
 			return err
 		}
 	}
@@ -472,7 +473,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 			idx = *tc.Index
 		}
 		current := ss.toolCalls[idx]
-		if tc.ID != "" {
+		if current.ID == "" && tc.ID != "" {
 			current.ID = tc.ID
 		}
 		current.Index = tc.Index
@@ -481,16 +482,10 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 			current.Function.Name = tc.Function.Name
 		}
 		current.Function.Arguments += tc.Function.Arguments
-		ss.toolCalls[idx] = current
 		ss.toolArgs[idx] += tc.Function.Arguments
-		ref := c.toolCallRef(event, scope, current)
+		ref := c.ensureToolIdentity(ss.messageID, idx, scope, &current)
+		ss.toolCalls[idx] = current
 		ss.toolRefs[idx] = ref
-		if current.ID != "" {
-			c.toolRefsByID.Store(current.ID, ref)
-			if current.Index != nil {
-				c.toolOrdersByID.Store(current.ID, *current.Index)
-			}
-		}
 		if tc.Function.Arguments != "" {
 			nEvent := agentcore.Event{Type: agentcore.EventMessageDelta, MessageID: ss.messageID, Role: ss.role, AgentName: event.AgentName, RunPath: formatRunPath(event.RunPath), DeltaKind: agentcore.DeltaToolArgs, Content: tc.Function.Arguments, Delta: tc.Function.Arguments, ToolCallID: current.ID, ToolCallRef: ref, ToolName: current.Function.Name, ToolCallIndex: current.Index}
 			scope.apply(&nEvent, c)
@@ -506,12 +501,77 @@ func (c *converter) messageID(event *adk.AgentEvent, suffix string) string {
 	return fmt.Sprintf("msg_%s_%s_%d", event.AgentName, suffix, atomic.AddInt64(&globalMessageSeq, 1))
 }
 
-func (c *converter) toolCallRef(event *adk.AgentEvent, scope MemberScope, tc agentcore.ToolCall) string {
-	idx := -1
+func (c *converter) ensureMessageToolIdentities(sourceMessageID string, scope MemberScope, toolCalls []agentcore.ToolCall) []agentcore.ToolCall {
+	if len(toolCalls) == 0 {
+		return toolCalls
+	}
+	result := make([]agentcore.ToolCall, len(toolCalls))
+	copy(result, toolCalls)
+	for i := range result {
+		c.ensureToolIdentity(sourceMessageID, i, scope, &result[i])
+	}
+	return result
+}
+
+func (c *converter) toolRefsForToolCalls(toolCalls []agentcore.ToolCall) map[int]string {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	refs := make(map[int]string, len(toolCalls))
+	for position, tc := range toolCalls {
+		if tc.ID == "" {
+			continue
+		}
+		ref, ok := c.toolRefsByID.Load(tc.ID)
+		if !ok {
+			continue
+		}
+		value, ok := ref.(string)
+		if !ok || value == "" {
+			continue
+		}
+		key := position
+		if tc.Index != nil {
+			key = *tc.Index
+		}
+		refs[key] = value
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return refs
+}
+
+func (c *converter) ensureToolIdentity(sourceMessageID string, position int, scope MemberScope, tc *agentcore.ToolCall) string {
+	if tc == nil {
+		return ""
+	}
+	if tc.ID == "" {
+		key := c.syntheticToolKey(sourceMessageID, position, scope, tc)
+		if existing, ok := c.toolIDsByKey.Load(key); ok {
+			if value, ok := existing.(string); ok && value != "" {
+				tc.ID = value
+			}
+		}
+		if tc.ID == "" {
+			tc.ID = "fk_tool_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+			c.toolIDsByKey.Store(key, tc.ID)
+		}
+	}
+	ref := "tool_call:" + tc.ID
+	c.toolRefsByID.Store(tc.ID, ref)
 	if tc.Index != nil {
+		c.toolOrdersByID.Store(tc.ID, *tc.Index)
+	}
+	return ref
+}
+
+func (c *converter) syntheticToolKey(sourceMessageID string, position int, scope MemberScope, tc *agentcore.ToolCall) string {
+	idx := position
+	if tc != nil && tc.Index != nil {
 		idx = *tc.Index
 	}
-	parts := []string{"tool", event.AgentName, formatRunPath(event.RunPath), fmt.Sprintf("idx:%d", idx)}
+	parts := []string{sourceMessageID, fmt.Sprintf("idx:%d", idx)}
 	if scope.CallID != "" {
 		parts = append(parts, "member:"+scope.CallID)
 	}

@@ -153,6 +153,27 @@ func TestConvertEventToMapDoesNotExposeSingularToolCallForMultipleCalls(t *testi
 	}
 }
 
+func TestConvertEventToMapUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.T) {
+	got := convertEventToMap(events.Event{
+		Type: events.EventMessageEnd,
+		ToolCalls: []agentcore.ToolCall{
+			{ID: "tool-call-1", Function: agentcore.FunctionCall{Name: "first_tool"}},
+			{ID: "tool-call-2", Function: agentcore.FunctionCall{Name: "second_tool"}},
+		},
+		ToolCallRefs: map[int]string{
+			0: "tool_call:tool-call-1",
+			1: "tool_call:tool-call-2",
+		},
+	})
+
+	toolCalls, ok := got["tool_calls"].([]map[string]any)
+	if !ok || len(toolCalls) != 2 {
+		t.Fatalf("expected two tool call maps, got %#v", got["tool_calls"])
+	}
+	requireMapValue(t, toolCalls[0], "ref", "tool_call:tool-call-1")
+	requireMapValue(t, toolCalls[1], "ref", "tool_call:tool-call-2")
+}
+
 func requireMapValue(t *testing.T, got map[string]any, key string, want any) {
 	t.Helper()
 	if got[key] != want {

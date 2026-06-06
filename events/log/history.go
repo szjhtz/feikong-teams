@@ -242,11 +242,17 @@ func toolCallRefFromEvent(event Event, tc agentcore.ToolCall) string {
 	if event.ToolCallRef != "" {
 		return event.ToolCallRef
 	}
-	if tc.ID != "" {
-		return "id:" + tc.ID
+	return ""
+}
+
+func toolCallRefFromEventAt(event Event, tc agentcore.ToolCall, position int) string {
+	if ref := toolCallRefFromEvent(event, tc); ref != "" {
+		return ref
 	}
-	if tc.Index != nil {
-		return fmt.Sprintf("idx:%d", *tc.Index)
+	if event.ToolCallRefs != nil {
+		if ref := event.ToolCallRefs[position]; ref != "" {
+			return ref
+		}
 	}
 	return ""
 }
@@ -303,19 +309,82 @@ func truncateErrorContent(s string) string {
 }
 
 func toolResultKey(event Event) string {
-	if event.SpanID != "" {
-		return event.SpanID
-	}
 	if event.ToolCallRef != "" {
 		return event.ToolCallRef
 	}
-	if event.ToolCallID != "" {
-		return event.ToolCallID
-	}
-	if event.ToolCallIndex != nil {
-		return fmt.Sprintf("idx:%d", *event.ToolCallIndex)
-	}
 	return ""
+}
+
+func toolResultContentFromEvent(event Event) string {
+	content := event.ToolResult
+	if content == "" {
+		content = event.Delta
+	}
+	if content == "" {
+		content = event.Content
+	}
+	return content
+}
+
+func eventMatchesPendingToolCall(tc pendingToolCall, event Event) bool {
+	return tc.Ref != "" && tc.Ref == event.ToolCallRef
+}
+
+func eventMatchesToolCallRecord(record *ToolCallRecord, event Event) bool {
+	if record == nil {
+		return false
+	}
+	return record.Ref != "" && record.Ref == event.ToolCallRef
+}
+
+func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Event, content string) {
+	if ctx == nil || content == "" || events.IsInternalContinueContent(content) {
+		return
+	}
+	if event.ToolCallRef == "" {
+		return
+	}
+	idx := -1
+	for i := range ctx.pendingToolCalls {
+		if eventMatchesPendingToolCall(ctx.pendingToolCalls[i], event) {
+			idx = i
+			break
+		}
+	}
+	if idx >= 0 {
+		tc := ctx.pendingToolCalls[idx]
+		ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
+		if events.IsInternalToolName(tc.Name) {
+			return
+		}
+		if !h.updateToolCallEvent(ctx, tc, content) {
+			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+				Type:     MsgTypeToolCall,
+				ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
+			})
+		}
+		return
+	}
+	for i := range ctx.msg.Events {
+		evt := &ctx.msg.Events[i]
+		if evt.Type != MsgTypeToolCall || !eventMatchesToolCallRecord(evt.ToolCall, event) {
+			continue
+		}
+		if evt.ToolCall.Result == "" {
+			evt.ToolCall.Result = content
+		}
+		return
+	}
+	if event.ToolName == "" || event.ToolCallRef == "" {
+		return
+	}
+	pending := pendingToolCallFromEvent(event.SpanID, event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
+	if !events.IsInternalToolName(pending.Name) {
+		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+			Type:     MsgTypeToolCall,
+			ToolCall: ptrToolCallRecord(toolCallRecordFromPending(pending, content)),
+		})
+	}
 }
 
 func historyActiveKey(event Event) string {
@@ -451,6 +520,12 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
+		if event.Role == agentcore.RoleTool && (event.DeltaKind == "" || event.DeltaKind == events.DeltaOutput) {
+			if key := toolResultKey(event); key != "" {
+				ctx.toolResultChunks[key] += content
+			}
+			return
+		}
 		switch event.DeltaKind {
 		case events.DeltaReasoning:
 			// 合并连续推理事件
@@ -481,6 +556,27 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		}
 
+	case events.EventMessageEnd:
+		if event.Role != agentcore.RoleTool {
+			return
+		}
+		content := toolResultContentFromEvent(event)
+		if content == "" || events.IsInternalContinueContent(content) {
+			return
+		}
+		ctx := h.ensureMessageContext(event)
+		resultKey := toolResultKey(event)
+		if resultKey != "" && ctx.toolResultChunks[resultKey] != "" {
+			chunked := ctx.toolResultChunks[resultKey]
+			if strings.Contains(chunked, content) {
+				content = chunked
+			} else if !strings.Contains(content, chunked) {
+				content = chunked + content
+			}
+			delete(ctx.toolResultChunks, resultKey)
+		}
+		h.recordToolResult(ctx, event, content)
+
 	case EventToolStart:
 		ctx := h.ensureMessageContext(event)
 		toolCalls := event.ToolCalls
@@ -497,22 +593,22 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				},
 			}}
 		}
-		for _, tc := range toolCalls {
+		for i, tc := range toolCalls {
 			if events.IsInternalToolName(tc.Function.Name) {
 				continue
 			}
 			if tc.Function.Name == "" {
 				continue
 			}
+			ref := toolCallRefFromEventAt(event, tc, i)
+			if ref == "" {
+				continue
+			}
 			updated := false
 			for i := range ctx.pendingToolCalls {
-				sameID := ctx.pendingToolCalls[i].ID != "" && ctx.pendingToolCalls[i].ID == tc.ID
-				sameIndex := ctx.pendingToolCalls[i].Index != nil && tc.Index != nil && *ctx.pendingToolCalls[i].Index == *tc.Index
-				sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == toolCallRefFromEvent(event, tc)
-				if sameRef || sameID || sameIndex {
-					if ref := toolCallRefFromEvent(event, tc); ref != "" {
-						ctx.pendingToolCalls[i].Ref = ref
-					}
+				sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == ref
+				if sameRef {
+					ctx.pendingToolCalls[i].Ref = ref
 					if tc.ID != "" {
 						ctx.pendingToolCalls[i].ID = tc.ID
 					}
@@ -523,7 +619,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				}
 			}
 			if !updated {
-				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
 				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
@@ -546,10 +642,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 
 	case EventToolEnd:
-		content := event.ToolResult
-		if content == "" {
-			content = event.Content
-		}
+		content := toolResultContentFromEvent(event)
 		if events.IsInternalContinueContent(content) {
 			return
 		}
@@ -564,53 +657,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 			delete(ctx.toolResultChunks, resultKey)
 		}
-		idx := -1
-		for i := range ctx.pendingToolCalls {
-			sameSpan := ctx.pendingToolCalls[i].SpanID != "" && ctx.pendingToolCalls[i].SpanID == event.SpanID
-			sameID := ctx.pendingToolCalls[i].ID != "" && ctx.pendingToolCalls[i].ID == event.ToolCallID
-			sameIndex := ctx.pendingToolCalls[i].Index != nil && event.ToolCallIndex != nil && *ctx.pendingToolCalls[i].Index == *event.ToolCallIndex
-			sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == event.ToolCallRef
-			if sameSpan || sameRef || sameID || sameIndex {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 && event.ToolName != "" {
-			for i := range ctx.pendingToolCalls {
-				if ctx.pendingToolCalls[i].Name != event.ToolName {
-					continue
-				}
-				if idx >= 0 {
-					idx = -1
-					break
-				}
-				idx = i
-			}
-		}
-		if idx >= 0 {
-			tc := ctx.pendingToolCalls[idx]
-			ctx.pendingToolCalls = append(ctx.pendingToolCalls[:idx], ctx.pendingToolCalls[idx+1:]...)
-			if events.IsInternalToolName(tc.Name) {
-				return
-			}
-			if !h.updateToolCallEvent(ctx, tc, content) {
-				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-					Type:     MsgTypeToolCall,
-					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
-				})
-			}
-		} else {
-			if event.ToolName == "" {
-				return
-			}
-			pending := pendingToolCallFromEvent(event.SpanID, event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
-			if !events.IsInternalToolName(pending.Name) {
-				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-					Type:     MsgTypeToolCall,
-					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(pending, content)),
-				})
-			}
-		}
+		h.recordToolResult(ctx, event, content)
 
 	case EventAction:
 		ctx := h.ensureMessageContext(event)
@@ -645,9 +692,7 @@ func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 		idx := -1
 		for i := range ctx.pendingToolCalls {
 			sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == resultKey
-			sameID := ctx.pendingToolCalls[i].ID != "" && ctx.pendingToolCalls[i].ID == resultKey
-			sameIndex := ctx.pendingToolCalls[i].Index != nil && resultKey == fmt.Sprintf("idx:%d", *ctx.pendingToolCalls[i].Index)
-			if sameRef || sameID || sameIndex {
+			if sameRef {
 				idx = i
 				break
 			}

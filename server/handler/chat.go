@@ -251,6 +251,11 @@ func toolCallRefForMap(event events.Event, tc agentcore.ToolCall, position, tota
 			return ref
 		}
 	}
+	if event.ToolCallRefs != nil {
+		if ref := event.ToolCallRefs[position]; ref != "" {
+			return ref
+		}
+	}
 	if event.ToolCallRef == "" {
 		return ""
 	}

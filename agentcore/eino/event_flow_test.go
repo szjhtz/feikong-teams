@@ -237,6 +237,99 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 	requireBefore(t, events, messageEndIdx, toolStartIdx, "regular message end", "regular tool start")
 	requireBefore(t, events, toolStartIdx, toolEndIdx, "regular tool start", "regular tool end")
 	requireBefore(t, events, toolEndIdx, finalIdx, "regular tool end", "regular final output")
+
+	messageEnd := events[messageEndIdx]
+	if messageEnd.ToolCallRefs[0] != toolStart.ToolCallRef {
+		t.Fatalf("regular message_end tool call ref = %q, want %q", messageEnd.ToolCallRefs[0], toolStart.ToolCallRef)
+	}
+}
+
+func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
+	ctx := context.Background()
+	toolCallIndex := 0
+	echoTool, err := agentcore.InferTool("generated_id_echo", "echo text", func(_ context.Context, req *flowEchoRequest) (*flowEchoResponse, error) {
+		return &flowEchoResponse{Text: "echo:" + req.Text}, nil
+	})
+	if err != nil {
+		t.Fatalf("create tool: %v", err)
+	}
+
+	model := testmodel.New().
+		EnqueueStream(
+			agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+				Index: &toolCallIndex,
+				Type:  "function",
+				Function: agentcore.FunctionCall{
+					Name:      "generated_id_echo",
+					Arguments: `{"text":`,
+				},
+			}}},
+			agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+				Index: &toolCallIndex,
+				Type:  "function",
+				Function: agentcore.FunctionCall{
+					Arguments: `"hello"}`,
+				},
+			}}},
+		).
+		EnqueueStream(testmodel.AssistantMessage("final"))
+	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+		Name:               "generated-id-flow",
+		Description:        "generated id flow",
+		Model:              model,
+		Tools:              []agentcore.Tool{echoTool},
+		MaxIterations:      4,
+		EmitInternalEvents: true,
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	events := runAgentForTest(t, ctx, agent, true)
+	firstArgsIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventMessageDelta &&
+			event.DeltaKind == agentcore.DeltaToolArgs &&
+			event.ToolName == "generated_id_echo" &&
+			event.Content == `{"text":`
+	}, "first generated-id tool args")
+	secondArgsIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventMessageDelta &&
+			event.DeltaKind == agentcore.DeltaToolArgs &&
+			event.ToolName == "generated_id_echo" &&
+			event.Content == `"hello"}`
+	}, "second generated-id tool args")
+	messageEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventMessageEnd &&
+			len(event.ToolCalls) == 1 &&
+			event.ToolCalls[0].Function.Name == "generated_id_echo"
+	}, "generated-id message end")
+	toolStartIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventToolStart &&
+			event.ToolName == "generated_id_echo"
+	}, "generated-id tool start")
+
+	firstArgs := events[firstArgsIdx]
+	secondArgs := events[secondArgsIdx]
+	messageEnd := events[messageEndIdx]
+	toolStart := events[toolStartIdx]
+	if !strings.HasPrefix(firstArgs.ToolCallID, "fk_tool_") {
+		t.Fatalf("generated tool_call_id = %q, want fk_tool_ prefix", firstArgs.ToolCallID)
+	}
+	if firstArgs.ToolCallRef != "tool_call:"+firstArgs.ToolCallID {
+		t.Fatalf("generated ref = %q, want tool_call:%s", firstArgs.ToolCallRef, firstArgs.ToolCallID)
+	}
+	if secondArgs.ToolCallID != firstArgs.ToolCallID || secondArgs.ToolCallRef != firstArgs.ToolCallRef {
+		t.Fatalf("generated identity changed: first=%s/%s second=%s/%s", firstArgs.ToolCallID, firstArgs.ToolCallRef, secondArgs.ToolCallID, secondArgs.ToolCallRef)
+	}
+	if messageEnd.ToolCalls[0].ID != firstArgs.ToolCallID {
+		t.Fatalf("message_end tool id = %q, want %q", messageEnd.ToolCalls[0].ID, firstArgs.ToolCallID)
+	}
+	if messageEnd.ToolCallRefs[0] != firstArgs.ToolCallRef {
+		t.Fatalf("message_end ref = %q, want %q", messageEnd.ToolCallRefs[0], firstArgs.ToolCallRef)
+	}
+	if toolStart.ToolCallID != firstArgs.ToolCallID || toolStart.ToolCallRef != firstArgs.ToolCallRef {
+		t.Fatalf("tool_start identity = %s/%s, want %s/%s", toolStart.ToolCallID, toolStart.ToolCallRef, firstArgs.ToolCallID, firstArgs.ToolCallRef)
+	}
 }
 
 func runAgentForTest(t *testing.T, ctx context.Context, agent agentcore.Agent, streaming bool) []agentcore.Event {

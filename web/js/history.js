@@ -994,6 +994,7 @@ FKTeamsChat.prototype.queueHistoryMemberTask = function (tc) {
   if (!this._historyPendingMemberTasks) this._historyPendingMemberTasks = [];
   this._historyPendingMemberTasks.push({
     id: tc.id || "",
+    ref: tc.ref || "",
     index: tc.index,
     name: tc.name || "",
     target: display.target || "",
@@ -1015,10 +1016,7 @@ FKTeamsChat.prototype.takeHistoryMemberTask = function (msg, fallbackIndex) {
     const normalized = this.normalizedAgentName(msg.member_name);
     idx = tasks.findIndex((task) => this.normalizedAgentName(task.target) === normalized);
   }
-  if (idx < 0 && Number.isInteger(fallbackIndex) && fallbackIndex < tasks.length) {
-    idx = fallbackIndex;
-  }
-  if (idx < 0) idx = 0;
+  if (idx < 0) return null;
 
   const task = tasks[idx];
   tasks.splice(idx, 1);
@@ -1042,6 +1040,7 @@ FKTeamsChat.prototype.prepareHistoryMemberTasks = function (messages) {
         if (display.kind !== "agent") return;
         tasks.push({
           id: evt.tool_call.id || "",
+          ref: evt.tool_call.ref || "",
           index: evt.tool_call.index,
           name: evt.tool_call.name || "",
           target: display.target || "",
@@ -1062,7 +1061,6 @@ FKTeamsChat.prototype.prepareHistoryMemberTasks = function (messages) {
         const normalized = this.normalizedAgentName(msg.member_name);
         idx = tasks.findIndex((task) => this.normalizedAgentName(task.target) === normalized);
       }
-      if (idx < 0 && fallbackIndex < tasks.length) idx = fallbackIndex;
       if (idx < 0) return;
       msg.__historyMemberTask = tasks[idx];
       tasks.splice(idx, 1);
@@ -1145,13 +1143,7 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
       }
       if (evt.type === "tool_call" && evt.tool_call) {
         const display = this.historyToolDisplay(evt.tool_call);
-        const flowKey = evt.tool_call.ref
-          ? "ref:" + evt.tool_call.ref
-          : evt.tool_call.id
-          ? "id:" + evt.tool_call.id
-          : evt.tool_call.index !== undefined && evt.tool_call.index !== null
-            ? "idx:" + evt.tool_call.index
-            : "";
+        const flowKey = evt.tool_call.ref ? "ref:" + evt.tool_call.ref : "";
         if (!flowKey) return;
         this.ensureMemberToolFlow(entry, flowKey, display.displayName);
         this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, evt.tool_call.arguments || "", false);
@@ -1499,6 +1491,9 @@ FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
   const toolDisplay = this.historyToolDisplay(tc);
   if (toolDisplay.kind === "agent") return;
   toolCallEl.className = "tool-call" + (toolDisplay.kind === "agent" ? " agent-tool-call" : "");
+  if (tc.ref) toolCallEl.setAttribute("data-tool-key", "ref:" + tc.ref);
+  if (tc.id) toolCallEl.setAttribute("data-tool-call-id", tc.id);
+  if (tc.index !== undefined && tc.index !== null) toolCallEl.setAttribute("data-tool-index", tc.index);
 
   let argsDisplay = tc.arguments || "无参数";
   try {
