@@ -249,6 +249,10 @@
     min-height: 40px;
 }
 
+.sidebar-session-item.menu-open {
+    z-index: 20;
+}
+
 .sidebar-session-item:hover {
     background: var(--bg-tertiary);
     border-color: var(--border-color);
@@ -275,6 +279,7 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
+    padding-right: 34px;
 }
 
 .sidebar-session-name {
@@ -352,7 +357,7 @@
     border-radius: 9px;
     background: var(--bg-secondary);
     box-shadow: 2px 4px 0 rgba(60, 50, 30, 0.12);
-    z-index: 20;
+    z-index: 4;
 }
 
 .sidebar-session-item.menu-open .sidebar-session-menu {
@@ -623,6 +628,10 @@
     /* 会话项更紧凑 */
     .sidebar-session-item {
         padding: 10px 12px;
+    }
+
+    .sidebar-session-info {
+        padding-right: 44px;
     }
 
     .sidebar-session-name {

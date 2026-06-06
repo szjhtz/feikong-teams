@@ -189,7 +189,9 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
       e.stopPropagation();
       const isOpen = item.classList.contains("menu-open");
       this.closeSidebarSessionMenus();
-      item.classList.toggle("menu-open", !isOpen);
+      if (!isOpen) {
+        item.classList.add("menu-open");
+      }
     });
 
     // 分享按钮

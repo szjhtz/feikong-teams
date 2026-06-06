@@ -792,6 +792,7 @@ class FKTeamsChat {
     this._tooltipTimer = null;
 
     document.addEventListener("mouseover", (e) => {
+      if (this._shouldSuppressTooltip()) return;
       const el = e.target;
       if (!el || typeof el.closest !== "function") return;
       const target = el.closest("[data-tooltip]");
@@ -815,9 +816,17 @@ class FKTeamsChat {
       this._currentTooltipTarget = null;
       this._hideTooltip();
     });
+
+    document.addEventListener("touchstart", () => this._hideTooltip(), {
+      passive: true,
+    });
+    document.addEventListener("pointerdown", (e) => {
+      if (e.pointerType && e.pointerType !== "mouse") this._hideTooltip();
+    });
   }
 
   _showTooltip(target) {
+    if (this._shouldSuppressTooltip()) return;
     clearTimeout(this._tooltipTimer);
 
     this._tooltipTimer = setTimeout(() => {
@@ -886,6 +895,13 @@ class FKTeamsChat {
     if (this._tooltipEl) {
       this._tooltipEl.classList.remove("visible");
     }
+  }
+
+  _shouldSuppressTooltip() {
+    return (
+      window.matchMedia &&
+      window.matchMedia("(hover: none), (pointer: coarse)").matches
+    );
   }
 
   _getTooltipPlacement(target, rect, tipRect) {
