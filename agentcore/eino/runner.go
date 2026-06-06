@@ -282,6 +282,7 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 		Content:    content,
 		ToolResult: content,
 	}
+	c.attachToolIdentity(&toolEvent)
 	scope.apply(&toolEvent, c)
 	if err := c.emit(toolEvent); err != nil {
 		return err
@@ -424,6 +425,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 			Delta:      chunk.Content,
 			DeltaKind:  agentcore.DeltaToolResult,
 		}
+		c.attachToolIdentity(&nEvent)
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
 	}
@@ -499,6 +501,22 @@ func (c *converter) toolCallRef(event *adk.AgentEvent, scope MemberScope, tc age
 		parts = append(parts, "member:"+scope.CallID)
 	}
 	return strings.Join(parts, "|")
+}
+
+func (c *converter) attachToolIdentity(event *agentcore.Event) {
+	if event == nil || event.ToolCallID == "" {
+		return
+	}
+	if ref, ok := c.toolRefsByID.Load(event.ToolCallID); ok {
+		if value, ok := ref.(string); ok && value != "" {
+			event.ToolCallRef = value
+		}
+	}
+	if order, ok := c.toolOrdersByID.Load(event.ToolCallID); ok {
+		if value, ok := order.(int); ok {
+			event.ToolCallIndex = &value
+		}
+	}
 }
 
 func firstNonEmpty(values ...string) string {

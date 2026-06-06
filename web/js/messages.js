@@ -51,6 +51,30 @@ FKTeamsChat.prototype.findToolCallCard = function (key) {
   return null;
 };
 
+FKTeamsChat.prototype.findToolCallCardByIdentity = function (event, toolCall) {
+  const keys = [];
+  if (event?.tool_call_ref) keys.push("ref:" + event.tool_call_ref);
+  if (toolCall?.ref) keys.push("ref:" + toolCall.ref);
+  if (event?.tool_call_id) keys.push("id:" + event.tool_call_id);
+  if (toolCall?.id) keys.push("id:" + toolCall.id);
+  if (event?.tool_call_index !== undefined && event?.tool_call_index !== null) keys.push("idx:" + event.tool_call_index);
+  if (toolCall?.index !== undefined && toolCall?.index !== null) keys.push("idx:" + toolCall.index);
+  for (const key of keys) {
+    const card = this.findToolCallCard(key);
+    if (card) return card;
+  }
+  const cards = this.messagesContainer.querySelectorAll(".tool-call");
+  for (const card of cards) {
+    if (event?.tool_call_id && card.getAttribute("data-tool-call-id") === event.tool_call_id) return card;
+    if (toolCall?.id && card.getAttribute("data-tool-call-id") === toolCall.id) return card;
+    const eventIndex = event?.tool_call_index;
+    const toolIndex = toolCall?.index;
+    if (eventIndex !== undefined && eventIndex !== null && card.getAttribute("data-tool-index") === String(eventIndex)) return card;
+    if (toolIndex !== undefined && toolIndex !== null && card.getAttribute("data-tool-index") === String(toolIndex)) return card;
+  }
+  return null;
+};
+
 FKTeamsChat.prototype.appendToolResultToCard = function (card, content, toolDisplay) {
   if (!card) return false;
   const detail = card.querySelector(".tool-call-detail") || card;
@@ -1661,10 +1685,11 @@ FKTeamsChat.prototype.handleCoreMessageStart = function (event) {
 
 FKTeamsChat.prototype.handleCoreMessageDelta = function (event) {
   if (event.role === "user") return;
+  if (event.role === "tool") return;
   const content = event.delta || event.content || "";
   if (!content) return;
 
-  if (event.role === "tool" || event.delta_kind === "tool_result") {
+  if (event.delta_kind === "tool_result") {
     this.handleCoreToolUpdate(event);
     return;
   }
@@ -1681,10 +1706,7 @@ FKTeamsChat.prototype.handleCoreMessageDelta = function (event) {
 
 FKTeamsChat.prototype.handleCoreMessageEnd = function (event) {
   if (event.role === "user") return;
-  if (event.role === "tool") {
-    this.handleCoreToolEnd(event);
-    return;
-  }
+  if (event.role === "tool") return;
 
   if (event.reasoning_content || event.content) {
     this.handleMessage(event);
@@ -2147,8 +2169,7 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
     }
   }
 
-  const resultKey = event.tool_call_ref ? "ref:" + event.tool_call_ref : event.tool_call_id ? "id:" + event.tool_call_id : event.tool_call_index !== undefined && event.tool_call_index !== null ? "idx:" + event.tool_call_index : "";
-  const resultCard = resultKey ? this.findToolCallCard(resultKey) : null;
+  const resultCard = this.findToolCallCardByIdentity(event, toolCall);
   if (resultCard && this.appendToolResultToCard(resultCard, content, toolDisplay)) {
     this.scrollToBottom();
     return;
