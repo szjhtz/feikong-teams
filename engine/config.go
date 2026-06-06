@@ -9,6 +9,11 @@ import (
 
 type ContextHook func(context.Context) context.Context
 
+type TurnInput struct {
+	Messages  []adk.Message
+	UserInput string
+}
+
 type HistorySink interface {
 	GetMessageCount() int
 	RecordUserInput(text string)
@@ -20,6 +25,9 @@ type HistorySink interface {
 type runConfig struct {
 	// Messages 输入消息列表
 	Messages []adk.Message
+
+	// UserInput 本轮用户输入的可展示文本，用于写入会话历史
+	UserInput string
 
 	// EventCallback 接收智能体执行期间的事件
 	EventCallback func(fkevent.Event) error

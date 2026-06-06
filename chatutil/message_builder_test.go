@@ -8,6 +8,33 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestBuildTurnInputReturnsTurnInput(t *testing.T) {
+	recorder := eventlog.NewHistoryRecorder()
+
+	input := BuildTurnInput(recorder, "hello")
+
+	if input.UserInput != "hello" {
+		t.Fatalf("user input = %q, want hello", input.UserInput)
+	}
+	if len(input.Messages) == 0 || input.Messages[len(input.Messages)-1].Content != "hello" {
+		t.Fatalf("messages = %#v, want final user message", input.Messages)
+	}
+}
+
+func TestBuildMultimodalTurnInputReturnsDisplayText(t *testing.T) {
+	recorder := eventlog.NewHistoryRecorder()
+	parts := []schema.MessageInputPart{TextPart("describe this")}
+
+	input := BuildMultimodalTurnInput(recorder, "describe this", parts)
+
+	if input.UserInput != "describe this" {
+		t.Fatalf("user input = %q, want display text", input.UserInput)
+	}
+	if len(input.Messages) == 0 || len(input.Messages[len(input.Messages)-1].UserInputMultiContent) != 1 {
+		t.Fatalf("messages = %#v, want multimodal user message", input.Messages)
+	}
+}
+
 func TestAgentMessageToSchemaMessagesIncludesCancellationNotice(t *testing.T) {
 	msg := eventlog.AgentMessage{
 		AgentName: "系统",

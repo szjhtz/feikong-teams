@@ -181,15 +181,15 @@ func getCliRecorder() *eventlog.HistoryRecorder {
 	return eventlog.GlobalSessionManager.GetOrCreate(activeSessionID, CLIHistoryDir)
 }
 
-// BuildInputMessages 构建输入消息列表（包含历史对话，支持上下文压缩摘要）
-func BuildInputMessages(input string) []adk.Message {
+// BuildTurnInput 构建一轮输入（包含历史对话，支持上下文压缩摘要）
+func BuildTurnInput(input string) engine.TurnInput {
 	recorder := getCliRecorder()
-	return chatutil.BuildInputMessages(recorder, input)
+	return chatutil.BuildTurnInput(recorder, input)
 }
 
 // Execute 执行查询
 func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
-	inputMessages := BuildInputMessages(input)
+	turnInput := BuildTurnInput(input)
 	recorder := getCliRecorder()
 
 	// 缓存第一次输入作为会话标题（不立即创建文件，等用户保存时才写入）
@@ -225,7 +225,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	startTime := time.Now()
 	_, err := engine.NewSession(e.runner, activeSessionID).
-		WithMessages(inputMessages).
+		WithInput(turnInput).
 		OnEvent(func(event fkevent.Event) error {
 			return innerCallback(event)
 		}).

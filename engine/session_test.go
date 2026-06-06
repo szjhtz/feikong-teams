@@ -66,3 +66,19 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 		t.Fatal("finish handler was not configured")
 	}
 }
+
+func TestSessionBuilderConfiguresTurnInput(t *testing.T) {
+	input := TurnInput{
+		Messages:  []adk.Message{schema.UserMessage("hello")},
+		UserInput: "display hello",
+	}
+
+	session := NewSession(&adk.Runner{}, "session-1").WithInput(input)
+
+	if len(session.cfg.Messages) != 1 || session.cfg.Messages[0].Content != "hello" {
+		t.Fatal("input messages were not configured")
+	}
+	if session.cfg.UserInput != "display hello" {
+		t.Fatalf("user input = %q, want display hello", session.cfg.UserInput)
+	}
+}

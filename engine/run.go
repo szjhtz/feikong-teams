@@ -5,9 +5,9 @@ import (
 	"fkteams/agents/middlewares/summary"
 	"fkteams/common"
 	"fkteams/fkevent"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
 // run 执行查询，处理事件和 HITL 中断。
@@ -21,8 +21,8 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) 
 
 	if cfg.Recorder != nil {
 		countBefore := cfg.Recorder.GetMessageCount()
-		if userText := lastUserMessageText(cfg.Messages); userText != "" {
-			cfg.Recorder.RecordUserInput(userText)
+		if userInput := strings.TrimSpace(cfg.UserInput); userInput != "" {
+			cfg.Recorder.RecordUserInput(userInput)
 		}
 		ctx = summary.WithSummaryPersistCallback(ctx, func(s string) {
 			cfg.Recorder.SetSummary(s, countBefore)
@@ -55,28 +55,4 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) 
 	}
 
 	return lastEvent, err
-}
-
-func lastUserMessageText(messages []adk.Message) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		msg := messages[i]
-		if msg.Role != schema.User {
-			continue
-		}
-		if msg.Content != "" {
-			return msg.Content
-		}
-		for _, part := range msg.UserInputMultiContent {
-			if part.Type == schema.ChatMessagePartTypeText {
-				return part.Text
-			}
-		}
-		for _, part := range msg.MultiContent {
-			if part.Type == schema.ChatMessagePartTypeText {
-				return part.Text
-			}
-		}
-		return ""
-	}
-	return ""
 }

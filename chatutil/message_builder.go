@@ -2,6 +2,7 @@
 package chatutil
 
 import (
+	"fkteams/engine"
 	"fkteams/eventlog"
 	"fkteams/fkenv"
 	"fkteams/g"
@@ -14,8 +15,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// BuildInputMessages 构建输入消息列表（长期记忆 + 对话历史 + 用户输入）
-func BuildInputMessages(recorder *eventlog.HistoryRecorder, userInput string) []adk.Message {
+// BuildTurnInput 构建一轮输入（长期记忆 + 对话历史 + 用户输入）
+func BuildTurnInput(recorder *eventlog.HistoryRecorder, userInput string) engine.TurnInput {
 	var inputMessages []adk.Message
 
 	// 注入长期记忆
@@ -33,13 +34,16 @@ func BuildInputMessages(recorder *eventlog.HistoryRecorder, userInput string) []
 	inputMessages = append(inputMessages, schema.UserMessage(userInput))
 
 	if debugContextEnabled() {
-		logMessages("BuildInputMessages", inputMessages)
+		logMessages("BuildTurnInput", inputMessages)
 	}
-	return inputMessages
+	return engine.TurnInput{
+		Messages:  inputMessages,
+		UserInput: userInput,
+	}
 }
 
-// BuildMultimodalInputMessages 构建多模态输入消息列表（长期记忆 + 对话历史 + 多模态内容）
-func BuildMultimodalInputMessages(recorder *eventlog.HistoryRecorder, textContent string, parts []schema.MessageInputPart) []adk.Message {
+// BuildMultimodalTurnInput 构建一轮多模态输入（长期记忆 + 对话历史 + 多模态内容）
+func BuildMultimodalTurnInput(recorder *eventlog.HistoryRecorder, textContent string, parts []schema.MessageInputPart) engine.TurnInput {
 	var inputMessages []adk.Message
 
 	// 注入长期记忆（使用文本部分进行搜索）
@@ -60,9 +64,12 @@ func BuildMultimodalInputMessages(recorder *eventlog.HistoryRecorder, textConten
 	})
 
 	if debugContextEnabled() {
-		logMessages("BuildMultimodalInputMessages", inputMessages)
+		logMessages("BuildMultimodalTurnInput", inputMessages)
 	}
-	return inputMessages
+	return engine.TurnInput{
+		Messages:  inputMessages,
+		UserInput: textContent,
+	}
 }
 
 // TextPart 创建文本内容部分

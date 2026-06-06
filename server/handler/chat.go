@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agenttool"
 	"fkteams/chatutil"
+	"fkteams/engine"
 	"fkteams/eventlog"
 	"fkteams/fkevent"
 	"fkteams/g"
@@ -35,17 +36,17 @@ func resolveRunner(ctx context.Context, mode, agentName string) (*adk.Runner, er
 // --- 聊天输入构建 ---
 
 // buildChatInput 构建输入消息（含历史），支持多模态
-func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart) (messages []adk.Message, displayText string) {
+func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart) (input engine.TurnInput, displayText string) {
 	if len(contents) > 0 {
 		parts := convertContentParts(contents)
 		displayText = chatutil.ExtractTextFromParts(parts)
 		if displayText == "" {
 			displayText = message
 		}
-		messages = chatutil.BuildMultimodalInputMessages(recorder, displayText, parts)
+		input = chatutil.BuildMultimodalTurnInput(recorder, displayText, parts)
 	} else {
 		displayText = message
-		messages = chatutil.BuildInputMessages(recorder, message)
+		input = chatutil.BuildTurnInput(recorder, message)
 	}
 	return
 }

@@ -243,12 +243,12 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	}
 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
-	messages := chatutil.BuildInputMessages(recorder, combinedInput)
+	turnInput := chatutil.BuildTurnInput(recorder, combinedInput)
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
 	engine.NewSession(r, sessionID).
-		WithMessages(messages).
+		WithInput(turnInput).
 		OnEvent(func(event fkevent.Event) error {
 			recorder.RecordEvent(event)
 			return rc.handleEvent(event)

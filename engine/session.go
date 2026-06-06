@@ -21,6 +21,12 @@ func NewSession(runner *adk.Runner, checkpointID string) *Session {
 	return &Session{engine: newEngine(runner, checkpointID)}
 }
 
+func (s *Session) WithInput(input TurnInput) *Session {
+	s.cfg.Messages = input.Messages
+	s.cfg.UserInput = input.UserInput
+	return s
+}
+
 func (s *Session) WithMessages(messages []adk.Message) *Session {
 	s.cfg.Messages = messages
 	return s

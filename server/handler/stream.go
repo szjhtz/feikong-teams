@@ -78,7 +78,7 @@ func StreamStartHandler() gin.HandlerFunc {
 		}
 
 		recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-		inputMessages, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
+		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
 
 		// 创建任务——统一使用 GlobalStreams
 		taskCtx, taskCancel := context.WithCancel(ctx)
@@ -104,7 +104,7 @@ func StreamStartHandler() gin.HandlerFunc {
 		})
 
 		// 后台执行任务
-		go runStreamTask(taskCtx, stream, sessionID, r, recorder, inputMessages, userDisplayText)
+		go runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText)
 
 		OK(c, gin.H{
 			"session_id": sessionID,
@@ -115,12 +115,12 @@ func StreamStartHandler() gin.HandlerFunc {
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *eventlog.HistoryRecorder, inputMessages []adk.Message, userDisplayText string) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
 	engine.NewSession(r, sessionID).
-		WithMessages(inputMessages).
+		WithInput(turnInput).
 		OnEvent(func(event fkevent.Event) error {
 			if event.Type == fkevent.EventAction && event.ActionType == fkevent.ActionInterrupted {
 				return nil

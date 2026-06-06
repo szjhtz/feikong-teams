@@ -54,10 +54,13 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 
 	callback, getResult := eventview.NewMarkdownCollector()
 
-	inputMessages := []adk.Message{schema.UserMessage(task)}
+	input := engine.TurnInput{
+		Messages:  []adk.Message{schema.UserMessage(task)},
+		UserInput: task,
+	}
 
 	_, err = engine.NewSession(r, "fkteams_scheduler").
-		WithMessages(inputMessages).
+		WithInput(input).
 		OnEvent(callback).
 		Run(ctx)
 	if err != nil {

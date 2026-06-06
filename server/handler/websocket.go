@@ -322,7 +322,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 
 	// 构建输入消息
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
+	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
 	stream.Publish(map[string]any{
 		"type":       fkevent.NotifyUserMessage,
 		"session_id": sessionID,
@@ -332,7 +332,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
 	engine.NewSession(r, sessionID).
-		WithMessages(inputMessages).
+		WithInput(turnInput).
 		OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)).
 		WithHistory(recorder).
 		OnStart(func(ctx context.Context) {
