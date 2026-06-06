@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fkteams/agentcore"
 	"fkteams/agents"
 	"fkteams/agenttool"
 	"fkteams/config"
@@ -27,8 +28,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/atotto/clipboard"
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
 const (
@@ -45,13 +44,13 @@ const (
 type Runtime struct {
 	ctx         context.Context
 	session     *Session
-	runner      *adk.Runner
+	runner      agentcore.Runner
 	executor    *QueryExecutor
 	exitSignals chan os.Signal
 	program     *tea.Program
 }
 
-func NewRuntime(ctx context.Context, session *Session, r *adk.Runner, exitSignals chan os.Signal) *Runtime {
+func NewRuntime(ctx context.Context, session *Session, r agentcore.Runner, exitSignals chan os.Signal) *Runtime {
 	executor := NewQueryExecutor(r, session.queryState)
 	return &Runtime{
 		ctx:         ctx,
@@ -2346,29 +2345,17 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 		agent = runtimeDefaultAgentName
 	}
 	switch event.Type {
-	case fkevent.EventReasoningChunk:
-		content := event.ReasoningContent
-		if content == "" {
-			content = event.Content
-		}
-		m.appendReasoning(agent, content)
-	case fkevent.EventStreamChunk:
-		m.appendOutput(agent, event.Content)
-	case fkevent.EventMessage:
-		if event.Content != "" {
-			m.appendOutput(agent, event.Content)
-		}
-	case fkevent.EventToolCallsPreparing:
-		m.activeOutput = -1
-		m.activeReason = -1
-		if _, ok := runtimeAgentToolDisplay(event.ToolName); ok {
-			return
-		}
-		m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
-	case fkevent.EventToolCalls, fkevent.EventToolCallsArgsDelta:
-		m.activeOutput = -1
-		m.activeReason = -1
-		if event.Type == fkevent.EventToolCallsArgsDelta {
+	case fkevent.EventMessageDelta:
+		switch event.DeltaKind {
+		case fkevent.DeltaReasoning:
+			content := event.ReasoningContent
+			if content == "" {
+				content = event.Content
+			}
+			m.appendReasoning(agent, content)
+		case fkevent.DeltaToolArgs:
+			m.activeOutput = -1
+			m.activeReason = -1
 			if member, _ := m.memberForToolEvent(event); member != nil {
 				member.Status = "running"
 				m.syncMemberSummary(member)
@@ -2381,9 +2368,13 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 				return
 			}
 			m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
-			return
+		default:
+			m.appendOutput(agent, event.Content)
 		}
-		for _, tool := range event.ToolCalls {
+	case fkevent.EventToolStart:
+		m.activeOutput = -1
+		m.activeReason = -1
+		for _, tool := range runtimeEventToolCalls(event) {
 			if display, ok := runtimeAgentToolDisplay(tool.Function.Name); ok {
 				aliases := runtimeAgentToolCallAliases(event, tool)
 				key := runtimeAgentToolCallKey(event, tool)
@@ -2399,13 +2390,13 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 			key := runtimeToolCallKey(event, tool)
 			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
-	case fkevent.EventToolResult, fkevent.EventToolResultChunk:
+	case fkevent.EventToolEnd, fkevent.EventToolUpdate:
 		m.activeOutput = -1
 		m.activeReason = -1
 		if m.applyAgentToolResult(event) {
 			return
 		}
-		m.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == fkevent.EventToolResultChunk)
+		m.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == fkevent.EventToolUpdate)
 	case fkevent.EventAction:
 		m.activeOutput = -1
 		m.activeReason = -1
@@ -2445,39 +2436,38 @@ func (m *runtimeModel) applyMemberEvent(event fkevent.Event) {
 		agent = member.Name
 	}
 	switch event.Type {
-	case fkevent.EventReasoningChunk:
-		content := event.ReasoningContent
-		if content == "" {
-			content = event.Content
-		}
-		member.appendReasoning(agent, content)
-	case fkevent.EventStreamChunk:
-		member.appendOutput(agent, event.Content)
-	case fkevent.EventMessage:
-		if event.Content != "" {
-			member.appendOutput(agent, event.Content)
-			member.Status = "done"
-		}
-	case fkevent.EventToolCallsPreparing:
-		member.ActiveOutput = -1
-		member.ActiveReason = -1
-		member.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
-	case fkevent.EventToolCalls, fkevent.EventToolCallsArgsDelta:
-		member.ActiveOutput = -1
-		member.ActiveReason = -1
-		if event.Type == fkevent.EventToolCallsArgsDelta {
+	case fkevent.EventMessageDelta:
+		switch event.DeltaKind {
+		case fkevent.DeltaReasoning:
+			content := event.ReasoningContent
+			if content == "" {
+				content = event.Content
+			}
+			member.appendReasoning(agent, content)
+		case fkevent.DeltaToolArgs:
+			member.ActiveOutput = -1
+			member.ActiveReason = -1
 			member.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
-			break
+		default:
+			member.appendOutput(agent, event.Content)
 		}
-		for _, tool := range event.ToolCalls {
+	case fkevent.EventMessageEnd:
+		if event.Content != "" && len(member.Blocks) == 0 {
+			member.appendOutput(agent, event.Content)
+		}
+		member.Status = "done"
+	case fkevent.EventToolStart:
+		member.ActiveOutput = -1
+		member.ActiveReason = -1
+		for _, tool := range runtimeEventToolCalls(event) {
 			key := runtimeToolCallKey(event, tool)
 			display := agenttool.FormatToolDisplay(tool.Function.Name)
 			member.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
-	case fkevent.EventToolResult, fkevent.EventToolResultChunk:
+	case fkevent.EventToolEnd, fkevent.EventToolUpdate:
 		member.ActiveOutput = -1
 		member.ActiveReason = -1
-		member.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == fkevent.EventToolResultChunk)
+		member.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == fkevent.EventToolUpdate)
 	case fkevent.EventError:
 		msg := event.Error
 		if msg == "" {
@@ -2525,7 +2515,7 @@ func (m *runtimeModel) applyAgentToolResult(event fkevent.Event) bool {
 	}
 	member.ActiveOutput = -1
 	member.ActiveReason = -1
-	if event.Type == fkevent.EventToolResultChunk {
+	if event.Type == fkevent.EventToolUpdate {
 		member.Status = "running"
 	} else {
 		member.Status = "done"
@@ -2596,6 +2586,16 @@ func runtimeAgentToolDisplay(name string) (agenttool.ToolDisplay, bool) {
 	return display, false
 }
 
+func runtimeEventToolCalls(event fkevent.Event) []agentcore.ToolCall {
+	if event.ToolCall == nil {
+		return event.ToolCalls
+	}
+	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
+	toolCalls = append(toolCalls, *event.ToolCall)
+	toolCalls = append(toolCalls, event.ToolCalls...)
+	return toolCalls
+}
+
 func runtimeAgentTaskFromCompleteArgs(args string) string {
 	args = strings.TrimSpace(args)
 	if args == "" {
@@ -2642,13 +2642,13 @@ func runtimeAgentToolEventKey(event fkevent.Event) string {
 }
 
 func runtimeLikelyPendingAgentToolArgs(event fkevent.Event) bool {
-	if event.Type != fkevent.EventToolCallsArgsDelta {
+	if event.Type != fkevent.EventMessageDelta || event.DeltaKind != fkevent.DeltaToolArgs {
 		return false
 	}
 	return event.ToolCallRef != "" || event.ToolCallID != "" || event.SpanID != ""
 }
 
-func runtimeAgentToolCallAliases(event fkevent.Event, tool schema.ToolCall) []string {
+func runtimeAgentToolCallAliases(event fkevent.Event, tool agentcore.ToolCall) []string {
 	aliases := []string{
 		tool.ID,
 	}
@@ -2667,7 +2667,7 @@ func runtimeAgentToolCallAliases(event fkevent.Event, tool schema.ToolCall) []st
 	return compactRuntimeAliases(aliases)
 }
 
-func runtimeAgentToolCallKey(event fkevent.Event, tool schema.ToolCall) string {
+func runtimeAgentToolCallKey(event fkevent.Event, tool agentcore.ToolCall) string {
 	if tool.Index != nil && event.ToolCallSpanIDs != nil {
 		if span := event.ToolCallSpanIDs[*tool.Index]; span != "" {
 			return span
@@ -2736,7 +2736,7 @@ func runtimeToolEventKey(event fkevent.Event) string {
 	return ""
 }
 
-func runtimeToolCallKey(event fkevent.Event, tool schema.ToolCall) string {
+func runtimeToolCallKey(event fkevent.Event, tool agentcore.ToolCall) string {
 	if tool.Index != nil && event.ToolCallSpanIDs != nil {
 		if span := event.ToolCallSpanIDs[*tool.Index]; span != "" {
 			return span

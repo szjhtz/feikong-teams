@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fkteams/agentcore"
 	"fkteams/engine"
 	"fkteams/eventlog"
 	"fkteams/fkevent"
@@ -14,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -186,7 +186,7 @@ func WebSocketHandler() gin.HandlerFunc {
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
 func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, writeJSON func(any) error, stream *taskstream.Stream) engine.InterruptHandler {
 	channelHandler := engine.ChannelHandler(stream.InterruptCh())
-	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
+	return func(ctx context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if info := extractAskInfo(interrupts); info != nil {
 			stream.BeginInterrupt(taskstream.InterruptAsk)
@@ -346,7 +346,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		OnInterrupt(interruptHandler).
 		NonInteractive().
 		WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
-		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				if ctx.Err() != nil {
 					log.Printf("task cancelled: session=%s", sessionID)

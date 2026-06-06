@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/fkevent"
 	"fkteams/tui"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/cloudwego/eino/schema"
 )
 
 func TestRuntimeCtrlCCancelsRunningTask(t *testing.T) {
@@ -296,8 +296,8 @@ func TestRuntimeReasoningChunksAreMerged(t *testing.T) {
 		exitSignals: make(chan os.Signal, 1),
 	})
 
-	model.applyEvent(fkevent.Event{Type: fkevent.EventReasoningChunk, Content: "用户"})
-	model.applyEvent(fkevent.Event{Type: fkevent.EventReasoningChunk, Content: "问好"})
+	model.applyEvent(fkevent.Event{Type: fkevent.EventMessageDelta, DeltaKind: fkevent.DeltaReasoning, Content: "用户"})
+	model.applyEvent(fkevent.Event{Type: fkevent.EventMessageDelta, DeltaKind: fkevent.DeltaReasoning, Content: "问好"})
 
 	var reasoningBlocks []runtimeBlock
 	for _, block := range model.blocks {
@@ -375,13 +375,13 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 	secondIndex := 1
 
 	model.applyEvent(fkevent.Event{
-		Type:      fkevent.EventToolCalls,
+		Type:      fkevent.EventToolStart,
 		AgentName: "coordinator",
-		ToolCalls: []schema.ToolCall{
+		ToolCalls: []agentcore.ToolCall{
 			{
 				ID:    "call_first",
 				Index: &firstIndex,
-				Function: schema.FunctionCall{
+				Function: agentcore.FunctionCall{
 					Name:      "ask_fkagent_researcher",
 					Arguments: `{"task":"first task"}`,
 				},
@@ -389,7 +389,7 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 			{
 				ID:    "call_second",
 				Index: &secondIndex,
-				Function: schema.FunctionCall{
+				Function: agentcore.FunctionCall{
 					Name:      "ask_fkagent_researcher",
 					Arguments: `{"task":"second task"}`,
 				},
@@ -397,14 +397,16 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 		},
 	})
 	model.applyEvent(fkevent.Event{
-		Type:         fkevent.EventStreamChunk,
+		Type:         fkevent.EventMessageDelta,
+		DeltaKind:    fkevent.DeltaOutput,
 		AgentName:    "researcher",
 		Content:      "second output",
 		MemberCallID: "call_second",
 		MemberName:   "researcher",
 	})
 	model.applyEvent(fkevent.Event{
-		Type:         fkevent.EventStreamChunk,
+		Type:         fkevent.EventMessageDelta,
+		DeltaKind:    fkevent.DeltaOutput,
 		AgentName:    "researcher",
 		Content:      "first output",
 		MemberCallID: "call_first",
@@ -439,14 +441,16 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 	callIndex := 0
 
 	model.applyEvent(fkevent.Event{
-		Type:          fkevent.EventToolCallsPreparing,
+		Type:          fkevent.EventMessageDelta,
+		DeltaKind:     fkevent.DeltaToolArgs,
 		ToolName:      "ask_fkagent_researcher",
 		ToolCallID:    "call_full",
 		ToolCallIndex: &callIndex,
 		Content:       "{",
 	})
 	model.applyEvent(fkevent.Event{
-		Type:          fkevent.EventToolCallsArgsDelta,
+		Type:          fkevent.EventMessageDelta,
+		DeltaKind:     fkevent.DeltaToolArgs,
 		ToolName:      "ask_fkagent_researcher",
 		ToolCallID:    "call_full",
 		ToolCallIndex: &callIndex,
@@ -457,12 +461,12 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 	}
 
 	model.applyEvent(fkevent.Event{
-		Type:      fkevent.EventToolCalls,
+		Type:      fkevent.EventToolStart,
 		AgentName: "coordinator",
-		ToolCalls: []schema.ToolCall{{
+		ToolCalls: []agentcore.ToolCall{{
 			ID:    "call_full",
 			Index: &callIndex,
-			Function: schema.FunctionCall{
+			Function: agentcore.FunctionCall{
 				Name:      "ask_fkagent_researcher",
 				Arguments: `{"request":"完整任务目标"}`,
 			},
@@ -487,7 +491,8 @@ func TestRuntimeUnnamedAgentArgsDeltaDoesNotRenderToolBlock(t *testing.T) {
 	blockCount := len(model.blocks)
 
 	model.applyEvent(fkevent.Event{
-		Type:        fkevent.EventToolCallsArgsDelta,
+		Type:        fkevent.EventMessageDelta,
+		DeltaKind:   fkevent.DeltaToolArgs,
 		ToolCallRef: "tool|stream|seq:1|coordinator|idx:0",
 		Content:     `{"request":"partial`,
 	})

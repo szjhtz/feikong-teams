@@ -6,6 +6,7 @@ import (
 	"log"
 	"syscall"
 
+	"fkteams/agentcore"
 	"fkteams/agents"
 	"fkteams/cli"
 	commonPkg "fkteams/common"
@@ -15,7 +16,6 @@ import (
 	"fkteams/lifecycle"
 	"fkteams/runner"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
@@ -138,7 +138,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		return nil
 	})
 
-	var agentRunner *adk.Runner
+	var agentRunner agentcore.Runner
 	app.OnSetup(func(ctx context.Context) error {
 		agent := agentInfo.Creator(ctx)
 		agentRunner = runner.CreateAgentRunner(ctx, agent)

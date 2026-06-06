@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"fkteams/agentcore"
 	"fkteams/eventlog"
 	"fkteams/fkenv"
 
@@ -121,7 +122,7 @@ func writeShareableSession(t *testing.T, sessionID, title string) {
 		t.Fatalf("save metadata: %v", err)
 	}
 	recorder := eventlog.NewHistoryRecorder()
-	recorder.RecordUserInput("hello")
+	recorder.RecordUserMessage(agentcore.Message{Role: agentcore.RoleUser, Content: "hello"})
 	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.HistoryFileName)); err != nil {
 		t.Fatalf("save history: %v", err)
 	}

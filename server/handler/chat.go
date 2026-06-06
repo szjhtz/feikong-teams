@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/agenttool"
 	"fkteams/chatutil"
 	"fkteams/engine"
@@ -15,9 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
 var globalRunnerCache = runner.NewCache()
@@ -29,7 +27,7 @@ func ClearRunnerCache() {
 }
 
 // resolveRunner 按 agentName 或 mode 获取 runner
-func resolveRunner(ctx context.Context, mode, agentName string) (*adk.Runner, error) {
+func resolveRunner(ctx context.Context, mode, agentName string) (agentcore.Runner, error) {
 	return globalRunnerCache.ResolveWithTeamFallback(ctx, mode, agentName)
 }
 
@@ -158,7 +156,7 @@ func isConnectionClosed(ctx context.Context, err error) bool {
 		strings.Contains(msg, "connection reset")
 }
 
-func extractInterruptMessage(interrupts []*adk.InterruptCtx) string {
+func extractInterruptMessage(interrupts []agentcore.Interrupt) string {
 	var infos []string
 	for _, ic := range interrupts {
 		if ic.IsRootCause && ic.Info != nil {
@@ -213,7 +211,7 @@ func askResponseText(result map[string]any) string {
 }
 
 // extractAskInfo 从中断上下文中提取 ask_questions 信息
-func extractAskInfo(interrupts []*adk.InterruptCtx) *ask.AskInfo {
+func extractAskInfo(interrupts []agentcore.Interrupt) *ask.AskInfo {
 	for _, ic := range interrupts {
 		if ic.IsRootCause {
 			if info, ok := ic.Info.(*ask.AskInfo); ok {
@@ -222,6 +220,16 @@ func extractAskInfo(interrupts []*adk.InterruptCtx) *ask.AskInfo {
 		}
 	}
 	return nil
+}
+
+func handlerEventToolCalls(event fkevent.Event) []agentcore.ToolCall {
+	if event.ToolCall == nil {
+		return event.ToolCalls
+	}
+	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
+	toolCalls = append(toolCalls, *event.ToolCall)
+	toolCalls = append(toolCalls, event.ToolCalls...)
+	return toolCalls
 }
 
 // --- 事件/内容转换 ---
@@ -247,21 +255,20 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if event.ParentSpanID != "" {
 		result["parent_span_id"] = event.ParentSpanID
 	}
-	if event.Phase != "" {
-		result["phase"] = event.Phase
+	if event.TurnID != "" {
+		result["turn_id"] = event.TurnID
 	}
-	if event.IsPartial {
-		result["is_partial"] = true
+	if event.MessageID != "" {
+		result["message_id"] = event.MessageID
 	}
-	if event.IsFinal {
-		result["is_final"] = true
+	if event.Role != "" {
+		result["role"] = event.Role
 	}
-	if event.StreamID != "" {
-		result["stream_id"] = event.StreamID
-		result["chunk_index"] = event.ChunkIndex
+	if event.DeltaKind != "" {
+		result["delta_kind"] = event.DeltaKind
 	}
-	if event.ContentKind != "" {
-		result["content_kind"] = event.ContentKind
+	if event.Delta != "" {
+		result["delta"] = event.Delta
 	}
 	if event.RunPath != "" {
 		result["run_path"] = event.RunPath
@@ -272,9 +279,9 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if event.ReasoningContent != "" {
 		result["reasoning_content"] = event.ReasoningContent
 	}
-	if len(event.ToolCalls) > 0 {
-		toolCalls := make([]map[string]any, 0, len(event.ToolCalls))
-		for _, tc := range event.ToolCalls {
+	if toolCallsFromEvent := handlerEventToolCalls(event); len(toolCallsFromEvent) > 0 {
+		toolCalls := make([]map[string]any, 0, len(toolCallsFromEvent))
+		for _, tc := range toolCallsFromEvent {
 			display := agenttool.FormatToolDisplay(tc.Function.Name)
 			toolCall := map[string]any{
 				"name":         tc.Function.Name,
@@ -370,20 +377,20 @@ type ContentPart struct {
 	Detail     string `json:"detail,omitempty"`      // type=image_url 时的精度: high/low/auto
 }
 
-// convertContentParts 将前端传入的多模态内容转换为 eino MessageInputPart
-func convertContentParts(parts []ContentPart) []schema.MessageInputPart {
-	result := make([]schema.MessageInputPart, 0, len(parts))
+// convertContentParts 将前端传入的多模态内容转换为核心内容部分
+func convertContentParts(parts []ContentPart) []agentcore.ContentPart {
+	result := make([]agentcore.ContentPart, 0, len(parts))
 	for _, p := range parts {
 		switch p.Type {
 		case "text":
 			result = append(result, chatutil.TextPart(p.Text))
 		case "image_url":
-			detail := schema.ImageURLDetailAuto
+			detail := "auto"
 			switch p.Detail {
 			case "high":
-				detail = schema.ImageURLDetailHigh
+				detail = "high"
 			case "low":
-				detail = schema.ImageURLDetailLow
+				detail = "low"
 			}
 			result = append(result, chatutil.ImageURLPart(p.URL, detail))
 		case "image_base64":

@@ -3,6 +3,8 @@ package runner
 
 import (
 	"context"
+	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fkteams/agents"
 	agentcommon "fkteams/agents/common"
 	"fkteams/agents/coordinator"
@@ -14,7 +16,6 @@ import (
 	"fkteams/agenttool"
 	"fkteams/common"
 	"fkteams/config"
-	"fkteams/fkevent"
 	"fmt"
 	"regexp"
 	"strings"
@@ -64,7 +65,7 @@ func (a *agentToolNameAgent) Description(ctx context.Context) string {
 func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
 	innerIter := a.inner.Run(ctx, input, opts...)
 	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
-	scope := fkevent.MemberScope{
+	scope := einoruntime.MemberScope{
 		CallID:   compose.GetToolCallID(ctx),
 		ToolName: a.toolName,
 		Name:     a.displayName,
@@ -77,7 +78,7 @@ func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opt
 			if !ok {
 				return
 			}
-			fkevent.RegisterAgentEventScope(event, scope)
+			einoruntime.RegisterAgentEventScope(event, scope)
 			gen.Send(event)
 		}
 	}()
@@ -132,16 +133,16 @@ func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Mod
 }
 
 // newRunner 用共享配置创建 Runner
-func newRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
-	return adk.NewRunner(ctx, adk.RunnerConfig{
+func newRunner(ctx context.Context, agent adk.Agent) agentcore.Runner {
+	return einoruntime.NewRunner(adk.NewRunner(ctx, adk.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
-	})
+	}))
 }
 
 // CreateBackgroundTaskRunner 创建后台定时任务专用 Runner（任务官单智能体，独立执行）
-func CreateBackgroundTaskRunner(ctx context.Context) (*adk.Runner, error) {
+func CreateBackgroundTaskRunner(ctx context.Context) (agentcore.Runner, error) {
 	agent, err := tasker.NewAgent(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("创建任务官智能体失败: %w", err)
@@ -150,12 +151,12 @@ func CreateBackgroundTaskRunner(ctx context.Context) (*adk.Runner, error) {
 }
 
 // CreateAgentRunner 创建普通 ReACT 模式的 Runner
-func CreateAgentRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
+func CreateAgentRunner(ctx context.Context, agent adk.Agent) agentcore.Runner {
 	return newRunner(ctx, agent)
 }
 
 // CreateTeamRunner 创建团队模式 Runner，使用 ChatModelAgent + AgentTool 协作。
-func CreateTeamRunner(ctx context.Context) (*adk.Runner, error) {
+func CreateTeamRunner(ctx context.Context) (agentcore.Runner, error) {
 	agentTools := buildAgentTools(ctx, wrapErrorSafe(agents.GetTeamAgents(ctx)))
 
 	coordinatorAgent, err := coordinator.NewAgent(ctx, agentTools...)
@@ -167,7 +168,7 @@ func CreateTeamRunner(ctx context.Context) (*adk.Runner, error) {
 }
 
 // CreateDeepAgentsRunner 创建 DeepAgents 模式的 Runner
-func CreateDeepAgentsRunner(ctx context.Context) (*adk.Runner, error) {
+func CreateDeepAgentsRunner(ctx context.Context) (agentcore.Runner, error) {
 	subAgents := wrapErrorSafe(agents.GetTeamAgents(ctx))
 
 	deepAgent, err := deep.NewAgent(ctx, subAgents)
@@ -179,7 +180,7 @@ func CreateDeepAgentsRunner(ctx context.Context) (*adk.Runner, error) {
 }
 
 // CreateLoopAgentRunner 创建 LoopAgent 模式的 Runner
-func CreateLoopAgentRunner(ctx context.Context) (*adk.Runner, error) {
+func CreateLoopAgentRunner(ctx context.Context) (agentcore.Runner, error) {
 	teamConfig := config.Get()
 
 	var subAgents []adk.Agent
@@ -205,7 +206,7 @@ func CreateLoopAgentRunner(ctx context.Context) (*adk.Runner, error) {
 }
 
 // CreateCustomRunner 创建自定义会议模式 Runner，使用主持人 ChatModelAgent + AgentTool 协作。
-func CreateCustomRunner(ctx context.Context) (*adk.Runner, error) {
+func CreateCustomRunner(ctx context.Context) (agentcore.Runner, error) {
 	cfg := config.Get()
 
 	var moderatorAgent adk.Agent

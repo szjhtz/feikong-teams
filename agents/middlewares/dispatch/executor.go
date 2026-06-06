@@ -283,8 +283,9 @@ func forwardEvents(ctx context.Context, tasks []taskItem, eventCh <-chan viewEve
 			"event_detail": e.Content,
 		})
 		_ = fkevent.DispatchEvent(ctx, fkevent.Event{
-			Type:       fkevent.EventDispatchProgress,
+			Type:       fkevent.EventMemberUpdate,
 			ActionType: fkevent.ActionType(e.Type),
+			Content:    e.Content,
 			Detail:     string(detail),
 		})
 	}

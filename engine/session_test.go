@@ -2,12 +2,10 @@ package engine
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/fkevent"
 	"fkteams/tools/approval"
 	"testing"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
 type historySinkStub struct {
@@ -18,20 +16,29 @@ func (h *historySinkStub) GetMessageCount() int {
 	return h.count
 }
 
-func (h *historySinkStub) RecordUserInput(string) {}
+func (h *historySinkStub) RecordUserMessage(agentcore.Message) {}
 
 func (h *historySinkStub) SetSummary(string, int) {}
 
+type runnerStub struct {
+	input agentcore.TurnInput
+}
+
+func (r *runnerStub) Run(_ context.Context, input agentcore.TurnInput, _ agentcore.RunOptions) (*agentcore.RunResult, error) {
+	r.input = input
+	return &agentcore.RunResult{}, nil
+}
+
 func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
-	messages := []adk.Message{schema.UserMessage("hello")}
+	messages := []agentcore.Message{{Role: agentcore.RoleUser, Content: "hello"}}
 	history := &historySinkStub{}
 	approvalReg := approval.NewDefaultRegistry()
 	eventHandler := func(fkevent.Event) error { return nil }
 	startHandler := func(context.Context) {}
 	interruptHandler := FixedDecisionHandler(approval.Reject)
-	finishHandler := func(context.Context, *adk.AgentEvent, error) {}
+	finishHandler := func(context.Context, *agentcore.RunResult, error) {}
 
-	session := NewSession(&adk.Runner{}, "session-1").
+	session := NewSession(&runnerStub{}, "session-1").
 		WithMessages(messages).
 		OnEvent(eventHandler).
 		WithHistory(history).
@@ -41,7 +48,7 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 		WithContext(approval.RegistryContext(approvalReg)).
 		OnFinish(finishHandler)
 
-	if len(session.cfg.Messages) != 1 || session.cfg.Messages[0].Content != "hello" {
+	if len(session.cfg.Input.Context) != 1 || session.cfg.Input.Context[0].Content != "hello" {
 		t.Fatal("messages were not configured")
 	}
 	if session.cfg.EventCallback == nil {
@@ -69,16 +76,16 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 
 func TestSessionBuilderConfiguresTurnInput(t *testing.T) {
 	input := TurnInput{
-		Messages:  []adk.Message{schema.UserMessage("hello")},
-		UserInput: "display hello",
+		Context: []agentcore.Message{{Role: agentcore.RoleSystem, Content: "context"}},
+		Message: agentcore.Message{Role: agentcore.RoleUser, Content: "hello"},
 	}
 
-	session := NewSession(&adk.Runner{}, "session-1").WithInput(input)
+	session := NewSession(&runnerStub{}, "session-1").WithInput(input)
 
-	if len(session.cfg.Messages) != 1 || session.cfg.Messages[0].Content != "hello" {
-		t.Fatal("input messages were not configured")
+	if len(session.cfg.Input.Context) != 1 || session.cfg.Input.Context[0].Content != "context" {
+		t.Fatal("input context was not configured")
 	}
-	if session.cfg.UserInput != "display hello" {
-		t.Fatalf("user input = %q, want display hello", session.cfg.UserInput)
+	if session.cfg.Input.Message.Content != "hello" {
+		t.Fatalf("input message = %q, want hello", session.cfg.Input.Message.Content)
 	}
 }

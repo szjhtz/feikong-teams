@@ -2,6 +2,7 @@ package eventview
 
 import (
 	"encoding/json"
+	"fkteams/agentcore"
 	"fkteams/agenttool"
 	"fkteams/eventlog"
 	"fkteams/fkevent"
@@ -13,7 +14,6 @@ import (
 	"unicode"
 
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/cloudwego/eino/schema"
 	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
@@ -24,17 +24,14 @@ const agentToolPrefix = agenttool.AgentToolPrefix
 type Event = fkevent.Event
 
 const (
-	EventReasoningChunk     = fkevent.EventReasoningChunk
-	EventStreamChunk        = fkevent.EventStreamChunk
-	EventMessage            = fkevent.EventMessage
-	EventToolResult         = fkevent.EventToolResult
-	EventToolResultChunk    = fkevent.EventToolResultChunk
-	EventToolCallsPreparing = fkevent.EventToolCallsPreparing
-	EventToolCalls          = fkevent.EventToolCalls
-	EventToolCallsArgsDelta = fkevent.EventToolCallsArgsDelta
-	EventAction             = fkevent.EventAction
-	EventUsage              = fkevent.EventUsage
-	EventError              = fkevent.EventError
+	EventMessageDelta = fkevent.EventMessageDelta
+	EventMessageEnd   = fkevent.EventMessageEnd
+	EventToolStart    = fkevent.EventToolStart
+	EventToolUpdate   = fkevent.EventToolUpdate
+	EventToolEnd      = fkevent.EventToolEnd
+	EventAction       = fkevent.EventAction
+	EventUsage        = fkevent.EventUsage
+	EventError        = fkevent.EventError
 
 	ActionTransfer             = fkevent.ActionTransfer
 	ActionContextCompressStart = fkevent.ActionContextCompressStart
@@ -47,6 +44,16 @@ func isInternalToolName(name string) bool {
 
 func isInternalContinueContent(content string) bool {
 	return fkevent.IsInternalContinueContent(content)
+}
+
+func eventToolCalls(event Event) []agentcore.ToolCall {
+	if event.ToolCall == nil {
+		return event.ToolCalls
+	}
+	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
+	toolCalls = append(toolCalls, *event.ToolCall)
+	toolCalls = append(toolCalls, event.ToolCalls...)
+	return toolCalls
 }
 
 func FormatToolDisplay(name string) agenttool.ToolDisplay {
@@ -594,7 +601,7 @@ func newPrintEvent() (func(Event), func()) {
 		return key, name
 	}
 
-	memberToolKey := func(event Event, tool schema.ToolCall, fallbackIndex int) string {
+	memberToolKey := func(event Event, tool agentcore.ToolCall, fallbackIndex int) string {
 		if tool.ID != "" {
 			return "id:" + tool.ID
 		}
@@ -613,7 +620,7 @@ func newPrintEvent() (func(Event), func()) {
 		return fmt.Sprintf("fallback:%d", fallbackIndex)
 	}
 
-	regularToolKey := func(event Event, tool schema.ToolCall, fallbackIndex int) string {
+	regularToolKey := func(event Event, tool agentcore.ToolCall, fallbackIndex int) string {
 		if tool.ID != "" {
 			return "id:" + tool.ID
 		}
@@ -820,7 +827,7 @@ func newPrintEvent() (func(Event), func()) {
 		}
 	}
 
-	registerAgentToolCall := func(tool schema.ToolCall, fallbackIndex int) (string, string) {
+	registerAgentToolCall := func(tool agentcore.ToolCall, fallbackIndex int) (string, string) {
 		key, memberName, _ := agentToolKey(tool.Function.Name)
 		if tool.ID != "" {
 			key = tool.ID
@@ -848,7 +855,7 @@ func newPrintEvent() (func(Event), func()) {
 		return key, memberName
 	}
 
-	splitAgentToolCalls := func(toolCalls []schema.ToolCall) (agents, others []schema.ToolCall) {
+	splitAgentToolCalls := func(toolCalls []agentcore.ToolCall) (agents, others []agentcore.ToolCall) {
 		for _, tool := range toolCalls {
 			if isInternalToolName(tool.Function.Name) {
 				continue
@@ -865,59 +872,105 @@ func newPrintEvent() (func(Event), func()) {
 
 	printFn = func(event Event) {
 		switch event.Type {
-		case EventReasoningChunk:
-			if isMemberEvent(event) {
-				key, name := memberFromEvent(event)
-				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
-				return
-			}
-			if finishMembersBeforeParentOutput(event) {
-				return
-			}
-			tryFlush()
-			if agentName != event.AgentName {
-				agentName = event.AgentName
-				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
-			}
-			if !inReasoning {
-				inReasoning = true
-				rw = newReasoningWriter()
-				fmt.Printf("%s\033[90m[思考] \033[0m%s", reasoningPrefix, "\033[3;90m")
-				rw.col = 6 // "[思考] " 占 6 列
-			}
-			rw.writeChunk(event.Content)
-
-		case EventStreamChunk:
-			if isMemberEvent(event) {
-				key, name := memberFromEvent(event)
-				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
-				return
-			}
-			if finishMembersBeforeParentOutput(event) {
-				return
-			}
-			wasReasoning := inReasoning
-			if inReasoning {
-				inReasoning = false
-				fmt.Printf("\033[0m\n")
-			}
-			if agentName != event.AgentName {
+		case EventMessageDelta:
+			switch event.DeltaKind {
+			case fkevent.DeltaReasoning:
+				if isMemberEvent(event) {
+					key, name := memberFromEvent(event)
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
+					return
+				}
+				if finishMembersBeforeParentOutput(event) {
+					return
+				}
 				tryFlush()
-				agentName = event.AgentName
-				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
-				sb.agent = agentName
-				sb.path = event.RunPath
-			} else if wasReasoning && sb.agent == "" {
-				sb.agent = agentName
-				sb.path = event.RunPath
-			}
-			if sb.agent == "" {
-				sb.agent = event.AgentName
-				sb.path = event.RunPath
-			}
-			sb.addChunk(event.Content)
+				if agentName != event.AgentName {
+					agentName = event.AgentName
+					fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
+				}
+				if !inReasoning {
+					inReasoning = true
+					rw = newReasoningWriter()
+					fmt.Printf("%s\033[90m[思考] \033[0m%s", reasoningPrefix, "\033[3;90m")
+					rw.col = 6 // "[思考] " 占 6 列
+				}
+				rw.writeChunk(event.Content)
+				return
 
-		case EventMessage:
+			case fkevent.DeltaToolArgs:
+				if isMemberEvent(event) {
+					key, name := memberFromEvent(event)
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, agentcore.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
+					return
+				}
+				toolName := event.ToolName
+				if toolName == "" && event.ToolCallID != "" {
+					toolName = toolNamesByID[event.ToolCallID]
+				}
+				if toolName != "" {
+					if key, memberName, ok := agentToolKey(toolName); ok {
+						if event.ToolCallID != "" {
+							if mapped := memberKeysByToolID[event.ToolCallID]; mapped != "" {
+								key = mapped
+							} else {
+								memberKeysByToolID[event.ToolCallID] = key
+							}
+							if memberNamesByToolID[event.ToolCallID] == "" {
+								memberNamesByToolID[event.ToolCallID] = memberName
+							}
+						}
+						sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: "任务参数接收中"})
+						return
+					}
+				}
+				key := regularToolKey(event, agentcore.ToolCall{}, 0)
+				if event.ToolCallIndex != nil {
+					if mapped := toolKeysByIndex[*event.ToolCallIndex]; mapped != "" && event.ToolCallID == "" {
+						key = mapped
+					}
+				}
+				flow := ensureToolFlow(key, toolName)
+				flow.AgentName = event.AgentName
+				flow.Status = "参数准备中"
+				flow.Args += event.Content
+				if toolName == "" {
+					return
+				}
+				sendToolPanel(key, flow, "op", flow.Args, false)
+				return
+
+			default:
+				if isMemberEvent(event) {
+					key, name := memberFromEvent(event)
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
+					return
+				}
+				if finishMembersBeforeParentOutput(event) {
+					return
+				}
+				wasReasoning := inReasoning
+				if inReasoning {
+					inReasoning = false
+					fmt.Printf("\033[0m\n")
+				}
+				if agentName != event.AgentName {
+					tryFlush()
+					agentName = event.AgentName
+					fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
+					sb.agent = agentName
+					sb.path = event.RunPath
+				} else if wasReasoning && sb.agent == "" {
+					sb.agent = agentName
+					sb.path = event.RunPath
+				}
+				if sb.agent == "" {
+					sb.agent = event.AgentName
+					sb.path = event.RunPath
+				}
+				sb.addChunk(event.Content)
+			}
+
+		case EventMessageEnd:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.ReasoningContent != "" {
@@ -950,11 +1003,11 @@ func newPrintEvent() (func(Event), func()) {
 				lipgloss.Println(formatAssistantOutput(fktui.RenderMarkdown(printContent)))
 			}
 
-		case EventToolResult:
+		case EventToolEnd:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.Content != "" {
-					toolKey := memberToolKey(event, schema.ToolCall{}, 0)
+					toolKey := memberToolKey(event, agentcore.ToolCall{}, 0)
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content})
 				}
 				return
@@ -985,7 +1038,7 @@ func newPrintEvent() (func(Event), func()) {
 					key = memberKeysByToolID[event.ToolCallID]
 				}
 				if isErrorContent(event.Content) {
-					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: event.Content, ToolKey: memberToolKey(event, schema.ToolCall{}, 0), ToolName: toolName})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: event.Content, ToolKey: memberToolKey(event, agentcore.ToolCall{}, 0), ToolName: toolName})
 				} else {
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "done"})
 				}
@@ -997,7 +1050,7 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			tryFlush()
-			key := regularToolKey(event, schema.ToolCall{}, 0)
+			key := regularToolKey(event, agentcore.ToolCall{}, 0)
 			flow := ensureToolFlow(key, toolName)
 			flow.AgentName = event.AgentName
 			flow.Status = "已完成"
@@ -1019,10 +1072,10 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			delete(toolFlows, key)
 
-		case EventToolResultChunk:
+		case EventToolUpdate:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				toolKey := memberToolKey(event, schema.ToolCall{}, 0)
+				toolKey := memberToolKey(event, agentcore.ToolCall{}, 0)
 				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content, Append: true})
 				return
 			}
@@ -1033,7 +1086,7 @@ func newPrintEvent() (func(Event), func()) {
 			if finishMembersBeforeParentOutput(event) {
 				return
 			}
-			key := regularToolKey(event, schema.ToolCall{}, 0)
+			key := regularToolKey(event, agentcore.ToolCall{}, 0)
 			flow := ensureToolFlow(key, event.ToolName)
 			flow.AgentName = event.AgentName
 			flow.Status = "执行中"
@@ -1041,72 +1094,10 @@ func newPrintEvent() (func(Event), func()) {
 			flow.Streamed = true
 			sendToolPanel(key, flow, "content", event.Content, true)
 
-		case EventToolCallsPreparing:
+		case EventToolStart:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				for i, tool := range event.ToolCalls {
-					if tool.Function.Name != "" {
-						display := FormatToolDisplay(tool.Function.Name)
-						sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_prepare", ToolKey: memberToolKey(event, tool, i), ToolName: display.DisplayName})
-					}
-				}
-				return
-			}
-			agentTools, otherTools := splitAgentToolCalls(event.ToolCalls)
-			if len(agentTools) > 0 {
-				if inReasoning {
-					inReasoning = false
-					fmt.Printf("\033[0m\n")
-				}
-				tryFlush()
-			}
-			for i, tool := range agentTools {
-				key, memberName := registerAgentToolCall(tool, i)
-				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: "任务准备中"})
-			}
-			if len(agentTools) > 0 && len(otherTools) == 0 {
-				return
-			}
-			if len(agentTools) > 0 {
-				event.ToolCalls = otherTools
-				if hasPendingMembers() && !replayingDeferred {
-					deferredEvents = append(deferredEvents, event)
-					return
-				}
-			}
-			if finishMembersBeforeParentOutput(event) {
-				return
-			}
-			tryFlush()
-			if inReasoning {
-				inReasoning = false
-				fmt.Printf("\033[0m\n")
-			}
-			for i, tool := range event.ToolCalls {
-				if isInternalToolName(tool.Function.Name) {
-					continue
-				}
-				if tool.Function.Name != "" {
-					if tool.ID != "" {
-						toolNamesByID[tool.ID] = tool.Function.Name
-					}
-					if tool.Index != nil {
-						toolKeysByIndex[*tool.Index] = regularToolKey(event, tool, i)
-					}
-					key := regularToolKey(event, tool, i)
-					flow := ensureToolFlow(key, tool.Function.Name)
-					flow.AgentName = event.AgentName
-					flow.Status = "参数准备中"
-					flow.Name = tool.Function.Name
-					lastToolName = tool.Function.Name
-					sendToolPanel(key, flow, "start", "", false)
-				}
-			}
-
-		case EventToolCalls:
-			if isMemberEvent(event) {
-				key, name := memberFromEvent(event)
-				for i, tool := range event.ToolCalls {
+				for i, tool := range eventToolCalls(event) {
 					if tool.Function.Name == "" {
 						continue
 					}
@@ -1115,7 +1106,7 @@ func newPrintEvent() (func(Event), func()) {
 				}
 				return
 			}
-			agentTools, otherTools := splitAgentToolCalls(event.ToolCalls)
+			agentTools, otherTools := splitAgentToolCalls(eventToolCalls(event))
 			if len(agentTools) > 0 {
 				if inReasoning {
 					inReasoning = false
@@ -1145,7 +1136,7 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			tryFlush()
-			for i, tool := range event.ToolCalls {
+			for i, tool := range eventToolCalls(event) {
 				if isInternalToolName(tool.Function.Name) {
 					continue
 				}
@@ -1167,7 +1158,7 @@ func newPrintEvent() (func(Event), func()) {
 					flow.Args = tool.Function.Arguments
 					sendToolPanel(key, flow, "op", tool.Function.Arguments, false)
 				}
-				if i == len(event.ToolCalls)-1 {
+				if i == len(eventToolCalls(event))-1 {
 					lastToolName = tool.Function.Name
 				}
 			}
@@ -1211,46 +1202,6 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			fmt.Println()
 
-		case EventToolCallsArgsDelta:
-			if isMemberEvent(event) {
-				key, name := memberFromEvent(event)
-				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, schema.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
-				return
-			}
-			toolName := event.ToolName
-			if toolName == "" && event.ToolCallID != "" {
-				toolName = toolNamesByID[event.ToolCallID]
-			}
-			if toolName != "" {
-				if key, memberName, ok := agentToolKey(toolName); ok {
-					if event.ToolCallID != "" {
-						if mapped := memberKeysByToolID[event.ToolCallID]; mapped != "" {
-							key = mapped
-						} else {
-							memberKeysByToolID[event.ToolCallID] = key
-						}
-						if memberNamesByToolID[event.ToolCallID] == "" {
-							memberNamesByToolID[event.ToolCallID] = memberName
-						}
-					}
-					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: "任务参数接收中"})
-					return
-				}
-			}
-			key := regularToolKey(event, schema.ToolCall{}, 0)
-			if event.ToolCallIndex != nil {
-				if mapped := toolKeysByIndex[*event.ToolCallIndex]; mapped != "" && event.ToolCallID == "" {
-					key = mapped
-				}
-			}
-			flow := ensureToolFlow(key, toolName)
-			flow.AgentName = event.AgentName
-			flow.Status = "参数准备中"
-			flow.Args += event.Content
-			if toolName == "" {
-				return
-			}
-			sendToolPanel(key, flow, "op", flow.Args, false)
 		default:
 			if finishMembersBeforeParentOutput(event) {
 				return
@@ -1811,7 +1762,10 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 	callback = func(event Event) error {
 		switch event.Type {
-		case EventStreamChunk:
+		case EventMessageDelta:
+			if event.DeltaKind != "" && event.DeltaKind != fkevent.DeltaOutput {
+				return nil
+			}
 			if lastAgent != event.AgentName {
 				flushStream()
 				lastAgent = event.AgentName
@@ -1820,39 +1774,17 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			buf.WriteString(event.Content)
 			inStream = true
 
-		case EventMessage:
-			if event.Content != "" {
-				flushStream()
-				if lastAgent != event.AgentName {
-					lastAgent = event.AgentName
-					fmt.Fprintf(&buf, "\n\n**[%s]**\n\n", event.AgentName)
-				}
-				buf.WriteString(event.Content)
-			}
-
-		case EventToolCallsPreparing:
-			for _, tc := range event.ToolCalls {
-				if isInternalToolName(tc.Function.Name) {
-					continue
-				}
-				if tc.Function.Name != "" {
-					lastToolName = tc.Function.Name
-					if tc.ID != "" {
-						toolNamesByID[tc.ID] = tc.Function.Name
-					}
-				}
-			}
-
-		case EventToolCalls:
+		case EventToolStart:
 			flushStream()
-			for i, tc := range event.ToolCalls {
+			toolCalls := eventToolCalls(event)
+			for i, tc := range toolCalls {
 				if isInternalToolName(tc.Function.Name) {
 					continue
 				}
 				if tc.ID != "" {
 					toolNamesByID[tc.ID] = tc.Function.Name
 				}
-				if i == len(event.ToolCalls)-1 {
+				if i == len(toolCalls)-1 {
 					lastToolName = tc.Function.Name
 				}
 				args := truncateString(tc.Function.Arguments, 100)
@@ -1865,7 +1797,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			}
 			lastAgent = ""
 
-		case EventToolResult:
+		case EventToolEnd:
 			if event.Content != "" && !isInternalContinueContent(event.Content) {
 				toolName := lastToolName
 				if event.ToolCallID != "" {

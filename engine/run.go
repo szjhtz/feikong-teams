@@ -2,17 +2,15 @@ package engine
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/common"
 	"fkteams/fkevent"
-	"strings"
-
-	"github.com/cloudwego/eino/adk"
 )
 
 // run 执行查询，处理事件和 HITL 中断。
 // 根据 runConfig 自动装配 context（session ID、事件回调、摘要持久化、审批注册表等）。
-func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) {
+func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, error) {
 	ctx = common.WithSessionID(ctx, e.checkpointID)
 
 	if cfg.EventCallback != nil {
@@ -21,8 +19,8 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) 
 
 	if cfg.Recorder != nil {
 		countBefore := cfg.Recorder.GetMessageCount()
-		if userInput := strings.TrimSpace(cfg.UserInput); userInput != "" {
-			cfg.Recorder.RecordUserInput(userInput)
+		if !cfg.Input.Message.IsEmpty() {
+			cfg.Recorder.RecordUserMessage(cfg.Input.Message)
 		}
 		ctx = summary.WithSummaryPersistCallback(ctx, func(s string) {
 			cfg.Recorder.SetSummary(s, countBefore)
@@ -48,11 +46,11 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*adk.AgentEvent, error) 
 		handler = FixedDecisionHandler(0)
 	}
 
-	lastEvent, err := e.runLoop(ctx, cfg.Messages, handler)
+	result, err := e.runLoop(ctx, cfg.Input, handler)
 
 	if cfg.OnFinish != nil {
-		cfg.OnFinish(ctx, lastEvent, err)
+		cfg.OnFinish(ctx, result, err)
 	}
 
-	return lastEvent, err
+	return result, err
 }

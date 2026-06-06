@@ -1,9 +1,8 @@
 package eventlog
 
 import (
+	"fkteams/agentcore"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
@@ -12,12 +11,12 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:  1,
-		Type:      EventToolCalls,
+		Type:      EventToolStart,
 		AgentName: "coordinator",
-		ToolCalls: []schema.ToolCall{{
+		ToolCalls: []agentcore.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,
-			Function: schema.FunctionCall{
+			Function: agentcore.FunctionCall{
 				Name:      "ask_fkagent_researcher",
 				Arguments: `{"task":"查资料"}`,
 			},
@@ -25,9 +24,12 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:       2,
-		Type:           EventStreamChunk,
+		Type:           EventMessageDelta,
+		Role:           agentcore.RoleAssistant,
+		DeltaKind:      agentcore.DeltaOutput,
 		AgentName:      "researcher",
 		Content:        "结果",
+		Delta:          "结果",
 		MemberCallID:   "call_1",
 		MemberToolName: "ask_fkagent_researcher",
 		MemberName:     "Researcher",
@@ -55,9 +57,12 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:  1,
-		Type:      EventStreamChunk,
+		Type:      EventMessageDelta,
+		Role:      agentcore.RoleAssistant,
+		DeltaKind: agentcore.DeltaOutput,
 		AgentName: "coordinator",
 		Content:   "ok",
+		Delta:     "ok",
 	})
 	recorder.RecordEvent(Event{
 		Sequence:         2,
@@ -94,12 +99,12 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:  1,
-		Type:      EventToolCalls,
+		Type:      EventToolStart,
 		AgentName: "coordinator",
-		ToolCalls: []schema.ToolCall{{
+		ToolCalls: []agentcore.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,
-			Function: schema.FunctionCall{
+			Function: agentcore.FunctionCall{
 				Name:      "ask_fkagent_researcher",
 				Arguments: `{"task":"查资料"}`,
 			},
@@ -107,9 +112,12 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:       2,
-		Type:           EventReasoningChunk,
+		Type:           EventMessageDelta,
+		Role:           agentcore.RoleAssistant,
+		DeltaKind:      agentcore.DeltaReasoning,
 		AgentName:      "researcher",
 		Content:        "working",
+		Delta:          "working",
 		MemberCallID:   "call_1",
 		MemberToolName: "ask_fkagent_researcher",
 		MemberName:     "Researcher",

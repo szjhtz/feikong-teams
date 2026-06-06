@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
@@ -21,7 +22,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/pterm/pterm"
 )
 
@@ -87,14 +87,14 @@ func (s *QueryState) Cancel() bool {
 // QueryExecutor 查询执行器
 type QueryExecutor struct {
 	state         *QueryState
-	runner        *adk.Runner
+	runner        agentcore.Runner
 	autoReject    bool
 	approveStores []string // 自动批准的 store 列表
 	view          QueryView
 }
 
 // NewQueryExecutor 创建查询执行器
-func NewQueryExecutor(runner *adk.Runner, state *QueryState) *QueryExecutor {
+func NewQueryExecutor(runner agentcore.Runner, state *QueryState) *QueryExecutor {
 	return &QueryExecutor{
 		state:  state,
 		runner: runner,
@@ -120,7 +120,7 @@ func (e *QueryExecutor) SetApproveStores(s string) {
 }
 
 // SetRunner 设置 runner
-func (e *QueryExecutor) SetRunner(runner *adk.Runner) {
+func (e *QueryExecutor) SetRunner(runner agentcore.Runner) {
 	e.runner = runner
 }
 
@@ -232,7 +232,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		WithHistory(recorder).
 		OnInterrupt(handler).
 		WithContext(approval.RegistryContext(approvalReg)).
-		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, _ error) {
+		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, _ error) {
 			e.state.EndQuery()
 			recorder.FinalizeCurrent()
 			if g.MemoryManager != nil {

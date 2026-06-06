@@ -2,14 +2,13 @@ package engine
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/fkevent"
-
-	"github.com/cloudwego/eino/adk"
 )
 
 type EventHandler func(fkevent.Event) error
 type StartHandler func(context.Context)
-type FinishHandler func(context.Context, *adk.AgentEvent, error)
+type FinishHandler func(context.Context, *agentcore.RunResult, error)
 
 // Session 提供面向一次会话执行的易用接口。
 type Session struct {
@@ -17,18 +16,17 @@ type Session struct {
 	cfg    runConfig
 }
 
-func NewSession(runner *adk.Runner, checkpointID string) *Session {
+func NewSession(runner agentcore.Runner, checkpointID string) *Session {
 	return &Session{engine: newEngine(runner, checkpointID)}
 }
 
 func (s *Session) WithInput(input TurnInput) *Session {
-	s.cfg.Messages = input.Messages
-	s.cfg.UserInput = input.UserInput
+	s.cfg.Input = input
 	return s
 }
 
-func (s *Session) WithMessages(messages []adk.Message) *Session {
-	s.cfg.Messages = messages
+func (s *Session) WithMessages(messages []agentcore.Message) *Session {
+	s.cfg.Input.Context = messages
 	return s
 }
 
@@ -69,6 +67,6 @@ func (s *Session) OnFinish(handler FinishHandler) *Session {
 	return s
 }
 
-func (s *Session) Run(ctx context.Context) (*adk.AgentEvent, error) {
+func (s *Session) Run(ctx context.Context) (*agentcore.RunResult, error) {
 	return s.engine.run(ctx, s.cfg)
 }

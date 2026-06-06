@@ -1,12 +1,13 @@
-package fkevent
+package eino
 
 import (
+	"fkteams/agentcore"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
 )
 
-// MemberScope 标记 AgentTool 内部事件所属的父级工具调用。
+// MemberScope marks ADK events emitted inside an agent-tool call.
 type MemberScope struct {
 	CallID   string
 	ToolName string
@@ -15,7 +16,6 @@ type MemberScope struct {
 
 var agentEventScopes sync.Map
 
-// RegisterAgentEventScope 为即将转发的 ADK 事件登记成员调用信息。
 func RegisterAgentEventScope(event *adk.AgentEvent, scope MemberScope) {
 	if event == nil || scope.CallID == "" {
 		return
@@ -35,7 +35,7 @@ func consumeAgentEventScope(event *adk.AgentEvent) (MemberScope, func()) {
 	return scope, func() { agentEventScopes.Delete(event) }
 }
 
-func (s MemberScope) apply(event *Event) {
+func (s MemberScope) apply(event *agentcore.Event, c *converter) {
 	if event == nil || s.CallID == "" {
 		return
 	}
@@ -43,13 +43,17 @@ func (s MemberScope) apply(event *Event) {
 	event.MemberCallID = s.CallID
 	event.MemberToolName = s.ToolName
 	event.MemberName = s.Name
+	event.ParentToolCallID = s.CallID
+	event.ParentToolName = s.ToolName
 	if event.MemberOrder == nil && s.CallID != "" {
-		if order, ok := toolCallOrdersByID.Load(s.CallID); ok {
+		if order, ok := c.toolOrdersByID.Load(s.CallID); ok {
 			if v, ok := order.(int); ok {
 				event.MemberOrder = intPtr(v)
 			}
 		}
 	}
-	event.ParentToolCallID = s.CallID
-	event.ParentToolName = s.ToolName
+}
+
+func intPtr(v int) *int {
+	return &v
 }

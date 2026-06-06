@@ -2,14 +2,14 @@
 package engine
 
 import (
-	"github.com/cloudwego/eino/adk"
+	"fkteams/agentcore"
 )
 
 type core struct {
-	runner       *adk.Runner
+	runner       agentcore.Runner
 	checkpointID string
 }
 
-func newEngine(runner *adk.Runner, checkpointID string) *core {
+func newEngine(runner agentcore.Runner, checkpointID string) *core {
 	return &core{runner: runner, checkpointID: checkpointID}
 }

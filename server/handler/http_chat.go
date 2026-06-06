@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fkteams/agentcore"
 	"fkteams/engine"
 	"fkteams/eventlog"
 	"fkteams/fkevent"
@@ -11,7 +12,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -73,7 +73,7 @@ func ChatHandler() gin.HandlerFunc {
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string) {
+func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -91,7 +91,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 			return err
 		}).
 		WithHistory(recorder).
-		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("connection closed, stopping: session=%s", sessionID)
@@ -109,7 +109,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string) {
+func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
@@ -123,7 +123,7 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder
 			return nil
 		}).
 		WithHistory(recorder).
-		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
 			}

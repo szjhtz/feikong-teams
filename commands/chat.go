@@ -3,6 +3,7 @@ package commands
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/cli"
 	commonPkg "fkteams/common"
 	"fkteams/config"
@@ -13,7 +14,6 @@ import (
 	"log"
 	"syscall"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
@@ -58,7 +58,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		return nil
 	})
 
-	var r *adk.Runner
+	var r agentcore.Runner
 	app.OnSetup(func(ctx context.Context) error {
 		var err error
 		r, err = createModeRunner(ctx, currentMode)
@@ -133,7 +133,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 }
 
 // createModeRunner 根据工作模式创建对应的 Runner
-func createModeRunner(ctx context.Context, mode cli.WorkMode) (*adk.Runner, error) {
+func createModeRunner(ctx context.Context, mode cli.WorkMode) (agentcore.Runner, error) {
 	switch mode {
 	case cli.ModeTeam:
 		return runner.CreateTeamRunner(ctx)

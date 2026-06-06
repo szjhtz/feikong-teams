@@ -2,6 +2,7 @@ package eventlog
 
 import (
 	"encoding/json"
+	"fkteams/agentcore"
 	"fkteams/agenttool"
 	"fkteams/common"
 	"fkteams/common/atomicfile"
@@ -14,25 +15,19 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 type Event = fkevent.Event
 type ActionType = fkevent.ActionType
 
 const (
-	EventReasoningChunk     = fkevent.EventReasoningChunk
-	EventStreamChunk        = fkevent.EventStreamChunk
-	EventToolCallsPreparing = fkevent.EventToolCallsPreparing
-	EventToolCalls          = fkevent.EventToolCalls
-	EventToolResultChunk    = fkevent.EventToolResultChunk
-	EventToolResult         = fkevent.EventToolResult
-	EventMessage            = fkevent.EventMessage
-	EventAction             = fkevent.EventAction
-	EventUsage              = fkevent.EventUsage
-	EventError              = fkevent.EventError
-	EventDispatchProgress   = fkevent.EventDispatchProgress
+	EventMessageDelta = fkevent.EventMessageDelta
+	EventToolStart    = fkevent.EventToolStart
+	EventToolUpdate   = fkevent.EventToolUpdate
+	EventToolEnd      = fkevent.EventToolEnd
+	EventAction       = fkevent.EventAction
+	EventUsage        = fkevent.EventUsage
+	EventError        = fkevent.EventError
 
 	ActionContextCompress = fkevent.ActionContextCompress
 )
@@ -98,11 +93,12 @@ const (
 
 // MessageEvent 单个消息事件
 type MessageEvent struct {
-	Type     MsgEventType    `json:"type"`
-	Content  string          `json:"content,omitempty"`
-	ToolCall *ToolCallRecord `json:"tool_call,omitempty"`
-	Action   *ActionRecord   `json:"action,omitempty"`
-	Usage    *UsageRecord    `json:"usage,omitempty"`
+	Type         MsgEventType            `json:"type"`
+	Content      string                  `json:"content,omitempty"`
+	ContentParts []agentcore.ContentPart `json:"content_parts,omitempty"`
+	ToolCall     *ToolCallRecord         `json:"tool_call,omitempty"`
+	Action       *ActionRecord           `json:"action,omitempty"`
+	Usage        *UsageRecord            `json:"usage,omitempty"`
 }
 
 // AgentMessage 代理的一次完整发言
@@ -237,7 +233,7 @@ func pendingToolCallFromEvent(spanID, ref, id string, index *int, name, argument
 	}
 }
 
-func toolCallRefFromEvent(event Event, tc schema.ToolCall) string {
+func toolCallRefFromEvent(event Event, tc agentcore.ToolCall) string {
 	if tc.Index != nil && event.ToolCallRefs != nil {
 		if ref := event.ToolCallRefs[*tc.Index]; ref != "" {
 			return ref
@@ -255,7 +251,7 @@ func toolCallRefFromEvent(event Event, tc schema.ToolCall) string {
 	return ""
 }
 
-func toolCallSpanFromEvent(event Event, tc schema.ToolCall) string {
+func toolCallSpanFromEvent(event Event, tc agentcore.ToolCall) string {
 	if tc.Index != nil && event.ToolCallSpanIDs != nil {
 		if span := event.ToolCallSpanIDs[*tc.Index]; span != "" {
 			return span
@@ -443,47 +439,69 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			},
 		})
 
-	case EventReasoningChunk:
+	case EventMessageDelta:
+		if event.Role == agentcore.RoleUser {
+			return
+		}
+		content := event.Delta
+		if content == "" {
+			content = event.Content
+		}
+		if content == "" {
+			return
+		}
 		ctx := h.ensureMessageContext(event)
-		// 合并连续推理事件
-		if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning {
-			ctx.msg.Events[n-1].Content += event.Content
-		} else {
-			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-				Type:    MsgTypeReasoning,
-				Content: event.Content,
-			})
+		switch event.DeltaKind {
+		case fkevent.DeltaReasoning:
+			// 合并连续推理事件
+			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning {
+				ctx.msg.Events[n-1].Content += content
+			} else {
+				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+					Type:    MsgTypeReasoning,
+					Content: content,
+				})
+			}
+		case fkevent.DeltaOutput, "":
+			// 合并连续文本事件
+			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeText {
+				ctx.msg.Events[n-1].Content += content
+			} else {
+				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+					Type:    MsgTypeText,
+					Content: content,
+				})
+			}
+		case fkevent.DeltaToolResult:
+			if fkevent.IsInternalContinueContent(content) {
+				return
+			}
+			if key := toolResultKey(event); key != "" {
+				ctx.toolResultChunks[key] += content
+			}
 		}
 
-	case EventStreamChunk:
+	case EventToolStart:
 		ctx := h.ensureMessageContext(event)
-		// 合并连续文本事件
-		if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeText {
-			ctx.msg.Events[n-1].Content += event.Content
-		} else {
-			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-				Type:    MsgTypeText,
-				Content: event.Content,
-			})
+		toolCalls := event.ToolCalls
+		if event.ToolCall != nil {
+			toolCalls = append([]agentcore.ToolCall{*event.ToolCall}, toolCalls...)
 		}
-
-	case EventToolCallsPreparing:
-		ctx := h.ensureMessageContext(event)
-		for _, tc := range event.ToolCalls {
+		if len(toolCalls) == 0 && event.ToolName != "" {
+			toolCalls = []agentcore.ToolCall{{
+				ID:    event.ToolCallID,
+				Index: event.ToolCallIndex,
+				Function: agentcore.FunctionCall{
+					Name:      event.ToolName,
+					Arguments: event.ToolArgs,
+				},
+			}}
+		}
+		for _, tc := range toolCalls {
 			if fkevent.IsInternalToolName(tc.Function.Name) {
 				continue
 			}
-			if tc.Function.Name != "" {
-				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, "")
-				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
-				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
-			}
-		}
-
-	case EventToolCalls:
-		ctx := h.ensureMessageContext(event)
-		for _, tc := range event.ToolCalls {
-			if fkevent.IsInternalToolName(tc.Function.Name) {
+			if tc.Function.Name == "" {
 				continue
 			}
 			updated := false
@@ -511,21 +529,31 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		}
 
-	case EventToolResultChunk:
-		if fkevent.IsInternalContinueContent(event.Content) {
+	case EventToolUpdate:
+		content := event.Delta
+		if content == "" {
+			content = event.Content
+		}
+		if content == "" {
+			content = event.ToolResult
+		}
+		if fkevent.IsInternalContinueContent(content) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
 		if key := toolResultKey(event); key != "" {
-			ctx.toolResultChunks[key] += event.Content
+			ctx.toolResultChunks[key] += content
 		}
 
-	case EventToolResult:
-		if fkevent.IsInternalContinueContent(event.Content) {
+	case EventToolEnd:
+		content := event.ToolResult
+		if content == "" {
+			content = event.Content
+		}
+		if fkevent.IsInternalContinueContent(content) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
-		content := event.Content
 		resultKey := toolResultKey(event)
 		if resultKey != "" && ctx.toolResultChunks[resultKey] != "" {
 			chunked := ctx.toolResultChunks[resultKey]
@@ -571,30 +599,16 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 				})
 			}
-		}
-
-	case EventMessage:
-		ctx := h.ensureMessageContext(event)
-		if event.ReasoningContent != "" {
-			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-				Type:    MsgTypeReasoning,
-				Content: event.ReasoningContent,
-			})
-		}
-		if event.Content != "" {
-			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-				Type:    MsgTypeText,
-				Content: event.Content,
-			})
-		}
-		for _, tc := range event.ToolCalls {
-			if fkevent.IsInternalToolName(tc.Function.Name) {
-				continue
+		} else {
+			if event.ToolName == "" {
+				return
 			}
-			if tc.Function.Name != "" {
-				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
-				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
-				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
+			pending := pendingToolCallFromEvent(event.SpanID, event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
+			if !fkevent.IsInternalToolName(pending.Name) {
+				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+					Type:     MsgTypeToolCall,
+					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(pending, content)),
+				})
 			}
 		}
 
@@ -616,8 +630,6 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			Content: truncateErrorContent(event.Error),
 		})
 
-	case EventDispatchProgress:
-		// 子任务进度事件不单独记录，最终结果已包含在 tool_call 的 result 中
 	}
 }
 
@@ -658,18 +670,31 @@ func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 	}
 }
 
-func (h *HistoryRecorder) RecordUserInput(input string) {
+func (h *HistoryRecorder) RecordUserMessage(message agentcore.Message) {
+	if message.Role == "" {
+		message.Role = agentcore.RoleUser
+	}
+	if message.Role != agentcore.RoleUser || message.IsEmpty() {
+		return
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	h.finalizeAllActiveMessages()
+
+	content := message.DisplayText()
+	parts := append([]agentcore.ContentPart(nil), message.UserInputMultiContent...)
+	if len(parts) == 0 {
+		parts = append(parts, message.MultiContent...)
+	}
 
 	h.messages = append(h.messages, AgentMessage{
 		AgentName: "用户",
 		StartTime: time.Now(),
 		EndTime:   time.Now(),
 		Events: []MessageEvent{
-			{Type: MsgTypeText, Content: input},
+			{Type: MsgTypeText, Content: content, ContentParts: parts},
 		},
 	})
 

@@ -2,19 +2,17 @@ package scheduler
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/engine"
 	"fkteams/eventview"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
 // RunnerCreator creates a Runner for task execution
-type RunnerCreator func(ctx context.Context) (*adk.Runner, error)
+type RunnerCreator func(ctx context.Context) (agentcore.Runner, error)
 
 // BackgroundExecutor executes tasks in the background
 type BackgroundExecutor struct {
@@ -55,8 +53,7 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 	callback, getResult := eventview.NewMarkdownCollector()
 
 	input := engine.TurnInput{
-		Messages:  []adk.Message{schema.UserMessage(task)},
-		UserInput: task,
+		Message: agentcore.Message{Role: agentcore.RoleUser, Content: task},
 	}
 
 	_, err = engine.NewSession(r, "fkteams_scheduler").

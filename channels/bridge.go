@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
@@ -17,8 +18,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/cloudwego/eino/adk"
 )
 
 // queuedMessage 队列中的待处理消息
@@ -58,7 +57,7 @@ type Bridge struct {
 	mode    string // 运行模式: team, deep, roundtable, custom 或智能体名称
 
 	runnerMu  sync.Mutex
-	runner    *adk.Runner
+	runner    agentcore.Runner
 	runnerErr error
 
 	queueMu sync.Mutex
@@ -86,7 +85,7 @@ func (b *Bridge) ResetRunner() {
 }
 
 // getRunner 惰性创建 runner（线程安全）
-func (b *Bridge) getRunner(ctx context.Context) (*adk.Runner, error) {
+func (b *Bridge) getRunner(ctx context.Context) (agentcore.Runner, error) {
 	b.runnerMu.Lock()
 	defer b.runnerMu.Unlock()
 
@@ -256,7 +255,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		WithHistory(recorder).
 		NonInteractive().
 		WithContext(approval.RegistryContext(approval.NewAutoApproveRegistry())).
-		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
 			}
@@ -343,6 +342,16 @@ type pendingToolCall struct {
 	args string
 }
 
+func channelEventToolCalls(event fkevent.Event) []agentcore.ToolCall {
+	if event.ToolCall == nil {
+		return event.ToolCalls
+	}
+	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
+	toolCalls = append(toolCalls, *event.ToolCall)
+	toolCalls = append(toolCalls, event.ToolCalls...)
+	return toolCalls
+}
+
 func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector {
 	return &replyCollector{
 		manager:      mgr,
@@ -356,12 +365,10 @@ func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector
 // handleEvent 处理引擎产生的各类事件
 func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 	switch event.Type {
-	case fkevent.EventMessage:
-		// 非流式完整消息：先 flush 累积文本，再直接发送
-		rc.flushToolResultChunks()
-		rc.flush()
-		rc.send(event.Content)
-	case fkevent.EventStreamChunk:
+	case fkevent.EventMessageDelta:
+		if event.DeltaKind != "" && event.DeltaKind != fkevent.DeltaOutput {
+			return nil
+		}
 		// 流式文本块：累积，检测到 agent 切换时 flush
 		rc.flushToolResultChunks()
 		rc.mu.Lock()
@@ -380,20 +387,18 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 		if event.ActionType == fkevent.ActionTransfer {
 			rc.flush()
 		}
-	case fkevent.EventToolCalls:
+	case fkevent.EventToolStart:
 		// 工具调用：flush 之前的文本，按 ToolCall.ID 记录所有工具调用
 		rc.flush()
 		rc.mu.Lock()
-		for _, tc := range event.ToolCalls {
+		for _, tc := range channelEventToolCalls(event) {
 			rc.pendingCalls[tc.ID] = pendingToolCall{
 				name: tc.Function.Name,
 				args: truncateText(tc.Function.Arguments, 200),
 			}
 		}
 		rc.mu.Unlock()
-	case fkevent.EventToolCallsPreparing:
-		rc.flush()
-	case fkevent.EventToolResult:
+	case fkevent.EventToolEnd:
 		// 工具调用完成：按 ToolCallID 匹配调用，发送摘要
 		rc.mu.Lock()
 		call, found := rc.pendingCalls[event.ToolCallID]
@@ -415,7 +420,7 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 			summary := "[" + call.name + "] " + call.args + "\n-> " + result
 			rc.send(summary)
 		}
-	case fkevent.EventToolResultChunk:
+	case fkevent.EventToolUpdate:
 		rc.mu.Lock()
 		if event.ToolCallID != "" {
 			rc.resultChunks[event.ToolCallID] += event.Content

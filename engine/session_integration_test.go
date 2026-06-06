@@ -2,37 +2,39 @@ package engine
 
 import (
 	"context"
-	"fkteams/common"
+	"fkteams/agentcore"
 	"fkteams/fkevent"
-	"fkteams/internal/testmodel"
 	"testing"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
-func TestSessionRunsChatModelAgentWithTestModel(t *testing.T) {
-	ctx := context.Background()
-	cm := testmodel.New(schema.AssistantMessage("pong", nil))
+type recordingRunner struct {
+	input agentcore.TurnInput
+}
 
-	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "test_agent",
-		Description: "test agent",
-		Model:       cm,
-	})
-	if err != nil {
-		t.Fatalf("create agent: %v", err)
+func (r *recordingRunner) Run(_ context.Context, input agentcore.TurnInput, opts agentcore.RunOptions) (*agentcore.RunResult, error) {
+	r.input = input
+	event := agentcore.Event{
+		Type:      agentcore.EventMessageDelta,
+		Role:      agentcore.RoleAssistant,
+		DeltaKind: agentcore.DeltaOutput,
+		Content:   "pong",
+		Delta:     "pong",
 	}
+	if opts.Sink != nil {
+		if err := opts.Sink(event); err != nil {
+			return nil, err
+		}
+	}
+	return &agentcore.RunResult{LastEvent: event}, nil
+}
 
-	r := adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           agent,
-		EnableStreaming: false,
-		CheckPointStore: common.NewInMemoryStore(),
-	})
+func TestSessionRunsCoreRunner(t *testing.T) {
+	ctx := context.Background()
+	r := &recordingRunner{}
 
 	var events []fkevent.Event
-	_, err = NewSession(r, "test-session").
-		WithMessages([]adk.Message{schema.UserMessage("ping")}).
+	_, err := NewSession(r, "test-session").
+		WithInput(TurnInput{Message: agentcore.Message{Role: agentcore.RoleUser, Content: "ping"}}).
 		OnEvent(func(event fkevent.Event) error {
 			events = append(events, event)
 			return nil
@@ -42,12 +44,9 @@ func TestSessionRunsChatModelAgentWithTestModel(t *testing.T) {
 		t.Fatalf("run session: %v", err)
 	}
 
-	calls := cm.GenerateCalls()
-	if len(calls) != 1 {
-		t.Fatalf("expected one model call, got %d", len(calls))
-	}
-	if len(calls[0].Input) == 0 || calls[0].Input[len(calls[0].Input)-1].Content != "ping" {
-		t.Fatalf("expected user input to reach model, got %#v", calls[0].Input)
+	messages := r.input.AllMessages()
+	if len(messages) == 0 || messages[len(messages)-1].Content != "ping" {
+		t.Fatalf("expected user input to reach runner, got %#v", messages)
 	}
 
 	found := false

@@ -2,8 +2,6 @@ package fkevent
 
 import (
 	"context"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -24,7 +22,7 @@ func TestDispatchEventDoesNotSerializeCallbacksGlobally(t *testing.T) {
 	})
 
 	go func() {
-		firstDone <- DispatchEvent(slowCtx, Event{Type: EventMessage, Content: "slow"})
+		firstDone <- DispatchEvent(slowCtx, Event{Type: EventMessageDelta, Content: "slow"})
 	}()
 
 	select {
@@ -34,7 +32,7 @@ func TestDispatchEventDoesNotSerializeCallbacksGlobally(t *testing.T) {
 	}
 
 	go func() {
-		fastDone <- DispatchEvent(fastCtx, Event{Type: EventMessage, Content: "fast"})
+		fastDone <- DispatchEvent(fastCtx, Event{Type: EventMessageDelta, Content: "fast"})
 	}()
 
 	select {
@@ -52,57 +50,28 @@ func TestDispatchEventDoesNotSerializeCallbacksGlobally(t *testing.T) {
 	}
 }
 
-func TestToolCallStateResolvesBeforeTTL(t *testing.T) {
-	clearToolCallStateForTest()
-	oldTTL := toolCallStateTTL
-	toolCallStateTTL = time.Hour
-	defer func() {
-		toolCallStateTTL = oldTTL
-		clearToolCallStateForTest()
-	}()
-
-	registerToolCallRef("call_1", "ref_1")
-
-	event := NormalizeEvent(Event{Type: EventToolResult, ToolCallID: "call_1"})
-	if event.ToolCallRef != "ref_1" {
-		t.Fatalf("expected ref_1, got %q", event.ToolCallRef)
+func TestNormalizeEventFillsCommonMetadata(t *testing.T) {
+	event := NormalizeEvent(Event{Type: EventMessageDelta, SpanID: "span_1", Content: "hello"})
+	if event.EventID == "" {
+		t.Fatal("event id was not set")
+	}
+	if event.Sequence == 0 {
+		t.Fatal("sequence was not set")
+	}
+	if event.CreatedAt.IsZero() {
+		t.Fatal("created_at was not set")
+	}
+	if event.Delta != "hello" {
+		t.Fatalf("delta = %q, want hello", event.Delta)
+	}
+	if event.RunID != "span_1" {
+		t.Fatalf("run id = %q, want span_1", event.RunID)
 	}
 }
 
-func TestToolCallStateExpires(t *testing.T) {
-	clearToolCallStateForTest()
-	oldTTL := toolCallStateTTL
-	toolCallStateTTL = time.Hour
-	defer func() {
-		toolCallStateTTL = oldTTL
-		clearToolCallStateForTest()
-	}()
-
-	toolCallRefsByID.Store("call_2", toolCallStateEntry{
-		Value:     "ref_2",
-		CreatedAt: time.Now().Add(-2 * time.Hour),
-	})
-
-	event := NormalizeEvent(Event{Type: EventToolResult, ToolCallID: "call_2"})
-	if event.ToolCallRef != "" {
-		t.Fatalf("expected expired ref to be ignored, got %q", event.ToolCallRef)
+func TestNormalizeEventMarksMemberEvents(t *testing.T) {
+	event := NormalizeEvent(Event{Type: EventMessageDelta, MemberCallID: "call_1"})
+	if !event.IsMemberEvent {
+		t.Fatal("member event was not marked")
 	}
-	if _, ok := toolCallRefsByID.Load("call_2"); ok {
-		t.Fatal("expected expired ref to be deleted on read")
-	}
-}
-
-func clearToolCallStateForTest() {
-	for _, store := range []*sync.Map{
-		&toolCallRefsByID,
-		&toolCallOrdersByID,
-		&toolCallSpansByID,
-		&toolCallSpansByRef,
-	} {
-		store.Range(func(key, _ any) bool {
-			store.Delete(key)
-			return true
-		})
-	}
-	atomic.StoreInt64(&toolCallStateStoreCount, 0)
 }

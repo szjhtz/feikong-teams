@@ -2,6 +2,7 @@
 package chatutil
 
 import (
+	"fkteams/agentcore"
 	"fkteams/engine"
 	"fkteams/eventlog"
 	"fkteams/fkenv"
@@ -10,147 +11,120 @@ import (
 	"fkteams/memory"
 	"fmt"
 	"strings"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
 // BuildTurnInput 构建一轮输入（长期记忆 + 对话历史 + 用户输入）
 func BuildTurnInput(recorder *eventlog.HistoryRecorder, userInput string) engine.TurnInput {
-	var inputMessages []adk.Message
+	var contextMessages []agentcore.Message
 
 	// 注入长期记忆
 	if g.MemoryManager != nil {
 		memories := g.MemoryManager.Search(userInput, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
+			contextMessages = append(contextMessages, agentcore.Message{Role: agentcore.RoleSystem, Content: memCtx})
 		}
 	}
 
 	// 对话历史
-	inputMessages = append(inputMessages, buildHistoryMessages(recorder)...)
-
-	// 添加用户输入
-	inputMessages = append(inputMessages, schema.UserMessage(userInput))
+	contextMessages = append(contextMessages, buildHistoryMessages(recorder)...)
+	message := agentcore.Message{Role: agentcore.RoleUser, Content: userInput}
 
 	if debugContextEnabled() {
-		logMessages("BuildTurnInput", inputMessages)
+		logMessages("BuildTurnInput", append(contextMessages, message))
 	}
 	return engine.TurnInput{
-		Messages:  inputMessages,
-		UserInput: userInput,
+		Context: contextMessages,
+		Message: message,
 	}
 }
 
 // BuildMultimodalTurnInput 构建一轮多模态输入（长期记忆 + 对话历史 + 多模态内容）
-func BuildMultimodalTurnInput(recorder *eventlog.HistoryRecorder, textContent string, parts []schema.MessageInputPart) engine.TurnInput {
-	var inputMessages []adk.Message
+func BuildMultimodalTurnInput(recorder *eventlog.HistoryRecorder, textContent string, parts []agentcore.ContentPart) engine.TurnInput {
+	var contextMessages []agentcore.Message
 
 	// 注入长期记忆（使用文本部分进行搜索）
 	if g.MemoryManager != nil {
 		memories := g.MemoryManager.Search(textContent, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
+			contextMessages = append(contextMessages, agentcore.Message{Role: agentcore.RoleSystem, Content: memCtx})
 		}
 	}
 
 	// 对话历史
-	inputMessages = append(inputMessages, buildHistoryMessages(recorder)...)
-
-	// 添加多模态用户输入
-	inputMessages = append(inputMessages, &schema.Message{
-		Role:                  schema.User,
+	contextMessages = append(contextMessages, buildHistoryMessages(recorder)...)
+	message := agentcore.Message{
+		Role:                  agentcore.RoleUser,
 		UserInputMultiContent: parts,
-	})
+	}
 
 	if debugContextEnabled() {
-		logMessages("BuildMultimodalTurnInput", inputMessages)
+		logMessages("BuildMultimodalTurnInput", append(contextMessages, message))
 	}
 	return engine.TurnInput{
-		Messages:  inputMessages,
-		UserInput: textContent,
+		Context: contextMessages,
+		Message: message,
 	}
 }
 
 // TextPart 创建文本内容部分
-func TextPart(text string) schema.MessageInputPart {
-	return schema.MessageInputPart{
-		Type: schema.ChatMessagePartTypeText,
+func TextPart(text string) agentcore.ContentPart {
+	return agentcore.ContentPart{
+		Type: agentcore.ContentPartText,
 		Text: text,
 	}
 }
 
 // ImageURLPart 创建图片 URL 内容部分
-func ImageURLPart(url string, detail ...schema.ImageURLDetail) schema.MessageInputPart {
-	d := schema.ImageURLDetailAuto
+func ImageURLPart(url string, detail ...string) agentcore.ContentPart {
+	d := "auto"
 	if len(detail) > 0 {
 		d = detail[0]
 	}
-	return schema.MessageInputPart{
-		Type: schema.ChatMessagePartTypeImageURL,
-		Image: &schema.MessageInputImage{
-			MessagePartCommon: schema.MessagePartCommon{
-				URL: &url,
-			},
-			Detail: d,
-		},
+	return agentcore.ContentPart{
+		Type:   agentcore.ContentPartImageURL,
+		URL:    url,
+		Detail: d,
 	}
 }
 
 // ImageBase64Part 创建 Base64 编码图片内容部分
-func ImageBase64Part(base64Data, mimeType string) schema.MessageInputPart {
-	return schema.MessageInputPart{
-		Type: schema.ChatMessagePartTypeImageURL,
-		Image: &schema.MessageInputImage{
-			MessagePartCommon: schema.MessagePartCommon{
-				Base64Data: &base64Data,
-				MIMEType:   mimeType,
-			},
-		},
+func ImageBase64Part(base64Data, mimeType string) agentcore.ContentPart {
+	return agentcore.ContentPart{
+		Type:       agentcore.ContentPartImageURL,
+		Base64Data: base64Data,
+		MIMEType:   mimeType,
 	}
 }
 
 // AudioURLPart 创建音频 URL 内容部分
-func AudioURLPart(url string) schema.MessageInputPart {
-	return schema.MessageInputPart{
-		Type: schema.ChatMessagePartTypeAudioURL,
-		Audio: &schema.MessageInputAudio{
-			MessagePartCommon: schema.MessagePartCommon{
-				URL: &url,
-			},
-		},
+func AudioURLPart(url string) agentcore.ContentPart {
+	return agentcore.ContentPart{
+		Type: agentcore.ContentPartAudioURL,
+		URL:  url,
 	}
 }
 
 // VideoURLPart 创建视频 URL 内容部分
-func VideoURLPart(url string) schema.MessageInputPart {
-	return schema.MessageInputPart{
-		Type: schema.ChatMessagePartTypeVideoURL,
-		Video: &schema.MessageInputVideo{
-			MessagePartCommon: schema.MessagePartCommon{
-				URL: &url,
-			},
-		},
+func VideoURLPart(url string) agentcore.ContentPart {
+	return agentcore.ContentPart{
+		Type: agentcore.ContentPartVideoURL,
+		URL:  url,
 	}
 }
 
 // FileURLPart 创建文件 URL 内容部分
-func FileURLPart(url string) schema.MessageInputPart {
-	return schema.MessageInputPart{
-		Type: schema.ChatMessagePartTypeFileURL,
-		File: &schema.MessageInputFile{
-			MessagePartCommon: schema.MessagePartCommon{
-				URL: &url,
-			},
-		},
+func FileURLPart(url string) agentcore.ContentPart {
+	return agentcore.ContentPart{
+		Type: agentcore.ContentPartFileURL,
+		URL:  url,
 	}
 }
 
 // ExtractTextFromParts 从多模态内容中提取纯文本
-func ExtractTextFromParts(parts []schema.MessageInputPart) string {
+func ExtractTextFromParts(parts []agentcore.ContentPart) string {
 	var texts []string
 	for _, p := range parts {
-		if p.Type == schema.ChatMessagePartTypeText && p.Text != "" {
+		if p.Type == agentcore.ContentPartText && p.Text != "" {
 			texts = append(texts, p.Text)
 		}
 	}
@@ -158,24 +132,22 @@ func ExtractTextFromParts(parts []schema.MessageInputPart) string {
 }
 
 // buildHistoryMessages 构建结构化历史消息列表
-func buildHistoryMessages(recorder *eventlog.HistoryRecorder) []adk.Message {
+func buildHistoryMessages(recorder *eventlog.HistoryRecorder) []agentcore.Message {
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
 
-	var messages []adk.Message
+	var messages []agentcore.Message
 
 	if summaryText != "" && summarizedCount > 0 {
-		messages = append(messages, schema.SystemMessage(
-			"## 对话历史摘要\n"+summaryText+"\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。",
-		))
+		messages = append(messages, agentcore.Message{Role: agentcore.RoleSystem, Content: "## 对话历史摘要\n" + summaryText + "\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。"})
 
 		// 摘要未覆盖的最近记录
 		for _, msg := range agentMessages[summarizedCount:] {
-			messages = append(messages, agentMessageToSchemaMessages(msg)...)
+			messages = append(messages, agentMessageToCoreMessages(msg)...)
 		}
 	} else if len(agentMessages) > 0 {
 		for _, msg := range agentMessages {
-			messages = append(messages, agentMessageToSchemaMessages(msg)...)
+			messages = append(messages, agentMessageToCoreMessages(msg)...)
 		}
 	}
 
@@ -188,7 +160,7 @@ func debugContextEnabled() bool {
 }
 
 // logMessages 打印消息列表摘要
-func logMessages(tag string, msgs []adk.Message) {
+func logMessages(tag string, msgs []agentcore.Message) {
 	totalChars := 0
 	for _, m := range msgs {
 		totalChars += len(m.Content)
@@ -213,7 +185,7 @@ func logMessages(tag string, msgs []adk.Message) {
 			}
 			continue
 		}
-		if m.Role == schema.Tool {
+		if m.Role == agentcore.RoleTool {
 			log.Debugf("  [%d] %-10s | %s%s", i+1, "tool_result", preview, extra)
 			continue
 		}
@@ -241,14 +213,28 @@ func truncatePreview(s string, n int) string {
 	return string(r[:n]) + "..."
 }
 
-// agentMessageToSchemaMessages 将 AgentMessage 转为结构化消息列表。
+// agentMessageToCoreMessages 将 AgentMessage 转为结构化消息列表。
 // 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
-func agentMessageToSchemaMessages(msg eventlog.AgentMessage) []adk.Message {
+func agentMessageToCoreMessages(msg eventlog.AgentMessage) []agentcore.Message {
 	if msg.AgentName == "用户" {
-		return []adk.Message{schema.UserMessage(msg.GetTextContent())}
+		var text strings.Builder
+		var parts []agentcore.ContentPart
+		for _, event := range msg.Events {
+			if event.Type != eventlog.MsgTypeText {
+				continue
+			}
+			text.WriteString(event.Content)
+			parts = append(parts, event.ContentParts...)
+		}
+		message := agentcore.Message{Role: agentcore.RoleUser, Content: text.String()}
+		if len(parts) > 0 {
+			message.Content = ""
+			message.UserInputMultiContent = parts
+		}
+		return []agentcore.Message{message}
 	}
 
-	var messages []adk.Message
+	var messages []agentcore.Message
 	var textBuf strings.Builder
 	var reasoningBuf strings.Builder
 
@@ -260,7 +246,7 @@ func agentMessageToSchemaMessages(msg eventlog.AgentMessage) []adk.Message {
 		if content == "" && reasoning == "" {
 			return
 		}
-		m := schema.AssistantMessage(content, nil)
+		m := agentcore.Message{Role: agentcore.RoleAssistant, Content: content}
 		m.Name = msg.AgentName
 		if reasoning != "" {
 			m.ReasoningContent = reasoning
@@ -283,16 +269,16 @@ func agentMessageToSchemaMessages(msg eventlog.AgentMessage) []adk.Message {
 			}
 			flushText()
 			// AssistantMessage 携带 ToolCall
-			messages = append(messages, schema.AssistantMessage("", []schema.ToolCall{{
+			messages = append(messages, agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
 				ID:   tc.ID,
 				Type: "function",
-				Function: schema.FunctionCall{
+				Function: agentcore.FunctionCall{
 					Name:      tc.Name,
 					Arguments: tc.Arguments,
 				},
-			}}))
+			}}})
 			// ToolMessage 携带结果
-			messages = append(messages, schema.ToolMessage(tc.Result, tc.ID, schema.WithToolName(tc.Name)))
+			messages = append(messages, agentcore.Message{Role: agentcore.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name})
 
 		case eventlog.MsgTypeAction:
 			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {

@@ -2,17 +2,24 @@ package runner
 
 import (
 	"context"
+	"fkteams/agentcore"
 	"testing"
-
-	"github.com/cloudwego/eino/adk"
 )
+
+type cacheRunnerStub struct {
+	id int
+}
+
+func (cacheRunnerStub) Run(context.Context, agentcore.TurnInput, agentcore.RunOptions) (*agentcore.RunResult, error) {
+	return &agentcore.RunResult{}, nil
+}
 
 func TestCacheGetOrCreateReusesRunner(t *testing.T) {
 	cache := NewCache()
 	calls := 0
-	factory := func() (*adk.Runner, error) {
+	factory := func() (agentcore.Runner, error) {
 		calls++
-		return &adk.Runner{}, nil
+		return &cacheRunnerStub{}, nil
 	}
 
 	first, err := cache.GetOrCreate(ModeTeam, factory)
@@ -34,8 +41,8 @@ func TestCacheGetOrCreateReusesRunner(t *testing.T) {
 
 func TestCacheClearRebuildsRunner(t *testing.T) {
 	cache := NewCache()
-	factory := func() (*adk.Runner, error) {
-		return &adk.Runner{}, nil
+	factory := func() (agentcore.Runner, error) {
+		return &cacheRunnerStub{}, nil
 	}
 
 	first, err := cache.GetOrCreate(ModeTeam, factory)

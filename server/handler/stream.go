@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fkteams/agentcore"
 	"fkteams/engine"
 	"fkteams/eventlog"
 	"fkteams/fkevent"
@@ -15,7 +16,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -115,7 +115,7 @@ func StreamStartHandler() gin.HandlerFunc {
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
@@ -135,7 +135,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 		OnInterrupt(interruptHandler).
 		NonInteractive().
 		WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
-		OnFinish(func(ctx context.Context, _ *adk.AgentEvent, err error) {
+		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("stream task cancelled: session=%s", sessionID)
@@ -419,7 +419,7 @@ func StreamEventsHandler() gin.HandlerFunc {
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
 func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) engine.InterruptHandler {
 	channelHandler := engine.ChannelHandler(stream.InterruptCh())
-	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
+	return func(ctx context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if info := extractAskInfo(interrupts); info != nil {
 			stream.BeginInterrupt(taskstream.InterruptAsk)
