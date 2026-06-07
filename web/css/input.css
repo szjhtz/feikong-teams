@@ -187,6 +187,10 @@
     min-width: 62px;
 }
 
+.runtime-queue-drag {
+    display: none;
+}
+
 .runtime-queue-actions button:hover:not(:disabled) {
     color: var(--accent-primary);
     border-color: var(--accent-primary);
@@ -326,11 +330,12 @@
 
     .message-input {
         min-width: 0;
+        height: 36px;
         min-height: 36px;
         flex: 1 1 0;
         font-size: 16px;
-        line-height: 1.6;
-        padding: 5px 0;
+        line-height: 22px;
+        padding: 7px 0;
         box-sizing: border-box;
         /* 防止 iOS 自动缩放 */
     }
@@ -338,6 +343,7 @@
     .upload-btn {
         width: 36px;
         height: 36px;
+        align-self: center;
     }
 
     .send-btn {
@@ -346,32 +352,99 @@
         padding: 6px 10px;
         font-size: 13px;
         border-radius: 8px;
+        align-self: center;
+        margin-bottom: 0;
     }
 
     .cancel-btn {
-        width: 36px;
+        width: auto;
+        min-width: 68px;
         height: 36px;
-        padding: 0;
+        padding: 0 10px;
+        gap: 4px;
         font-size: 13px;
         border-radius: 8px;
+        align-self: center;
+        margin-bottom: 0;
     }
 
     .cancel-btn span {
-        display: none;
+        display: inline;
+    }
+
+    .input-wrapper.input-multiline {
+        align-items: flex-end;
+    }
+
+    .input-wrapper.input-multiline .upload-btn,
+    .input-wrapper.input-multiline .send-btn,
+    .input-wrapper.input-multiline .cancel-btn {
+        align-self: flex-end;
     }
 
     .runtime-queue-head {
         align-items: flex-start;
+        justify-content: flex-start;
+        text-align: left;
         flex-direction: column;
     }
 
     .runtime-queue-item,
     .runtime-queue-item.editing {
-        grid-template-columns: 1fr;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .runtime-queue-meta {
+        justify-content: flex-start;
+        min-width: 58px;
+    }
+
+    .runtime-queue-text {
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .runtime-queue-actions {
         justify-content: flex-end;
+        flex-wrap: nowrap;
+        gap: 4px;
+        width: auto;
+    }
+
+    .runtime-queue-actions button {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+        padding: 0;
+    }
+
+    .runtime-queue-drag {
+        display: inline-flex;
+        touch-action: none;
+    }
+
+    .runtime-queue-actions button[data-queue-action="kind"] {
+        width: auto;
+        min-width: 50px;
+        padding: 0 8px;
+    }
+
+    .runtime-queue-actions button[data-queue-action="up"],
+    .runtime-queue-actions button[data-queue-action="down"] {
+        display: none;
+    }
+
+    .runtime-queue-item.dragging {
+        opacity: 0.7;
+        border-color: var(--accent-primary);
+        background: var(--bg-hover);
     }
 
     /* 隐藏输入提示，移动端空间有限 */

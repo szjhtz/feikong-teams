@@ -1234,6 +1234,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       break;
     case "processing_start":
       this._cancelledSessionId = null;
+      if (eventSessionId && this._cancelNoticeSessions) {
+        this._cancelNoticeSessions.delete(eventSessionId);
+      }
       this._resumePending = false;
       this.isProcessing = true;
       this.updateStatus("processing", "处理中...");
@@ -1259,6 +1262,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       this.finalizeParallelMemberResults();
       this._finalizeFootnotes();
       this.resetParallelState();
+      break;
+    case "cancellation_requested":
+      this.updateStatus("processing", "正在取消...");
       break;
     case "cancelled":
       this.handleCancelled(event);
@@ -1382,6 +1388,7 @@ FKTeamsChat.prototype.renderQueuePanel = function () {
   this.queuePanel.querySelectorAll("[data-queue-action]").forEach((btn) => {
     btn.addEventListener("click", () => this.handleQueueAction(btn));
   });
+  this.bindQueueDragHandlers();
 };
 
 FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMoveDown) {
@@ -1404,7 +1411,7 @@ FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMov
     `;
   }
   return `
-    <div class="runtime-queue-item" data-queue-id="${this.escapeHtml(item.id)}">
+    <div class="runtime-queue-item" data-queue-id="${this.escapeHtml(item.id)}" data-queue-kind="${this.escapeHtml(item.kind || "follow_up")}">
       <div class="runtime-queue-meta"><span>${index + 1}</span><span>${kind}</span></div>
       <div class="runtime-queue-text">${this.escapeHtml(text)}</div>
       <div class="runtime-queue-actions">
@@ -1413,6 +1420,9 @@ FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMov
         </button>
         <button data-queue-action="down" data-queue-id="${this.escapeHtml(item.id)}" ${canMoveDown ? "" : "disabled"} title="下移">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+        </button>
+        <button class="runtime-queue-drag" data-queue-drag data-queue-id="${this.escapeHtml(item.id)}" title="拖动排序">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5h.01"/><path d="M15 5h.01"/><path d="M9 12h.01"/><path d="M15 12h.01"/><path d="M9 19h.01"/><path d="M15 19h.01"/></svg>
         </button>
         <button data-queue-action="kind" data-queue-id="${this.escapeHtml(item.id)}" data-queue-kind="${nextKind}" title="${switchTitle}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -1427,6 +1437,56 @@ FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMov
       </div>
     </div>
   `;
+};
+
+FKTeamsChat.prototype.bindQueueDragHandlers = function () {
+  if (!this.queuePanel) return;
+  this.queuePanel.querySelectorAll("[data-queue-drag]").forEach((handle) => {
+    handle.addEventListener("pointerdown", (e) => {
+      if (!window.matchMedia || !window.matchMedia("(max-width: 768px)").matches) return;
+      const row = handle.closest(".runtime-queue-item");
+      if (!row) return;
+      e.preventDefault();
+      const id = row.dataset.queueId;
+      const kind = row.dataset.queueKind || "follow_up";
+      row.classList.add("dragging");
+
+      const cleanup = () => {
+        row.classList.remove("dragging");
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", cleanup);
+      };
+      const onPointerUp = async (upEvent) => {
+        cleanup();
+        const rows = Array.from(this.queuePanel.querySelectorAll(`.runtime-queue-item[data-queue-kind="${CSS.escape(kind)}"]`));
+        const from = rows.findIndex((item) => item.dataset.queueId === id);
+        if (from < 0) return;
+        let to = rows.length - 1;
+        for (let i = 0; i < rows.length; i++) {
+          const rect = rows[i].getBoundingClientRect();
+          if (upEvent.clientY < rect.top + rect.height / 2) {
+            to = i;
+            break;
+          }
+        }
+        const delta = to - from;
+        if (delta === 0) return;
+        await this.moveQueueItemByDelta(id, delta);
+      };
+      window.addEventListener("pointerup", onPointerUp, { once: true });
+      window.addEventListener("pointercancel", cleanup, { once: true });
+    });
+  });
+};
+
+FKTeamsChat.prototype.moveQueueItemByDelta = async function (id, delta) {
+  const direction = delta > 0 ? "down" : "up";
+  for (let i = 0; i < Math.abs(delta); i++) {
+    await this.queueRequest(id + "/move", {
+      method: "POST",
+      body: JSON.stringify({ direction }),
+    });
+  }
 };
 
 FKTeamsChat.prototype.handleQueueAction = async function (btn) {
@@ -2874,8 +2934,9 @@ FKTeamsChat.prototype.cancelTask = function () {
 };
 
 FKTeamsChat.prototype.handleCancelled = function (event) {
+  const sessionID = event.session_id || this.sessionId;
   this._resumePending = false;
-  this._cancelledSessionId = event.session_id || this.sessionId;
+  this._cancelledSessionId = sessionID;
   this.isProcessing = false;
   this.handleQueueUpdated({ queue: [] });
   this.updateStatus("connected", "已连接");
@@ -2890,14 +2951,28 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
   // 禁用所有未提交的 ask 表单
   this._dismissPendingAskForms();
 
-  this.renderCancelledNotice(event.message || "任务已取消");
-
-  this.showNotification("任务已取消", "success");
+  if (!this._cancelNoticeSessions) {
+    this._cancelNoticeSessions = new Set();
+  }
+  if (!this._cancelNoticeSessions.has(sessionID)) {
+    this._cancelNoticeSessions.add(sessionID);
+    this.renderCancelledNotice(event.message || "任务已取消", sessionID);
+    this.showNotification("任务已取消", "success");
+  }
 };
 
-FKTeamsChat.prototype.renderCancelledNotice = function (message) {
+FKTeamsChat.prototype.renderCancelledNotice = function (message, sessionID) {
+  if (sessionID) {
+    const existing = this.messagesContainer.querySelector(
+      `.action-event.cancelled[data-session-id="${CSS.escape(sessionID)}"]`,
+    );
+    if (existing) return;
+  }
   const cancelEl = document.createElement("div");
   cancelEl.className = "action-event cancelled";
+  if (sessionID) {
+    cancelEl.dataset.sessionId = sessionID;
+  }
   cancelEl.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>

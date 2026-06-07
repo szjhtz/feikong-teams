@@ -536,8 +536,12 @@ class FKTeamsChat {
     const hasAttachments = this.attachments && this.attachments.length > 0;
     this.sendBtn.disabled = !hasContent && !hasAttachments;
     this.messageInput.style.height = "auto";
-    this.messageInput.style.height =
-      Math.min(this.messageInput.scrollHeight, 120) + "px";
+    const nextHeight = Math.min(this.messageInput.scrollHeight, 120);
+    this.messageInput.style.height = nextHeight + "px";
+    const inputWrapper = this.messageInput.closest(".input-wrapper");
+    if (inputWrapper) {
+      inputWrapper.classList.toggle("input-multiline", nextHeight > 48);
+    }
     this.updateSendButtonState();
   }
 
@@ -664,7 +668,7 @@ class FKTeamsChat {
       this.sendBtn.disabled = !hasContent && !hasAttachments;
       this.cancelBtn.style.display = "flex";
       this.messageInput.disabled = false;
-      this.messageInput.placeholder = "继续发送，默认加入后续队列...";
+      this.messageInput.placeholder = "继续输入...";
     } else {
       this.sendBtn.style.display = "flex";
       this.sendBtn.textContent = "发送";

@@ -157,7 +157,7 @@ func WebSocketHandler() gin.HandlerFunc {
 					GlobalStreams.CancelAndRemove(sid)
 					sm.cancelTask(sid)
 				}
-				_ = writeJSON(map[string]any{"type": events.NotifyCancelled, "session_id": sid, "message": "任务已取消"})
+				_ = writeJSON(map[string]any{"type": "cancellation_requested", "session_id": sid, "message": "取消请求已发送"})
 
 			case "approval":
 				sid := wsMsg.SessionID
