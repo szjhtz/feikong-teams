@@ -148,6 +148,48 @@ func (e *QueryExecutor) QueueSteering(input string) bool {
 	return true
 }
 
+func (e *QueryExecutor) SteeringQueueSnapshot() []agentcore.Message {
+	e.steeringMu.Lock()
+	defer e.steeringMu.Unlock()
+	messages := make([]agentcore.Message, len(e.steering))
+	copy(messages, e.steering)
+	return messages
+}
+
+func (e *QueryExecutor) UpdateSteering(index int, input string) bool {
+	if strings.TrimSpace(input) == "" {
+		return false
+	}
+	e.steeringMu.Lock()
+	defer e.steeringMu.Unlock()
+	if index < 0 || index >= len(e.steering) {
+		return false
+	}
+	e.steering[index] = agentcore.Message{Role: agentcore.RoleUser, Content: input}
+	return true
+}
+
+func (e *QueryExecutor) RemoveSteering(index int) bool {
+	e.steeringMu.Lock()
+	defer e.steeringMu.Unlock()
+	if index < 0 || index >= len(e.steering) {
+		return false
+	}
+	e.steering = append(e.steering[:index], e.steering[index+1:]...)
+	return true
+}
+
+func (e *QueryExecutor) MoveSteering(index, direction int) bool {
+	e.steeringMu.Lock()
+	defer e.steeringMu.Unlock()
+	next := index + direction
+	if index < 0 || index >= len(e.steering) || next < 0 || next >= len(e.steering) {
+		return false
+	}
+	e.steering[index], e.steering[next] = e.steering[next], e.steering[index]
+	return true
+}
+
 func (e *QueryExecutor) takeSteeringMessages(limit int) []agentcore.Message {
 	e.steeringMu.Lock()
 	defer e.steeringMu.Unlock()

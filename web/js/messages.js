@@ -960,7 +960,7 @@ FKTeamsChat.prototype.handleMemberMessage = function (event) {
 FKTeamsChat.prototype.sendMessage = async function () {
   const message = this.messageInput.value.trim();
   const hasAttachments = this.attachments && this.attachments.length > 0;
-  if ((!message && !hasAttachments) || this.isProcessing) return;
+  if (!message && !hasAttachments) return;
 
   // 页面刷新后首次发送消息时，先创建/复用会话并恢复状态
   if (!this._hasLoadedSession) {
@@ -1017,7 +1017,7 @@ FKTeamsChat.prototype.sendMessage = async function () {
   // 提取文件路径
   const filePaths = this.extractFilePaths(message);
 
-  if (mention) {
+  if (!this.isProcessing && mention) {
     // 查找智能体
     const agent = this.agents.find((a) => a.name === mention.agentName || (a.aliases || []).includes(mention.agentName));
     if (agent) {
@@ -1032,12 +1032,14 @@ FKTeamsChat.prototype.sendMessage = async function () {
     }
   }
 
-  // 显示用户消息（包含附件预览）
-  this.addUserMessage(message, this.attachments);
+  // 运行中发送进入队列，等待服务端回传 queued user_message；空闲发送直接显示。
+  if (!this.isProcessing) {
+    this.addUserMessage(message, this.attachments);
+  }
 
   // 构建发送 payload
   const payload = {
-    type: "chat",
+    type: this.isProcessing && this.queueMode === "steering" ? "steer" : "chat",
     session_id: this.sessionId,
     message: message,
     mode: this.mode,
@@ -1074,10 +1076,14 @@ FKTeamsChat.prototype.sendMessage = async function () {
   this.messageInput.value = "";
   this.clearAttachments();
   this.handleInputChange();
-  this.isProcessing = true;
-  this.updateSendButtonState();
-  this.updateStatus("processing", "处理中...");
-  this.showThinkingIndicator();
+  if (this.isProcessing) {
+    this.updateStatus("processing", this.queueMode === "steering" ? "已加入转向队列" : "已加入后续队列");
+  } else {
+    this.isProcessing = true;
+    this.updateSendButtonState();
+    this.updateStatus("processing", "处理中...");
+    this.showThinkingIndicator();
+  }
 };
 
 // 显示等待模型响应的思考指示器
@@ -1197,7 +1203,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
   }
 
   // 首个内容事件到来时移除思考指示器
-  if (!["connected", "processing_start", "pong", "user_message"].includes(event.type)) {
+  if (!["connected", "processing_start", "pong", "user_message", "queue_updated"].includes(event.type)) {
     this.hideThinkingIndicator();
   }
   // resume 后收到内容事件则标记回放成功
@@ -1217,6 +1223,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       break;
     case "user_message":
       this.handleUserMessageEvent(event);
+      break;
+    case "queue_updated":
+      this.handleQueueUpdated(event);
       break;
     case "agent_start":
     case "agent_end":
@@ -1242,6 +1251,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       }
       this._resumePending = false;
       this.isProcessing = false;
+      this.handleQueueUpdated({ queue: [] });
       this.updateStatus("connected", "已连接");
       this.updateSendButtonState();
       // 流式结束后，对所有含 data-raw 的消息做一次脚注最终渲染
@@ -1305,6 +1315,11 @@ FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
   const content = event.content || "";
   if (!content) return;
 
+  if (event.queued) {
+    this.addQueuedMessageNotice(content, event.queue_kind);
+    return;
+  }
+
   const users = this.messagesContainer.querySelectorAll(".message.user .message-body");
   const last = users.length > 0 ? users[users.length - 1].textContent || "" : "";
   if (last === content) return;
@@ -1312,6 +1327,175 @@ FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
   const welcomeMsg = this.messagesContainer.querySelector(".welcome-message");
   if (welcomeMsg) welcomeMsg.remove();
   this.addUserMessage(content, null);
+};
+
+FKTeamsChat.prototype.handleQueueUpdated = function (event) {
+  this.queueItems = Array.isArray(event.queue) ? event.queue : [];
+  this.renderQueuePanel();
+};
+
+FKTeamsChat.prototype.addQueuedMessageNotice = function (content, kind) {
+  const el = document.createElement("div");
+  el.className = "action-event queued-message";
+  const label = kind === "steering" ? "转向已排队" : "续问已排队";
+  el.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M4 6h16M4 12h10M4 18h7"/>
+      <path d="M16 16l2 2 4-4"/>
+    </svg>
+    <span><strong>${label}</strong>：${this.escapeHtml(content)}</span>
+  `;
+  this.messagesContainer.appendChild(el);
+  this.scrollToBottom();
+};
+
+FKTeamsChat.prototype.renderQueuePanel = function () {
+  if (!this.queuePanel) return;
+  const items = this.queueItems || [];
+  if (!this.isProcessing && items.length === 0) {
+    this.queuePanel.style.display = "none";
+    this.queuePanel.innerHTML = "";
+    return;
+  }
+
+  const modeButtons = `
+    <div class="runtime-queue-mode" role="tablist" aria-label="运行中输入模式">
+      <button class="${this.queueMode === "steering" ? "active" : ""}" data-queue-mode="steering" title="下一次模型调用前注入">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+        转向
+      </button>
+      <button class="${this.queueMode === "follow_up" ? "active" : ""}" data-queue-mode="follow_up" title="当前任务完成后继续执行">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h10a4 4 0 0 1 0 8H7"/><path d="M7 12l-3 3 3 3"/></svg>
+        续问
+      </button>
+    </div>
+  `;
+  const kindCounts = {};
+  items.forEach((item) => {
+    kindCounts[item.kind || "follow_up"] = (kindCounts[item.kind || "follow_up"] || 0) + 1;
+  });
+  const kindIndexes = {};
+  const rows = items.map((item, index) => {
+    const kind = item.kind || "follow_up";
+    const kindIndex = kindIndexes[kind] || 0;
+    kindIndexes[kind] = kindIndex + 1;
+    return this.renderQueueItem(item, index, kindIndex > 0, kindIndex < (kindCounts[kind] || 0) - 1);
+  }).join("");
+  this.queuePanel.style.display = "block";
+  this.queuePanel.innerHTML = `
+    <div class="runtime-queue-head">
+      <div>
+        <strong>待处理队列</strong>
+        <span>${items.length} 条未执行</span>
+      </div>
+      ${modeButtons}
+    </div>
+    <div class="runtime-queue-list">${rows || '<div class="runtime-queue-empty">运行中可继续输入转向或续问</div>'}</div>
+  `;
+  this.queuePanel.querySelectorAll("[data-queue-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      this.queueMode = btn.dataset.queueMode || "steering";
+      this.updateSendButtonState();
+    });
+  });
+  this.queuePanel.querySelectorAll("[data-queue-action]").forEach((btn) => {
+    btn.addEventListener("click", () => this.handleQueueAction(btn));
+  });
+};
+
+FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMoveDown) {
+  const text = item.display_text || item.text || "";
+  const kind = item.kind === "steering" ? "转向" : "续问";
+  const editing = item.id && this._editingQueueID === item.id;
+  if (editing) {
+    return `
+      <div class="runtime-queue-item editing" data-queue-id="${this.escapeHtml(item.id)}">
+        <div class="runtime-queue-meta"><span>${index + 1}</span><span>${kind}</span></div>
+        <textarea class="runtime-queue-edit">${this.escapeHtml(text)}</textarea>
+        <div class="runtime-queue-actions">
+          <button data-queue-action="save" data-queue-id="${this.escapeHtml(item.id)}" title="保存">保存</button>
+          <button data-queue-action="cancel" data-queue-id="${this.escapeHtml(item.id)}" title="取消">取消</button>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="runtime-queue-item" data-queue-id="${this.escapeHtml(item.id)}">
+      <div class="runtime-queue-meta"><span>${index + 1}</span><span>${kind}</span></div>
+      <div class="runtime-queue-text">${this.escapeHtml(text)}</div>
+      <div class="runtime-queue-actions">
+        <button data-queue-action="up" data-queue-id="${this.escapeHtml(item.id)}" ${canMoveUp ? "" : "disabled"} title="上移">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+        </button>
+        <button data-queue-action="down" data-queue-id="${this.escapeHtml(item.id)}" ${canMoveDown ? "" : "disabled"} title="下移">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+        </button>
+        <button data-queue-action="edit" data-queue-id="${this.escapeHtml(item.id)}" title="编辑">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button data-queue-action="delete" data-queue-id="${this.escapeHtml(item.id)}" title="删除">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 18h10l1-18"/></svg>
+        </button>
+      </div>
+    </div>
+  `;
+};
+
+FKTeamsChat.prototype.handleQueueAction = async function (btn) {
+  const id = btn.dataset.queueId;
+  const action = btn.dataset.queueAction;
+  if (!id || !action) return;
+  if (action === "edit") {
+    this._editingQueueID = id;
+    this.renderQueuePanel();
+    return;
+  }
+  if (action === "cancel") {
+    this._editingQueueID = "";
+    this.renderQueuePanel();
+    return;
+  }
+  try {
+    if (action === "save") {
+      const row = this.queuePanel.querySelector(`[data-queue-id="${CSS.escape(id)}"]`);
+      const text = row ? row.querySelector(".runtime-queue-edit")?.value.trim() : "";
+      if (!text) {
+        this.showNotification("队列内容不能为空", "warning");
+        return;
+      }
+      await this.queueRequest(id, { method: "PATCH", body: JSON.stringify({ message: text }) });
+      this._editingQueueID = "";
+      return;
+    }
+    if (action === "delete") {
+      await this.queueRequest(id, { method: "DELETE" });
+      return;
+    }
+    if (action === "up" || action === "down") {
+      await this.queueRequest(id + "/move", {
+        method: "POST",
+        body: JSON.stringify({ direction: action }),
+      });
+    }
+  } catch (err) {
+    console.error("queue action failed:", err);
+    this.showNotification("队列操作失败", "error");
+  }
+};
+
+FKTeamsChat.prototype.queueRequest = async function (path, options) {
+  const resp = await this.fetchWithAuth(`/api/fkteams/stream/queue/${encodeURIComponent(this.sessionId)}/${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options && options.headers ? options.headers : {}) },
+  });
+  const result = await resp.json();
+  if (result.code !== 0) {
+    throw new Error(result.message || "queue request failed");
+  }
+  if (result.data && Array.isArray(result.data.queue)) {
+    this.handleQueueUpdated({ queue: result.data.queue });
+  }
+  return result.data;
 };
 
 FKTeamsChat.prototype.trimLeadingWhitespace = function (text) {
@@ -2570,6 +2754,7 @@ FKTeamsChat.prototype.handleError = function (event) {
   this.scrollToBottom();
   this.hideChatLoading();
   this.isProcessing = false;
+  this.handleQueueUpdated({ queue: [] });
   this.updateStatus("connected", "已连接");
   this.updateSendButtonState();
 };
@@ -2697,6 +2882,7 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
   this._resumePending = false;
   this._cancelledSessionId = event.session_id || this.sessionId;
   this.isProcessing = false;
+  this.handleQueueUpdated({ queue: [] });
   this.updateStatus("connected", "已连接");
   this.updateSendButtonState();
   this.cancelActiveMemberCards();

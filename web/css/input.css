@@ -55,6 +55,172 @@
     font-size: 11px;
 }
 
+.runtime-queue-panel {
+    margin-bottom: 10px;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sketch);
+}
+
+.runtime-queue-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.runtime-queue-head strong {
+    display: block;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.runtime-queue-head span {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.runtime-queue-mode {
+    display: flex;
+    gap: 4px;
+    padding: 2px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+}
+
+.runtime-queue-mode button,
+.runtime-queue-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.runtime-queue-mode button {
+    min-height: 28px;
+    padding: 0 8px;
+}
+
+.runtime-queue-mode button.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.runtime-queue-mode svg,
+.runtime-queue-actions svg {
+    width: 14px;
+    height: 14px;
+}
+
+.runtime-queue-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.runtime-queue-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: var(--bg-primary);
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+}
+
+.runtime-queue-item.editing {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: stretch;
+}
+
+.runtime-queue-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 62px;
+    color: var(--text-tertiary);
+    font-size: 11px;
+}
+
+.runtime-queue-meta span:first-child {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+}
+
+.runtime-queue-text {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.runtime-queue-edit {
+    width: 100%;
+    min-height: 42px;
+    resize: vertical;
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+}
+
+.runtime-queue-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.runtime-queue-actions button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0 6px;
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+}
+
+.runtime-queue-actions button:hover:not(:disabled) {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.runtime-queue-actions button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.runtime-queue-empty {
+    padding: 8px;
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
 .message-input {
     flex: 1;
     border: none;
@@ -186,6 +352,20 @@
         padding: 6px 12px;
         font-size: 13px;
         border-radius: 8px;
+    }
+
+    .runtime-queue-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .runtime-queue-item,
+    .runtime-queue-item.editing {
+        grid-template-columns: 1fr;
+    }
+
+    .runtime-queue-actions {
+        justify-content: flex-end;
     }
 
     /* 隐藏输入提示，移动端空间有限 */

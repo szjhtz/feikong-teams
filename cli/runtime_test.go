@@ -97,6 +97,62 @@ func TestRuntimeEnterWhileRunningQueuesSteering(t *testing.T) {
 	}
 }
 
+func TestRuntimeRunningQueueCommandRemovesSteering(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	executor := NewQueryExecutor(nil, state)
+	if !executor.QueueSteering("first") || !executor.QueueSteering("second") {
+		t.Fatal("expected steering queue setup to succeed")
+	}
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		executor:    executor,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.input.SetValue("/queue rm 1")
+	model.input.CursorEnd()
+
+	updated, cmd := model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("queue command should not start a new query command")
+	}
+	messages := executor.takeSteeringMessages(2)
+	if len(messages) != 1 || messages[0].Content != "second" {
+		t.Fatalf("expected first steering item to be removed, got %#v", messages)
+	}
+}
+
+func TestRuntimeRunningQueueCommandReordersSteering(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	executor := NewQueryExecutor(nil, state)
+	executor.QueueSteering("first")
+	executor.QueueSteering("second")
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		executor:    executor,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.input.SetValue("/queue up 2")
+	model.input.CursorEnd()
+
+	updated, _ := model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+	messages := executor.takeSteeringMessages(2)
+	if len(messages) != 2 || messages[0].Content != "second" || messages[1].Content != "first" {
+		t.Fatalf("expected steering queue to reorder, got %#v", messages)
+	}
+}
+
 func TestRuntimeHistoryNavigation(t *testing.T) {
 	model := newRuntimeModel(&Runtime{
 		ctx:         context.Background(),

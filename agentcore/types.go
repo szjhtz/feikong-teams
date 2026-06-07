@@ -149,6 +149,7 @@ const (
 	NotifyProcessingStart  NotifyType = "processing_start"
 	NotifyProcessingEnd    NotifyType = "processing_end"
 	NotifyUserMessage      NotifyType = "user_message"
+	NotifyQueueUpdated     NotifyType = "queue_updated"
 	NotifyCancelled        NotifyType = "cancelled"
 	NotifyError            NotifyType = "error"
 	NotifyAskQuestions     NotifyType = "ask_questions"

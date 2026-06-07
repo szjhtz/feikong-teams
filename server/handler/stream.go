@@ -159,6 +159,133 @@ func StreamSteerHandler() gin.HandlerFunc {
 	}
 }
 
+// StreamQueueHandler 返回运行中任务的未消费队列快照。
+func StreamQueueHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("sessionID")
+		stream := streamForQueueRequest(c, sessionID)
+		if stream == nil {
+			return
+		}
+		OK(c, gin.H{
+			"session_id":   sessionID,
+			"queue":        stream.QueueSnapshot(),
+			"queued_count": stream.QueuedCount(),
+		})
+	}
+}
+
+// StreamQueueUpdateHandler 修改尚未执行的队列项。
+func StreamQueueUpdateHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("sessionID")
+		queueID := c.Param("queueID")
+		stream := streamForQueueRequest(c, sessionID)
+		if stream == nil {
+			return
+		}
+		var req StreamStartRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+		if req.Message == "" && len(req.Contents) == 0 {
+			Fail(c, http.StatusBadRequest, "message or contents is required")
+			return
+		}
+		queued := queuedChatMessage(taskstream.QueueFollowUp, req.Message, req.Contents)
+		updated, ok := stream.UpdateQueuedMessage(queueID, queued.Text, queued.Parts, queued.DisplayText)
+		if !ok {
+			Fail(c, http.StatusNotFound, "queued message not found")
+			return
+		}
+		publishQueueUpdated(stream, sessionID)
+		OK(c, gin.H{
+			"session_id": sessionID,
+			"queue_item": updated,
+			"queue":      stream.QueueSnapshot(),
+		})
+	}
+}
+
+// StreamQueueDeleteHandler 删除尚未执行的队列项。
+func StreamQueueDeleteHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("sessionID")
+		queueID := c.Param("queueID")
+		stream := streamForQueueRequest(c, sessionID)
+		if stream == nil {
+			return
+		}
+		removed, ok := stream.RemoveQueuedMessage(queueID)
+		if !ok {
+			Fail(c, http.StatusNotFound, "queued message not found")
+			return
+		}
+		publishQueueUpdated(stream, sessionID)
+		OK(c, gin.H{
+			"session_id": sessionID,
+			"queue_item": removed,
+			"queue":      stream.QueueSnapshot(),
+		})
+	}
+}
+
+type StreamQueueMoveRequest struct {
+	Direction string `json:"direction"`
+}
+
+// StreamQueueMoveHandler 调整尚未执行队列项在同类队列中的顺序。
+func StreamQueueMoveHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("sessionID")
+		queueID := c.Param("queueID")
+		stream := streamForQueueRequest(c, sessionID)
+		if stream == nil {
+			return
+		}
+		var req StreamQueueMoveRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+		direction := 0
+		switch req.Direction {
+		case "up":
+			direction = -1
+		case "down":
+			direction = 1
+		default:
+			Fail(c, http.StatusBadRequest, "direction must be up or down")
+			return
+		}
+		moved, ok := stream.MoveQueuedMessage(queueID, direction)
+		if !ok {
+			Fail(c, http.StatusNotFound, "queued message not found")
+			return
+		}
+		publishQueueUpdated(stream, sessionID)
+		OK(c, gin.H{
+			"session_id": sessionID,
+			"queue_item": moved,
+			"queue":      stream.QueueSnapshot(),
+		})
+	}
+}
+
+func streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream {
+	if !validateSessionID(sessionID) {
+		Fail(c, http.StatusBadRequest, "invalid session ID")
+		return nil
+	}
+	stream := GlobalStreams.Get(sessionID)
+	if stream == nil || stream.Status() != "processing" {
+		Fail(c, http.StatusNotFound, "no running task for this session")
+		return nil
+	}
+	return stream
+}
+
 // runStreamTask 后台执行流式任务
 func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string) {
 	defer stream.Done()
@@ -214,6 +341,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 		recorder.FinalizeCurrent()
 		saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
+			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued)
 			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")

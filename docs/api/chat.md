@@ -114,7 +114,7 @@ data: {"type":"processing_end","message":"处理完成"}
 | `agent_name` | string | 指定单个智能体直接对话（优先级高于 mode）                      |
 | `contents`   | array  | 多模态内容部分（可选，存在时优先于 `message` 字段）            |
 
-如果同一会话已有运行中的任务，`chat` / `follow_up` 会作为 follow-up 排队；当前 Agent 停止后继续处理，不会取消当前任务。
+如果同一会话已有运行中的任务，`chat` / `follow_up` 会作为 follow-up 排队；当前 Agent 停止后继续处理，不会取消当前任务。排队成功后会收到 `user_message`（含 `queued`、`queue_id`、`queue_kind`、`queued_count`）和 `queue_updated` 快照事件。
 
 **处理流程**：
 
@@ -129,6 +129,7 @@ data: {"type":"processing_end","message":"处理完成"}
 #### steer / steering — 转向运行中的任务
 
 `steer` 用于在当前任务运行时发送转向消息。消息会在当前模型输出结束、工具调用完成后，于下一次模型调用前注入上下文；不会中断正在输出的 token，也不会强杀正在执行的工具。
+排队后的 steering 可在尚未消费前通过 Stream 队列管理 API 修改、删除或调整同类顺序。
 
 | 字段         | 类型   | 说明                                                |
 | ------------ | ------ | --------------------------------------------------- |

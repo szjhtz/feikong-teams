@@ -7,12 +7,14 @@
 ```
 1. POST /stream/start          → 启动后台任务，返回 session_id
 2. POST /stream/steer          → 向运行中的任务注入转向消息
-3. GET  /stream/subscribe/:id  → SSE 订阅事件流（支持断线重连）
-4. POST /stream/stop/:id       → 停止正在运行的任务
-5. GET  /stream/status/:id     → 查询任务状态
-6. GET  /stream/events/:id     → 一次性拉取已缓冲事件
-7. POST /stream/approval       → 提交 HITL 审批决定
-8. POST /stream/ask-response   → 提交交互式提问的回答
+3. GET  /stream/queue/:id      → 查询未执行队列
+4. PATCH/DELETE/POST move      → 修改、删除、排序未执行队列项
+5. GET  /stream/subscribe/:id  → SSE 订阅事件流（支持断线重连）
+6. POST /stream/stop/:id       → 停止正在运行的任务
+7. GET  /stream/status/:id     → 查询任务状态
+8. GET  /stream/events/:id     → 一次性拉取已缓冲事件
+9. POST /stream/approval       → 提交 HITL 审批决定
+10. POST /stream/ask-response  → 提交交互式提问的回答
 ```
 
 ## 接口详情
@@ -123,6 +125,38 @@ POST /api/fkteams/stream/steer
 
 ---
 
+### 管理未执行队列
+
+运行中的 `follow_up` 与 `steering` 都会进入未执行队列。每个队列项包含稳定 `id`、`kind`、`text`、`display_text`、`created_at`，前端可在尚未消费前编辑、删除或调整顺序。排序只在同类队列内生效：`steering` 仍由 `SteeringSource` 在下一次模型调用前消费，`follow_up` 在当前任务完成后继续执行。
+
+```
+GET /api/fkteams/stream/queue/:sessionID
+PATCH /api/fkteams/stream/queue/:sessionID/:queueID
+DELETE /api/fkteams/stream/queue/:sessionID/:queueID
+POST /api/fkteams/stream/queue/:sessionID/:queueID/move
+```
+
+编辑请求体：
+
+```json
+{
+  "message": "新的队列内容",
+  "contents": []
+}
+```
+
+移动请求体：
+
+```json
+{
+  "direction": "up"
+}
+```
+
+成功响应会返回最新 `queue` 快照；服务端也会推送 `queue_updated` 事件。
+
+---
+
 ### 订阅事件流
 
 ```
@@ -148,7 +182,8 @@ data: {"type":"stream_chunk","agent_name":"coder","content":"...","session_id":"
 | type                | 说明         |
 | ------------------- | ------------ |
 | `processing_start`  | 任务开始     |
-| `user_message`      | 用户消息；运行中排队时包含 `queued` / `queue_kind` / `queued_count` |
+| `user_message`      | 用户消息；运行中排队时包含 `queued` / `queue_id` / `queue_kind` / `queued_count` |
+| `queue_updated`     | 未执行队列快照，包含 `queue` / `queued_count` |
 | `stream_chunk`      | 文本片段     |
 | `reasoning_chunk`   | 推理内容片段 |
 | `tool_calls`        | 工具调用     |

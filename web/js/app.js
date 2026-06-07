@@ -39,6 +39,8 @@ class FKTeamsChat {
     this.selectedFileIndex = -1; // 当前选中的文件索引
     this.currentPath = ""; // 当前浏览的路径
     this.attachments = []; // 多模态附件列表
+    this.queueItems = []; // 运行中未消费队列
+    this.queueMode = "steering"; // running 输入默认作为真正转向
     this._debounceTimers = {}; // 防抖定时器
 
     this.init();
@@ -214,6 +216,10 @@ class FKTeamsChat {
     const inputWrapper = document.querySelector(".input-wrapper");
     if (inputWrapper && inputWrapper.parentNode) {
       inputWrapper.parentNode.insertBefore(this._contextIndicator, inputWrapper);
+      this.queuePanel = document.createElement("div");
+      this.queuePanel.className = "runtime-queue-panel";
+      this.queuePanel.style.display = "none";
+      inputWrapper.parentNode.insertBefore(this.queuePanel, inputWrapper);
     }
   }
 
@@ -529,8 +535,7 @@ class FKTeamsChat {
   handleInputChange() {
     const hasContent = this.messageInput.value.trim().length > 0;
     const hasAttachments = this.attachments && this.attachments.length > 0;
-    this.sendBtn.disabled =
-      (!hasContent && !hasAttachments) || this.isProcessing;
+    this.sendBtn.disabled = !hasContent && !hasAttachments;
     this.messageInput.style.height = "auto";
     this.messageInput.style.height =
       Math.min(this.messageInput.scrollHeight, 120) + "px";
@@ -652,17 +657,27 @@ class FKTeamsChat {
 
   updateSendButtonState() {
     if (this.isProcessing) {
-      this.sendBtn.style.display = "none";
+      this.sendBtn.style.display = "flex";
+      this.sendBtn.textContent = this.queueMode === "follow_up" ? "续问" : "转向";
+      this.sendBtn.classList.add("processing");
+      const hasContent = this.messageInput.value.trim().length > 0;
+      const hasAttachments = this.attachments && this.attachments.length > 0;
+      this.sendBtn.disabled = !hasContent && !hasAttachments;
       this.cancelBtn.style.display = "flex";
-      this.messageInput.disabled = true;
+      this.messageInput.disabled = false;
+      this.messageInput.placeholder = this.queueMode === "follow_up" ? "加入后续任务队列..." : "输入转向，下一次模型调用前生效...";
     } else {
       this.sendBtn.style.display = "flex";
+      this.sendBtn.textContent = "发送";
+      this.sendBtn.classList.remove("processing");
       this.cancelBtn.style.display = "none";
       this.messageInput.disabled = false;
+      this.messageInput.placeholder = "请输入消息...";
       const hasContent = this.messageInput.value.trim().length > 0;
       const hasAttachments = this.attachments && this.attachments.length > 0;
       this.sendBtn.disabled = !hasContent && !hasAttachments;
     }
+    this.renderQueuePanel();
   }
 
   scrollToBottom() {

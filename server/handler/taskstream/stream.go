@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Event 是传输无关的任务事件
@@ -44,11 +46,13 @@ const (
 )
 
 type QueuedMessage struct {
+	ID          string                  `json:"id"`
 	Kind        QueueKind               `json:"kind"`
 	Text        string                  `json:"text,omitempty"`
 	Parts       []agentcore.ContentPart `json:"parts,omitempty"`
 	DisplayText string                  `json:"display_text,omitempty"`
 	CreatedAt   time.Time               `json:"created_at"`
+	UpdatedAt   time.Time               `json:"updated_at,omitempty"`
 }
 
 func (m QueuedMessage) Message() agentcore.Message {
@@ -253,21 +257,30 @@ func (s *Stream) Cancel() {
 func (s *Stream) EnqueueMessage(msg QueuedMessage) QueuedMessage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if msg.Kind == "" {
-		msg.Kind = QueueFollowUp
-	}
-	if msg.CreatedAt.IsZero() {
-		msg.CreatedAt = time.Now()
-	}
-	if msg.DisplayText == "" {
-		msg.DisplayText = msg.Text
-	}
+	msg = normalizeQueuedMessage(msg)
 	switch msg.Kind {
 	case QueueSteering:
 		s.steering = append(s.steering, msg)
 	default:
 		msg.Kind = QueueFollowUp
 		s.followUps = append(s.followUps, msg)
+	}
+	return msg
+}
+
+func normalizeQueuedMessage(msg QueuedMessage) QueuedMessage {
+	now := time.Now()
+	if msg.ID == "" {
+		msg.ID = uuid.NewString()
+	}
+	if msg.Kind == "" {
+		msg.Kind = QueueFollowUp
+	}
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = now
+	}
+	if msg.DisplayText == "" {
+		msg.DisplayText = msg.Text
 	}
 	return msg
 }
@@ -301,6 +314,80 @@ func (s *Stream) DequeueNextMessage() (QueuedMessage, bool) {
 		return msg, true
 	}
 	return QueuedMessage{}, false
+}
+
+func (s *Stream) QueueSnapshot() []QueuedMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.queueSnapshotLocked()
+}
+
+func (s *Stream) queueSnapshotLocked() []QueuedMessage {
+	queue := make([]QueuedMessage, 0, len(s.steering)+len(s.followUps))
+	queue = append(queue, s.steering...)
+	queue = append(queue, s.followUps...)
+	return queue
+}
+
+func (s *Stream) UpdateQueuedMessage(id, text string, parts []agentcore.ContentPart, displayText string) (QueuedMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	queue, index, ok := s.findQueuedMessageLocked(id)
+	if !ok {
+		return QueuedMessage{}, false
+	}
+	msg := (*queue)[index]
+	msg.Text = text
+	msg.Parts = append([]agentcore.ContentPart(nil), parts...)
+	msg.DisplayText = displayText
+	if msg.DisplayText == "" {
+		msg.DisplayText = msg.Text
+	}
+	msg.UpdatedAt = time.Now()
+	(*queue)[index] = msg
+	return msg, true
+}
+
+func (s *Stream) RemoveQueuedMessage(id string) (QueuedMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	queue, index, ok := s.findQueuedMessageLocked(id)
+	if !ok {
+		return QueuedMessage{}, false
+	}
+	msg := (*queue)[index]
+	*queue = append((*queue)[:index], (*queue)[index+1:]...)
+	return msg, true
+}
+
+func (s *Stream) MoveQueuedMessage(id string, direction int) (QueuedMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	queue, index, ok := s.findQueuedMessageLocked(id)
+	if !ok {
+		return QueuedMessage{}, false
+	}
+	next := index + direction
+	if next < 0 || next >= len(*queue) {
+		return (*queue)[index], true
+	}
+	(*queue)[index], (*queue)[next] = (*queue)[next], (*queue)[index]
+	(*queue)[next].UpdatedAt = time.Now()
+	return (*queue)[next], true
+}
+
+func (s *Stream) findQueuedMessageLocked(id string) (*[]QueuedMessage, int, bool) {
+	for i := range s.steering {
+		if s.steering[i].ID == id {
+			return &s.steering, i, true
+		}
+	}
+	for i := range s.followUps {
+		if s.followUps[i].ID == id {
+			return &s.followUps, i, true
+		}
+	}
+	return nil, -1, false
 }
 
 func (s *Stream) QueuedCount() int {

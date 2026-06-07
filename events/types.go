@@ -50,6 +50,7 @@ const (
 	NotifyProcessingStart  = agentcore.NotifyProcessingStart
 	NotifyProcessingEnd    = agentcore.NotifyProcessingEnd
 	NotifyUserMessage      = agentcore.NotifyUserMessage
+	NotifyQueueUpdated     = agentcore.NotifyQueueUpdated
 	NotifyCancelled        = agentcore.NotifyCancelled
 	NotifyError            = agentcore.NotifyError
 	NotifyAskQuestions     = agentcore.NotifyAskQuestions

@@ -383,6 +383,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		recorder.FinalizeCurrent()
 		saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
+			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued)
 			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")

@@ -88,10 +88,24 @@ func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskst
 		"session_id":   sessionID,
 		"content":      queued.DisplayText,
 		"queued":       true,
+		"queue_id":     queued.ID,
 		"queue_kind":   string(queued.Kind),
 		"queued_count": stream.QueuedCount(),
 	})
+	publishQueueUpdated(stream, sessionID)
 	return queued
+}
+
+func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {
+	if stream == nil {
+		return
+	}
+	stream.Publish(map[string]any{
+		"type":         events.NotifyQueueUpdated,
+		"session_id":   sessionID,
+		"queue":        stream.QueueSnapshot(),
+		"queued_count": stream.QueuedCount(),
+	})
 }
 
 func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) agentcore.SteeringSource {
@@ -100,6 +114,7 @@ func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRe
 		if len(queued) == 0 {
 			return nil, nil
 		}
+		publishQueueUpdated(stream, sessionID)
 		messages := make([]agentcore.Message, 0, len(queued))
 		for _, msg := range queued {
 			message := msg.Message()

@@ -148,6 +148,36 @@ func TestSteeringQueueIsConsumedBeforeFollowUpFallback(t *testing.T) {
 	}
 }
 
+func TestQueuedMessagesCanBeManagedBeforeConsumption(t *testing.T) {
+	s := newTestStream()
+
+	first := s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "first"})
+	second := s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "second"})
+	follow := s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
+
+	if first.ID == "" || second.ID == "" || follow.ID == "" {
+		t.Fatal("queued messages should get stable IDs")
+	}
+	if updated, ok := s.UpdateQueuedMessage(second.ID, "changed", nil, "changed"); !ok || updated.Text != "changed" {
+		t.Fatalf("expected second item to update, got %#v ok=%v", updated, ok)
+	}
+	if moved, ok := s.MoveQueuedMessage(second.ID, -1); !ok || moved.ID != second.ID {
+		t.Fatalf("expected second item to move up, got %#v ok=%v", moved, ok)
+	}
+	if removed, ok := s.RemoveQueuedMessage(first.ID); !ok || removed.ID != first.ID {
+		t.Fatalf("expected first item to be removed, got %#v ok=%v", removed, ok)
+	}
+
+	steering := s.TakeSteeringMessages(1)
+	if len(steering) != 1 || steering[0].Text != "changed" {
+		t.Fatalf("expected changed steering to remain first, got %#v", steering)
+	}
+	next, ok := s.DequeueNextMessage()
+	if !ok || next.ID != follow.ID {
+		t.Fatalf("expected follow-up after steering, got %#v ok=%v", next, ok)
+	}
+}
+
 func TestQueuedMessageBuildsMultimodalUserMessage(t *testing.T) {
 	msg := QueuedMessage{
 		Text: "describe",

@@ -69,7 +69,7 @@ lifecycle/                  # 应用生命周期管理
 server/                     # HTTP 服务（Gin）
   router/                   #   路由注册（Web 模式含内嵌前端，API 模式纯接口）
   handler/                  #   请求处理器（chat / websocket / stream / files / sessions / memory / config）
-  handler/taskstream/       #   运行中任务事件流、HITL 输入、steering/follow-up 队列
+  handler/taskstream/       #   运行中任务事件流、HITL 输入、可管理 steering/follow-up 队列
   middleware/               #   CORS / JWT 认证 / API Key 认证 / Body Limit
 channels/                   # 消息通道桥接
   channel.go                #   Channel 接口 + Manager 管理器 + Factory 工厂注册
@@ -143,6 +143,7 @@ bootstrap/                  # 应用目录初始化
 - 流式事件的规范增量载荷使用 `Content`；不要在核心事件或历史存储中重复维护 `Delta`
 - 工具调用事件必须通过 `tool_call_ref` 保持 `message_delta(tool_args)`、`message_end.tool_calls[]`、`tool_start/update/end` 的稳定关联
 - WebSocket `steer`、`/stream/steer` 和终端运行中 Enter 必须进入 steering 通道，由 `SteeringSource` 在下一次模型调用前消费；运行中的普通 `chat`/`follow_up` 只作为后续任务排队
+- 流式任务队列项必须带稳定 `queue_id`；Web/SSE/WS 通过 `queue_updated` 同步快照。队列管理只能修改尚未消费的项，Web 支持 steering/follow-up 的编辑、删除、同类排序；终端运行中通过 `/queue` 管理未消费 steering
 
 ### 通道
 
