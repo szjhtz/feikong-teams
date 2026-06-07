@@ -1429,6 +1429,12 @@ a.source-item:hover {
   color: var(--accent-primary);
 }
 
+.action-event.steering-message {
+  background: var(--info-light);
+  border-color: var(--info);
+  color: var(--info);
+}
+
 .action-event.agent-switch {
   background: var(--accent-light);
   border-color: var(--accent-primary);

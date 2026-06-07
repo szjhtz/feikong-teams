@@ -1233,13 +1233,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     case "turn_end":
       break;
     case "processing_start":
-      this._cancelledSessionId = null;
-      if (eventSessionId && this._cancelNoticeSessions) {
-        this._cancelNoticeSessions.delete(eventSessionId);
-      }
-      this._resumePending = false;
-      this.isProcessing = true;
-      this.updateStatus("processing", "处理中...");
+      this.handleProcessingStart(event, eventSessionId);
       break;
     case "processing_end":
       // resume 回放未收到任何内容事件，说明流已提前结束，从历史 API 重新加载
@@ -1322,37 +1316,59 @@ FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
   if (!content) return;
 
   if (event.queued) {
-    this.addQueuedMessageNotice(content, event.queue_kind);
     return;
   }
 
-  const users = this.messagesContainer.querySelectorAll(".message.user .message-body");
-  const last = users.length > 0 ? users[users.length - 1].textContent || "" : "";
-  if (last === content) return;
+  if (!event.queued_executing) {
+    const users = this.messagesContainer.querySelectorAll(".message.user .message-body");
+    const last = users.length > 0 ? users[users.length - 1].textContent || "" : "";
+    if (last === content) return;
+  }
 
   const welcomeMsg = this.messagesContainer.querySelector(".welcome-message");
   if (welcomeMsg) welcomeMsg.remove();
   this.addUserMessage(content, null);
 };
 
-FKTeamsChat.prototype.handleQueueUpdated = function (event) {
-  this.queueItems = Array.isArray(event.queue) ? event.queue : [];
-  this.renderQueuePanel();
+FKTeamsChat.prototype.handleProcessingStart = function (event, eventSessionId) {
+  this._cancelledSessionId = null;
+  if (eventSessionId && this._cancelNoticeSessions) {
+    this._cancelNoticeSessions.delete(eventSessionId);
+  }
+  this._resumePending = false;
+  this.isProcessing = true;
+  this.updateStatus("processing", "处理中...");
+  if (event.queued_executing && event.queue_kind === "steering") {
+    this.addSteeringExecutionNotice(event.content || "", event.queue_id || "");
+  }
 };
 
-FKTeamsChat.prototype.addQueuedMessageNotice = function (content, kind) {
+FKTeamsChat.prototype.addSteeringExecutionNotice = function (content, queueID) {
+  if (!content) return;
+  if (queueID && this.messagesContainer.querySelector(`.action-event.steering-message[data-queue-id="${CSS.escape(queueID)}"]`)) {
+    return;
+  }
   const el = document.createElement("div");
-  el.className = "action-event queued-message";
-  const label = kind === "steering" ? "转向已排队" : "续问已排队";
+  el.className = "action-event steering-message";
+  if (queueID) {
+    el.dataset.queueId = queueID;
+  }
   el.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M4 6h16M4 12h10M4 18h7"/>
-      <path d="M16 16l2 2 4-4"/>
+      <path d="M17 1l4 4-4 4"/>
+      <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+      <path d="M7 23l-4-4 4-4"/>
+      <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
     </svg>
-    <span><strong>${label}</strong>：${this.escapeHtml(content)}</span>
+    <span><strong>转向消息</strong>：${this.escapeHtml(content)}</span>
   `;
   this.messagesContainer.appendChild(el);
   this.scrollToBottom();
+};
+
+FKTeamsChat.prototype.handleQueueUpdated = function (event) {
+  this.queueItems = Array.isArray(event.queue) ? event.queue : [];
+  this.renderQueuePanel();
 };
 
 FKTeamsChat.prototype.renderQueuePanel = function () {
@@ -1421,9 +1437,6 @@ FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMov
         <button data-queue-action="down" data-queue-id="${this.escapeHtml(item.id)}" ${canMoveDown ? "" : "disabled"} title="下移">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
         </button>
-        <button class="runtime-queue-drag" data-queue-drag data-queue-id="${this.escapeHtml(item.id)}" title="拖动排序">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5h.01"/><path d="M15 5h.01"/><path d="M9 12h.01"/><path d="M15 12h.01"/><path d="M9 19h.01"/><path d="M15 19h.01"/></svg>
-        </button>
         <button data-queue-action="kind" data-queue-id="${this.escapeHtml(item.id)}" data-queue-kind="${nextKind}" title="${switchTitle}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           <span>${switchLabel}</span>
@@ -1441,38 +1454,120 @@ FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMov
 
 FKTeamsChat.prototype.bindQueueDragHandlers = function () {
   if (!this.queuePanel) return;
-  this.queuePanel.querySelectorAll("[data-queue-drag]").forEach((handle) => {
-    handle.addEventListener("pointerdown", (e) => {
+  this.queuePanel.querySelectorAll(".runtime-queue-item:not(.editing)").forEach((row) => {
+    row.addEventListener("pointerdown", (e) => {
       if (!window.matchMedia || !window.matchMedia("(max-width: 768px)").matches) return;
-      const row = handle.closest(".runtime-queue-item");
-      if (!row) return;
-      e.preventDefault();
+      if (e.target.closest(".runtime-queue-actions,button,textarea,input")) return;
       const id = row.dataset.queueId;
       const kind = row.dataset.queueKind || "follow_up";
-      row.classList.add("dragging");
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let dragging = false;
+      let placeholder = null;
+      let startRect = null;
+      let holdTimer = null;
 
       const cleanup = () => {
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          holdTimer = null;
+        }
+        if (placeholder) {
+          placeholder.remove();
+          placeholder = null;
+        }
+        row.style.position = "";
+        row.style.left = "";
+        row.style.top = "";
+        row.style.width = "";
+        row.style.zIndex = "";
+        row.style.pointerEvents = "";
+        row.style.transform = "";
         row.classList.remove("dragging");
+        dragging = false;
+        window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", onPointerUp);
         window.removeEventListener("pointercancel", cleanup);
       };
-      const onPointerUp = async (upEvent) => {
-        cleanup();
-        const rows = Array.from(this.queuePanel.querySelectorAll(`.runtime-queue-item[data-queue-kind="${CSS.escape(kind)}"]`));
-        const from = rows.findIndex((item) => item.dataset.queueId === id);
-        if (from < 0) return;
-        let to = rows.length - 1;
+
+      const sameKindRows = () => {
+        return Array.from(this.queuePanel.querySelectorAll(".runtime-queue-item:not(.editing)"))
+          .filter((item) => item.dataset.queueKind === kind);
+      };
+
+      const startDrag = () => {
+        holdTimer = null;
+        startRect = row.getBoundingClientRect();
+        placeholder = document.createElement("div");
+        placeholder.className = "runtime-queue-placeholder";
+        placeholder.style.height = `${startRect.height}px`;
+        row.parentNode.insertBefore(placeholder, row);
+        row.classList.add("dragging");
+        row.style.position = "fixed";
+        row.style.left = `${startRect.left}px`;
+        row.style.top = `${startRect.top}px`;
+        row.style.width = `${startRect.width}px`;
+        row.style.zIndex = "20";
+        row.style.pointerEvents = "none";
+        dragging = true;
+      };
+
+      const movePlaceholder = (clientY) => {
+        if (!placeholder) return;
+        const rows = sameKindRows().filter((item) => item !== row);
+        let placed = false;
+        for (const candidate of rows) {
+          const rect = candidate.getBoundingClientRect();
+          if (clientY < rect.top + rect.height / 2) {
+            candidate.parentNode.insertBefore(placeholder, candidate);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          const last = rows[rows.length - 1];
+          if (last) {
+            last.parentNode.insertBefore(placeholder, last.nextSibling);
+          }
+        }
+      };
+
+      const onPointerMove = (moveEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        if (!dragging && Math.hypot(dx, dy) > 8) {
+          cleanup();
+          return;
+        }
+        if (!dragging) return;
+        moveEvent.preventDefault();
+        row.style.transform = `translate3d(0, ${dy}px, 0)`;
+        movePlaceholder(moveEvent.clientY);
+      };
+
+      const onPointerUp = async () => {
+        if (!dragging) {
+          cleanup();
+          return;
+        }
+        const rows = sameKindRows().filter((item) => item !== row);
+        const from = (this.queueItems || []).filter((item) => (item.kind || "follow_up") === kind).findIndex((item) => item.id === id);
+        let to = rows.length;
         for (let i = 0; i < rows.length; i++) {
-          const rect = rows[i].getBoundingClientRect();
-          if (upEvent.clientY < rect.top + rect.height / 2) {
+          if (placeholder && placeholder.compareDocumentPosition(rows[i]) & Node.DOCUMENT_POSITION_FOLLOWING) {
             to = i;
             break;
           }
         }
+        cleanup();
+        if (from < 0) return;
         const delta = to - from;
         if (delta === 0) return;
         await this.moveQueueItemByDelta(id, delta);
       };
+
+      holdTimer = window.setTimeout(startDrag, 180);
+      window.addEventListener("pointermove", onPointerMove);
       window.addEventListener("pointerup", onPointerUp, { once: true });
       window.addEventListener("pointercancel", cleanup, { once: true });
     });

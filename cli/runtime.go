@@ -708,7 +708,6 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.runtime.session.InputHistory = append(m.runtime.session.InputHistory, input)
-				m.appendBlock(runtimeBlockUser, "转向", input)
 				if m.runtime.queueSteering(input) {
 					m.status = "已排队转向，等待下一次模型调用..."
 				} else {
@@ -2407,6 +2406,12 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 		agent = runtimeDefaultAgentName
 	}
 	switch event.Type {
+	case events.EventType(events.NotifyProcessingStart):
+		if event.Detail == "steering" && strings.TrimSpace(event.Content) != "" {
+			m.activeOutput = -1
+			m.activeReason = -1
+			m.appendBlock(runtimeBlockSystem, "转向消息", event.Content)
+		}
 	case events.EventMessageDelta:
 		switch event.DeltaKind {
 		case events.DeltaReasoning:

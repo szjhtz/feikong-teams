@@ -79,6 +79,7 @@ func TestRuntimeEnterWhileRunningQueuesSteering(t *testing.T) {
 	model.running = true
 	model.input.SetValue("change direction")
 	model.input.CursorEnd()
+	blockCount := len(model.blocks)
 
 	updated, cmd := model.Update(keyMsg("enter", "", 0))
 	model = updated.(runtimeModel)
@@ -88,12 +89,38 @@ func TestRuntimeEnterWhileRunningQueuesSteering(t *testing.T) {
 	if got := model.input.Value(); got != "" {
 		t.Fatalf("steering submit should clear input, got %q", got)
 	}
-	if len(model.blocks) == 0 || model.blocks[len(model.blocks)-1].Title != "转向" {
-		t.Fatalf("steering submit should append a turn block, got %#v", model.blocks)
+	if len(model.blocks) != blockCount {
+		t.Fatalf("steering submit should not append transcript blocks before execution, got %#v", model.blocks[blockCount:])
+	}
+	if model.status != "已排队转向，等待下一次模型调用..." {
+		t.Fatalf("steering submit should update status, got %q", model.status)
 	}
 	messages := executor.takeSteeringMessages(1)
 	if len(messages) != 1 || messages[0].Content != "change direction" {
 		t.Fatalf("expected queued steering message, got %#v", messages)
+	}
+}
+
+func TestRuntimeSteeringExecutionNoticeAppendsBlock(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	blockCount := len(model.blocks)
+
+	model.applyEvent(events.Event{
+		Type:    events.EventType(events.NotifyProcessingStart),
+		Detail:  "steering",
+		Content: "change direction",
+	})
+
+	if len(model.blocks) != blockCount+1 {
+		t.Fatalf("steering execution should append one block, got %#v", model.blocks[blockCount:])
+	}
+	block := model.blocks[blockCount]
+	if block.Kind != runtimeBlockSystem || block.Title != "转向消息" || block.Content != "change direction" {
+		t.Fatalf("unexpected steering execution block: %#v", block)
 	}
 }
 

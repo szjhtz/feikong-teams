@@ -387,12 +387,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued)
 			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
-			stream.Publish(map[string]any{
-				"type":       events.NotifyProcessingStart,
-				"session_id": sessionID,
-				"message":    "继续处理排队消息...",
-				"queue_kind": string(queued.Kind),
-			})
+			publishQueuedExecutionStart(stream, sessionID, queued)
 			continue
 		}
 

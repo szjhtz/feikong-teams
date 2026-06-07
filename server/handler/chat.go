@@ -108,6 +108,33 @@ func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {
 	})
 }
 
+func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, queued taskstream.QueuedMessage) {
+	if queued.Kind == taskstream.QueueFollowUp {
+		stream.Publish(map[string]any{
+			"type":             events.NotifyUserMessage,
+			"session_id":       sessionID,
+			"content":          queued.DisplayText,
+			"queue_id":         queued.ID,
+			"queue_kind":       string(queued.Kind),
+			"queued_executing": true,
+		})
+	}
+
+	message := "继续处理排队消息..."
+	if queued.Kind == taskstream.QueueSteering {
+		message = "应用转向消息..."
+	}
+	stream.Publish(map[string]any{
+		"type":             events.NotifyProcessingStart,
+		"session_id":       sessionID,
+		"message":          message,
+		"queue_id":         queued.ID,
+		"queue_kind":       string(queued.Kind),
+		"content":          queued.DisplayText,
+		"queued_executing": true,
+	})
+}
+
 func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) agentcore.SteeringSource {
 	return func(context.Context) ([]agentcore.Message, error) {
 		queued := stream.TakeSteeringMessages(1)
@@ -121,12 +148,7 @@ func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRe
 			recorder.RecordUserMessage(message)
 			messages = append(messages, message)
 		}
-		stream.Publish(map[string]any{
-			"type":       events.NotifyProcessingStart,
-			"session_id": sessionID,
-			"message":    "应用转向消息...",
-			"queue_kind": string(taskstream.QueueSteering),
-		})
+		publishQueuedExecutionStart(stream, sessionID, queued[0])
 		return messages, nil
 	}
 }

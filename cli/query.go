@@ -305,6 +305,13 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			return nil, nil
 		}
 		recorder.RecordUserMessage(message)
+		if err := innerCallback(events.Event{
+			Type:    events.EventType(events.NotifyProcessingStart),
+			Content: strings.TrimSpace(message.DisplayText()),
+			Detail:  "steering",
+		}); err != nil {
+			return nil, err
+		}
 		return []agentcore.Message{message}, nil
 	}
 	for {

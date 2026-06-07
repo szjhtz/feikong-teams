@@ -187,10 +187,6 @@
     min-width: 62px;
 }
 
-.runtime-queue-drag {
-    display: none;
-}
-
 .runtime-queue-actions button:hover:not(:disabled) {
     color: var(--accent-primary);
     border-color: var(--accent-primary);
@@ -205,6 +201,13 @@
     padding: 8px;
     color: var(--text-tertiary);
     font-size: 12px;
+}
+
+.runtime-queue-placeholder {
+    min-height: 40px;
+    border: 1px dashed var(--accent-primary);
+    border-radius: 8px;
+    background: rgba(107, 127, 198, 0.08);
 }
 
 .message-input {
@@ -398,6 +401,11 @@
         padding: 8px;
     }
 
+    .runtime-queue-item:not(.editing) {
+        touch-action: none;
+        user-select: none;
+    }
+
     .runtime-queue-meta {
         justify-content: flex-start;
         min-width: 58px;
@@ -425,11 +433,6 @@
         padding: 0;
     }
 
-    .runtime-queue-drag {
-        display: inline-flex;
-        touch-action: none;
-    }
-
     .runtime-queue-actions button[data-queue-action="kind"] {
         width: auto;
         min-width: 50px;
@@ -442,9 +445,11 @@
     }
 
     .runtime-queue-item.dragging {
-        opacity: 0.7;
+        box-sizing: border-box;
+        opacity: 0.96;
         border-color: var(--accent-primary);
-        background: var(--bg-hover);
+        background: var(--bg-primary);
+        box-shadow: var(--shadow-sketch);
     }
 
     /* 隐藏输入提示，移动端空间有限 */
