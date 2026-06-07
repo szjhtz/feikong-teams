@@ -99,6 +99,13 @@ func (r *Runtime) requestCancel() tea.Cmd {
 	}
 }
 
+func (r *Runtime) queueSteering(input string) bool {
+	if r == nil || r.executor == nil {
+		return false
+	}
+	return r.executor.QueueSteering(input)
+}
+
 func (r *Runtime) requestExit() {
 	select {
 	case r.exitSignals <- syscall.SIGTERM:
@@ -683,6 +690,22 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			if m.running {
+				input := strings.TrimSpace(m.expandInput())
+				m.input.SetValue("")
+				m.pastes = nil
+				m.savedInput = ""
+				m.historyIndex = len(m.runtime.session.InputHistory)
+				m.exitUntil = time.Time{}
+				if input == "" {
+					return m, nil
+				}
+				m.runtime.session.InputHistory = append(m.runtime.session.InputHistory, input)
+				m.appendBlock(runtimeBlockUser, "转向", input)
+				if m.runtime.queueSteering(input) {
+					m.status = "已排队转向，等待下一次模型调用..."
+				} else {
+					m.appendBlock(runtimeBlockError, "转向失败", "当前没有正在运行的任务")
+				}
 				return m, nil
 			}
 			input := strings.TrimSpace(m.expandInput())
@@ -1576,6 +1599,13 @@ func (m runtimeModel) memberDetailHint() string {
 }
 
 func (m runtimeModel) inputHint() string {
+	if m.running {
+		return strings.Join([]string{
+			runtimeModeName(m.runtime.session.CurrentMode),
+			"Enter 转向",
+			"Ctrl+C 取消",
+		}, " · ")
+	}
 	return strings.Join([]string{
 		runtimeModeName(m.runtime.session.CurrentMode),
 		"@ 智能体",
@@ -2712,6 +2742,7 @@ func runtimeHelpMarkdown() string {
 	sb.WriteString("- `@agent` 指定智能体\n")
 	sb.WriteString("- `#file` 引用文件\n")
 	sb.WriteString("- `Shift+Enter` 输入换行\n")
+	sb.WriteString("- 任务运行中输入内容并按 `Enter` 发送转向消息\n")
 	sb.WriteString("\n直接输入问题即可与智能体团队对话。")
 	return sb.String()
 }

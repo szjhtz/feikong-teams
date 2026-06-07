@@ -10,6 +10,7 @@ import (
 	"fkteams/events/log"
 	"fkteams/g"
 	"fkteams/runner"
+	"fkteams/server/handler/taskstream"
 	"fkteams/tools/ask"
 	"fmt"
 	"log"
@@ -47,6 +48,72 @@ func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents
 		input = chat.BuildTurnInput(recorder, message)
 	}
 	return
+}
+
+func queuedChatMessage(kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
+	queued := taskstream.QueuedMessage{
+		Kind: kind,
+		Text: message,
+	}
+	if len(contents) > 0 {
+		queued.Parts = convertContentParts(contents)
+		queued.DisplayText = chat.ExtractTextFromParts(queued.Parts)
+		if queued.DisplayText == "" {
+			queued.DisplayText = message
+		}
+	} else {
+		queued.DisplayText = message
+	}
+	return queued
+}
+
+func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.QueuedMessage) engine.TurnInput {
+	if len(msg.Parts) > 0 {
+		displayText := chat.ExtractTextFromParts(msg.Parts)
+		if displayText == "" {
+			displayText = msg.DisplayText
+		}
+		if displayText == "" {
+			displayText = msg.Text
+		}
+		return chat.BuildMultimodalTurnInput(recorder, displayText, msg.Parts)
+	}
+	return chat.BuildTurnInput(recorder, msg.Text)
+}
+
+func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
+	queued := stream.EnqueueMessage(queuedChatMessage(kind, message, contents))
+	stream.Publish(map[string]any{
+		"type":         events.NotifyUserMessage,
+		"session_id":   sessionID,
+		"content":      queued.DisplayText,
+		"queued":       true,
+		"queue_kind":   string(queued.Kind),
+		"queued_count": stream.QueuedCount(),
+	})
+	return queued
+}
+
+func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) agentcore.SteeringSource {
+	return func(context.Context) ([]agentcore.Message, error) {
+		queued := stream.TakeSteeringMessages(1)
+		if len(queued) == 0 {
+			return nil, nil
+		}
+		messages := make([]agentcore.Message, 0, len(queued))
+		for _, msg := range queued {
+			message := msg.Message()
+			recorder.RecordUserMessage(message)
+			messages = append(messages, message)
+		}
+		stream.Publish(map[string]any{
+			"type":       events.NotifyProcessingStart,
+			"session_id": sessionID,
+			"message":    "应用转向消息...",
+			"queue_kind": string(taskstream.QueueSteering),
+		})
+		return messages, nil
+	}
 }
 
 // chatHistoryPath 返回会话历史文件路径（使用 filepath.Base 防止路径穿越）

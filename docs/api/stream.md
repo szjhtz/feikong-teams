@@ -6,12 +6,13 @@
 
 ```
 1. POST /stream/start          → 启动后台任务，返回 session_id
-2. GET  /stream/subscribe/:id  → SSE 订阅事件流（支持断线重连）
-3. POST /stream/stop/:id       → 停止正在运行的任务
-4. GET  /stream/status/:id     → 查询任务状态
-5. GET  /stream/events/:id     → 一次性拉取已缓冲事件
-6. POST /stream/approval       → 提交 HITL 审批决定
-7. POST /stream/ask-response   → 提交交互式提问的回答
+2. POST /stream/steer          → 向运行中的任务注入转向消息
+3. GET  /stream/subscribe/:id  → SSE 订阅事件流（支持断线重连）
+4. POST /stream/stop/:id       → 停止正在运行的任务
+5. GET  /stream/status/:id     → 查询任务状态
+6. GET  /stream/events/:id     → 一次性拉取已缓冲事件
+7. POST /stream/approval       → 提交 HITL 审批决定
+8. POST /stream/ask-response   → 提交交互式提问的回答
 ```
 
 ## 接口详情
@@ -56,13 +57,69 @@ POST /api/fkteams/stream/start
 }
 ```
 
+如果同一 `session_id` 已有运行中的任务，`/stream/start` 会把消息作为 follow-up 排队；当前 Agent 正常停止后继续处理该消息，不会取消当前任务。
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "session_id": "abc-123",
+    "status": "queued",
+    "message": "message queued",
+    "queue_kind": "follow_up",
+    "queued_count": 1
+  }
+}
+```
+
 **错误码**：
 
-| 状态码 | 说明                   |
-| ------ | ---------------------- |
-| 400    | 参数错误               |
-| 409    | 该会话已有运行中的任务 |
-| 500    | Runner 创建失败        |
+| 状态码 | 说明            |
+| ------ | --------------- |
+| 400    | 参数错误        |
+| 500    | Runner 创建失败 |
+
+---
+
+### 转向任务
+
+```
+POST /api/fkteams/stream/steer
+```
+
+向运行中的任务发送 steering 消息。消息会在当前模型输出结束、工具调用完成后，于下一次模型调用前注入上下文；不会中断正在输出的 token，也不会强杀正在执行的工具。
+
+**请求体**：
+
+```json
+{
+  "session_id": "abc-123",
+  "message": "停止当前方向，优先检查这个问题",
+  "contents": []
+}
+```
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "session_id": "abc-123",
+    "status": "queued",
+    "message": "steering queued",
+    "queue_kind": "steering",
+    "queued_count": 1
+  }
+}
+```
+
+| 状态码 | 说明                         |
+| ------ | ---------------------------- |
+| 400    | 参数错误                     |
+| 404    | 该会话没有正在运行的流式任务 |
 
 ---
 
@@ -91,6 +148,7 @@ data: {"type":"stream_chunk","agent_name":"coder","content":"...","session_id":"
 | type                | 说明         |
 | ------------------- | ------------ |
 | `processing_start`  | 任务开始     |
+| `user_message`      | 用户消息；运行中排队时包含 `queued` / `queue_kind` / `queued_count` |
 | `stream_chunk`      | 文本片段     |
 | `reasoning_chunk`   | 推理内容片段 |
 | `tool_calls`        | 工具调用     |

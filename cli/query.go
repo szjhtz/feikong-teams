@@ -91,6 +91,8 @@ type QueryExecutor struct {
 	autoReject    bool
 	approveStores []string // 自动批准的 store 列表
 	view          QueryView
+	steeringMu    sync.Mutex
+	steering      []agentcore.Message
 }
 
 // NewQueryExecutor 创建查询执行器
@@ -134,6 +136,39 @@ func (e *QueryExecutor) SetView(view QueryView) {
 	if view != nil {
 		e.view = view
 	}
+}
+
+func (e *QueryExecutor) QueueSteering(input string) bool {
+	if strings.TrimSpace(input) == "" || !e.state.IsRunning() {
+		return false
+	}
+	e.steeringMu.Lock()
+	defer e.steeringMu.Unlock()
+	e.steering = append(e.steering, agentcore.Message{Role: agentcore.RoleUser, Content: input})
+	return true
+}
+
+func (e *QueryExecutor) takeSteeringMessages(limit int) []agentcore.Message {
+	e.steeringMu.Lock()
+	defer e.steeringMu.Unlock()
+	if len(e.steering) == 0 {
+		return nil
+	}
+	if limit <= 0 || limit > len(e.steering) {
+		limit = len(e.steering)
+	}
+	messages := make([]agentcore.Message, limit)
+	copy(messages, e.steering[:limit])
+	e.steering = e.steering[limit:]
+	return messages
+}
+
+func (e *QueryExecutor) takeSteeringMessage() (agentcore.Message, bool) {
+	messages := e.takeSteeringMessages(1)
+	if len(messages) == 0 {
+		return agentcore.Message{}, false
+	}
+	return messages[0], true
 }
 
 // CLI 模式会话常量
@@ -222,36 +257,54 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	e.state.SetCancelFunc(cancelFunc)
 	e.state.StartQuery()
+	defer e.state.EndQuery()
 
 	startTime := time.Now()
-	_, err := engine.NewSession(e.runner, activeSessionID).
-		WithInput(turnInput).
-		OnEvent(func(event events.Event) error {
-			return innerCallback(event)
-		}).
-		WithHistory(recorder).
-		OnInterrupt(handler).
-		WithContext(approval.RegistryContext(approvalReg)).
-		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, _ error) {
-			e.state.EndQuery()
-			recorder.FinalizeCurrent()
-			if g.MemoryManager != nil {
-				g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
+	currentInput := turnInput
+	steeringSource := func(context.Context) ([]agentcore.Message, error) {
+		messages := e.takeSteeringMessages(1)
+		for _, message := range messages {
+			recorder.RecordUserMessage(message)
+		}
+		return messages, nil
+	}
+	for {
+		_, err := engine.NewSession(e.runner, activeSessionID).
+			WithInput(currentInput).
+			OnEvent(func(event events.Event) error {
+				return innerCallback(event)
+			}).
+			WithHistory(recorder).
+			OnInterrupt(handler).
+			WithContext(approval.RegistryContext(approvalReg)).
+			WithContext(func(ctx context.Context) context.Context {
+				return agentcore.WithSteeringSource(ctx, steeringSource)
+			}).
+			Run(queryCtx)
+
+		recorder.FinalizeCurrent()
+		if err != nil {
+			if queryCtx.Err() != nil {
+				e.view.Interrupted()
+				return nil
 			}
-		}).
-		Run(queryCtx)
+			e.view.Error(err)
+			return nil
+		}
+
+		if next, ok := e.takeSteeringMessage(); ok && queryCtx.Err() == nil {
+			currentInput = chat.BuildTurnInput(recorder, next.DisplayText())
+			continue
+		}
+		break
+	}
 
 	if queryCtx.Err() == nil {
 		e.view.Flush()
 	}
 
-	if err != nil {
-		if queryCtx.Err() != nil {
-			e.view.Interrupted()
-			return nil
-		}
-		e.view.Error(err)
-		return nil
+	if g.MemoryManager != nil {
+		g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
 	}
 
 	elapsed := time.Since(startTime).Round(time.Millisecond)

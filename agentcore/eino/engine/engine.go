@@ -10,6 +10,7 @@ import (
 	"fkteams/agentcore/eino/middlewares/dispatch"
 	"fkteams/agentcore/eino/middlewares/inject"
 	"fkteams/agentcore/eino/middlewares/skills"
+	"fkteams/agentcore/eino/middlewares/steering"
 	"fkteams/agentcore/eino/middlewares/summary"
 	"fkteams/agentcore/eino/middlewares/tools/destructiveguard"
 	"fkteams/agentcore/eino/middlewares/tools/patch"
@@ -64,6 +65,10 @@ func (e *Engine) NewAutoContinueMiddleware() (agentcore.AgentMiddleware, error) 
 
 func (e *Engine) NewTrimResultMiddleware() agentcore.AgentMiddleware {
 	return trimresult.New(nil)
+}
+
+func (e *Engine) NewSteeringMiddleware() agentcore.AgentMiddleware {
+	return steering.New()
 }
 
 func (e *Engine) NewSummaryMiddleware(ctx context.Context, cfg *agentcore.SummaryConfig) (agentcore.AgentMiddleware, error) {

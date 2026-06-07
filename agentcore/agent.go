@@ -113,6 +113,7 @@ type Engine interface {
 	NewToolErrorMiddleware() AgentMiddleware
 	NewAutoContinueMiddleware() (AgentMiddleware, error)
 	NewTrimResultMiddleware() AgentMiddleware
+	NewSteeringMiddleware() AgentMiddleware
 	NewSummaryMiddleware(ctx context.Context, cfg *SummaryConfig) (AgentMiddleware, error)
 	NewSkillsMiddleware(ctx context.Context) (AgentMiddleware, error)
 	NewDispatchMiddleware(ctx context.Context, cfg *DispatchConfig) (AgentMiddleware, error)

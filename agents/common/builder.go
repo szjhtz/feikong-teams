@@ -178,6 +178,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	cfg.Middlewares = append(cfg.Middlewares, acMiddleware)
 
 	cfg.Middlewares = append(cfg.Middlewares, engine.NewTrimResultMiddleware())
+	cfg.Middlewares = append(cfg.Middlewares, engine.NewSteeringMiddleware())
 
 	if b.enableSummary {
 		maxTokens := agentcore.DefaultMaxTokensBeforeSummary

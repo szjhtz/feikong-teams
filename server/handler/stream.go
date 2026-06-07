@@ -7,6 +7,7 @@ import (
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
+	"fkteams/g"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -54,9 +55,15 @@ func StreamStartHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 如果已有运行中的任务，拒绝重复启动
 		if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
-			Fail(c, http.StatusConflict, "session has a running task, stop it first")
+			queued := enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents)
+			OK(c, gin.H{
+				"session_id":   sessionID,
+				"status":       "queued",
+				"message":      "message queued",
+				"queue_kind":   queued.Kind,
+				"queued_count": existing.QueuedCount(),
+			})
 			return
 		}
 
@@ -114,62 +121,122 @@ func StreamStartHandler() gin.HandlerFunc {
 	}
 }
 
+// StreamSteerHandler 在运行中的流式任务下一次模型调用前注入转向消息。
+func StreamSteerHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req StreamStartRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+		if req.Message == "" && len(req.Contents) == 0 {
+			Fail(c, http.StatusBadRequest, "message or contents is required")
+			return
+		}
+		if req.SessionID == "" {
+			Fail(c, http.StatusBadRequest, "session_id is required")
+			return
+		}
+		if !validateSessionID(req.SessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
+			return
+		}
+
+		stream := GlobalStreams.Get(req.SessionID)
+		if stream == nil || stream.Status() != "processing" {
+			Fail(c, http.StatusNotFound, "no running task for this session")
+			return
+		}
+
+		queued := enqueueTaskMessage(stream, req.SessionID, taskstream.QueueSteering, req.Message, req.Contents)
+		OK(c, gin.H{
+			"session_id":   req.SessionID,
+			"status":       "queued",
+			"message":      "steering queued",
+			"queue_kind":   queued.Kind,
+			"queued_count": stream.QueuedCount(),
+		})
+	}
+}
+
 // runStreamTask 后台执行流式任务
 func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
-	_, runErr := engine.NewSession(r, sessionID).
-		WithInput(turnInput).
-		OnEvent(func(event events.Event) error {
-			if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
-				return nil
-			}
-			recorder.RecordEvent(event)
-			data := convertEventToMap(event)
-			data["session_id"] = sessionID
-			stream.Publish(data)
-			return nil
-		}).
-		WithHistory(recorder).
-		OnInterrupt(interruptHandler).
-		NonInteractive().
-		WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
-		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
-			if err != nil {
-				if isConnectionClosed(ctx, err) {
-					log.Printf("stream task cancelled: session=%s", sessionID)
-					stream.SetStatus("cancelled")
-					stream.Publish(map[string]any{
-						"type":       events.NotifyCancelled,
-						"session_id": sessionID,
-						"message":    "任务已取消",
-					})
-					finishCancelledChat(recorder, sessionID, userDisplayText)
-					return
+	steeringSource := buildSteeringSource(stream, recorder, sessionID)
+	currentInput := turnInput
+	currentDisplayText := userDisplayText
+	for {
+		_, runErr := engine.NewSession(r, sessionID).
+			WithInput(currentInput).
+			OnEvent(func(event events.Event) error {
+				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
+					return nil
 				}
-				log.Printf("stream task error: session=%s, err=%v", sessionID, err)
-				stream.SetStatus("error")
+				recorder.RecordEvent(event)
+				data := convertEventToMap(event)
+				data["session_id"] = sessionID
+				stream.Publish(data)
+				return nil
+			}).
+			WithHistory(recorder).
+			OnInterrupt(interruptHandler).
+			NonInteractive().
+			WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
+			WithContext(func(ctx context.Context) context.Context {
+				return agentcore.WithSteeringSource(ctx, steeringSource)
+			}).
+			Run(ctx)
+		if runErr != nil {
+			if isConnectionClosed(ctx, runErr) {
+				log.Printf("stream task cancelled: session=%s", sessionID)
+				stream.SetStatus("cancelled")
 				stream.Publish(map[string]any{
-					"type":       events.NotifyError,
+					"type":       events.NotifyCancelled,
 					"session_id": sessionID,
-					"error":      err.Error(),
+					"message":    "任务已取消",
 				})
-				finishErrorChat(recorder, sessionID, userDisplayText, err)
+				finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
-			} else {
-				stream.SetStatus("completed")
-				stream.Publish(map[string]any{
-					"type":       events.NotifyProcessingEnd,
-					"session_id": sessionID,
-					"message":    "处理完成",
-				})
 			}
-			finishChat(recorder, sessionID, userDisplayText)
-		}).
-		Run(ctx)
-	if runErr != nil && !isConnectionClosed(ctx, runErr) {
-		log.Printf("stream task failed: session=%s, err=%v", sessionID, runErr)
+			log.Printf("stream task error: session=%s, err=%v", sessionID, runErr)
+			stream.SetStatus("error")
+			stream.Publish(map[string]any{
+				"type":       events.NotifyError,
+				"session_id": sessionID,
+				"error":      runErr.Error(),
+			})
+			finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
+			return
+		}
+
+		recorder.FinalizeCurrent()
+		saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+		if queued, ok := stream.DequeueNextMessage(); ok {
+			currentDisplayText = queued.DisplayText
+			currentInput = buildQueuedChatInput(recorder, queued)
+			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+			stream.Publish(map[string]any{
+				"type":       events.NotifyProcessingStart,
+				"session_id": sessionID,
+				"message":    "继续处理排队消息...",
+				"queue_kind": string(queued.Kind),
+			})
+			continue
+		}
+
+		stream.SetStatus("completed")
+		stream.Publish(map[string]any{
+			"type":       events.NotifyProcessingEnd,
+			"session_id": sessionID,
+			"message":    "处理完成",
+		})
+		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
+		if g.MemoryManager != nil {
+			g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+		}
+		return
 	}
 }
 

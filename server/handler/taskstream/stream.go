@@ -9,6 +9,7 @@
 package taskstream
 
 import (
+	"fkteams/agentcore"
 	"fmt"
 	"sync"
 	"time"
@@ -34,6 +35,33 @@ const (
 	InterruptApproval InterruptKind = "approval"
 	InterruptAsk      InterruptKind = "ask"
 )
+
+type QueueKind string
+
+const (
+	QueueFollowUp QueueKind = "follow_up"
+	QueueSteering QueueKind = "steering"
+)
+
+type QueuedMessage struct {
+	Kind        QueueKind               `json:"kind"`
+	Text        string                  `json:"text,omitempty"`
+	Parts       []agentcore.ContentPart `json:"parts,omitempty"`
+	DisplayText string                  `json:"display_text,omitempty"`
+	CreatedAt   time.Time               `json:"created_at"`
+}
+
+func (m QueuedMessage) Message() agentcore.Message {
+	msg := agentcore.Message{
+		Role:    agentcore.RoleUser,
+		Content: m.Text,
+	}
+	if len(m.Parts) > 0 {
+		msg.Content = ""
+		msg.UserInputMultiContent = append([]agentcore.ContentPart(nil), m.Parts...)
+	}
+	return msg
+}
 
 // Subscriber 接收推送事件（Push 模式，如 WebSocket 连接）
 type Subscriber interface {
@@ -82,6 +110,8 @@ type Stream struct {
 	interruptCh chan any // 审批/ask 通道
 	pendingKind InterruptKind
 	submitted   bool
+	steering    []QueuedMessage
+	followUps   []QueuedMessage
 
 	// 所属 Manager 引用（用于 grace timer 自动移除）
 	manager *Manager
@@ -218,6 +248,65 @@ func (s *Stream) Done() {
 // Cancel 取消底层任务
 func (s *Stream) Cancel() {
 	s.config.Cancel()
+}
+
+func (s *Stream) EnqueueMessage(msg QueuedMessage) QueuedMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if msg.Kind == "" {
+		msg.Kind = QueueFollowUp
+	}
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now()
+	}
+	if msg.DisplayText == "" {
+		msg.DisplayText = msg.Text
+	}
+	switch msg.Kind {
+	case QueueSteering:
+		s.steering = append(s.steering, msg)
+	default:
+		msg.Kind = QueueFollowUp
+		s.followUps = append(s.followUps, msg)
+	}
+	return msg
+}
+
+func (s *Stream) TakeSteeringMessages(limit int) []QueuedMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.steering) == 0 {
+		return nil
+	}
+	if limit <= 0 || limit > len(s.steering) {
+		limit = len(s.steering)
+	}
+	result := make([]QueuedMessage, limit)
+	copy(result, s.steering[:limit])
+	s.steering = s.steering[limit:]
+	return result
+}
+
+func (s *Stream) DequeueNextMessage() (QueuedMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.steering) > 0 {
+		msg := s.steering[0]
+		s.steering = s.steering[1:]
+		return msg, true
+	}
+	if len(s.followUps) > 0 {
+		msg := s.followUps[0]
+		s.followUps = s.followUps[1:]
+		return msg, true
+	}
+	return QueuedMessage{}, false
+}
+
+func (s *Stream) QueuedCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.steering) + len(s.followUps)
 }
 
 // BeginInterrupt 标记当前流正在等待指定类型的人工输入。

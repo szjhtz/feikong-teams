@@ -1,6 +1,7 @@
 package taskstream
 
 import (
+	"fkteams/agentcore"
 	"testing"
 	"time"
 )
@@ -124,5 +125,45 @@ func TestSubscribeReplaysEventsFromOffset(t *testing.T) {
 
 	if len(replayed) != 1 || replayed[0]["content"] != "second" {
 		t.Fatalf("expected replay from offset 1, got %#v", replayed)
+	}
+}
+
+func TestSteeringQueueIsConsumedBeforeFollowUpFallback(t *testing.T) {
+	s := newTestStream()
+
+	s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
+	s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "change direction"})
+
+	steering := s.TakeSteeringMessages(1)
+	if len(steering) != 1 || steering[0].Text != "change direction" {
+		t.Fatalf("expected one steering message, got %#v", steering)
+	}
+	if s.QueuedCount() != 1 {
+		t.Fatalf("expected one queued follow-up, got %d", s.QueuedCount())
+	}
+
+	next, ok := s.DequeueNextMessage()
+	if !ok || next.Kind != QueueFollowUp || next.Text != "later" {
+		t.Fatalf("expected follow-up fallback, got %#v ok=%v", next, ok)
+	}
+}
+
+func TestQueuedMessageBuildsMultimodalUserMessage(t *testing.T) {
+	msg := QueuedMessage{
+		Text: "describe",
+		Parts: []agentcore.ContentPart{
+			{Type: agentcore.ContentPartText, Text: "describe"},
+			{Type: agentcore.ContentPartImageURL, URL: "https://example.com/a.png"},
+		},
+	}.Message()
+
+	if msg.Role != agentcore.RoleUser {
+		t.Fatalf("expected user role, got %s", msg.Role)
+	}
+	if msg.Content != "" {
+		t.Fatalf("expected text content to be cleared for multimodal input, got %q", msg.Content)
+	}
+	if len(msg.UserInputMultiContent) != 2 {
+		t.Fatalf("expected multimodal parts to be preserved, got %#v", msg.UserInputMultiContent)
 	}
 }

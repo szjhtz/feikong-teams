@@ -64,6 +64,39 @@ func TestRuntimeCtrlCConfirmsExitWhenIdle(t *testing.T) {
 	}
 }
 
+func TestRuntimeEnterWhileRunningQueuesSteering(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	executor := NewQueryExecutor(nil, state)
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		executor:    executor,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.input.SetValue("change direction")
+	model.input.CursorEnd()
+
+	updated, cmd := model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("steering submit should not start a new query command")
+	}
+	if got := model.input.Value(); got != "" {
+		t.Fatalf("steering submit should clear input, got %q", got)
+	}
+	if len(model.blocks) == 0 || model.blocks[len(model.blocks)-1].Title != "转向" {
+		t.Fatalf("steering submit should append a turn block, got %#v", model.blocks)
+	}
+	messages := executor.takeSteeringMessages(1)
+	if len(messages) != 1 || messages[0].Content != "change direction" {
+		t.Fatalf("expected queued steering message, got %#v", messages)
+	}
+}
+
 func TestRuntimeHistoryNavigation(t *testing.T) {
 	model := newRuntimeModel(&Runtime{
 		ctx:         context.Background(),

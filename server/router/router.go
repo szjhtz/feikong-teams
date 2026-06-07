@@ -55,6 +55,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		stream := apiV1.Group("/stream")
 		{
 			stream.POST("/start", handler.StreamStartHandler())
+			stream.POST("/steer", handler.StreamSteerHandler())
 			stream.POST("/stop/:sessionID", handler.StreamStopHandler())
 			stream.GET("/subscribe/:sessionID", handler.StreamSubscribeHandler())
 			stream.GET("/status/:sessionID", handler.StreamStatusHandler())

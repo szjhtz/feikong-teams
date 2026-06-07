@@ -7,6 +7,7 @@ import (
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
+	"fkteams/g"
 	"fkteams/server/handler/taskstream"
 	"fkteams/server/origin"
 	"fkteams/tools/approval"
@@ -102,20 +103,23 @@ func WebSocketHandler() gin.HandlerFunc {
 				continue
 			}
 
-			// chat 消息二次校验 token，防止 WS 长时间连接后 token 过期仍可操作
-			if wsMsg.Type == "chat" && authEnabled && !ValidateToken(wsToken) {
+			// chat/steer 消息二次校验 token，防止 WS 长时间连接后 token 过期仍可操作
+			if (wsMsg.Type == "chat" || wsMsg.Type == "follow_up" || wsMsg.Type == "steer" || wsMsg.Type == "steering") && authEnabled && !ValidateToken(wsToken) {
 				_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "登录已过期，请重新登录"})
 				conn.Close()
 				break
 			}
 
 			switch wsMsg.Type {
-			case "chat":
+			case "chat", "follow_up":
 				if wsMsg.SessionID == "" {
 					_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
 					continue
 				}
 				go handleChatMessage(sm, wsMsg, writeJSON)
+
+			case "steer", "steering":
+				handleSteeringMessage(wsMsg, writeJSON)
 
 			case "resume":
 				sid := wsMsg.SessionID
@@ -276,13 +280,17 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	if mode == "" {
 		mode = "team"
 	}
-
-	if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
+	if wsMsg.Message == "" && len(wsMsg.Contents) == 0 {
 		_ = writeJSON(map[string]any{
 			"type":       events.NotifyError,
 			"session_id": sessionID,
-			"error":      "session has a running task, cancel it first",
+			"error":      "message or contents is required",
 		})
+		return
+	}
+
+	if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
+		enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents)
 		return
 	}
 
@@ -331,46 +339,98 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
-	_, runErr := engine.NewSession(r, sessionID).
-		WithInput(turnInput).
-		OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)).
-		WithHistory(recorder).
-		OnStart(func(ctx context.Context) {
-			updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
+	steeringSource := buildSteeringSource(stream, recorder, sessionID)
+	currentInput := turnInput
+	currentDisplayText := userDisplayText
+	updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+	stream.Publish(map[string]any{
+		"type":       events.NotifyProcessingStart,
+		"session_id": sessionID,
+		"message":    "开始处理您的请求...",
+	})
+
+	for {
+		_, runErr := engine.NewSession(r, sessionID).
+			WithInput(currentInput).
+			OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)).
+			WithHistory(recorder).
+			OnInterrupt(interruptHandler).
+			NonInteractive().
+			WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
+			WithContext(func(ctx context.Context) context.Context {
+				return agentcore.WithSteeringSource(ctx, steeringSource)
+			}).
+			Run(taskCtx)
+		if runErr != nil {
+			if isConnectionClosed(taskCtx, runErr) {
+				log.Printf("task cancelled: session=%s", sessionID)
+				stream.SetStatus("cancelled")
+				stream.Publish(map[string]any{
+					"type":       events.NotifyCancelled,
+					"session_id": sessionID,
+					"message":    "任务已取消",
+				})
+				finishCancelledChat(recorder, sessionID, currentDisplayText)
+				return
+			}
+			log.Printf("failed to run task: session=%s, err=%v", sessionID, runErr)
+			stream.SetStatus("error")
+			stream.Publish(map[string]any{"type": events.NotifyError, "session_id": sessionID, "error": runErr.Error()})
+			finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
+			return
+		}
+
+		recorder.FinalizeCurrent()
+		saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+		if queued, ok := stream.DequeueNextMessage(); ok {
+			currentDisplayText = queued.DisplayText
+			currentInput = buildQueuedChatInput(recorder, queued)
+			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
 			stream.Publish(map[string]any{
 				"type":       events.NotifyProcessingStart,
 				"session_id": sessionID,
-				"message":    "开始处理您的请求...",
+				"message":    "继续处理排队消息...",
+				"queue_kind": string(queued.Kind),
 			})
-		}).
-		OnInterrupt(interruptHandler).
-		NonInteractive().
-		WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
-		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
-			if err != nil {
-				if ctx.Err() != nil {
-					log.Printf("task cancelled: session=%s", sessionID)
-					stream.SetStatus("cancelled")
-					finishCancelledChat(recorder, sessionID, userDisplayText)
-					return
-				}
-				log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
-				stream.SetStatus("error")
-				stream.Publish(map[string]any{"type": events.NotifyError, "session_id": sessionID, "error": err.Error()})
-				finishErrorChat(recorder, sessionID, userDisplayText, err)
-				return
-			} else {
-				stream.SetStatus("completed")
-				stream.Publish(map[string]any{
-					"type":       events.NotifyProcessingEnd,
-					"session_id": sessionID,
-					"message":    "处理完成",
-				})
-			}
-			finishChat(recorder, sessionID, userDisplayText)
-		}).
-		Run(taskCtx)
-	if runErr != nil && taskCtx.Err() == nil {
-		log.Printf("websocket task failed: session=%s, err=%v", sessionID, runErr)
+			continue
+		}
+
+		stream.SetStatus("completed")
+		stream.Publish(map[string]any{
+			"type":       events.NotifyProcessingEnd,
+			"session_id": sessionID,
+			"message":    "处理完成",
+		})
+		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
+		if g.MemoryManager != nil {
+			g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+		}
+		return
 	}
+}
+
+func handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) error) {
+	sessionID := wsMsg.SessionID
+	if sessionID == "" {
+		_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
+		return
+	}
+	if wsMsg.Message == "" && len(wsMsg.Contents) == 0 {
+		_ = writeJSON(map[string]any{
+			"type":       events.NotifyError,
+			"session_id": sessionID,
+			"error":      "message or contents is required",
+		})
+		return
+	}
+	stream := GlobalStreams.Get(sessionID)
+	if stream == nil || stream.Status() != "processing" {
+		_ = writeJSON(map[string]any{
+			"type":       events.NotifyError,
+			"session_id": sessionID,
+			"error":      "no running task to steer",
+		})
+		return
+	}
+	enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents)
 }

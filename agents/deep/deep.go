@@ -50,6 +50,9 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		SubAgents:        subAgents,
 		Tools:            toolList,
 		MaxIterations:    common.MaxIterations(),
-		Middlewares:      []agentcore.AgentMiddleware{summaryMiddleware},
+		Middlewares: []agentcore.AgentMiddleware{
+			engine.NewSteeringMiddleware(),
+			summaryMiddleware,
+		},
 	})
 }

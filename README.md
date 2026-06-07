@@ -193,7 +193,8 @@ docker compose up -d
 
 - `agentcore` 定义运行时无关的 Agent、Runner、Message、Tool、Event 等核心接口；`agentcore/eino` 是当前 CloudWeGo Eino ADK 适配实现，负责模型、工具、中间件、AgentTool 和 HITL resume 的具体落地。
 - `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理，并提供 `WithText` / `WithMessage` / `WithInput` 三种输入入口；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
-- Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；执行失败会保存为 `error` 会话状态，HTTP 同步接口会返回错误响应。
+- Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；WebSocket、流式任务和终端交互模式支持运行中 follow-up 排队和 steering 转向，steering 会在工具完成后的下一次模型调用前注入。
+- 执行失败会保存为 `error` 会话状态，HTTP 同步接口会返回错误响应。
 - 流式事件通过 `events.Emitter` 统一归一化和校验，`events/log` 负责会话历史与元数据，`events/view` 负责终端展示；事件保留 `message_id`、成员智能体作用域、分片顺序和稳定 `tool_call_ref`，Web 前端据此将子智能体思考、工具调用和输出归并到同一成员卡片。
 - Runner 可被入口层缓存复用，checkpoint store 为并发安全实现；配置更新会重建 Agent 注册表并清空 Runner/MCP/通道缓存。
 - 内置工具必须在工具策略表中声明只读、破坏性、串行化和审批元数据；MCP 和成员智能体工具作为外部扩展，不强制使用内置策略表。
