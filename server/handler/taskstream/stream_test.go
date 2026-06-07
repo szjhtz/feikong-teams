@@ -178,6 +178,23 @@ func TestQueuedMessagesCanBeManagedBeforeConsumption(t *testing.T) {
 	}
 }
 
+func TestQueuedMessageKindCanBeChangedBeforeConsumption(t *testing.T) {
+	s := newTestStream()
+
+	follow := s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
+	updated, ok := s.SetQueuedMessageKind(follow.ID, QueueSteering)
+	if !ok || updated.Kind != QueueSteering {
+		t.Fatalf("expected item to switch to steering, got %#v ok=%v", updated, ok)
+	}
+	if s.QueuedCount() != 1 {
+		t.Fatalf("expected one queued item, got %d", s.QueuedCount())
+	}
+	steering := s.TakeSteeringMessages(1)
+	if len(steering) != 1 || steering[0].ID != follow.ID {
+		t.Fatalf("expected switched item to be consumed as steering, got %#v", steering)
+	}
+}
+
 func TestQueuedMessageBuildsMultimodalUserMessage(t *testing.T) {
 	msg := QueuedMessage{
 		Text: "describe",

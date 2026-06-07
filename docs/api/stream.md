@@ -127,12 +127,13 @@ POST /api/fkteams/stream/steer
 
 ### 管理未执行队列
 
-运行中的 `follow_up` 与 `steering` 都会进入未执行队列。每个队列项包含稳定 `id`、`kind`、`text`、`display_text`、`created_at`，前端可在尚未消费前编辑、删除或调整顺序。排序只在同类队列内生效：`steering` 仍由 `SteeringSource` 在下一次模型调用前消费，`follow_up` 在当前任务完成后继续执行。
+运行中的 `follow_up` 与 `steering` 都会进入未执行队列。每个队列项包含稳定 `id`、`kind`、`text`、`display_text`、`created_at`，前端可在尚未消费前编辑、删除、调整顺序或切换 `kind`。排序只在同类队列内生效：`steering` 仍由 `SteeringSource` 在下一次模型调用前消费，`follow_up` 在当前任务完成后继续执行。
 
 ```
 GET /api/fkteams/stream/queue/:sessionID
 PATCH /api/fkteams/stream/queue/:sessionID/:queueID
 DELETE /api/fkteams/stream/queue/:sessionID/:queueID
+POST /api/fkteams/stream/queue/:sessionID/:queueID/kind
 POST /api/fkteams/stream/queue/:sessionID/:queueID/move
 ```
 
@@ -150,6 +151,14 @@ POST /api/fkteams/stream/queue/:sessionID/:queueID/move
 ```json
 {
   "direction": "up"
+}
+```
+
+切换类型请求体：
+
+```json
+{
+  "kind": "steering"
 }
 ```
 

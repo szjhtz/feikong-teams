@@ -85,16 +85,6 @@
     color: var(--text-tertiary);
 }
 
-.runtime-queue-mode {
-    display: flex;
-    gap: 4px;
-    padding: 2px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-primary);
-}
-
-.runtime-queue-mode button,
 .runtime-queue-actions button {
     display: inline-flex;
     align-items: center;
@@ -109,18 +99,6 @@
     line-height: 1;
 }
 
-.runtime-queue-mode button {
-    min-height: 28px;
-    padding: 0 8px;
-}
-
-.runtime-queue-mode button.active {
-    background: var(--accent-primary);
-    border-color: var(--accent-primary);
-    color: white;
-}
-
-.runtime-queue-mode svg,
 .runtime-queue-actions svg {
     width: 14px;
     height: 14px;
@@ -203,6 +181,10 @@
     padding: 0 6px;
     background: var(--bg-secondary);
     border-color: var(--border-color);
+}
+
+.runtime-queue-actions button[data-queue-action="kind"] {
+    min-width: 62px;
 }
 
 .runtime-queue-actions button:hover:not(:disabled) {
@@ -290,6 +272,10 @@
     cursor: not-allowed;
 }
 
+.send-btn.processing:not(:disabled) {
+    cursor: pointer;
+}
+
 .cancel-btn {
     padding: 8px 18px;
     display: flex;
@@ -332,26 +318,46 @@
     }
 
     .input-wrapper {
+        align-items: center;
         padding: 10px 12px;
         border-radius: 12px;
         gap: 8px;
     }
 
     .message-input {
+        min-width: 0;
+        min-height: 36px;
+        flex: 1 1 0;
         font-size: 16px;
+        line-height: 1.6;
+        padding: 5px 0;
+        box-sizing: border-box;
         /* 防止 iOS 自动缩放 */
     }
 
+    .upload-btn {
+        width: 36px;
+        height: 36px;
+    }
+
     .send-btn {
-        padding: 6px 14px;
+        min-width: 58px;
+        min-height: 36px;
+        padding: 6px 10px;
         font-size: 13px;
         border-radius: 8px;
     }
 
     .cancel-btn {
-        padding: 6px 12px;
+        width: 36px;
+        height: 36px;
+        padding: 0;
         font-size: 13px;
         border-radius: 8px;
+    }
+
+    .cancel-btn span {
+        display: none;
     }
 
     .runtime-queue-head {

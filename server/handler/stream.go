@@ -235,6 +235,43 @@ type StreamQueueMoveRequest struct {
 	Direction string `json:"direction"`
 }
 
+type StreamQueueKindRequest struct {
+	Kind string `json:"kind"`
+}
+
+// StreamQueueKindHandler 切换尚未执行队列项的语义类型。
+func StreamQueueKindHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("sessionID")
+		queueID := c.Param("queueID")
+		stream := streamForQueueRequest(c, sessionID)
+		if stream == nil {
+			return
+		}
+		var req StreamQueueKindRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+		kind := taskstream.QueueKind(req.Kind)
+		if kind != taskstream.QueueFollowUp && kind != taskstream.QueueSteering {
+			Fail(c, http.StatusBadRequest, "kind must be follow_up or steering")
+			return
+		}
+		updated, ok := stream.SetQueuedMessageKind(queueID, kind)
+		if !ok {
+			Fail(c, http.StatusNotFound, "queued message not found")
+			return
+		}
+		publishQueueUpdated(stream, sessionID)
+		OK(c, gin.H{
+			"session_id": sessionID,
+			"queue_item": updated,
+			"queue":      stream.QueueSnapshot(),
+		})
+	}
+}
+
 // StreamQueueMoveHandler 调整尚未执行队列项在同类队列中的顺序。
 func StreamQueueMoveHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {

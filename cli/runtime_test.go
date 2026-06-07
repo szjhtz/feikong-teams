@@ -97,9 +97,30 @@ func TestRuntimeEnterWhileRunningQueuesSteering(t *testing.T) {
 	}
 }
 
-func TestRuntimeRunningQueueCommandRemovesSteering(t *testing.T) {
+func TestQueryExecutorDrainsSteeringAsMergedMessage(t *testing.T) {
 	state := NewQueryState()
 	state.StartQuery()
+	executor := NewQueryExecutor(nil, state)
+	executor.QueueSteering("first")
+	executor.QueueSteering("second")
+
+	message, ok := executor.drainSteeringMessage()
+	if !ok {
+		t.Fatal("expected merged steering message")
+	}
+	if got := message.Content; !strings.Contains(got, "1. first") || !strings.Contains(got, "2. second") {
+		t.Fatalf("expected merged steering content, got %q", got)
+	}
+	if messages := executor.takeSteeringMessages(1); len(messages) != 0 {
+		t.Fatalf("expected steering queue to be drained, got %#v", messages)
+	}
+}
+
+func TestRuntimeEscWhileRunningRestoresQueuedSteeringToInput(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	cancelled := false
+	state.SetCancelFunc(func() { cancelled = true })
 	session := NewSession(ModeTeam, nil, nil)
 	session.queryState = state
 	executor := NewQueryExecutor(nil, state)
@@ -113,43 +134,24 @@ func TestRuntimeRunningQueueCommandRemovesSteering(t *testing.T) {
 		exitSignals: make(chan os.Signal, 1),
 	})
 	model.running = true
-	model.input.SetValue("/queue rm 1")
+	model.input.SetValue("draft")
 	model.input.CursorEnd()
 
-	updated, cmd := model.Update(keyMsg("enter", "", 0))
+	updated, cmd := model.Update(keyMsg("esc", "", 0))
 	model = updated.(runtimeModel)
-	if cmd != nil {
-		t.Fatal("queue command should not start a new query command")
+	if cmd == nil {
+		t.Fatal("esc while running should request cancellation")
 	}
-	messages := executor.takeSteeringMessages(2)
-	if len(messages) != 1 || messages[0].Content != "second" {
-		t.Fatalf("expected first steering item to be removed, got %#v", messages)
+	_ = cmd()
+	if !cancelled {
+		t.Fatal("esc should cancel the running query")
 	}
-}
-
-func TestRuntimeRunningQueueCommandReordersSteering(t *testing.T) {
-	state := NewQueryState()
-	state.StartQuery()
-	session := NewSession(ModeTeam, nil, nil)
-	session.queryState = state
-	executor := NewQueryExecutor(nil, state)
-	executor.QueueSteering("first")
-	executor.QueueSteering("second")
-	model := newRuntimeModel(&Runtime{
-		ctx:         context.Background(),
-		session:     session,
-		executor:    executor,
-		exitSignals: make(chan os.Signal, 1),
-	})
-	model.running = true
-	model.input.SetValue("/queue up 2")
-	model.input.CursorEnd()
-
-	updated, _ := model.Update(keyMsg("enter", "", 0))
-	model = updated.(runtimeModel)
-	messages := executor.takeSteeringMessages(2)
-	if len(messages) != 2 || messages[0].Content != "second" || messages[1].Content != "first" {
-		t.Fatalf("expected steering queue to reorder, got %#v", messages)
+	got := model.expandInput()
+	if !strings.Contains(got, "1. first") || !strings.Contains(got, "2. second") || !strings.Contains(got, "draft") {
+		t.Fatalf("expected queued steering and draft to return to input, got %q", got)
+	}
+	if messages := executor.takeSteeringMessages(1); len(messages) != 0 {
+		t.Fatalf("expected steering queue to be drained, got %#v", messages)
 	}
 }
 
@@ -606,6 +608,8 @@ func keyMsg(name, text string, code rune) tea.KeyPressMsg {
 			code = tea.KeyEnter
 		case "backspace":
 			code = tea.KeyBackspace
+		case "esc":
+			code = tea.KeyEsc
 		case "f2":
 			code = tea.KeyF2
 		}

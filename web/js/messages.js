@@ -1039,7 +1039,7 @@ FKTeamsChat.prototype.sendMessage = async function () {
 
   // 构建发送 payload
   const payload = {
-    type: this.isProcessing && this.queueMode === "steering" ? "steer" : "chat",
+    type: "chat",
     session_id: this.sessionId,
     message: message,
     mode: this.mode,
@@ -1077,7 +1077,7 @@ FKTeamsChat.prototype.sendMessage = async function () {
   this.clearAttachments();
   this.handleInputChange();
   if (this.isProcessing) {
-    this.updateStatus("processing", this.queueMode === "steering" ? "已加入转向队列" : "已加入后续队列");
+    this.updateStatus("processing", "已加入后续队列");
   } else {
     this.isProcessing = true;
     this.updateSendButtonState();
@@ -1352,24 +1352,12 @@ FKTeamsChat.prototype.addQueuedMessageNotice = function (content, kind) {
 FKTeamsChat.prototype.renderQueuePanel = function () {
   if (!this.queuePanel) return;
   const items = this.queueItems || [];
-  if (!this.isProcessing && items.length === 0) {
+  if (items.length === 0) {
     this.queuePanel.style.display = "none";
     this.queuePanel.innerHTML = "";
     return;
   }
 
-  const modeButtons = `
-    <div class="runtime-queue-mode" role="tablist" aria-label="运行中输入模式">
-      <button class="${this.queueMode === "steering" ? "active" : ""}" data-queue-mode="steering" title="下一次模型调用前注入">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h14"/><path d="M13 6l6 6-6 6"/></svg>
-        转向
-      </button>
-      <button class="${this.queueMode === "follow_up" ? "active" : ""}" data-queue-mode="follow_up" title="当前任务完成后继续执行">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h10a4 4 0 0 1 0 8H7"/><path d="M7 12l-3 3 3 3"/></svg>
-        续问
-      </button>
-    </div>
-  `;
   const kindCounts = {};
   items.forEach((item) => {
     kindCounts[item.kind || "follow_up"] = (kindCounts[item.kind || "follow_up"] || 0) + 1;
@@ -1388,16 +1376,9 @@ FKTeamsChat.prototype.renderQueuePanel = function () {
         <strong>待处理队列</strong>
         <span>${items.length} 条未执行</span>
       </div>
-      ${modeButtons}
     </div>
-    <div class="runtime-queue-list">${rows || '<div class="runtime-queue-empty">运行中可继续输入转向或续问</div>'}</div>
+    <div class="runtime-queue-list">${rows}</div>
   `;
-  this.queuePanel.querySelectorAll("[data-queue-mode]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      this.queueMode = btn.dataset.queueMode || "steering";
-      this.updateSendButtonState();
-    });
-  });
   this.queuePanel.querySelectorAll("[data-queue-action]").forEach((btn) => {
     btn.addEventListener("click", () => this.handleQueueAction(btn));
   });
@@ -1406,6 +1387,9 @@ FKTeamsChat.prototype.renderQueuePanel = function () {
 FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMoveDown) {
   const text = item.display_text || item.text || "";
   const kind = item.kind === "steering" ? "转向" : "续问";
+  const nextKind = item.kind === "steering" ? "follow_up" : "steering";
+  const switchLabel = item.kind === "steering" ? "续问" : "转向";
+  const switchTitle = item.kind === "steering" ? "转为续问" : "转为转向";
   const editing = item.id && this._editingQueueID === item.id;
   if (editing) {
     return `
@@ -1429,6 +1413,10 @@ FKTeamsChat.prototype.renderQueueItem = function (item, index, canMoveUp, canMov
         </button>
         <button data-queue-action="down" data-queue-id="${this.escapeHtml(item.id)}" ${canMoveDown ? "" : "disabled"} title="下移">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+        </button>
+        <button data-queue-action="kind" data-queue-id="${this.escapeHtml(item.id)}" data-queue-kind="${nextKind}" title="${switchTitle}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          <span>${switchLabel}</span>
         </button>
         <button data-queue-action="edit" data-queue-id="${this.escapeHtml(item.id)}" title="编辑">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -1469,6 +1457,13 @@ FKTeamsChat.prototype.handleQueueAction = async function (btn) {
     }
     if (action === "delete") {
       await this.queueRequest(id, { method: "DELETE" });
+      return;
+    }
+    if (action === "kind") {
+      await this.queueRequest(id + "/kind", {
+        method: "POST",
+        body: JSON.stringify({ kind: btn.dataset.queueKind || "follow_up" }),
+      });
       return;
     }
     if (action === "up" || action === "down") {

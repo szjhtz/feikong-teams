@@ -156,40 +156,6 @@ func (e *QueryExecutor) SteeringQueueSnapshot() []agentcore.Message {
 	return messages
 }
 
-func (e *QueryExecutor) UpdateSteering(index int, input string) bool {
-	if strings.TrimSpace(input) == "" {
-		return false
-	}
-	e.steeringMu.Lock()
-	defer e.steeringMu.Unlock()
-	if index < 0 || index >= len(e.steering) {
-		return false
-	}
-	e.steering[index] = agentcore.Message{Role: agentcore.RoleUser, Content: input}
-	return true
-}
-
-func (e *QueryExecutor) RemoveSteering(index int) bool {
-	e.steeringMu.Lock()
-	defer e.steeringMu.Unlock()
-	if index < 0 || index >= len(e.steering) {
-		return false
-	}
-	e.steering = append(e.steering[:index], e.steering[index+1:]...)
-	return true
-}
-
-func (e *QueryExecutor) MoveSteering(index, direction int) bool {
-	e.steeringMu.Lock()
-	defer e.steeringMu.Unlock()
-	next := index + direction
-	if index < 0 || index >= len(e.steering) || next < 0 || next >= len(e.steering) {
-		return false
-	}
-	e.steering[index], e.steering[next] = e.steering[next], e.steering[index]
-	return true
-}
-
 func (e *QueryExecutor) takeSteeringMessages(limit int) []agentcore.Message {
 	e.steeringMu.Lock()
 	defer e.steeringMu.Unlock()
@@ -205,12 +171,42 @@ func (e *QueryExecutor) takeSteeringMessages(limit int) []agentcore.Message {
 	return messages
 }
 
-func (e *QueryExecutor) takeSteeringMessage() (agentcore.Message, bool) {
-	messages := e.takeSteeringMessages(1)
+func (e *QueryExecutor) drainSteeringMessages() []agentcore.Message {
+	return e.takeSteeringMessages(0)
+}
+
+func (e *QueryExecutor) drainSteeringMessage() (agentcore.Message, bool) {
+	messages := e.drainSteeringMessages()
 	if len(messages) == 0 {
 		return agentcore.Message{}, false
 	}
-	return messages[0], true
+	return mergeSteeringMessages(messages), true
+}
+
+func (e *QueryExecutor) DrainSteeringText() string {
+	messages := e.drainSteeringMessages()
+	if len(messages) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(mergeSteeringMessages(messages).DisplayText())
+}
+
+func mergeSteeringMessages(messages []agentcore.Message) agentcore.Message {
+	if len(messages) == 1 {
+		return messages[0]
+	}
+	var sb strings.Builder
+	for i, message := range messages {
+		text := strings.TrimSpace(message.DisplayText())
+		if text == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteString("\n\n")
+		}
+		fmt.Fprintf(&sb, "%d. %s", i+1, text)
+	}
+	return agentcore.Message{Role: agentcore.RoleUser, Content: sb.String()}
 }
 
 // CLI 模式会话常量
@@ -304,11 +300,12 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	startTime := time.Now()
 	currentInput := turnInput
 	steeringSource := func(context.Context) ([]agentcore.Message, error) {
-		messages := e.takeSteeringMessages(1)
-		for _, message := range messages {
-			recorder.RecordUserMessage(message)
+		message, ok := e.drainSteeringMessage()
+		if !ok {
+			return nil, nil
 		}
-		return messages, nil
+		recorder.RecordUserMessage(message)
+		return []agentcore.Message{message}, nil
 	}
 	for {
 		_, err := engine.NewSession(e.runner, activeSessionID).
@@ -334,7 +331,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			return nil
 		}
 
-		if next, ok := e.takeSteeringMessage(); ok && queryCtx.Err() == nil {
+		if next, ok := e.drainSteeringMessage(); ok && queryCtx.Err() == nil {
 			currentInput = chat.BuildTurnInput(recorder, next.DisplayText())
 			continue
 		}

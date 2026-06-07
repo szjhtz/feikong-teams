@@ -348,6 +348,35 @@ func (s *Stream) UpdateQueuedMessage(id, text string, parts []agentcore.ContentP
 	return msg, true
 }
 
+func (s *Stream) SetQueuedMessageKind(id string, kind QueueKind) (QueuedMessage, bool) {
+	if kind == "" {
+		kind = QueueFollowUp
+	}
+	if kind != QueueFollowUp && kind != QueueSteering {
+		return QueuedMessage{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	queue, index, ok := s.findQueuedMessageLocked(id)
+	if !ok {
+		return QueuedMessage{}, false
+	}
+	msg := (*queue)[index]
+	if msg.Kind == kind {
+		return msg, true
+	}
+	*queue = append((*queue)[:index], (*queue)[index+1:]...)
+	msg.Kind = kind
+	msg.UpdatedAt = time.Now()
+	switch kind {
+	case QueueSteering:
+		s.steering = append(s.steering, msg)
+	default:
+		s.followUps = append(s.followUps, msg)
+	}
+	return msg, true
+}
+
 func (s *Stream) RemoveQueuedMessage(id string) (QueuedMessage, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -40,7 +40,6 @@ class FKTeamsChat {
     this.currentPath = ""; // 当前浏览的路径
     this.attachments = []; // 多模态附件列表
     this.queueItems = []; // 运行中未消费队列
-    this.queueMode = "steering"; // running 输入默认作为真正转向
     this._debounceTimers = {}; // 防抖定时器
 
     this.init();
@@ -658,14 +657,14 @@ class FKTeamsChat {
   updateSendButtonState() {
     if (this.isProcessing) {
       this.sendBtn.style.display = "flex";
-      this.sendBtn.textContent = this.queueMode === "follow_up" ? "续问" : "转向";
+      this.sendBtn.textContent = "续问";
       this.sendBtn.classList.add("processing");
       const hasContent = this.messageInput.value.trim().length > 0;
       const hasAttachments = this.attachments && this.attachments.length > 0;
       this.sendBtn.disabled = !hasContent && !hasAttachments;
       this.cancelBtn.style.display = "flex";
       this.messageInput.disabled = false;
-      this.messageInput.placeholder = this.queueMode === "follow_up" ? "加入后续任务队列..." : "输入转向，下一次模型调用前生效...";
+      this.messageInput.placeholder = "继续发送，默认加入后续队列...";
     } else {
       this.sendBtn.style.display = "flex";
       this.sendBtn.textContent = "发送";

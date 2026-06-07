@@ -59,6 +59,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			stream.GET("/queue/:sessionID", handler.StreamQueueHandler())
 			stream.PATCH("/queue/:sessionID/:queueID", handler.StreamQueueUpdateHandler())
 			stream.DELETE("/queue/:sessionID/:queueID", handler.StreamQueueDeleteHandler())
+			stream.POST("/queue/:sessionID/:queueID/kind", handler.StreamQueueKindHandler())
 			stream.POST("/queue/:sessionID/:queueID/move", handler.StreamQueueMoveHandler())
 			stream.POST("/stop/:sessionID", handler.StreamStopHandler())
 			stream.GET("/subscribe/:sessionID", handler.StreamSubscribeHandler())

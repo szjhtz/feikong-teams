@@ -106,32 +106,11 @@ func (r *Runtime) queueSteering(input string) bool {
 	return r.executor.QueueSteering(input)
 }
 
-func (r *Runtime) steeringQueueSnapshot() []agentcore.Message {
+func (r *Runtime) drainSteeringText() string {
 	if r == nil || r.executor == nil {
-		return nil
+		return ""
 	}
-	return r.executor.SteeringQueueSnapshot()
-}
-
-func (r *Runtime) updateSteering(index int, input string) bool {
-	if r == nil || r.executor == nil {
-		return false
-	}
-	return r.executor.UpdateSteering(index, input)
-}
-
-func (r *Runtime) removeSteering(index int) bool {
-	if r == nil || r.executor == nil {
-		return false
-	}
-	return r.executor.RemoveSteering(index)
-}
-
-func (r *Runtime) moveSteering(index, direction int) bool {
-	if r == nil || r.executor == nil {
-		return false
-	}
-	return r.executor.MoveSteering(index, direction)
+	return r.executor.DrainSteeringText()
 }
 
 func (r *Runtime) requestExit() {
@@ -673,6 +652,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, runtimeExitTickCmd()
 		case "esc":
 			if m.running {
+				m.restoreSteeringQueueToInput()
 				return m.startRuntimeCancel()
 			}
 			m.input.SetValue("")
@@ -726,10 +706,6 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.exitUntil = time.Time{}
 				if input == "" {
 					return m, nil
-				}
-				if strings.HasPrefix(input, "/queue") {
-					m.runtime.session.InputHistory = append(m.runtime.session.InputHistory, input)
-					return m.handleRunningQueueCommand(input), nil
 				}
 				m.runtime.session.InputHistory = append(m.runtime.session.InputHistory, input)
 				m.appendBlock(runtimeBlockUser, "转向", input)
@@ -786,6 +762,23 @@ func (m runtimeModel) startRuntimeCancel() (tea.Model, tea.Cmd) {
 	m.status = "正在取消当前任务..."
 	m.exitUntil = time.Time{}
 	return m, m.runtime.requestCancel()
+}
+
+func (m *runtimeModel) restoreSteeringQueueToInput() {
+	queued := m.runtime.drainSteeringText()
+	if queued == "" {
+		return
+	}
+	current := strings.TrimSpace(m.expandInput())
+	next := queued
+	if current != "" {
+		next = queued + "\n\n" + current
+	}
+	m.input.SetValue(strings.ReplaceAll(next, "\n", tui.InlineLineBreakTag))
+	m.pastes = nil
+	m.savedInput = ""
+	m.input.CursorEnd()
+	m.appendBlock(runtimeBlockSystem, "转向", "未执行的转向消息已回到输入框")
 }
 
 func (m *runtimeModel) scrollTranscript(delta int) {
@@ -1027,68 +1020,6 @@ func (m *runtimeModel) historyNext() {
 	}
 	m.pastes = nil
 	m.input.CursorEnd()
-}
-
-func (m runtimeModel) handleRunningQueueCommand(input string) runtimeModel {
-	args := strings.TrimSpace(strings.TrimPrefix(input, "/queue"))
-	queue := m.runtime.steeringQueueSnapshot()
-	if args == "" || args == "ls" || args == "list" {
-		if len(queue) == 0 {
-			m.appendBlock(runtimeBlockSystem, "队列", "当前没有排队的转向消息")
-			m.status = "转向队列为空"
-			return m
-		}
-		var sb strings.Builder
-		for i, msg := range queue {
-			fmt.Fprintf(&sb, "%d. %s\n", i+1, strings.TrimSpace(msg.Content))
-		}
-		m.appendBlock(runtimeBlockSystem, "队列", strings.TrimRight(sb.String(), "\n"))
-		m.status = fmt.Sprintf("转向队列 %d 条", len(queue))
-		return m
-	}
-	parts := strings.Fields(args)
-	if len(parts) < 2 {
-		m.appendBlock(runtimeBlockError, "队列命令", "用法: /queue rm N | /queue edit N 内容 | /queue up N | /queue down N")
-		return m
-	}
-	index, err := strconv.Atoi(parts[1])
-	if err != nil || index <= 0 {
-		m.appendBlock(runtimeBlockError, "队列命令", "队列序号必须是正整数")
-		return m
-	}
-	zeroIndex := index - 1
-	switch parts[0] {
-	case "rm", "remove", "delete":
-		if !m.runtime.removeSteering(zeroIndex) {
-			m.appendBlock(runtimeBlockError, "队列命令", "未找到对应队列项")
-			return m
-		}
-		m.status = fmt.Sprintf("已删除第 %d 条转向", index)
-	case "edit":
-		editArgs := strings.TrimSpace(strings.TrimPrefix(args, parts[0]))
-		editArgs = strings.TrimSpace(strings.TrimPrefix(editArgs, parts[1]))
-		next := strings.TrimSpace(editArgs)
-		if !m.runtime.updateSteering(zeroIndex, next) {
-			m.appendBlock(runtimeBlockError, "队列命令", "未找到对应队列项，或内容为空")
-			return m
-		}
-		m.status = fmt.Sprintf("已修改第 %d 条转向", index)
-	case "up":
-		if !m.runtime.moveSteering(zeroIndex, -1) {
-			m.appendBlock(runtimeBlockError, "队列命令", "该队列项无法上移")
-			return m
-		}
-		m.status = fmt.Sprintf("已上移第 %d 条转向", index)
-	case "down":
-		if !m.runtime.moveSteering(zeroIndex, 1) {
-			m.appendBlock(runtimeBlockError, "队列命令", "该队列项无法下移")
-			return m
-		}
-		m.status = fmt.Sprintf("已下移第 %d 条转向", index)
-	default:
-		m.appendBlock(runtimeBlockError, "队列命令", "用法: /queue rm N | /queue edit N 内容 | /queue up N | /queue down N")
-	}
-	return m
 }
 
 func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
@@ -1646,15 +1577,6 @@ func (m runtimeModel) renderBottom() string {
 	}
 	if m.running {
 		writeStatusLine(tui.Status(m.status))
-		if queue := m.renderSteeringQueue(); queue != "" {
-			if sb.Len() > 0 && !strings.HasSuffix(sb.String(), "\n") {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(queue)
-			if !strings.HasSuffix(sb.String(), "\n") {
-				sb.WriteString("\n")
-			}
-		}
 	}
 	if m.isExitConfirming() {
 		seconds := int(time.Until(m.exitUntil).Seconds())
@@ -1667,32 +1589,6 @@ func (m runtimeModel) renderBottom() string {
 		fmt.Fprintf(&sb, "%s\n", tui.RightLine(tui.Dim(tokenStatus), m.contentWidth()))
 	}
 	sb.WriteString(m.renderInputBox())
-	return sb.String()
-}
-
-func (m runtimeModel) renderSteeringQueue() string {
-	queue := m.runtime.steeringQueueSnapshot()
-	if len(queue) == 0 {
-		return ""
-	}
-	width := max(24, m.contentWidth())
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s\n", tui.Dim("转向队列 · /queue rm N · /queue edit N 内容 · /queue up/down N"))
-	limit := min(len(queue), 4)
-	for i := 0; i < limit; i++ {
-		content := strings.TrimSpace(queue[i].Content)
-		if content == "" && len(queue[i].UserInputMultiContent) > 0 {
-			content = "多模态输入"
-		}
-		content = strings.ReplaceAll(content, "\n", " ")
-		if len(content) > max(8, width-12) {
-			content = content[:max(8, width-15)] + "..."
-		}
-		fmt.Fprintf(&sb, "%s %s\n", tui.Dim(fmt.Sprintf("%d.", i+1)), content)
-	}
-	if len(queue) > limit {
-		fmt.Fprintf(&sb, "%s\n", tui.Dim(fmt.Sprintf("还有 %d 条", len(queue)-limit)))
-	}
 	return sb.String()
 }
 
@@ -1732,7 +1628,7 @@ func (m runtimeModel) inputHint() string {
 		return strings.Join([]string{
 			runtimeModeName(m.runtime.session.CurrentMode),
 			"Enter 转向",
-			"/queue 管理",
+			"Esc 暂停并取回转向",
 			"Ctrl+C 取消",
 		}, " · ")
 	}
@@ -2873,7 +2769,7 @@ func runtimeHelpMarkdown() string {
 	sb.WriteString("- `#file` 引用文件\n")
 	sb.WriteString("- `Shift+Enter` 输入换行\n")
 	sb.WriteString("- 任务运行中输入内容并按 `Enter` 发送转向消息\n")
-	sb.WriteString("- 任务运行中用 `/queue` 查看队列，`/queue rm N` 删除，`/queue edit N 内容` 修改，`/queue up/down N` 调整顺序\n")
+	sb.WriteString("- 任务运行中按 `Esc` 暂停当前任务，并将未执行的转向消息回填到输入框\n")
 	sb.WriteString("\n直接输入问题即可与智能体团队对话。")
 	return sb.String()
 }
