@@ -244,6 +244,70 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 	}
 }
 
+func TestUnknownToolCallEmitsToolEndWithHandlerResult(t *testing.T) {
+	ctx := context.Background()
+	toolCallIndex := 0
+	dummyTool, err := agentcore.InferTool("known_tool", "known tool", func(context.Context, *flowEchoRequest) (string, error) {
+		return "known", nil
+	})
+	if err != nil {
+		t.Fatalf("create tool: %v", err)
+	}
+	model := testmodel.New(
+		agentcore.Message{
+			Role: agentcore.RoleAssistant,
+			ToolCalls: []agentcore.ToolCall{{
+				ID:    "unknown-tool-call",
+				Index: &toolCallIndex,
+				Type:  "function",
+				Function: agentcore.FunctionCall{
+					Name:      "search",
+					Arguments: `{"query":"anthropic ipo"}`,
+				},
+			}},
+		},
+		testmodel.AssistantMessage("final"),
+	)
+	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+		Name:               "unknown-tool-flow",
+		Description:        "unknown tool flow",
+		Model:              model,
+		Tools:              []agentcore.Tool{dummyTool},
+		MaxIterations:      4,
+		EmitInternalEvents: true,
+		UnknownToolHandler: func(context.Context, string, string) (string, error) {
+			return "Tool 'search' does not exist. Please check the available tools and try again.", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	events := runAgentForTest(t, ctx, agent, false)
+	toolStartIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventToolStart &&
+			event.ToolCallID == "unknown-tool-call" &&
+			event.ToolName == "search" &&
+			event.ToolCallRef != ""
+	}, "unknown tool start")
+	toolStart := events[toolStartIdx]
+	toolEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventToolEnd &&
+			event.ToolCallID == "unknown-tool-call" &&
+			event.ToolCallRef == toolStart.ToolCallRef &&
+			event.ToolName == "search" &&
+			strings.Contains(event.ToolResult, "does not exist")
+	}, "unknown tool end")
+	finalIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventMessageDelta &&
+			event.Role == agentcore.RoleAssistant &&
+			event.DeltaKind == agentcore.DeltaOutput &&
+			event.Content == "final"
+	}, "unknown tool final delta")
+	requireBefore(t, events, toolStartIdx, toolEndIdx, "unknown tool start", "unknown tool end")
+	requireBefore(t, events, toolEndIdx, finalIdx, "unknown tool end", "unknown tool final output")
+}
+
 func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
 	ctx := context.Background()
 	toolCallIndex := 0

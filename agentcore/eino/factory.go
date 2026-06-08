@@ -42,7 +42,7 @@ func NewChatModelAgent(ctx context.Context, cfg *agentcore.ChatAgentConfig) (age
 			EmitInternalEvents: cfg.EmitInternalEvents,
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools:               runnerTools,
-				UnknownToolsHandler: adaptUnknownToolHandlerForRunner(cfg.UnknownToolHandler),
+				UnknownToolsHandler: adaptUnknownToolHandlerForRunner(cfg.Name, cfg.UnknownToolHandler),
 				ToolCallMiddlewares: runnerToolMiddlewares,
 			},
 		},
@@ -102,12 +102,21 @@ func adaptToolMiddlewaresForRunner(middlewares []agentcore.ToolMiddleware) ([]co
 	return result, nil
 }
 
-func adaptUnknownToolHandlerForRunner(handler agentcore.UnknownToolHandler) func(context.Context, string, string) (string, error) {
+func adaptUnknownToolHandlerForRunner(agentName string, handler agentcore.UnknownToolHandler) func(context.Context, string, string) (string, error) {
 	if handler == nil {
 		return nil
 	}
 	return func(ctx context.Context, name, arguments string) (string, error) {
-		return handler(ctx, name, arguments)
+		result, err := handler(ctx, name, arguments)
+		if err == nil {
+			recordUnknownToolResult(ctx, unknownToolReport{
+				AgentName:  agentName,
+				ToolName:   name,
+				ToolArgs:   arguments,
+				ToolResult: result,
+			})
+		}
+		return result, err
 	}
 }
 

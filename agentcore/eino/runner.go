@@ -50,8 +50,10 @@ func (r *Runner) Run(ctx context.Context, input agentcore.TurnInput, opts agentc
 		}
 	}
 
+	unknownTools := newUnknownToolRecorder()
+	ctx = withUnknownToolRecorder(ctx, unknownTools)
 	iter := r.inner.Run(ctx, adaptMessagesForRunner(input.AllMessages()), adk.WithCheckPointID(opts.CheckpointID))
-	converter := newConverter(emitter)
+	converter := newConverter(emitter, unknownTools)
 	for {
 		lastEvent, err := converter.drain(ctx, iter)
 		if err != nil {
@@ -104,12 +106,14 @@ func adaptInterruptsFromRunner(interrupts []*adk.InterruptCtx) []agentcore.Inter
 type converter struct {
 	emitter    *events.Emitter
 	identities *toolIdentityTracker
+	unknowns   *unknownToolRecorder
 }
 
-func newConverter(emitter *events.Emitter) *converter {
+func newConverter(emitter *events.Emitter, unknowns *unknownToolRecorder) *converter {
 	return &converter{
 		emitter:    emitter,
 		identities: newToolIdentityTracker(),
+		unknowns:   unknowns,
 	}
 }
 
@@ -130,8 +134,15 @@ func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.Agen
 		default:
 		}
 
+		if err := c.flushUnknownToolReports(); err != nil {
+			return lastEvent, err
+		}
+
 		event, ok := iter.Next()
 		if !ok {
+			if err := c.flushUnknownToolReports(); err != nil {
+				return lastEvent, err
+			}
 			return lastEvent, nil
 		}
 		lastEvent = event
@@ -139,6 +150,25 @@ func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.Agen
 			return lastEvent, err
 		}
 	}
+}
+
+func (c *converter) flushUnknownToolReports() error {
+	for _, report := range c.unknowns.take() {
+		if events.IsInternalToolName(report.ToolName) {
+			continue
+		}
+		nEvent := events.ToolEnd(events.ToolEvent{
+			AgentName:  report.AgentName,
+			ToolCallID: report.ToolCallID,
+			ToolName:   report.ToolName,
+			ToolResult: normalizeToolResultContent(report.ToolResult),
+		})
+		c.identities.attach(&nEvent)
+		if err := c.emit(nEvent); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *converter) process(ctx context.Context, event *adk.AgentEvent) error {
