@@ -1083,30 +1083,78 @@ FKTeamsChat.prototype.sendMessage = async function () {
     this.isProcessing = true;
     this.updateSendButtonState();
     this.updateStatus("processing", "处理中...");
-    this.showThinkingIndicator();
+    this.showThinkingIndicator("等待中");
   }
 };
 
 // 显示等待模型响应的思考指示器
-FKTeamsChat.prototype.showThinkingIndicator = function () {
-  this.hideThinkingIndicator();
-  const el = document.createElement("div");
-  el.className = "thinking-indicator";
-  el.id = "thinking-indicator";
-  el.innerHTML = `
+FKTeamsChat.prototype.showThinkingIndicator = function (text) {
+  let el = document.getElementById("thinking-indicator");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "thinking-indicator";
+    el.id = "thinking-indicator";
+    this._thinkingIndicatorShownAt = Date.now();
+    el.innerHTML = `
     <div class="thinking-dots">
       <span></span><span></span><span></span>
     </div>
-    <span class="thinking-text">思考中</span>
+    <span class="thinking-text"></span>
   `;
-  this.messagesContainer.appendChild(el);
+    this.messagesContainer.appendChild(el);
+  }
+  if (this._thinkingHideTimer) {
+    clearTimeout(this._thinkingHideTimer);
+    this._thinkingHideTimer = null;
+  }
+  this.updateThinkingIndicator(text || "思考中");
   this.scrollToBottom();
+};
+
+FKTeamsChat.prototype.updateThinkingIndicator = function (text) {
+  const el = document.getElementById("thinking-indicator");
+  if (!el) return;
+  const textEl = el.querySelector(".thinking-text");
+  if (textEl) textEl.textContent = text || "思考中";
 };
 
 // 隐藏思考指示器
 FKTeamsChat.prototype.hideThinkingIndicator = function () {
+  if (this._thinkingHideTimer) {
+    clearTimeout(this._thinkingHideTimer);
+    this._thinkingHideTimer = null;
+  }
   const el = document.getElementById("thinking-indicator");
-  if (el) el.remove();
+  if (!el) return;
+  const shownAt = this._thinkingIndicatorShownAt || 0;
+  const remaining = Math.max(0, 700 - (Date.now() - shownAt));
+  if (remaining > 0) {
+    this._thinkingHideTimer = setTimeout(() => {
+      this._thinkingHideTimer = null;
+      const current = document.getElementById("thinking-indicator");
+      if (current) current.remove();
+    }, remaining);
+    return;
+  }
+  el.remove();
+};
+
+FKTeamsChat.prototype.shouldHideThinkingIndicatorForEvent = function (event) {
+  return [
+    "message_start",
+    "message_delta",
+    "message_end",
+    "tool_start",
+    "tool_update",
+    "tool_end",
+    "action",
+    "dispatch_progress",
+    "approval_required",
+    "ask_questions",
+    "error",
+    "cancelled",
+    "processing_end",
+  ].includes(event?.type);
 };
 
 // 显示智能体切换通知
@@ -1203,8 +1251,8 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     return;
   }
 
-  // 首个内容事件到来时移除思考指示器
-  if (!["connected", "processing_start", "pong", "user_message", "queue_updated"].includes(event.type)) {
+  // 首个可见内容事件到来时移除思考指示器；生命周期事件不算响应内容。
+  if (this.shouldHideThinkingIndicatorForEvent(event)) {
     this.hideThinkingIndicator();
   }
   // resume 后收到内容事件则标记回放成功
@@ -1339,6 +1387,7 @@ FKTeamsChat.prototype.handleProcessingStart = function (event, eventSessionId) {
   this._resumePending = false;
   this.isProcessing = true;
   this.updateStatus("processing", "处理中...");
+  this.showThinkingIndicator(event.queued_executing ? "处理队列" : "思考中");
   if (event.queued_executing && event.queue_kind === "steering") {
     this.addSteeringExecutionNotice(event.content || "", event.queue_id || "");
   }
@@ -2943,7 +2992,7 @@ FKTeamsChat.prototype.continueAfterMaxIterations = function () {
   this.isProcessing = true;
   this.updateSendButtonState();
   this.updateStatus("processing", "处理中...");
-  this.showThinkingIndicator();
+  this.showThinkingIndicator("等待中");
 };
 
 FKTeamsChat.prototype.addUserMessage = function (content, attachments) {
