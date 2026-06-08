@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/hooks"
 	"fkteams/tools/approval"
 	"testing"
 )
@@ -71,6 +72,14 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 	}
 	if session.cfg.OnFinish == nil {
 		t.Fatal("finish handler was not configured")
+	}
+}
+
+func TestSessionBuilderConfiguresHookBus(t *testing.T) {
+	bus := hooks.NewBus()
+	session := NewSession(&runnerStub{}, "session-1").WithHookBus(bus)
+	if session.cfg.HookBus != bus {
+		t.Fatal("hook bus was not configured")
 	}
 }
 

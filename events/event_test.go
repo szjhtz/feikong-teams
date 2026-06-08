@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"fkteams/hooks"
 	"testing"
 	"time"
 )
@@ -70,5 +71,47 @@ func TestIsMemberEventUsesMemberCallID(t *testing.T) {
 	event := NormalizeEvent(Event{Type: EventMessageDelta, MemberCallID: "call_1"})
 	if !IsMemberEvent(event) {
 		t.Fatal("member event was not detected")
+	}
+}
+
+func TestDispatchEventInvokesHooksBeforeCallback(t *testing.T) {
+	bus := hooks.NewBus()
+	bus.RegisterFunc("rewrite-event", []hooks.HookPoint{hooks.HookOnEvent}, func(ctx hooks.Context, inv hooks.Invocation) (hooks.Result, error) {
+		payload := inv.Payload.(hooks.EventPayload)
+		payload.Event.Content = "hooked"
+		return hooks.Result{Payload: payload}, nil
+	}, hooks.Options{})
+	ctx := hooks.WithBus(context.Background(), bus)
+
+	var got Event
+	ctx = WithCallback(ctx, func(event Event) error {
+		got = event
+		return nil
+	})
+	if err := DispatchEvent(ctx, Event{Type: EventMessageDelta, Content: "original"}); err != nil {
+		t.Fatalf("dispatch event: %v", err)
+	}
+	if got.Content != "hooked" {
+		t.Fatalf("content = %q, want hooked", got.Content)
+	}
+}
+
+func TestDispatchEventHookCanSkipCallback(t *testing.T) {
+	bus := hooks.NewBus()
+	bus.RegisterFunc("skip-event", []hooks.HookPoint{hooks.HookOnEvent}, func(ctx hooks.Context, inv hooks.Invocation) (hooks.Result, error) {
+		return hooks.Result{Action: hooks.ActionSkip}, nil
+	}, hooks.Options{})
+	ctx := hooks.WithBus(context.Background(), bus)
+
+	called := false
+	ctx = WithCallback(ctx, func(event Event) error {
+		called = true
+		return nil
+	})
+	if err := DispatchEvent(ctx, Event{Type: EventMessageDelta, Content: "hello"}); err != nil {
+		t.Fatalf("dispatch event: %v", err)
+	}
+	if called {
+		t.Fatal("callback should not be called")
 	}
 }

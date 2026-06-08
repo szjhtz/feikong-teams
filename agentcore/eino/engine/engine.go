@@ -13,6 +13,7 @@ import (
 	"fkteams/agentcore/eino/middlewares/steering"
 	"fkteams/agentcore/eino/middlewares/summary"
 	"fkteams/agentcore/eino/middlewares/tools/destructiveguard"
+	hooktools "fkteams/agentcore/eino/middlewares/tools/hooks"
 	"fkteams/agentcore/eino/middlewares/tools/patch"
 	"fkteams/agentcore/eino/middlewares/tools/trimresult"
 	"fkteams/agentcore/eino/middlewares/tools/warperror"
@@ -100,6 +101,10 @@ func (e *Engine) NewDispatchMiddleware(ctx context.Context, cfg *agentcore.Dispa
 
 func (e *Engine) NewDestructiveGuardMiddleware() agentcore.ToolMiddleware {
 	return destructiveguard.New()
+}
+
+func (e *Engine) NewHookToolMiddleware() agentcore.ToolMiddleware {
+	return hooktools.New()
 }
 
 func (e *Engine) MCPTools(ctx context.Context, rawClient any) ([]agentcore.Tool, error) {

@@ -8,6 +8,7 @@ import (
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
 	"fkteams/agentcore/eino/middlewares/inject"
+	"fkteams/hooks"
 	"fkteams/internal/testmodel"
 
 	"github.com/cloudwego/eino/schema"
@@ -66,6 +67,57 @@ func TestStreamInjectsDynamicContext(t *testing.T) {
 		t.Fatalf("expected one stream call, got %d", len(calls))
 	}
 	assertInjectedContext(t, calls[0].Input)
+}
+
+func TestGenerateInvokesModelHooks(t *testing.T) {
+	bus := hooks.NewBus()
+	afterCalled := false
+	bus.RegisterFunc("rewrite-model-input", []hooks.HookPoint{hooks.HookBeforeModelRequest}, func(ctx hooks.Context, inv hooks.Invocation) (hooks.Result, error) {
+		payload := inv.Payload.(hooks.BeforeModelRequestPayload)
+		payload.Messages = append(payload.Messages, agentcore.Message{Role: agentcore.RoleSystem, Content: "hooked"})
+		return hooks.Result{Payload: payload}, nil
+	}, hooks.Options{})
+	bus.RegisterFunc("after-model", []hooks.HookPoint{hooks.HookAfterModelResponse}, func(ctx hooks.Context, inv hooks.Invocation) (hooks.Result, error) {
+		payload := inv.Payload.(hooks.AfterModelResponsePayload)
+		if payload.Message.Content != "ok" {
+			t.Fatalf("response = %q, want ok", payload.Message.Content)
+		}
+		afterCalled = true
+		return hooks.Result{}, nil
+	}, hooks.Options{})
+
+	ctx := hooks.WithBus(context.Background(), bus)
+	cm := testmodel.New(testmodel.AssistantMessage("ok"))
+	runnerModel, err := einoruntime.AdaptChatModelForRunner(cm)
+	if err != nil {
+		t.Fatalf("adapt model: %v", err)
+	}
+	wrapped := inject.New(runnerModel)
+
+	resp, err := wrapped.Generate(ctx, []*schema.Message{schema.UserMessage("hello")})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if resp.Content != "ok" {
+		t.Fatalf("unexpected response: %q", resp.Content)
+	}
+	calls := cm.GenerateCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected one generate call, got %d", len(calls))
+	}
+	found := false
+	for _, msg := range calls[0].Input {
+		if msg.Content == "hooked" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("hooked model message not found: %#v", calls[0].Input)
+	}
+	if !afterCalled {
+		t.Fatal("after hook was not called")
+	}
 }
 
 func assertInjectedContext(t *testing.T, input []agentcore.Message) {

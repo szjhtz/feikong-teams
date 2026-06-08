@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/hooks"
 )
 
 type EventHandler func(events.Event) error
@@ -71,6 +72,11 @@ func (s *Session) WithContext(hook ContextHook) *Session {
 	if hook != nil {
 		s.cfg.ContextHooks = append(s.cfg.ContextHooks, hook)
 	}
+	return s
+}
+
+func (s *Session) WithHookBus(bus *hooks.Bus) *Session {
+	s.cfg.HookBus = bus
 	return s
 }
 

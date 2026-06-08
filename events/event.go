@@ -4,6 +4,7 @@ package events
 import (
 	"context"
 	"fkteams/agentcore"
+	"fkteams/hooks"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -59,6 +60,19 @@ func IsMemberEvent(event Event) bool {
 // DispatchEvent normalizes and sends an event to the context callback.
 func DispatchEvent(ctx context.Context, event Event) error {
 	event = NormalizeEvent(event)
+	result, err := hooks.FromContext(ctx).Invoke(ctx, hooks.Invocation{
+		HookPoint: hooks.HookOnEvent,
+		Payload:   hooks.EventPayload{Event: event},
+	})
+	if err != nil {
+		return err
+	}
+	if payload, ok := result.Payload.(hooks.EventPayload); ok {
+		event = payload.Event
+	}
+	if result.Action == hooks.ActionSkip || result.Action == hooks.ActionReject {
+		return nil
+	}
 	if cb := getCallback(ctx); cb != nil {
 		return cb(event)
 	}

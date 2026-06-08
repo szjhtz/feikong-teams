@@ -5,6 +5,7 @@ import (
 	"fkteams/agentcore"
 	"fkteams/common"
 	"fkteams/events"
+	"fkteams/hooks"
 )
 
 // run 执行查询，处理事件和 HITL 中断。
@@ -12,11 +13,21 @@ import (
 func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, error) {
 	ctx = cfg.prepareContext(ctx, e.checkpointID)
 
+	input, err := cfg.invokeBeforeRun(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx = cfg.prepareHistoryContext(ctx, input)
+
 	if cfg.OnStart != nil {
 		cfg.OnStart(ctx)
 	}
 
-	result, err := e.runLoop(ctx, cfg.Input, cfg.interruptHandler())
+	result, err := e.runLoop(ctx, input, cfg.interruptHandler())
+
+	if hookErr := cfg.invokeAfterRun(ctx, input, result, err); hookErr != nil && err == nil {
+		err = hookErr
+	}
 
 	if cfg.OnFinish != nil {
 		cfg.OnFinish(ctx, result, err)
@@ -27,19 +38,10 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, er
 
 func (cfg runConfig) prepareContext(ctx context.Context, checkpointID string) context.Context {
 	ctx = common.WithSessionID(ctx, checkpointID)
+	ctx = hooks.WithBus(ctx, cfg.hookBus())
 
 	if cfg.EventCallback != nil {
 		ctx = events.WithCallback(ctx, cfg.EventCallback)
-	}
-
-	if cfg.Recorder != nil {
-		countBefore := cfg.Recorder.GetMessageCount()
-		if !cfg.Input.Message.IsEmpty() {
-			cfg.Recorder.RecordUserMessage(cfg.Input.Message)
-		}
-		ctx = agentcore.WithSummaryPersistCallback(ctx, func(s string) {
-			cfg.Recorder.SetSummary(s, countBefore)
-		})
 	}
 
 	if cfg.NonInteractive {
@@ -52,6 +54,53 @@ func (cfg runConfig) prepareContext(ctx context.Context, checkpointID string) co
 		}
 	}
 	return ctx
+}
+
+func (cfg runConfig) prepareHistoryContext(ctx context.Context, input agentcore.TurnInput) context.Context {
+	if cfg.Recorder != nil {
+		countBefore := cfg.Recorder.GetMessageCount()
+		if !input.Message.IsEmpty() {
+			cfg.Recorder.RecordUserMessage(input.Message)
+		}
+		ctx = agentcore.WithSummaryPersistCallback(ctx, func(s string) {
+			cfg.Recorder.SetSummary(s, countBefore)
+		})
+	}
+	return ctx
+}
+
+func (cfg runConfig) invokeBeforeRun(ctx context.Context) (agentcore.TurnInput, error) {
+	input := cfg.Input
+	result, err := cfg.hookBus().Invoke(ctx, hooks.Invocation{
+		HookPoint: hooks.HookBeforeRun,
+		Payload:   hooks.BeforeRunPayload{Input: input},
+	})
+	if err != nil {
+		return input, err
+	}
+	if payload, ok := result.Payload.(hooks.BeforeRunPayload); ok {
+		input = payload.Input
+	}
+	return input, nil
+}
+
+func (cfg runConfig) invokeAfterRun(ctx context.Context, input agentcore.TurnInput, result *agentcore.RunResult, runErr error) error {
+	_, err := cfg.hookBus().Invoke(ctx, hooks.Invocation{
+		HookPoint: hooks.HookAfterRun,
+		Payload: hooks.AfterRunPayload{
+			Input:  input,
+			Result: result,
+			Error:  runErr,
+		},
+	})
+	return err
+}
+
+func (cfg runConfig) hookBus() *hooks.Bus {
+	if cfg.HookBus != nil {
+		return cfg.HookBus
+	}
+	return hooks.Global()
 }
 
 func (cfg runConfig) interruptHandler() InterruptHandler {

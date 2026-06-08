@@ -29,6 +29,18 @@ func WrapChatModel(inner model.ToolCallingChatModel) agentcore.ChatModel {
 	return &runtimeChatModelAdapter{inner: inner}
 }
 
+func AdaptMessagesForRunner(messages []agentcore.Message) []*schema.Message {
+	return adaptMessagesForRunner(messages)
+}
+
+func AdaptMessagesFromRunner(messages []*schema.Message) []agentcore.Message {
+	return adaptMessagesFromRunner(messages)
+}
+
+func AdaptMessageFromRunner(msg *schema.Message) agentcore.Message {
+	return adaptMessageFromRunner(msg)
+}
+
 type runtimeChatModelAdapter struct {
 	inner model.ToolCallingChatModel
 }

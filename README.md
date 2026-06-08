@@ -193,6 +193,7 @@ docker compose up -d
 
 - `agentcore` 定义运行时无关的 Agent、Runner、Message、Tool、Event 等核心接口；`agentcore/eino` 是当前 CloudWeGo Eino ADK 适配实现，负责模型、工具、中间件、AgentTool 和 HITL resume 的具体落地。
 - `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理，并提供 `WithText` / `WithMessage` / `WithInput` 三种输入入口；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
+- `hooks` 提供运行期扩展点总线，当前接入 `before_run` / `after_run` / `on_event` / `before_tool_call` / `after_tool_call` / `before_model_request` / `after_model_response`；入口层可通过 `Session.WithHookBus` 注入独立 HookBus，未指定时使用全局 HookBus。
 - Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；WebSocket、流式任务和终端交互模式支持运行中 follow-up 排队和 steering 转向，steering 会在工具完成后的下一次模型调用前注入。Web 运行中输入默认追加为 follow-up，可在队列面板中将未执行项转为 steering，并可编辑、删除、上移/下移；终端运行中可随时追加转向消息，下一次模型调用前会合并消费当前队列，按 `Esc` 暂停时会把未消费转向回填到输入框。
 - 执行失败会保存为 `error` 会话状态，HTTP 同步接口会返回错误响应。
 - 流式事件通过 `events.Emitter` 统一归一化和校验，`events/log` 负责会话历史与元数据，`events/view` 负责终端展示；事件保留 `message_id`、成员智能体作用域、分片顺序和稳定 `tool_call_ref`，Web 前端据此将子智能体思考、工具调用和输出归并到同一成员卡片。

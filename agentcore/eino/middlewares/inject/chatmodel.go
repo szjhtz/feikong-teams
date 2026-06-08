@@ -8,6 +8,7 @@ import (
 	einoruntime "fkteams/agentcore/eino"
 	rootcommon "fkteams/common"
 	"fkteams/common/typeutil"
+	"fkteams/hooks"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -56,11 +57,23 @@ func (m *injectChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCalling
 
 func (m *injectChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	enriched := m.injectDynamicContext(input)
-
-	if m.innerHandlesCallbacks {
-		return m.inner.Generate(ctx, enriched, opts...)
+	var hookErr error
+	enriched, hookErr = invokeBeforeModelRequest(ctx, enriched)
+	if hookErr != nil {
+		return nil, hookErr
 	}
-	return m.generateWithProxyCallbacks(ctx, enriched, opts...)
+
+	var out *schema.Message
+	var err error
+	if m.innerHandlesCallbacks {
+		out, err = m.inner.Generate(ctx, enriched, opts...)
+	} else {
+		out, err = m.generateWithProxyCallbacks(ctx, enriched, opts...)
+	}
+	if hookErr := invokeAfterModelResponse(ctx, out, err); hookErr != nil && err == nil {
+		err = hookErr
+	}
+	return out, err
 }
 
 func (m *injectChatModel) generateWithProxyCallbacks(ctx context.Context,
@@ -83,11 +96,23 @@ func (m *injectChatModel) Stream(ctx context.Context, input []*schema.Message, o
 	*schema.StreamReader[*schema.Message], error) {
 
 	enriched := m.injectDynamicContext(input)
-
-	if m.innerHandlesCallbacks {
-		return m.inner.Stream(ctx, enriched, opts...)
+	var hookErr error
+	enriched, hookErr = invokeBeforeModelRequest(ctx, enriched)
+	if hookErr != nil {
+		return nil, hookErr
 	}
-	return m.streamWithProxyCallbacks(ctx, enriched, opts...)
+
+	var stream *schema.StreamReader[*schema.Message]
+	var err error
+	if m.innerHandlesCallbacks {
+		stream, err = m.inner.Stream(ctx, enriched, opts...)
+	} else {
+		stream, err = m.streamWithProxyCallbacks(ctx, enriched, opts...)
+	}
+	if hookErr := invokeAfterModelResponse(ctx, nil, err); hookErr != nil && err == nil {
+		err = hookErr
+	}
+	return stream, err
 }
 
 func (m *injectChatModel) streamWithProxyCallbacks(ctx context.Context,
@@ -149,4 +174,43 @@ func buildDynamicContext() string {
 		rootcommon.WorkspaceDir(),
 	)
 	return contextMsg
+}
+
+func invokeBeforeModelRequest(ctx context.Context, input []*schema.Message) ([]*schema.Message, error) {
+	messages := einoruntime.AdaptMessagesFromRunner(input)
+	result, err := hooks.FromContext(ctx).Invoke(ctx, hooks.Invocation{
+		HookPoint: hooks.HookBeforeModelRequest,
+		Payload:   hooks.BeforeModelRequestPayload{Messages: messages},
+	})
+	if err != nil {
+		return input, err
+	}
+	if result.Action == hooks.ActionReject {
+		if result.Message != "" {
+			return input, fmt.Errorf("model request rejected by hook: %s", result.Message)
+		}
+		return input, fmt.Errorf("model request rejected by hook")
+	}
+	if result.Action == hooks.ActionSkip {
+		return input, fmt.Errorf("model request skipped by hook")
+	}
+	if payload, ok := result.Payload.(hooks.BeforeModelRequestPayload); ok {
+		return einoruntime.AdaptMessagesForRunner(payload.Messages), nil
+	}
+	return input, nil
+}
+
+func invokeAfterModelResponse(ctx context.Context, output *schema.Message, modelErr error) error {
+	var message agentcore.Message
+	if output != nil {
+		message = einoruntime.AdaptMessageFromRunner(output)
+	}
+	_, err := hooks.FromContext(ctx).Invoke(ctx, hooks.Invocation{
+		HookPoint: hooks.HookAfterModelResponse,
+		Payload: hooks.AfterModelResponsePayload{
+			Message: message,
+			Error:   modelErr,
+		},
+	})
+	return err
 }

@@ -154,7 +154,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		Instruction:        instruction,
 		Model:              coreModel,
 		Tools:              toolList,
-		ToolMiddlewares:    []agentcore.ToolMiddleware{engine.NewDestructiveGuardMiddleware()},
+		ToolMiddlewares:    []agentcore.ToolMiddleware{engine.NewHookToolMiddleware(), engine.NewDestructiveGuardMiddleware()},
 		UnknownToolHandler: unknownToolsHandler,
 		ModelRetryConfig:   rootcommon.NewModelRetryConfig(),
 		MaxIterations:      MaxIterations(),

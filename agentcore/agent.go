@@ -117,5 +117,6 @@ type Engine interface {
 	NewSummaryMiddleware(ctx context.Context, cfg *SummaryConfig) (AgentMiddleware, error)
 	NewSkillsMiddleware(ctx context.Context) (AgentMiddleware, error)
 	NewDispatchMiddleware(ctx context.Context, cfg *DispatchConfig) (AgentMiddleware, error)
+	NewHookToolMiddleware() ToolMiddleware
 	NewDestructiveGuardMiddleware() ToolMiddleware
 }

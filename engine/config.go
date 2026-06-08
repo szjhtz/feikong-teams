@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/hooks"
 )
 
 type ContextHook func(context.Context) context.Context
@@ -39,6 +40,9 @@ type runConfig struct {
 
 	// ContextHooks 额外 context 装配逻辑
 	ContextHooks []ContextHook
+
+	// HookBus 运行期扩展点总线。nil 时使用 hooks.Global()
+	HookBus *hooks.Bus
 
 	// OnFinish 执行结束回调（含错误）。用于保存历史、更新元数据、提取记忆等
 	OnFinish func(ctx context.Context, result *agentcore.RunResult, err error)
