@@ -1,6 +1,6 @@
 # fkteams 非空小队
 
-fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI 助手，旨在通过多个专业智能体的协同工作来完成复杂任务。它支持 CLI、Web UI、OpenAI 兼容 API 和消息通道（Discord / QQ / 微信）多种交互方式，满足不同用户的使用习惯和场景需求。
+fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI 助手，适合代码开发、资料研究、数据分析、远程运维和自动化任务。它支持 Web UI、CLI、OpenAI 兼容 API 和消息通道（Discord / QQ / 微信）多种入口。
 
 ![非空小队架构简介](./docs/images/fkteams.png)
 
@@ -40,24 +40,14 @@ fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI
 
 ## 功能特性
 
-- **多智能体协作**：内置多个专业智能体（代码、搜索、数据分析、SSH、通用执行等），由 coordinator 智能调度
-- **四种工作模式**：团队模式、深度模式、圆桌会议模式、自定义模式
-- **多入口支持**：现代化 Web 界面、命令行界面、纯 API 服务和消息通道
-- **MCP 工具生态**：完整支持 MCP 协议，轻松接入外部工具
-- **自定义智能体**：通过配置文件灵活创建专业智能体
-- **OpenAI 兼容 API**：对外提供 OpenAI 格式接口，任意客户端配置地址和密钥即可使用已配置的模型
-- **聊天通道集成**：支持接入 QQ、Discord、微信等即时通讯平台
-- **长期记忆**：跨会话自动记忆，助手越用越顺手
-- **多模态输入**：支持文本、图片、音频、视频和文件
-- **推理模型支持**：流式展示思考过程（DeepSeek-R1、o1/o3 等）
-- **统一事件协议**：核心事件、历史记录与终端展示解耦，CLI/Web/Stream/通道共用一致事件结构
-- **GitHub Copilot**：一键登录 GitHub Copilot，OAuth 设备码认证
-- **流式任务控制**：任务后台独立执行，刷新页面或断开连接不会停止任务，同一会话支持多端实时订阅与断点续接
-- **Skills 技能系统**：动态加载技能提升特定任务表现
-- **交互式提问**：模型可主动向用户提问，支持选项选择（单选/多选）+ 自由输入
-- **定时任务**：自然语言设置定时任务，后台静默执行
-- **子任务并行**：generalist 智能体支持多子任务并行处理
-- **输出截断自动续接**：检测模型 max_tokens 截断，自动触发续接（自动修复不完整的 JSON ），输出不丢失
+- **多智能体协作**：按任务自动协同代码、搜索、数据分析、远程运维等专业能力
+- **多入口使用**：支持 Web UI、CLI、OpenAI 兼容 API，以及 QQ、Discord、微信等消息通道
+- **灵活工作模式**：支持团队模式、深度模式、圆桌会议模式和自定义模式
+- **工具与扩展**：内置文件、命令、搜索、文档、表格、SSH 等工具，并支持 MCP、Skills 和自定义智能体
+- **长任务体验**：任务可在后台运行，刷新页面或断开连接后仍可回到同一会话继续查看
+- **多模态与推理展示**：支持文本、图片、音频、视频和文件输入，可流式展示推理模型思考过程
+- **长期记忆与定时任务**：支持跨会话记忆、自然语言定时任务和模型主动提问
+- **模型接入**：支持 OpenAI 兼容供应商，并可通过 OAuth 登录 GitHub Copilot
 
 ## 安装
 
@@ -84,9 +74,25 @@ powershell -c "irm https://raw.githubusercontent.com/wsshow/feikong-teams/main/i
 
 ## 快速开始
 
-> **快速体验**：安装完成后，只需要生成配置文件并运行 `fkteams web` 即可立即体验 Web 界面！
+> **快速体验**：安装完成后，只需要配置模型并运行 `fkteams web` 即可立即体验 Web 界面！
 
-### 1. 生成配置文件
+### 1. 配置模型
+
+推荐使用登录向导：
+
+```bash
+fkteams login
+```
+
+也可以直接指定供应商：
+
+```bash
+fkteams login openai
+fkteams login deepseek
+fkteams login copilot
+```
+
+或生成配置文件后手动编辑：
 
 ```bash
 fkteams generate config
@@ -103,39 +109,18 @@ api_key = "your_api_key_here"
 model = "gpt-5"
 ```
 
-或使用 GitHub Copilot（需要 Copilot 订阅）：
+GitHub Copilot 用户也可以从 VS Code 已保存的 token 导入（需要 Copilot 订阅）：
 
 ```bash
-# 登录 GitHub Copilot
-fkteams login copilot
-
-# 或从 VS Code 已保存的 token 导入（免登录）
 fkteams login copilot --import
 ```
 
-也可通过 `login` 命令快速配置供应商：
+常用模型管理命令：
 
 ```bash
-# 交互式选择供应商并配置（推荐）
-fkteams login
-
-# 或直接指定供应商
-fkteams login openai
-fkteams login deepseek
-fkteams login copilot         # GitHub Copilot（OAuth 设备码）
-fkteams login copilot --import # 从 VS Code 导入 Copilot token
-
-# 模型管理
 fkteams model ls                     # 列出已配置的模型
 fkteams model rm                     # 交互式选择并移除模型配置
 fkteams logout openai                # 退出指定供应商
-```
-
-```toml
-[[models]]
-name = "default"
-provider = "copilot"
-model = "gpt-4o"
 ```
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)
@@ -191,14 +176,11 @@ docker compose up -d
 
 ## 架构与安全边界
 
-- `agentcore` 定义运行时无关的 Agent、Runner、Message、Tool、Event 等核心接口；运行时通过 registry 注册，默认实现为 `eino`；核心工具统一通过 `Tool.Invoke` 执行，函数工具只向适配层暴露输入类型用于 schema 推导；模型装饰、pipeline 和 MCP 工具加载通过可选能力接口扩展；`agentcore/eino` 是当前 CloudWeGo Eino ADK 适配实现，负责模型、工具、中间件、AgentTool 和 HITL resume 的具体落地。
-- `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理，并提供 `WithText` / `WithMessage` / `WithInput` 三种输入入口；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
-- `hooks` 提供运行期扩展点总线，当前接入 `before_run` / `after_run` / `on_event` / `before_tool_call` / `after_tool_call` / `before_model_request` / `after_model_response`；入口层可通过 `Session.WithHookBus` 注入独立 HookBus，未指定时使用全局 HookBus。
-- Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；WebSocket、流式任务和终端交互模式支持运行中 follow-up 排队和 steering 转向，steering 会在工具完成后的下一次模型调用前注入。Web 运行中输入默认追加为 follow-up，可在队列面板中将未执行项转为 steering，并可编辑、删除、上移/下移；终端运行中可随时追加转向消息，下一次模型调用前会合并消费当前队列，按 `Esc` 暂停时会把未消费转向回填到输入框。
-- 执行失败会保存为 `error` 会话状态，HTTP 同步接口会返回错误响应。
-- 流式事件通过 `events.Emitter` 统一归一化和校验，`events/log` 负责会话历史与元数据，`events/view` 负责终端展示；事件保留 `message_id`、成员智能体作用域、分片顺序和稳定 `tool_call_ref`，Web 前端据此将子智能体思考、工具调用和输出归并到同一成员卡片。
-- Runner 可被入口层缓存复用，checkpoint store 为并发安全实现；配置更新会重建 Agent 注册表并清空 Runner/MCP/通道缓存。
-- 内置工具必须在工具策略表中声明只读、破坏性、串行化和审批元数据；MCP 和成员智能体工具作为外部扩展，不强制使用内置策略表。
+- Web、CLI、API 和消息通道共用同一套执行引擎，会话、历史、流式输出和运行中输入保持一致。
+- 智能体、模型、工具和运行时适配层彼此解耦；默认运行时基于 CloudWeGo Eino ADK，后续可以替换或扩展。
+- 文件、命令、Git、SSH 等高风险能力会经过工具安全策略和人工确认流程；被拒绝的操作不会被自动重试。
+- 任务事件会统一记录到历史中，Web 和 CLI 基于同一事件流展示思考、工具调用、成员执行和最终回复。
+- Hooks、MCP、Skills 和自定义智能体用于扩展运行期能力；详细机制请参考下方文档。
 
 ## 文档导航
 
