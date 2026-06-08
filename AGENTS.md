@@ -112,6 +112,15 @@ bootstrap/                  # 应用目录初始化
 6. **初始化函数必须返回 error**，不使用 `log.Fatal`
 7. **禁止事件类型的字符串字面量**：始终使用 `events/types.go`（底层为 `agentcore/types.go`）中的类型常量
 
+## 验证与交付
+
+- 功能、重构或运行时行为改动优先执行 `go test ./...` 和 `go build ./...`；涉及静态风险时补充 `go vet ./...`。
+- 小范围改动可以先跑相关 package 的测试，但最终交付前要说明实际执行过的验证。
+- 文档、提示词或纯前端脚本改动至少执行 `git diff --check`；前端脚本改动优先补充 `node --check <file>`。
+- 功能变更必须同步更新 `README.md`，但 README 面向用户，避免暴露不必要的内部调度细节。
+- 提交信息遵循 Conventional Commits：`feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:` 等类型后接中文说明。
+- 验证失败、未运行或被环境阻塞时必须如实说明原因和剩余风险。
+
 ## 开发约定
 
 ### 智能体
@@ -158,4 +167,3 @@ bootstrap/                  # 应用目录初始化
 ### 其他
 
 - `Session.OnInterrupt` 未设置时自动使用固定拒绝决策
-- 功能变更必须同步更新 `README.md`
