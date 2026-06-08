@@ -41,6 +41,7 @@ class FKTeamsChat {
     this.attachments = []; // 多模态附件列表
     this.queueItems = []; // 运行中未消费队列
     this._debounceTimers = {}; // 防抖定时器
+    this._messageInputComposing = false; // 输入法组合态，避免回车选字时误发送
 
     this.init();
   }
@@ -228,6 +229,12 @@ class FKTeamsChat {
     this.messageInput.addEventListener("input", () => {
       this.handleInputChange();
       this.handleInputForMention();
+    });
+    this.messageInput.addEventListener("compositionstart", () => {
+      this._messageInputComposing = true;
+    });
+    this.messageInput.addEventListener("compositionend", () => {
+      this._messageInputComposing = false;
     });
     this.messageInput.addEventListener("keydown", (e) => this.handleKeyDown(e));
     this.sessionIdInput.addEventListener("change", () => {
@@ -546,6 +553,14 @@ class FKTeamsChat {
   }
 
   handleKeyDown(e) {
+    if (this.isMessageInputComposing(e)) {
+      return;
+    }
+
+    if (e.key === "Enter" && !e.shiftKey && this.isMobileMessageInput()) {
+      return;
+    }
+
     // 先处理文件建议的键盘导航
     if (this.handleFileSuggestionKeyDown(e)) {
       return;
@@ -562,6 +577,23 @@ class FKTeamsChat {
         this.sendMessage();
       }
     }
+  }
+
+  isMessageInputComposing(e) {
+    return Boolean(
+      this._messageInputComposing ||
+      (e && e.isComposing) ||
+      (e && e.keyCode === 229),
+    );
+  }
+
+  isMobileMessageInput() {
+    if (window.matchMedia) {
+      return window.matchMedia(
+        "(max-width: 768px), (hover: none), (pointer: coarse)",
+      ).matches;
+    }
+    return window.innerWidth <= 768;
   }
 
   // setCurrentAgent 切换当前智能体
