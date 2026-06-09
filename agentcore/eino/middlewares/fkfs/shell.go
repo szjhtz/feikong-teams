@@ -120,16 +120,17 @@ type limitedWriter struct {
 }
 
 func (lw *limitedWriter) Write(p []byte) (n int, err error) {
+	originalLen := len(p)
 	remaining := lw.limit - lw.written
 	if remaining <= 0 {
-		return len(p), nil
+		return originalLen, nil
 	}
 	if len(p) > remaining {
 		p = p[:remaining]
 	}
 	n, err = lw.w.Write(p)
 	lw.written += n
-	return len(p), err
+	return originalLen, err
 }
 
 var _ filesystem.Shell = (*LocalShell)(nil)
