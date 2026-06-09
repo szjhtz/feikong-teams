@@ -176,6 +176,46 @@ test("thinking indicator hides for visible message content", () => {
   }), false);
 });
 
+test("queued executing user message waits for processing start", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let added = 0;
+
+  chat.messagesContainer = { querySelectorAll: () => [] };
+  chat.addUserMessage = () => {
+    added += 1;
+  };
+
+  chat.handleUserMessageEvent({
+    type: "user_message",
+    content: "later",
+    queued_executing: true,
+    queue_kind: "follow_up",
+  });
+
+  assert.equal(added, 0);
+});
+
+test("queued follow-up is rendered when processing starts", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let rendered = null;
+
+  chat.updateStatus = () => {};
+  chat.showThinkingIndicator = () => {};
+  chat.addQueuedFollowUpMessage = (content, queueID) => {
+    rendered = { content, queueID };
+  };
+
+  chat.handleProcessingStart({
+    type: "processing_start",
+    queued_executing: true,
+    queue_kind: "follow_up",
+    content: "later",
+    queue_id: "queue-1",
+  });
+
+  assert.deepEqual(rendered, { content: "later", queueID: "queue-1" });
+});
+
 test("dispatch task handling does not assume the first tool call", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   chat.isMemberRunEvent = () => false;

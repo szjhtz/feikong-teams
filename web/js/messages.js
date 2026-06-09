@@ -1406,11 +1406,13 @@ FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
     return;
   }
 
-  if (!event.queued_executing) {
-    const users = this.messagesContainer.querySelectorAll(".message.user .message-body");
-    const last = users.length > 0 ? users[users.length - 1].textContent || "" : "";
-    if (last === content) return;
+  if (event.queued_executing) {
+    return;
   }
+
+  const users = this.messagesContainer.querySelectorAll(".message.user .message-body");
+  const last = users.length > 0 ? users[users.length - 1].textContent || "" : "";
+  if (last === content) return;
 
   const welcomeMsg = this.messagesContainer.querySelector(".welcome-message");
   if (welcomeMsg) welcomeMsg.remove();
@@ -1428,7 +1430,22 @@ FKTeamsChat.prototype.handleProcessingStart = function (event, eventSessionId) {
   this.showThinkingIndicator(event.queued_executing ? "处理队列" : "思考中");
   if (event.queued_executing && event.queue_kind === "steering") {
     this.addSteeringExecutionNotice(event.content || "", event.queue_id || "");
+  } else if (event.queued_executing && event.queue_kind === "follow_up") {
+    this.addQueuedFollowUpMessage(event.content || "", event.queue_id || "");
   }
+};
+
+FKTeamsChat.prototype.addQueuedFollowUpMessage = function (content, queueID) {
+  if (!content) return;
+  if (queueID && this.messagesContainer?.querySelectorAll) {
+    const existing = Array.from(this.messagesContainer.querySelectorAll(".message.user[data-queue-id]"))
+      .find((el) => el.dataset.queueId === queueID);
+    if (existing) return;
+  }
+  this.addUserMessage(content, null, {
+    queueID,
+    queuedExecuting: true,
+  });
 };
 
 FKTeamsChat.prototype.addSteeringExecutionNotice = function (content, queueID) {
@@ -3037,10 +3054,16 @@ FKTeamsChat.prototype.continueAfterMaxIterations = function () {
   this.showThinkingIndicator("等待中");
 };
 
-FKTeamsChat.prototype.addUserMessage = function (content, attachments) {
+FKTeamsChat.prototype.addUserMessage = function (content, attachments, options) {
   const messageEl = document.createElement("div");
   messageEl.className = "message user";
   messageEl.setAttribute("data-message-id", `msg-${Date.now()}`);
+  if (options?.queueID) {
+    messageEl.dataset.queueId = options.queueID;
+  }
+  if (options?.queuedExecuting) {
+    messageEl.dataset.queuedExecuting = "1";
+  }
 
   let attachmentsHtml = "";
   if (attachments && attachments.length > 0) {
