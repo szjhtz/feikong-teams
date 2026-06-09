@@ -156,6 +156,26 @@ test("role tool message end is routed as tool result end", () => {
   assert.equal(routed.content, "done");
 });
 
+test("thinking indicator stays visible for message start", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+
+  assert.equal(chat.shouldHideThinkingIndicatorForEvent({
+    type: "message_start",
+  }), false);
+});
+
+test("thinking indicator hides for visible message content", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+
+  assert.equal(chat.shouldHideThinkingIndicatorForEvent({
+    type: "message_delta",
+    content: "hello",
+  }), true);
+  assert.equal(chat.shouldHideThinkingIndicatorForEvent({
+    type: "message_delta",
+  }), false);
+});
+
 test("dispatch task handling does not assume the first tool call", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   chat.isMemberRunEvent = () => false;

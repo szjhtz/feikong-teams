@@ -1140,21 +1140,47 @@ FKTeamsChat.prototype.hideThinkingIndicator = function () {
 };
 
 FKTeamsChat.prototype.shouldHideThinkingIndicatorForEvent = function (event) {
-  return [
-    "message_start",
-    "message_delta",
-    "message_end",
-    "tool_start",
-    "tool_update",
-    "tool_end",
-    "action",
-    "dispatch_progress",
-    "approval_required",
-    "ask_questions",
-    "error",
-    "cancelled",
-    "processing_end",
-  ].includes(event?.type);
+  if (!event) return false;
+  const content = event.delta || event.content || event.tool_result || "";
+  switch (event.type) {
+    case "message_start":
+      return false;
+    case "message_delta":
+      return content !== "";
+    case "message_end":
+      return Boolean(
+        content !== "" ||
+          event.reasoning_content ||
+          this.normalizeToolCallsForEvent(event).length > 0,
+      );
+    case "tool_start":
+      return Boolean(
+        this.normalizeToolCallsForEvent(event).length > 0 ||
+          event.tool_name ||
+          event.tool_call_id ||
+          event.tool_call_ref,
+      );
+    case "tool_update":
+    case "tool_end":
+      return Boolean(
+        content !== "" ||
+          event.tool_name ||
+          event.tool_call_id ||
+          event.tool_call_ref,
+      );
+    case "action":
+      return Boolean(event.content || event.action_type);
+    case "dispatch_progress":
+    case "approval_required":
+    case "ask_questions":
+    case "error":
+    case "cancelled":
+      return true;
+    case "processing_end":
+      return false;
+    default:
+      return false;
+  }
 };
 
 // 显示智能体切换通知
@@ -1314,6 +1340,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       break;
     case "message_start":
       if (this._cancelledSessionId === eventSessionId) break;
+      this.updateThinkingIndicator("准备响应");
       this.handleCoreMessageStart(event);
       break;
     case "message_delta":
