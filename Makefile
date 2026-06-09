@@ -41,4 +41,26 @@ build:
 clean:
 	rm -rf ./release
 
-.PHONY: native all build clean
+fmt-check:
+	@files=$$(find . -name '*.go' -not -path './.git/*' -print | xargs gofmt -l); \
+	if [ -n "$$files" ]; then \
+		echo "以下 Go 文件需要 gofmt:"; \
+		echo "$$files"; \
+		exit 1; \
+	fi
+
+test:
+	go test ./...
+
+vet:
+	go vet ./...
+
+js-test:
+	node --test web/js_test/*.test.js
+
+diff-check:
+	git diff --check
+
+check: fmt-check vet test js-test diff-check
+
+.PHONY: native all build clean fmt-check test vet js-test diff-check check

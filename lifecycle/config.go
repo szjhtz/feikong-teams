@@ -10,12 +10,12 @@ import (
 
 // AppConfig 应用配置
 type AppConfig struct {
-	WorkspaceDir       string // 工作目录
-	MemoryEnabled      bool   // 是否启用长期记忆
-	SchedulerEnabled   bool   // 是否启用定时任务
-	SchedulerDir       string // 定时任务调度器数据目录
-	InputHistoryPath   string // 输入历史文件路径
-	ChatHistoryDir     string // 聊天历史目录
+	WorkspaceDir     string // 工作目录
+	MemoryEnabled    bool   // 是否启用长期记忆
+	SchedulerEnabled bool   // 是否启用定时任务
+	SchedulerDir     string // 定时任务调度器数据目录
+	InputHistoryPath string // 输入历史文件路径
+	ChatHistoryDir   string // 聊天历史目录
 
 	// ExitSignals 触发退出的系统信号（CLI 模式应排除 SIGINT）
 	ExitSignals []os.Signal
@@ -26,13 +26,13 @@ func DefaultConfig() *AppConfig {
 	appDir := common.AppDir()
 	cfg := config.Get()
 	return &AppConfig{
-		WorkspaceDir:       cfg.WorkspaceDir(),
-		MemoryEnabled:      cfg.Memory.Enabled,
-		SchedulerEnabled:   true,
-		SchedulerDir:       common.SchedulerDir(),
-		InputHistoryPath:   filepath.Join(appDir, "history", "input_history", "fkteams_input_history"),
-		ChatHistoryDir:     filepath.Join(appDir, "history", "chat_history"),
-		ExitSignals:        []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP},
+		WorkspaceDir:     cfg.WorkspaceDir(),
+		MemoryEnabled:    cfg.Memory.Enabled,
+		SchedulerEnabled: true,
+		SchedulerDir:     common.SchedulerDir(),
+		InputHistoryPath: filepath.Join(appDir, "history", "input_history", "fkteams_input_history"),
+		ChatHistoryDir:   filepath.Join(appDir, "history", "chat_history"),
+		ExitSignals:      []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP},
 	}
 }
 
