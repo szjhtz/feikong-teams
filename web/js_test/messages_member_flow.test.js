@@ -31,6 +31,24 @@ test("message event hides thinking after visible render handler", () => {
   assert.deepEqual(calls, ["render", "hide"]);
 });
 
+test("sources card uses local favicon proxy", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  chat.escapeHtml = (value) => String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+
+  const html = chat._buildSourcesCard("", [{
+    url: "https://example.com/report",
+    label: "Example",
+  }]);
+
+  assert.match(html, /\/api\/fkteams\/favicon\?domain=example\.com&amp;size=32/);
+  assert.match(html, /\/api\/fkteams\/favicon\?domain=example\.com&amp;size=16/);
+  assert.doesNotMatch(html, /google\.com\/s2\/favicons/);
+});
+
 test("member tool flow key uses only canonical ref", () => {
   const chat = newChatWithRecordedMigrations();
   const entry = {};

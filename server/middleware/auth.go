@@ -26,6 +26,10 @@ func Auth() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if path == "/api/fkteams/favicon" {
+			c.Next()
+			return
+		}
 
 		// 文件预览/分享链接不需要验证（有独立的密码校验机制）
 		if strings.HasPrefix(path, "/p/") || strings.HasPrefix(path, "/s/") {

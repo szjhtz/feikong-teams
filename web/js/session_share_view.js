@@ -123,14 +123,14 @@
     });
     const iconsHtml = domains.length > 0
       ? domains.slice(0, 5).map((domain, index) => (
-        `<img class="source-favicon" src="https://www.google.com/s2/favicons?domain=${escapeHtml(domain)}&sz=32" alt="" style="z-index:${5 - index};margin-left:${index === 0 ? "0" : "-6px"};">`
+        `<img class="source-favicon" src="${escapeHtml(sourceFaviconURL(domain, 32))}" alt="" style="z-index:${5 - index};margin-left:${index === 0 ? "0" : "-6px"};">`
       )).join("")
       : '<span class="source-icon-fallback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
 
     const listHtml = items.map((item, index) => {
       const domain = sourceDomain(item.url);
       const icon = domain
-        ? `<img class="source-item-favicon" src="https://www.google.com/s2/favicons?domain=${escapeHtml(domain)}&sz=16" alt="">`
+        ? `<img class="source-item-favicon" src="${escapeHtml(sourceFaviconURL(domain, 16))}" alt="">`
         : '<span class="source-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
       const label = `${index + 1}. ${item.label || item.url || "来源"}`;
       if (item.url) {
@@ -157,6 +157,10 @@
     } catch (_) {
       return "";
     }
+  }
+
+  function sourceFaviconURL(domain, size) {
+    return `/api/fkteams/favicon?domain=${encodeURIComponent(domain || "")}&size=${encodeURIComponent(String(size || 16))}`;
   }
 
   function formatUnixTime(value) {

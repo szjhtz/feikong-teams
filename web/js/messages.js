@@ -1930,30 +1930,42 @@ FKTeamsChat.prototype._replaceFootnotePlaceholders = function (
   });
 };
 
+FKTeamsChat.prototype.sourceDomainFromURL = function (url) {
+  if (!url || !/^https?:\/\//.test(url)) return "";
+  try {
+    return new URL(url).hostname;
+  } catch (e) {
+    return "";
+  }
+};
+
+FKTeamsChat.prototype.sourceFaviconURL = function (domain, size) {
+  return (
+    "/api/fkteams/favicon?domain=" +
+    encodeURIComponent(domain || "") +
+    "&size=" +
+    encodeURIComponent(String(size || 16))
+  );
+};
+
 // 根据提取的脚注项构建来源卡片，追加到 HTML 末尾
 FKTeamsChat.prototype._buildSourcesCard = function (html, items) {
-  // 收集可用 favicon 的域名
-  var favicons = [];
+  // 收集可用域名，通过本地代理加载 favicon，避免浏览器侧外部 404 噪音。
+  var domains = [];
   items.forEach(function (item) {
-    if (item.url && /^https?:\/\//.test(item.url)) {
-      try {
-        var domain = new URL(item.url).hostname;
-        if (favicons.indexOf(domain) === -1) favicons.push(domain);
-      } catch (e) {
-        /* ignore */
-      }
-    }
-  });
+    var domain = this.sourceDomainFromURL(item.url);
+    if (domain && domains.indexOf(domain) === -1) domains.push(domain);
+  }, this);
 
   // 构建图标堆叠（最多显示5个）
   var iconsHtml = "";
-  var showCount = Math.min(favicons.length, 5);
+  var showCount = Math.min(domains.length, 5);
   if (showCount > 0) {
     for (var i = 0; i < showCount; i++) {
       iconsHtml +=
-        '<img class="source-favicon" src="https://www.google.com/s2/favicons?domain=' +
-        favicons[i] +
-        '&sz=32" alt="" style="z-index:' +
+        '<img class="source-favicon" src="' +
+        this.escapeHtml(this.sourceFaviconURL(domains[i], 32)) +
+        '" alt="" style="z-index:' +
         (showCount - i) +
         ";margin-left:" +
         (i === 0 ? "0" : "-6px") +
@@ -1967,22 +1979,12 @@ FKTeamsChat.prototype._buildSourcesCard = function (html, items) {
   // 构建来源列表
   var listHtml = "";
   items.forEach(function (item, idx) {
-    var favicon = "";
-    if (item.url && /^https?:\/\//.test(item.url)) {
-      try {
-        var d = new URL(item.url).hostname;
-        favicon =
-          '<img class="source-item-favicon" src="https://www.google.com/s2/favicons?domain=' +
-          d +
-          '&sz=16" alt="">';
-      } catch (e) {
-        /* ignore */
-      }
-    }
-    if (!favicon) {
-      favicon =
-        '<span class="source-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
-    }
+    var domain = this.sourceDomainFromURL(item.url);
+    var icon = domain
+      ? '<img class="source-item-favicon" src="' +
+        this.escapeHtml(this.sourceFaviconURL(domain, 16)) +
+        '" alt="">'
+      : '<span class="source-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
     var linkAttr = item.url
       ? ' href="' + item.url + '" target="_blank" rel="noopener noreferrer"'
       : "";
@@ -1993,7 +1995,7 @@ FKTeamsChat.prototype._buildSourcesCard = function (html, items) {
       ' class="source-item"' +
       linkAttr +
       ">" +
-      favicon +
+      icon +
       '<span class="source-item-label">' +
       (idx + 1) +
       ". " +
@@ -2001,7 +2003,7 @@ FKTeamsChat.prototype._buildSourcesCard = function (html, items) {
       "</span></" +
       tag +
       ">";
-  });
+  }, this);
 
   var cardHtml =
     '<div class="sources-card">' +

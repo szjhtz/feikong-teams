@@ -54,6 +54,9 @@ func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate
 		// 智能体 API
 		apiV1.GET("/agents", handler.GetAgentsHandler())
 
+		// 来源图标代理
+		apiV1.GET("/favicon", handler.FaviconHandler())
+
 		// 聊天 API
 		apiV1.POST("/chat", handler.ChatHandlerWithState(state))
 

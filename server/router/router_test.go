@@ -20,6 +20,7 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 		"POST /v1/chat/completions",
 		"GET /api/fkteams/version",
 		"GET /api/fkteams/agents",
+		"GET /api/fkteams/favicon",
 		"POST /api/fkteams/chat",
 		"POST /api/fkteams/stream/start",
 		"PATCH /api/fkteams/stream/queue/:sessionID/:queueID",
