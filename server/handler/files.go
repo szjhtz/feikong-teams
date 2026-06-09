@@ -52,6 +52,18 @@ func resolveAndValidatePath(baseDir, absBase, subPath string) (string, string, e
 	return resolved.AbsPath, resolved.RelPath, nil
 }
 
+func isPathWithinBase(absBase, path string) bool {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absBase, absPath)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
+}
+
 // GetFilesHandler 获取指定目录下的文件和文件夹列表
 func GetFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -245,9 +257,7 @@ func UploadFileHandler() gin.HandlerFunc {
 
 			savePath := filepath.Join(targetDir, fileName)
 
-			// 确保最终路径在 baseDir 内
-			absSave, _ := filepath.Abs(savePath)
-			if !strings.HasPrefix(absSave, absBase+string(os.PathSeparator)) {
+			if !isPathWithinBase(absBase, savePath) {
 				continue
 			}
 
@@ -349,8 +359,7 @@ func UploadChunkHandler() gin.HandlerFunc {
 
 		// 确保最终路径在 baseDir 内
 		finalPath := filepath.Join(targetDir, safeName)
-		absFinal, _ := filepath.Abs(finalPath)
-		if !strings.HasPrefix(absFinal, absBase+string(os.PathSeparator)) {
+		if !isPathWithinBase(absBase, finalPath) {
 			Fail(c, http.StatusBadRequest, "无效的保存路径")
 			return
 		}
