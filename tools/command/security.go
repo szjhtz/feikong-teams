@@ -170,6 +170,9 @@ func splitShellCommands(command string) []string {
 			segments = append(segments, strings.TrimSpace(current.String()))
 			current.Reset()
 			i++ // skip second &
+		case !inSingle && !inDouble && ch == '|' && i+1 < len(command) && command[i+1] == '|':
+			current.WriteString("||")
+			i++
 		case !inSingle && !inDouble && ch == ';':
 			segments = append(segments, strings.TrimSpace(current.String()))
 			current.Reset()
