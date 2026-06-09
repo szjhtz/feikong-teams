@@ -2,7 +2,9 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fkteams/agentcore"
+	"sync"
 	"testing"
 )
 
@@ -60,6 +62,72 @@ func TestCacheClearRebuildsRunner(t *testing.T) {
 	}
 }
 
+func TestCacheGetOrCreateDoesNotCacheErrors(t *testing.T) {
+	cache := NewCache()
+	calls := 0
+	factory := func() (agentcore.Runner, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("temporary")
+		}
+		return &cacheRunnerStub{}, nil
+	}
+
+	if _, err := cache.GetOrCreate(ModeTeam, factory); err == nil {
+		t.Fatal("expected first factory error")
+	}
+	if _, err := cache.GetOrCreate(ModeTeam, factory); err != nil {
+		t.Fatalf("second factory call should succeed: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("factory calls = %d, want 2", calls)
+	}
+}
+
+func TestCacheGetOrCreateRunsSingleFactoryConcurrently(t *testing.T) {
+	cache := NewCache()
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	calls := 0
+	factory := func() (agentcore.Runner, error) {
+		calls++
+		<-start
+		return &cacheRunnerStub{}, nil
+	}
+
+	const workers = 5
+	results := make(chan agentcore.Runner, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, err := cache.GetOrCreate(ModeTeam, factory)
+			if err != nil {
+				t.Errorf("GetOrCreate error: %v", err)
+				return
+			}
+			results <- r
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	var first agentcore.Runner
+	for r := range results {
+		if first == nil {
+			first = r
+			continue
+		}
+		if first != r {
+			t.Fatal("expected all workers to receive the same runner")
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("factory calls = %d, want 1", calls)
+	}
+}
+
 func TestResolveFactoryDefaultsToTeam(t *testing.T) {
 	key, factory, err := resolveFactory(context.Background(), "", "", false)
 	if err != nil {
@@ -70,6 +138,21 @@ func TestResolveFactoryDefaultsToTeam(t *testing.T) {
 	}
 	if factory == nil {
 		t.Fatal("expected factory")
+	}
+}
+
+func TestResolveFactoryKnownModes(t *testing.T) {
+	for _, mode := range []string{ModeRoundtable, ModeCustom, ModeDeep, ModeTeam, ModeSupervisor} {
+		key, factory, err := resolveFactory(context.Background(), mode, "", false)
+		if err != nil {
+			t.Fatalf("resolveFactory(%q): %v", mode, err)
+		}
+		if key != mode {
+			t.Fatalf("resolveFactory(%q) key = %q", mode, key)
+		}
+		if factory == nil {
+			t.Fatalf("resolveFactory(%q) factory is nil", mode)
+		}
 	}
 }
 
