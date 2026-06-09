@@ -243,7 +243,14 @@ FKTeamsChat.prototype.memberEntryFromEvent = function (event) {
   const key = this.memberKeyFromEvent(event);
   if (!key) return null;
   const label = event.member_name || event.agent_name || event.member_tool_name;
-  return this.ensureMemberCard(key, label, event.member_name || event.agent_name || event.member_tool_name, event.member_order);
+  const entry = this.ensureMemberCard(key, label, event.member_name || event.agent_name || event.member_tool_name, event.member_order);
+  if (entry) {
+    entry.memberStarted = true;
+    if (entry.el?.classList.contains("parallel-member-done")) {
+      this.updateMemberStatus(entry, "running", "运行中");
+    }
+  }
+  return entry;
 };
 
 FKTeamsChat.prototype.memberInnerResultKey = function (event) {
@@ -900,6 +907,10 @@ FKTeamsChat.prototype.finalizeParallelMemberResults = function () {
       if (content) this.setMemberFinalOutput(entry, content);
       this.updateMemberStatus(entry, "error", "失败");
     } else {
+      if (entry.memberStarted) {
+        delete chunks[callID];
+        continue;
+      }
       if (content && !this.memberHasOutputContent(entry)) {
         this.setMemberFinalOutput(entry, content);
       }
@@ -2471,6 +2482,10 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
       if (content) this.setMemberFinalOutput(entry, content);
       this.updateMemberStatus(entry, "error", "失败");
     } else {
+      if (entry.memberStarted) {
+        this.scrollToBottom();
+        return;
+      }
       if (content && !this.memberHasOutputContent(entry)) {
         this.setMemberFinalOutput(entry, content, event.sequence);
       }

@@ -257,3 +257,65 @@ test("agent tool result uses event metadata when stored tool mapping was reset",
   });
   assert.deepEqual(status, { entry, state: "done", text: "完成" });
 });
+
+test("agent tool result does not finish a started member task", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = { memberStarted: true };
+  let status = null;
+
+  chat.isMemberRunEvent = () => false;
+  chat.toolCallsByID = {};
+  chat.parallelToolMemberByID = {};
+  chat.parallelMemberResultChunks = {};
+  chat.lastToolName = "";
+  chat.ensureMemberCard = () => entry;
+  chat.memberHasOutputContent = () => false;
+  chat.setMemberFinalOutput = () => {};
+  chat.updateMemberStatus = (_entry, state, text) => {
+    status = { entry: _entry, state, text };
+  };
+  chat.scrollToBottom = () => {};
+
+  chat.handleToolResult({
+    type: "tool_result",
+    tool_call_id: "call-1",
+    tool_call_ref: "tool_call:call-1",
+    tool_name: "ask_fkagent_researcher",
+    tool_display_name: "指派给 researcher",
+    tool_kind: "agent",
+    tool_target: "researcher",
+    content: "intermediate result",
+  });
+
+  assert.equal(status, null);
+});
+
+test("member event reopens a prematurely completed member card", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const classNames = new Set(["parallel-member-done"]);
+  const entry = {
+    el: {
+      classList: {
+        contains(name) {
+          return classNames.has(name);
+        },
+      },
+    },
+  };
+  let status = null;
+
+  chat.ensureMemberCard = () => entry;
+  chat.updateMemberStatus = (_entry, state, text) => {
+    status = { entry: _entry, state, text };
+    classNames.delete("parallel-member-done");
+  };
+
+  const got = chat.memberEntryFromEvent({
+    member_call_id: "call-1",
+    member_name: "researcher",
+  });
+
+  assert.equal(got, entry);
+  assert.equal(entry.memberStarted, true);
+  assert.deepEqual(status, { entry, state: "running", text: "运行中" });
+});
