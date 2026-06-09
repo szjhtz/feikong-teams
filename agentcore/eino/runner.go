@@ -146,6 +146,9 @@ func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.Agen
 			return lastEvent, nil
 		}
 		lastEvent = event
+		if err := c.flushUnknownToolReports(); err != nil {
+			return lastEvent, err
+		}
 		if err := c.process(ctx, event); err != nil {
 			return lastEvent, err
 		}
@@ -153,6 +156,7 @@ func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.Agen
 }
 
 func (c *converter) flushUnknownToolReports() error {
+	var pending []unknownToolReport
 	for _, report := range c.unknowns.take() {
 		if events.IsInternalToolName(report.ToolName) {
 			continue
@@ -161,12 +165,20 @@ func (c *converter) flushUnknownToolReports() error {
 			AgentName:  report.AgentName,
 			ToolCallID: report.ToolCallID,
 			ToolName:   report.ToolName,
+			ToolArgs:   report.ToolArgs,
 			ToolResult: normalizeToolResultContent(report.ToolResult),
 		})
 		c.identities.attach(&nEvent)
+		if nEvent.ToolCallID == "" || nEvent.ToolCallRef == "" {
+			pending = append(pending, report)
+			continue
+		}
 		if err := c.emit(nEvent); err != nil {
 			return err
 		}
+	}
+	for _, report := range pending {
+		c.unknowns.add(report)
 	}
 	return nil
 }

@@ -2,6 +2,8 @@ package events
 
 import (
 	"context"
+	"errors"
+	"fkteams/agentcore"
 	"fkteams/hooks"
 	"testing"
 	"time"
@@ -113,5 +115,50 @@ func TestDispatchEventHookCanSkipCallback(t *testing.T) {
 	}
 	if called {
 		t.Fatal("callback should not be called")
+	}
+}
+
+func TestDispatchAdapterAndNonInteractiveContext(t *testing.T) {
+	ctx := WithNonInteractive(context.Background())
+	if !IsNonInteractive(ctx) {
+		t.Fatal("expected non-interactive context")
+	}
+	if IsNonInteractive(context.Background()) {
+		t.Fatal("plain context should not be non-interactive")
+	}
+
+	var got Event
+	ctx = WithCallback(ctx, func(event Event) error {
+		got = event
+		return nil
+	})
+	sink := Dispatch(ctx)
+	if err := sink(agentcore.Event{Type: EventMessageDelta, Content: "hello"}); err != nil {
+		t.Fatalf("dispatch sink: %v", err)
+	}
+	if got.Content != "hello" || got.EventID == "" {
+		t.Fatalf("dispatched event = %#v", got)
+	}
+}
+
+func TestDispatchEventReturnsCallbackErrors(t *testing.T) {
+	callbackErr := errors.New("callback failed")
+	ctx := WithCallback(context.Background(), func(event Event) error {
+		return callbackErr
+	})
+	if err := DispatchEvent(ctx, Event{Type: EventMessageDelta}); !errors.Is(err, callbackErr) {
+		t.Fatalf("callback error = %v, want %v", err, callbackErr)
+	}
+}
+
+func TestInternalContinueContent(t *testing.T) {
+	if !IsInternalContinueContent("Your previous text output was truncated, continue") {
+		t.Fatal("expected text truncation message to be internal")
+	}
+	if !IsInternalContinueContent("Your previous tool call was truncated, continue") {
+		t.Fatal("expected tool truncation message to be internal")
+	}
+	if IsInternalContinueContent("normal output") {
+		t.Fatal("normal content should not be internal")
 	}
 }

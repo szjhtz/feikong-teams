@@ -43,6 +43,35 @@ func TestToolCallRefAtUsesIndexThenPositionAndDoesNotSpreadTopLevelRef(t *testin
 	}
 }
 
+func TestToolCallsFromEventPrependsSingleToolCall(t *testing.T) {
+	single := agentcore.ToolCall{
+		ID: "call_1",
+		Function: agentcore.FunctionCall{
+			Name: "first",
+		},
+	}
+	event := Event{
+		ToolCall: &single,
+		ToolCalls: []agentcore.ToolCall{{
+			ID: "call_2",
+			Function: agentcore.FunctionCall{
+				Name: "second",
+			},
+		}},
+	}
+
+	got := ToolCallsFromEvent(event)
+	if len(got) != 2 || got[0].ID != "call_1" || got[1].ID != "call_2" {
+		t.Fatalf("ToolCallsFromEvent = %#v", got)
+	}
+
+	event.ToolCall = nil
+	got = ToolCallsFromEvent(event)
+	if len(got) != 1 || got[0].ID != "call_2" {
+		t.Fatalf("ToolCallsFromEvent without single call = %#v", got)
+	}
+}
+
 func TestValidateEventContractRequiresStableToolIdentity(t *testing.T) {
 	if err := ValidateEventContract(Event{
 		Type:     EventToolStart,
@@ -85,5 +114,55 @@ func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 		ToolCallRefs: map[int]string{0: "tool_call:call_1"},
 	}); err != nil {
 		t.Fatalf("message_end with tool refs failed: %v", err)
+	}
+}
+
+func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing.T) {
+	invalidEvents := []Event{
+		{Type: EventToolUpdate, ToolCallID: "call_1"},
+		{Type: EventToolEnd, ToolCallRef: "ref_1"},
+		{Type: EventMessageDelta, DeltaKind: DeltaToolArgs, ToolCallID: "call_1"},
+		{Type: EventMessageDelta, DeltaKind: DeltaToolResult, ToolCallRef: "ref_1"},
+		{Type: EventMessageEnd, Role: agentcore.RoleTool, ToolCallID: "call_1"},
+	}
+	for i, event := range invalidEvents {
+		if err := ValidateEventContract(event); err == nil {
+			t.Fatalf("invalid event %d unexpectedly passed: %#v", i, event)
+		}
+	}
+
+	validEvents := []Event{
+		{Type: EventToolUpdate, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventToolEnd, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventMessageDelta, DeltaKind: DeltaToolArgs, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventMessageDelta, DeltaKind: DeltaToolResult, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventMessageEnd, Role: agentcore.RoleTool, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventMessageDelta, DeltaKind: DeltaOutput},
+	}
+	for i, event := range validEvents {
+		if err := ValidateEventContract(event); err != nil {
+			t.Fatalf("valid event %d failed: %v", i, err)
+		}
+	}
+}
+
+func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T) {
+	if err := ValidateEventContract(Event{
+		Type: EventMessageEnd,
+		ToolCalls: []agentcore.ToolCall{{
+			Function: agentcore.FunctionCall{Name: "continue_output"},
+		}},
+	}); err != nil {
+		t.Fatalf("internal tool call should be skipped: %v", err)
+	}
+
+	if err := ValidateEventContract(Event{
+		Type: EventMessageEnd,
+		ToolCalls: []agentcore.ToolCall{{
+			Function: agentcore.FunctionCall{Name: "search"},
+		}},
+		ToolCallRefs: map[int]string{0: "ref_1"},
+	}); err == nil {
+		t.Fatal("missing tool call id should fail")
 	}
 }
