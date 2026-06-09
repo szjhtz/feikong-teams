@@ -753,12 +753,19 @@ a.source-item:hover {
   border-radius: 10px;
   font-size: 13px;
   animation: fadeIn 0.2s ease;
+  box-sizing: border-box;
 }
 
 .tool-call {
   background: var(--info-light);
   border: 2px solid var(--info);
   box-shadow: var(--shadow-sketch);
+}
+
+.tool-call:not(.tool-call-expanded) {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
 }
 
 .agent-tool-call {
@@ -776,7 +783,8 @@ a.source-item:hover {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  width: 100%;
+  margin-bottom: 0;
   font-weight: 500;
 }
 
@@ -801,6 +809,11 @@ a.source-item:hover {
   color: var(--success);
   font-family: var(--font-hand);
   font-size: 15px;
+  margin-bottom: 8px;
+}
+
+.tool-call-expanded .tool-call-header {
+  margin-bottom: 8px;
 }
 
 /* Parallel Members */
@@ -971,7 +984,9 @@ a.source-item:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 44px;
   padding: 7px 10px;
+  box-sizing: border-box;
   cursor: pointer;
   list-style: none;
   color: var(--info);
@@ -1014,6 +1029,7 @@ a.source-item:hover {
   background: var(--bg-tertiary);
   border-radius: 999px;
   padding: 1px 7px;
+  line-height: 1.5;
 }
 
 .parallel-member-tool-section {
@@ -1062,6 +1078,7 @@ a.source-item:hover {
   padding: 2px 8px;
   border-radius: 6px;
   font-size: 12px;
+  line-height: 1.5;
   border: 1px solid rgba(107, 165, 198, 0.3);
 }
 
@@ -1073,6 +1090,7 @@ a.source-item:hover {
   background: var(--bg-tertiary);
   border-radius: 999px;
   padding: 1px 8px;
+  line-height: 1.5;
 }
 
 .tool-call-detail {
@@ -1210,6 +1228,13 @@ a.source-item:hover {
   box-shadow: none;
   min-width: 0;
   max-width: 100%;
+  box-sizing: border-box;
+}
+
+.dispatch-card:not(.dispatch-card-expanded) {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
 }
 
 .dispatch-card[style*="cursor: pointer"]:hover,
@@ -1222,6 +1247,7 @@ a.source-item:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
 }
@@ -1296,6 +1322,7 @@ a.source-item:hover {
   padding: 1px 6px;
   background: var(--bg-tertiary);
   border-radius: 4px;
+  line-height: 1.5;
 }
 
 .dispatch-card-toggle {
@@ -1550,13 +1577,33 @@ a.source-item:hover {
   margin-bottom: 10px;
   overflow: hidden;
   background: var(--bg-secondary);
+  box-sizing: border-box;
+}
+
+.message-body > .reasoning-block:last-child {
+  margin-bottom: 0;
+}
+
+.message-body:has(> .reasoning-block:only-child) {
+  display: flex;
+  align-items: center;
+}
+
+.message-body:has(> .reasoning-block.expanded:only-child) {
+  display: block;
+}
+
+.message-body > .reasoning-block:only-child {
+  width: 100%;
 }
 
 .reasoning-header {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 46px;
   padding: 8px 12px;
+  box-sizing: border-box;
   cursor: pointer;
   font-size: 13px;
   color: var(--text-secondary);
@@ -1740,9 +1787,18 @@ a.source-item:hover {
     font-size: 12px;
   }
 
+  .tool-call:not(.tool-call-expanded) {
+    min-height: 52px;
+  }
+
   .tool-call-header,
   .tool-result-header {
     font-size: 13px;
+    margin-bottom: 0;
+  }
+
+  .tool-result-header,
+  .tool-call-expanded .tool-call-header {
     margin-bottom: 6px;
   }
 
@@ -1770,6 +1826,10 @@ a.source-item:hover {
   .parallel-member-card {
     padding: 8px 10px;
     font-size: 12px;
+  }
+
+  .dispatch-card:not(.dispatch-card-expanded) {
+    min-height: 48px;
   }
 
   .parallel-member-head {
@@ -1829,6 +1889,7 @@ a.source-item:hover {
   .parallel-member-tool-flow summary {
     align-items: center;
     gap: 6px;
+    min-height: 40px;
     padding: 7px 8px;
   }
 
