@@ -97,17 +97,6 @@ func buildTextHTMLRequestHeader() http.Header {
 }
 
 func (t *TextSearchRequest) buildTextHTMLRequestBody(region Region) url.Values {
-	// q (str): Search query string
-	// s (int): Search offset for pagination
-	// nextParams (str): Continuation parameters from previous page response, typically empty
-	// v (str): Typically 'l' for subsequent pages
-	// o (str): Output format, typically 'json'
-	// dc (int): Display count - value equal to offset (s) + 1
-	// api (str): API endpoint identifier, typically 'd.js'
-	// vqd (str): Validation query digest
-	// kl (str): Keyboard language/region code (e.g., 'en-us')
-	// df (str): Time filter, maps to values like 'd' (day), 'w' (week), 'm' (month), 'y' (year)
-
 	body := url.Values{
 		"q":  {t.Query},
 		"b":  {""},

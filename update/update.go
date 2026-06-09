@@ -16,20 +16,20 @@ import (
 	"github.com/wsshow/selfupdate"
 )
 
-// Release represents a software version release.
+// Release 表示软件版本发布信息。
 type Release struct {
 	TagName string  `json:"tag_name"`
 	Assets  []Asset `json:"assets"`
 }
 
-// Asset represents a downloadable asset in a release.
+// Asset 表示发布中的可下载资源。
 type Asset struct {
 	Name               string `json:"name"`
 	ContentType        string `json:"content_type"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// IsCompressedFile checks if the asset is a compressed file.
+// IsCompressedFile 判断资源是否为压缩文件。
 func (a Asset) IsCompressedFile() bool {
 	return a.ContentType == "application/zip" || a.ContentType == "application/x-gzip"
 }
@@ -38,12 +38,12 @@ type Updater struct {
 	name string // 可执行文件名称（不含扩展名）
 }
 
-// NewUpdater creates a new Updater instance.
+// NewUpdater 创建 Updater 实例。
 func NewUpdater(name string) *Updater {
 	return &Updater{name: name}
 }
 
-// CheckForUpdates verifies if newer version exists.
+// CheckForUpdates 检查是否存在新版本。
 func (up Updater) CheckForUpdates(current *semver.Version, owner, repo string) (rel *Release, yes bool, err error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
 
@@ -78,24 +78,21 @@ func (up Updater) CheckForUpdates(current *semver.Version, owner, repo string) (
 	return nil, false, nil
 }
 
-// Apply performs version update to specified release.
+// Apply 应用指定发布版本的更新。
 func (up Updater) Apply(rel *Release,
 	findAsset func([]Asset) (idx int),
 	findChecksum func([]Asset) (algo Algorithm, expectedChecksum string, err error),
 ) error {
-	// findDownloadLink locates asset download URL.
 	idx := findAsset(rel.Assets)
 	if idx < 0 {
 		return ErrAssetNotFound
 	}
 
-	// findChecksum verifies file integrity hash.
 	algo, expectedChecksum, err := findChecksum(rel.Assets)
 	if err != nil {
 		return err
 	}
 
-	// downloadFile fetches remote resource.
 	tmpDir, err := os.MkdirTemp("", strconv.FormatInt(time.Now().UnixNano(), 10))
 	if err != nil {
 		return err
@@ -193,7 +190,7 @@ func (up Updater) Apply(rel *Release,
 	return selfupdate.Apply(dstFile, selfupdate.Options{})
 }
 
-// unarchive extracts compressed files to target directory and returns first extracted file.
+// unarchive 解压文件并返回目标可执行文件路径。
 func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) {
 	if err = Unzip(srcFile, dstDir, func(processed, total int, fileName string, isDir bool) {
 		fmt.Printf("解压中... %d/%d 文件: %s\n", processed, total, fileName)
@@ -214,12 +211,12 @@ func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) 
 	return "", fmt.Errorf("未在解压目录中找到可执行文件: %s", up.name)
 }
 
-// IsHttpSuccess determines if the HTTP status code indicates successful response.
+// IsHttpSuccess 判断 HTTP 状态码是否表示成功。
 func IsHttpSuccess(statusCode int) bool {
 	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
 }
 
-// formatFileSize converts file size in bytes to human-readable string.
+// formatFileSize 将字节数格式化为可读字符串。
 func formatFileSize(fileSize float64) string {
 	const (
 		KB = 1024.0

@@ -1,4 +1,4 @@
-// Package events provides the engine-neutral event dispatch layer.
+// Package events 提供运行时无关的事件分发层。
 package events
 
 import (
@@ -16,7 +16,7 @@ type nonInteractiveKey struct{}
 
 var globalEventSequence int64
 
-// WithCallback binds an event callback to context.
+// WithCallback 将事件回调绑定到 context。
 func WithCallback(ctx context.Context, cb func(Event) error) context.Context {
 	return context.WithValue(ctx, callbackKey{}, cb)
 }
@@ -28,18 +28,18 @@ func getCallback(ctx context.Context) func(Event) error {
 	return nil
 }
 
-// WithNonInteractive marks a context as non-interactive.
+// WithNonInteractive 标记 context 为非交互模式。
 func WithNonInteractive(ctx context.Context) context.Context {
 	return context.WithValue(ctx, nonInteractiveKey{}, true)
 }
 
-// IsNonInteractive reports whether a context is marked non-interactive.
+// IsNonInteractive 判断 context 是否为非交互模式。
 func IsNonInteractive(ctx context.Context) bool {
 	v, _ := ctx.Value(nonInteractiveKey{}).(bool)
 	return v
 }
 
-// NormalizeEvent fills common metadata for an event.
+// NormalizeEvent 补齐事件公共元数据。
 func NormalizeEvent(event Event) Event {
 	if event.Sequence == 0 {
 		event.Sequence = atomic.AddInt64(&globalEventSequence, 1)
@@ -57,7 +57,7 @@ func IsMemberEvent(event Event) bool {
 	return event.MemberCallID != ""
 }
 
-// DispatchEvent normalizes and sends an event to the context callback.
+// DispatchEvent 标准化事件并发送到 context 回调。
 func DispatchEvent(ctx context.Context, event Event) error {
 	event = NormalizeEvent(event)
 	result, err := hooks.FromContext(ctx).Invoke(ctx, hooks.Invocation{
@@ -79,7 +79,7 @@ func DispatchEvent(ctx context.Context, event Event) error {
 	return nil
 }
 
-// Dispatch is a convenience EventSink adapter.
+// Dispatch 将 context 适配为 EventSink。
 func Dispatch(ctx context.Context) agentcore.EventSink {
 	return func(event agentcore.Event) error {
 		return DispatchEvent(ctx, event)

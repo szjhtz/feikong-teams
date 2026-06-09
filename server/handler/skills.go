@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetInstalledSkillsHandler returns list of installed skills
+// GetInstalledSkillsHandler 返回已安装技能列表。
 func GetInstalledSkillsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		skills, err := skill.ListLocalSkills()
@@ -25,7 +25,7 @@ func GetInstalledSkillsHandler() gin.HandlerFunc {
 	}
 }
 
-// SearchSkillsHandler searches the skill marketplace
+// SearchSkillsHandler 搜索技能市场。
 func SearchSkillsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		keyword := c.Query("q")
@@ -76,7 +76,7 @@ func SearchSkillsHandler() gin.HandlerFunc {
 	}
 }
 
-// InstallSkillHandler installs a skill from the marketplace
+// InstallSkillHandler 从技能市场安装技能。
 func InstallSkillHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
@@ -103,7 +103,7 @@ func InstallSkillHandler() gin.HandlerFunc {
 	}
 }
 
-// RemoveSkillHandler removes an installed skill
+// RemoveSkillHandler 删除已安装技能。
 func RemoveSkillHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		slug := c.Param("slug")
@@ -122,7 +122,7 @@ func RemoveSkillHandler() gin.HandlerFunc {
 	}
 }
 
-// GetSkillFilesHandler returns the file tree of a skill
+// GetSkillFilesHandler 返回技能文件树。
 func GetSkillFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		slug := c.Param("slug")
@@ -144,7 +144,7 @@ func GetSkillFilesHandler() gin.HandlerFunc {
 	}
 }
 
-// GetSkillFileContentHandler reads a file from a skill directory
+// GetSkillFileContentHandler 读取技能文件内容。
 func GetSkillFileContentHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		slug := c.Param("slug")

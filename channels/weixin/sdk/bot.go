@@ -23,34 +23,34 @@ import (
 	"fkteams/channels/weixin/sdk/protocol"
 )
 
-// MessageHandler is called for each incoming user message.
+// MessageHandler 处理收到的用户消息。
 type MessageHandler func(msg *IncomingMessage)
 
-// Options configures a Bot instance.
+// Options 配置 Bot 实例。
 type Options struct {
 	BaseURL   string
 	CredPath  string
-	LogLevel  string // "debug", "info", "warn", "error", "silent"
+	LogLevel  string // debug/info/warn/error/silent
 	OnQRURL   func(url string)
 	OnScanned func()
 	OnExpired func()
 	OnError   func(err error)
 }
 
-// Bot is the main WeChat bot client.
+// Bot 是微信机器人客户端。
 type Bot struct {
 	opts          Options
 	client        *protocol.Client
 	creds         *auth.Credentials
 	handlers      []MessageHandler
-	contextTokens sync.Map // map[string]string
+	contextTokens sync.Map // userID -> context_token
 	cursor        string
 	stopped       bool
 	mu            sync.Mutex
 	cancelPoll    context.CancelFunc
 }
 
-// New creates a new Bot instance.
+// New 创建 Bot 实例。
 func New(opts ...Options) *Bot {
 	var o Options
 	if len(opts) > 0 {
@@ -65,7 +65,7 @@ func New(opts ...Options) *Bot {
 	}
 }
 
-// Login performs QR code login or loads stored credentials.
+// Login 执行扫码登录，或加载已保存的凭证。
 func (b *Bot) Login(ctx context.Context, force bool) (*Credentials, error) {
 	creds, err := auth.Login(ctx, b.client, auth.LoginOptions{
 		BaseURL:   b.opts.BaseURL,
@@ -95,18 +95,18 @@ func (b *Bot) Login(ctx context.Context, force bool) (*Credentials, error) {
 	}, nil
 }
 
-// OnMessage registers a message handler.
+// OnMessage 注册消息处理器。
 func (b *Bot) OnMessage(handler MessageHandler) {
 	b.handlers = append(b.handlers, handler)
 }
 
-// Reply sends a text reply to an incoming message.
+// Reply 回复一条文本消息。
 func (b *Bot) Reply(ctx context.Context, msg *IncomingMessage, text string) error {
 	b.contextTokens.Store(msg.UserID, msg.ContextToken)
 	return b.sendText(ctx, msg.UserID, text, msg.ContextToken)
 }
 
-// Send sends a text message to a user (requires prior context_token).
+// Send 向用户发送文本消息，需要已有 context_token。
 func (b *Bot) Send(ctx context.Context, userID, text string) error {
 	ct, ok := b.contextTokens.Load(userID)
 	if !ok {
@@ -115,7 +115,7 @@ func (b *Bot) Send(ctx context.Context, userID, text string) error {
 	return b.sendText(ctx, userID, text, ct.(string))
 }
 
-// SendTyping shows the "typing..." indicator.
+// SendTyping 显示输入中状态。
 func (b *Bot) SendTyping(ctx context.Context, userID string) error {
 	ct, ok := b.contextTokens.Load(userID)
 	if !ok {
@@ -132,7 +132,7 @@ func (b *Bot) SendTyping(ctx context.Context, userID string) error {
 	return b.client.SendTyping(ctx, creds.BaseURL, creds.Token, userID, config.TypingTicket, 1)
 }
 
-// StopTyping cancels the "typing..." indicator.
+// StopTyping 取消输入中状态。
 func (b *Bot) StopTyping(ctx context.Context, userID string) error {
 	ct, ok := b.contextTokens.Load(userID)
 	if !ok {
@@ -149,11 +149,7 @@ func (b *Bot) StopTyping(ctx context.Context, userID string) error {
 	return b.client.SendTyping(ctx, creds.BaseURL, creds.Token, userID, config.TypingTicket, 2)
 }
 
-// SendContent describes what to send. Use one of:
-//   - SendText("Hello!")
-//   - SendImage(data)
-//   - SendVideo(data)
-//   - SendFile(data, "report.pdf")
+// SendContent 描述要发送的内容。
 type SendContent struct {
 	Text     string
 	Image    []byte
@@ -163,27 +159,27 @@ type SendContent struct {
 	Caption  string
 }
 
-// SendText creates a text SendContent.
+// SendText 创建文本发送内容。
 func SendText(text string) SendContent { return SendContent{Text: text} }
 
-// SendImage creates an image SendContent.
+// SendImage 创建图片发送内容。
 func SendImage(data []byte) SendContent { return SendContent{Image: data} }
 
-// SendVideo creates a video SendContent.
+// SendVideo 创建视频发送内容。
 func SendVideo(data []byte) SendContent { return SendContent{Video: data} }
 
-// SendFile creates a file SendContent.
+// SendFile 创建文件发送内容。
 func SendFile(data []byte, fileName string) SendContent {
 	return SendContent{File: data, FileName: fileName}
 }
 
-// ReplyContent replies with any content type.
+// ReplyContent 回复任意类型内容。
 func (b *Bot) ReplyContent(ctx context.Context, msg *IncomingMessage, content SendContent) error {
 	b.contextTokens.Store(msg.UserID, msg.ContextToken)
 	return b.sendContent(ctx, msg.UserID, msg.ContextToken, content)
 }
 
-// SendMedia sends any content type to a user.
+// SendMedia 向用户发送任意类型内容。
 func (b *Bot) SendMedia(ctx context.Context, userID string, content SendContent) error {
 	ct, ok := b.contextTokens.Load(userID)
 	if !ok {
@@ -192,8 +188,7 @@ func (b *Bot) SendMedia(ctx context.Context, userID string, content SendContent)
 	return b.sendContent(ctx, userID, ct.(string), content)
 }
 
-// Download downloads media from an incoming message.
-// Returns nil if the message has no media. Priority: image > file > video > voice.
+// Download 下载消息中的媒体内容，优先级为图片、文件、视频、语音。
 func (b *Bot) Download(ctx context.Context, msg *IncomingMessage) (*DownloadedMedia, error) {
 	if len(msg.Images) > 0 && msg.Images[0].Media != nil {
 		data, err := b.cdnDownload(ctx, msg.Images[0].Media, msg.Images[0].AESKey)
@@ -234,12 +229,12 @@ func (b *Bot) Download(ctx context.Context, msg *IncomingMessage) (*DownloadedMe
 	return nil, nil
 }
 
-// DownloadRaw downloads and decrypts a raw CDN media reference.
+// DownloadRaw 下载并解密原始 CDN 媒体引用。
 func (b *Bot) DownloadRaw(ctx context.Context, media *CDNMedia, aeskeyOverride string) ([]byte, error) {
 	return b.cdnDownload(ctx, media, aeskeyOverride)
 }
 
-// Upload uploads data to WeChat CDN without sending a message.
+// Upload 上传数据到微信 CDN，不发送消息。
 func (b *Bot) Upload(ctx context.Context, data []byte, userID string, mediaType int) (*UploadResult, error) {
 	creds := b.getCreds()
 	if creds == nil {
@@ -248,7 +243,7 @@ func (b *Bot) Upload(ctx context.Context, data []byte, userID string, mediaType 
 	return b.cdnUpload(ctx, creds, data, userID, mediaType)
 }
 
-// Run starts the long-poll loop. Blocks until Stop() is called or context is cancelled.
+// Run 启动长轮询循环，直到 Stop 调用或 context 取消。
 func (b *Bot) Run(ctx context.Context) error {
 	creds := b.getCreds()
 	if creds == nil {
@@ -323,7 +318,7 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 }
 
-// Stop gracefully stops the poll loop.
+// Stop 停止轮询循环。
 func (b *Bot) Stop() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -333,10 +328,7 @@ func (b *Bot) Stop() {
 	}
 }
 
-// --- internal ---
-
 func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, content SendContent) error {
-	// Text
 	if content.Text != "" {
 		return b.sendText(ctx, userID, content.Text, contextToken)
 	}
@@ -346,7 +338,6 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 		return fmt.Errorf("not logged in; call Login() first")
 	}
 
-	// Image
 	if content.Image != nil {
 		result, err := b.cdnUpload(ctx, creds, content.Image, userID, int(MediaImage))
 		if err != nil {
@@ -368,7 +359,6 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 		return b.client.SendMessage(ctx, creds.BaseURL, creds.Token, msg)
 	}
 
-	// Video
 	if content.Video != nil {
 		result, err := b.cdnUpload(ctx, creds, content.Video, userID, int(MediaVideo))
 		if err != nil {
@@ -390,7 +380,6 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 		return b.client.SendMessage(ctx, creds.BaseURL, creds.Token, msg)
 	}
 
-	// File (auto-route by extension)
 	if content.File != nil {
 		fileName := content.FileName
 		if fileName == "" {
@@ -403,7 +392,6 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 		if cat == "video" {
 			return b.sendContent(ctx, userID, contextToken, SendContent{Video: content.File, Caption: content.Caption})
 		}
-		// Generic file
 		if content.Caption != "" {
 			_ = b.sendText(ctx, userID, content.Caption, contextToken)
 		}

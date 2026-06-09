@@ -5,7 +5,6 @@ import (
 	"net/http"
 )
 
-// Common constants
 var (
 	searchHTMLURL = "https://html.duckduckgo.com/html/"
 
@@ -26,81 +25,74 @@ type Search interface {
 	TextSearch(ctx context.Context, req *TextSearchRequest) (*TextSearchResponse, error)
 }
 
-// client represents the DuckDuckGo search client.
-// It handles all search-related operations including request configuration,
-// caching, and result parsing.
+// client 是 DuckDuckGo 搜索客户端。
 type client struct {
 	httpCli    *http.Client
 	maxResults int
 	region     Region
 }
 
-// Region represents a geographical region for search results.
-// Different regions may return different search results based on local relevance.
-// others can be found at: https://duckduckgo.com/duckduckgo-help-pages/settings/params/
+// Region 表示搜索结果地区。
 type Region string
 
-// Available regions for DuckDuckGo search
 const (
-	// RegionWT represents World region (No specific region, default)
+	// RegionWT 表示全球地区。
 	RegionWT Region = "wt-wt"
-	// RegionUS represents United States region
+	// RegionUS 表示美国地区。
 	RegionUS Region = "us-en"
-	// RegionUK represents United Kingdom region
+	// RegionUK 表示英国地区。
 	RegionUK Region = "uk-en"
-	// RegionDE represents Germany region
+	// RegionDE 表示德国地区。
 	RegionDE Region = "de-de"
-	// RegionFR represents France region
+	// RegionFR 表示法国地区。
 	RegionFR Region = "fr-fr"
-	// RegionJP represents Japan region
+	// RegionJP 表示日本地区。
 	RegionJP Region = "jp-jp"
-	// RegionCN represents China region
+	// RegionCN 表示中国地区。
 	RegionCN Region = "cn-zh"
-	// RegionRU represents Russia region
+	// RegionRU 表示俄罗斯地区。
 	RegionRU Region = "ru-ru"
 )
 
-// TimeRange represents the time range for search results.
+// TimeRange 表示搜索时间范围。
 type TimeRange string
 
 const (
-	// TimeRangeDay limits results to the past day
+	// TimeRangeDay 限制为过去一天。
 	TimeRangeDay TimeRange = "d"
-	// TimeRangeWeek limits results to the past week
+	// TimeRangeWeek 限制为过去一周。
 	TimeRangeWeek TimeRange = "w"
-	// TimeRangeMonth limits results to the past month
+	// TimeRangeMonth 限制为过去一月。
 	TimeRangeMonth TimeRange = "m"
-	// TimeRangeYear limits results to the past year
+	// TimeRangeYear 限制为过去一年。
 	TimeRangeYear TimeRange = "y"
-	// TimeRangeAny results at any time
+	// TimeRangeAny 不限制时间。
 	TimeRangeAny TimeRange = ""
 )
 
 type TextSearchRequest struct {
-	// Query is the user's search query
+	// Query 是用户搜索词。
 	Query string `json:"query" jsonschema:"description=The user's search query. The query is required.,required"`
-	// TimeRange is the search time range
-	// Default: TimeRangeAny
+	// TimeRange 是搜索时间范围，默认不限制。
 	TimeRange TimeRange `json:"time_range,omitempty" jsonschema:"description=The time range of search results: d for past day; w for past week; m for past month; y for past year; empty for any time"`
 }
 
-// TextSearchResult represents a single search result.
-// Contains the title, URL, and summary of the result.
+// TextSearchResult 表示单条搜索结果。
 type TextSearchResult struct {
-	// Title is the title of the search result
+	// Title 是结果标题。
 	Title string `json:"title"`
-	// URL is the web address of the result
+	// URL 是结果地址。
 	URL string `json:"url"`
-	// Summary is the summary of the result content
+	// Summary 是结果摘要。
 	Summary string `json:"summary"`
 }
 
-// TextSearchResponse represents the complete response from a search request.
+// TextSearchResponse 表示搜索响应。
 type TextSearchResponse struct {
-	// Message is a brief status message for the model
+	// Message 是给模型的简短状态信息。
 	Message string `json:"message,omitempty"`
-	// Results contains the list of search results
+	// Results 是搜索结果列表。
 	Results []*TextSearchResult `json:"results,omitempty"`
-	// ErrorMessage contains error information to guide the model
+	// ErrorMessage 是给模型的错误提示。
 	ErrorMessage string `json:"error_message,omitempty"`
 }

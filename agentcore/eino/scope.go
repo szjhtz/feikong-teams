@@ -7,7 +7,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 )
 
-// MemberScope marks ADK events emitted inside an agent-tool call.
+// MemberScope 标记成员工具调用内产生的 ADK 事件。
 type MemberScope struct {
 	CallID   string
 	ToolName string

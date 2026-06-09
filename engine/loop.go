@@ -6,8 +6,7 @@ import (
 	"fkteams/events"
 )
 
-// runLoop delegates one runner invocation with engine-level options assembled.
-// Runtime adapters own provider-specific interrupt and resume details.
+// runLoop 装配引擎级选项后执行一次 Runner 调用。
 func (e *core) runLoop(ctx context.Context, input agentcore.TurnInput, handler InterruptHandler) (*agentcore.RunResult, error) {
 	return e.runner.Run(ctx, input, agentcore.RunOptions{
 		RunID:            e.checkpointID,

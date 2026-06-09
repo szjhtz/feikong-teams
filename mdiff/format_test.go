@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// ============================================================
 // UnifiedDiff & Format 测试
-// ============================================================
 
 func TestUnifiedDiffFormat(t *testing.T) {
 	oldLines := []string{"line1", "line2", "line3", "line4", "line5"}
@@ -77,9 +75,7 @@ func TestUnifiedDiffMultipleHunks(t *testing.T) {
 	}
 }
 
-// ============================================================
 // FormatFileDiff / FormatMultiFileDiff / formatFileName 测试
-// ============================================================
 
 func TestFormatFileDiffNil(t *testing.T) {
 	if FormatFileDiff(nil) != "" {
@@ -109,9 +105,7 @@ func TestFormatFileName(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 新文件 / 删除文件 Hunk Header 测试
-// ============================================================
 
 func TestNewFileHunkHeader(t *testing.T) {
 	fd := DiffFiles("/dev/null", "", "new.go", "package main\n\nfunc main() {}\n", 3)
@@ -158,9 +152,7 @@ func TestDeleteFile(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 统计信息测试
-// ============================================================
 
 func TestStat(t *testing.T) {
 	changes := []FileChange{

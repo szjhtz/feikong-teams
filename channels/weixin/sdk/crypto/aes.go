@@ -11,7 +11,7 @@ import (
 
 var hexPattern = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
 
-// EncryptAESECB encrypts plaintext with AES-128-ECB and PKCS7 padding.
+// EncryptAESECB 使用 AES-128-ECB 和 PKCS7 padding 加密明文。
 func EncryptAESECB(plaintext, key []byte) ([]byte, error) {
 	if len(key) != 16 {
 		return nil, fmt.Errorf("AES key must be 16 bytes, got %d", len(key))
@@ -30,7 +30,7 @@ func EncryptAESECB(plaintext, key []byte) ([]byte, error) {
 	return ciphertext, nil
 }
 
-// DecryptAESECB decrypts AES-128-ECB ciphertext and removes PKCS7 padding.
+// DecryptAESECB 解密 AES-128-ECB 密文并移除 PKCS7 padding。
 func DecryptAESECB(ciphertext, key []byte) ([]byte, error) {
 	if len(key) != 16 {
 		return nil, fmt.Errorf("AES key must be 16 bytes, got %d", len(key))
@@ -51,29 +51,26 @@ func DecryptAESECB(ciphertext, key []byte) ([]byte, error) {
 	return pkcs7Unpad(plaintext)
 }
 
-// GenerateAESKey generates a random 16-byte AES key.
+// GenerateAESKey 生成 16 字节随机 AES key。
 func GenerateAESKey() ([]byte, error) {
 	key := make([]byte, 16)
 	_, err := rand.Read(key)
 	return key, err
 }
 
-// EncryptedSize calculates the size after AES-128-ECB with PKCS7 padding.
+// EncryptedSize 计算 AES-128-ECB 加密后的大小。
 func EncryptedSize(rawSize int) int {
 	return ((rawSize + 1 + aes.BlockSize - 1) / aes.BlockSize) * aes.BlockSize
 }
 
-// DecodeAESKey decodes an aes_key from the protocol.
-// Handles: direct hex (32 chars), base64(raw 16 bytes), base64(hex string 32 chars).
+// DecodeAESKey 解码协议中的 aes_key。
 func DecodeAESKey(encoded string) ([]byte, error) {
-	// Direct hex string (from image_item.aeskey)
 	if hexPattern.MatchString(encoded) {
 		return hex.DecodeString(encoded)
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		// Try URL-safe base64
 		decoded, err = base64.URLEncoding.DecodeString(encoded)
 		if err != nil {
 			return nil, fmt.Errorf("cannot base64 decode aes_key: %w", err)
@@ -90,12 +87,12 @@ func DecodeAESKey(encoded string) ([]byte, error) {
 	return nil, fmt.Errorf("decoded aes_key has unexpected length %d (want 16 or 32)", len(decoded))
 }
 
-// EncodeAESKeyHex returns the hex string of a key (for getuploadurl).
+// EncodeAESKeyHex 返回 key 的十六进制字符串。
 func EncodeAESKeyHex(key []byte) string {
 	return hex.EncodeToString(key)
 }
 
-// EncodeAESKeyBase64 returns base64(hex) for CDNMedia.aes_key.
+// EncodeAESKeyBase64 返回 CDNMedia.aes_key 使用的 base64(hex) 格式。
 func EncodeAESKeyBase64(key []byte) string {
 	return base64.StdEncoding.EncodeToString([]byte(hex.EncodeToString(key)))
 }

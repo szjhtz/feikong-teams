@@ -65,7 +65,7 @@ var riskyPatterns = []struct {
 	Description string
 	Risk        string
 }{
-	// Unix/Linux
+	// Unix/Linux 命令
 	{"rm -rf", LevelModerate, "强制递归删除", "可能意外删除重要文件"},
 	{"rm -r", LevelModerate, "递归删除", "可能意外删除文件"},
 	{"dd of=", LevelDangerous, "dd 磁盘写入命令", "可能覆盖重要数据"},
@@ -83,7 +83,7 @@ var riskyPatterns = []struct {
 	{"npm install -g", LevelModerate, "全局安装 npm 包", "可能影响系统环境"},
 	{"wget", LevelModerate, "下载文件", "可能下载恶意内容"},
 	{"curl", LevelModerate, "下载/上传数据", "可能泄露数据"},
-	// Windows/PowerShell
+	// Windows/PowerShell 命令
 	{"remove-item -recurse -force", LevelDangerous, "强制递归删除", "可能意外删除重要文件"},
 	{"remove-item -recurse", LevelModerate, "递归删除", "可能意外删除文件"},
 	{"stop-process", LevelModerate, "终止进程", "可能导致服务中断"},
@@ -174,7 +174,7 @@ func splitShellCommands(command string) []string {
 			segments = append(segments, strings.TrimSpace(current.String()))
 			current.Reset()
 		case !inSingle && !inDouble && ch == '|' && (i == 0 || command[i-1] != '|'):
-			// split on | but preserve
+			// 按管道分段，保留 ||。
 			segments = append(segments, strings.TrimSpace(current.String()))
 			current.Reset()
 		default:

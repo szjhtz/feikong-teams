@@ -9,17 +9,17 @@ import (
 	"os"
 )
 
-// Algorithm checksum algorithm type
+// Algorithm 表示校验和算法。
 type Algorithm string
 
 const (
-	// SHA256 algorithm using SHA-256 hash function.
+	// SHA256 使用 SHA-256。
 	SHA256 Algorithm = "SHA256"
-	// SHA1 algorithm using SHA-1 hash function.
+	// SHA1 使用 SHA-1。
 	SHA1 Algorithm = "SHA1"
 )
 
-// VerifyFile validates file integrity against expected checksum.
+// VerifyFile 根据期望校验和验证文件完整性。
 func VerifyFile(algo Algorithm, expectedChecksum, filename string) (err error) {
 	f, err := os.Open(filename)
 	if err != nil {

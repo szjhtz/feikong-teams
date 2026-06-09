@@ -209,7 +209,7 @@ func (s *Scheduler) ScheduleDelete(ctx context.Context, req *ScheduleDeleteReque
 		return &ScheduleDeleteResponse{ErrorMessage: "task not found"}, nil
 	}
 
-	// remove per-task result directory
+	// 移除任务结果目录
 	if err := os.RemoveAll(s.taskDir(req.TaskID)); err != nil {
 		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("remove task dir failed: %v", err)}, nil
 	}
@@ -285,13 +285,13 @@ func FormatTaskDetailJSON(task ScheduledTask) string {
 	return string(data)
 }
 
-// HistoryEntry represents a single history result file
+// HistoryEntry 表示单个历史结果文件。
 type HistoryEntry struct {
 	Filename string `json:"filename"`
 	Time     string `json:"time"`
 }
 
-// ListHistoryEntries lists all history result files for a task
+// ListHistoryEntries 列出任务的历史结果文件。
 func (s *Scheduler) ListHistoryEntries(taskID string) ([]HistoryEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -311,7 +311,7 @@ func (s *Scheduler) ListHistoryEntries(taskID string) ([]HistoryEntry, error) {
 			continue
 		}
 		name := e.Name()
-		// format: 20260430_150405.md → 2026-04-30 15:04:05
+		// 格式：20260430_150405.md -> 2026-04-30 15:04:05
 		timeStr := ""
 		if len(name) >= 15 {
 			timeStr = fmt.Sprintf("%s-%s-%s %s:%s:%s",
@@ -327,12 +327,12 @@ func (s *Scheduler) ListHistoryEntries(taskID string) ([]HistoryEntry, error) {
 	return result, nil
 }
 
-// ReadHistoryFile reads a specific history file for a task
+// ReadHistoryFile 读取指定历史结果文件。
 func (s *Scheduler) ReadHistoryFile(taskID string, filename string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// prevent path traversal
+	// 防止路径穿越
 	filename = filepath.Base(filename)
 	if filepath.Ext(filename) != ".md" {
 		return "", fmt.Errorf("invalid file type")

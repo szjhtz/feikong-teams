@@ -1,12 +1,9 @@
-// Package wechatbot provides a WeChat iLink Bot SDK for Go.
-//
-// It handles QR login, long-poll message receiving, text/media sending,
-// typing indicators, context_token management, and AES-128-ECB CDN crypto.
+// Package wechatbot 提供微信 iLink Bot SDK。
 package wechatbot
 
 import "time"
 
-// MessageType indicates who sent the message.
+// MessageType 表示消息发送方。
 type MessageType int
 
 const (
@@ -14,7 +11,7 @@ const (
 	MessageTypeBot  MessageType = 2
 )
 
-// MessageState indicates the message delivery state.
+// MessageState 表示消息投递状态。
 type MessageState int
 
 const (
@@ -23,7 +20,7 @@ const (
 	MessageStateFinish     MessageState = 2
 )
 
-// MessageItemType indicates the content type of a message item.
+// MessageItemType 表示消息条目类型。
 type MessageItemType int
 
 const (
@@ -34,7 +31,7 @@ const (
 	ItemVideo MessageItemType = 5
 )
 
-// MediaType is used in upload requests.
+// MediaType 表示上传媒体类型。
 type MediaType int
 
 const (
@@ -44,24 +41,22 @@ const (
 	MediaVoice MediaType = 4
 )
 
-// BaseInfo is included in every POST request body.
 type BaseInfo struct {
 	ChannelVersion string `json:"channel_version"`
 }
 
-// CDNMedia references an encrypted file on the WeChat CDN.
+// CDNMedia 表示微信 CDN 上的加密媒体。
 type CDNMedia struct {
 	EncryptQueryParam string `json:"encrypt_query_param"`
 	AESKey            string `json:"aes_key"`
 	EncryptType       int    `json:"encrypt_type,omitempty"`
 }
 
-// TextItem holds text content.
 type TextItem struct {
 	Text string `json:"text"`
 }
 
-// ImageItem holds image content and CDN references.
+// ImageItem 表示图片内容。
 type ImageItem struct {
 	Media       *CDNMedia `json:"media,omitempty"`
 	ThumbMedia  *CDNMedia `json:"thumb_media,omitempty"`
@@ -74,7 +69,7 @@ type ImageItem struct {
 	HDSize      int64     `json:"hd_size,omitempty"`
 }
 
-// VoiceItem holds voice content.
+// VoiceItem 表示语音内容。
 type VoiceItem struct {
 	Media      *CDNMedia `json:"media,omitempty"`
 	EncodeType int       `json:"encode_type,omitempty"`
@@ -82,7 +77,7 @@ type VoiceItem struct {
 	Playtime   int       `json:"playtime,omitempty"`
 }
 
-// FileItem holds file content.
+// FileItem 表示文件内容。
 type FileItem struct {
 	Media    *CDNMedia `json:"media,omitempty"`
 	FileName string    `json:"file_name,omitempty"`
@@ -90,7 +85,7 @@ type FileItem struct {
 	Len      string    `json:"len,omitempty"`
 }
 
-// VideoItem holds video content.
+// VideoItem 表示视频内容。
 type VideoItem struct {
 	Media      *CDNMedia `json:"media,omitempty"`
 	VideoSize  int64     `json:"video_size,omitempty"`
@@ -98,13 +93,13 @@ type VideoItem struct {
 	ThumbMedia *CDNMedia `json:"thumb_media,omitempty"`
 }
 
-// RefMessage represents a quoted/referenced message.
+// RefMessage 表示引用消息。
 type RefMessage struct {
 	Title       string       `json:"title,omitempty"`
 	MessageItem *MessageItem `json:"message_item,omitempty"`
 }
 
-// MessageItem is a single content item within a message.
+// MessageItem 表示单个消息条目。
 type MessageItem struct {
 	Type      MessageItemType `json:"type"`
 	TextItem  *TextItem       `json:"text_item,omitempty"`
@@ -115,7 +110,7 @@ type MessageItem struct {
 	RefMsg    *RefMessage     `json:"ref_msg,omitempty"`
 }
 
-// WireMessage is the raw message from the iLink API.
+// WireMessage 是 iLink API 返回的原始消息。
 type WireMessage struct {
 	Seq          int64         `json:"seq,omitempty"`
 	MessageID    int64         `json:"message_id,omitempty"`
@@ -129,7 +124,7 @@ type WireMessage struct {
 	ItemList     []MessageItem `json:"item_list"`
 }
 
-// ContentType is the primary type of an incoming message.
+// ContentType 表示收到消息的主类型。
 type ContentType string
 
 const (
@@ -140,7 +135,7 @@ const (
 	ContentVideo ContentType = "video"
 )
 
-// IncomingMessage is a parsed, user-friendly representation.
+// IncomingMessage 是解析后的消息。
 type IncomingMessage struct {
 	UserID        string
 	Text          string
@@ -152,10 +147,10 @@ type IncomingMessage struct {
 	Videos        []VideoContent
 	QuotedMessage *QuotedMessage
 	Raw           *WireMessage
-	ContextToken  string // internal, managed by SDK
+	ContextToken  string // SDK 内部维护
 }
 
-// ImageContent holds parsed image data from a message.
+// ImageContent 表示解析后的图片内容。
 type ImageContent struct {
 	Media      *CDNMedia
 	ThumbMedia *CDNMedia
@@ -165,7 +160,7 @@ type ImageContent struct {
 	Height     int
 }
 
-// VoiceContent holds parsed voice data.
+// VoiceContent 表示解析后的语音内容。
 type VoiceContent struct {
 	Media      *CDNMedia
 	Text       string
@@ -173,7 +168,7 @@ type VoiceContent struct {
 	EncodeType int
 }
 
-// FileContent holds parsed file data.
+// FileContent 表示解析后的文件内容。
 type FileContent struct {
 	Media    *CDNMedia
 	FileName string
@@ -181,7 +176,7 @@ type FileContent struct {
 	Size     int64
 }
 
-// VideoContent holds parsed video data.
+// VideoContent 表示解析后的视频内容。
 type VideoContent struct {
 	Media      *CDNMedia
 	ThumbMedia *CDNMedia
@@ -190,29 +185,29 @@ type VideoContent struct {
 	Height     int
 }
 
-// QuotedMessage represents a referenced message.
+// QuotedMessage 表示被引用的消息。
 type QuotedMessage struct {
 	Title string
 	Text  string
 	Type  ContentType
 }
 
-// DownloadedMedia is the result of downloading media from a message.
+// DownloadedMedia 是媒体下载结果。
 type DownloadedMedia struct {
 	Data     []byte
-	Type     string // "image", "file", "video", "voice"
+	Type     string // image/file/video/voice
 	FileName string
-	Format   string // "silk" for voice
+	Format   string // 语音格式，如 silk
 }
 
-// UploadResult is the result of uploading media to CDN.
+// UploadResult 是媒体上传结果。
 type UploadResult struct {
 	Media             CDNMedia
 	AESKey            []byte
 	EncryptedFileSize int
 }
 
-// Credentials holds login credentials.
+// Credentials 表示登录凭证。
 type Credentials struct {
 	Token     string `json:"token"`
 	BaseURL   string `json:"baseUrl"`

@@ -235,9 +235,7 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 	}
 }
 
-// PreviewFileHandler 通过预览链接访问文件
-// URL: /api/fkteams/preview/:linkId
-// Query: password(如果链接设置了密码)
+// PreviewFileHandler 通过预览链接访问文件。
 func PreviewFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseDir := common.WorkspaceDir()
@@ -606,7 +604,6 @@ func isPreviewable(contentType string) bool {
 }
 
 // PreviewRenderHandler 直接渲染预览文件（HTML 完整预览，支持相对路径资源加载）
-// Route: GET /api/fkteams/preview/:linkId/render/*filepath
 // 当 filepath 为空或 "/" 时返回主文件；否则解析为主文件目录下的相对路径资源
 // 密码校验支持 query 参数 password 或 cookie fk_preview_{linkId}
 func PreviewRenderHandler() gin.HandlerFunc {

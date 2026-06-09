@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// --- Benchmarks — 基准性能测试 ---
-
 func BenchmarkDiffSmall(b *testing.B) {
 	oldLines := []string{"a", "b", "c", "d", "e"}
 	newLines := []string{"a", "x", "c", "d", "y"}

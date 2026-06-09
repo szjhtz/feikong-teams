@@ -11,16 +11,16 @@ import (
 	"time"
 )
 
-// RunnerCreator creates a Runner for task execution
+// RunnerCreator 创建任务执行用 Runner。
 type RunnerCreator func(ctx context.Context) (agentcore.Runner, error)
 
-// BackgroundExecutor executes tasks in the background
+// BackgroundExecutor 在后台执行任务。
 type BackgroundExecutor struct {
 	createRunner RunnerCreator
 	resultsDir   string
 }
 
-// NewBackgroundExecutor creates a background executor
+// NewBackgroundExecutor 创建后台任务执行器。
 func NewBackgroundExecutor(createRunner RunnerCreator, resultsDir string) *BackgroundExecutor {
 	_ = os.MkdirAll(resultsDir, 0755)
 	return &BackgroundExecutor{
@@ -29,17 +29,17 @@ func NewBackgroundExecutor(createRunner RunnerCreator, resultsDir string) *Backg
 	}
 }
 
-// taskDir returns the per-task result directory
+// taskDir 返回任务结果目录。
 func (e *BackgroundExecutor) taskDir(taskID string) string {
 	return filepath.Join(e.resultsDir, taskID)
 }
 
-// taskResultPath returns the path to a task's result file
+// taskResultPath 返回任务结果文件路径。
 func (e *BackgroundExecutor) taskResultPath(taskID string) string {
 	return filepath.Join(e.taskDir(taskID), "result.md")
 }
 
-// Execute runs a task and writes the result to the per-task directory
+// Execute 执行任务并写入结果目录。
 func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task string) (string, error) {
 	if err := os.MkdirAll(e.taskDir(taskID), 0755); err != nil {
 		return "", fmt.Errorf("create task dir: %w", err)
@@ -71,7 +71,7 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 	return output, nil
 }
 
-// writeResult writes the task result to both the latest file and a timestamped history copy
+// writeResult 写入最新结果和历史快照。
 func (e *BackgroundExecutor) writeResult(taskID string, task string, result string) {
 	now := time.Now()
 	ts := now.Format("20060102_150405")
@@ -83,10 +83,8 @@ func (e *BackgroundExecutor) writeResult(taskID string, task string, result stri
 		result,
 	)
 
-	// write latest result
 	_ = os.WriteFile(e.taskResultPath(taskID), []byte(content), 0644)
 
-	// archive a timestamped copy
 	historyDir := filepath.Join(e.taskDir(taskID), "history")
 	_ = os.MkdirAll(historyDir, 0755)
 	_ = os.WriteFile(filepath.Join(historyDir, ts+".md"), []byte(content), 0644)

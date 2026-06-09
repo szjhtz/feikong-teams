@@ -9,29 +9,21 @@ import (
 )
 
 type Config struct {
-	// ToolName is the name of the tool
-	// Default: see defaultTextSearchToolName
+	// ToolName 是工具名称。
 	ToolName string `json:"tool_name"`
-	// ToolDesc is the description of the tool
-	// Default: see defaultTextSearchToolDesc
+	// ToolDesc 是工具描述。
 	ToolDesc string `json:"tool_desc"`
 
-	// Timeout specifies the maximum duration for a single request.
-	// Default: 30 seconds
+	// Timeout 是单次请求超时时间，默认 30 秒。
 	Timeout time.Duration
 
-	// HTTPClient specifies the client to send HTTP requests.
-	// If HTTPClient is set, Timeout will not be used.
-	// Optional. Default &http.client{Timeout: Timeout}
+	// HTTPClient 是自定义 HTTP 客户端，设置后忽略 Timeout。
 	HTTPClient *http.Client `json:"http_client"`
 
-	// MaxResults limits the number of results returned
-	// Default: 10
+	// MaxResults 限制返回结果数量，默认 10。
 	MaxResults int `json:"max_results"`
 
-	// Region is the geographical region for results
-	// Default: RegionWT, means all regions
-	// Reference: https://duckduckgo.com/duckduckgo-help-pages/settings/params
+	// Region 是搜索地区，默认 RegionWT。
 	Region Region `json:"region"`
 }
 

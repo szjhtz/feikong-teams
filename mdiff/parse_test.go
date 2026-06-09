@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// ============================================================
 // 1. 内部函数测试 — parseFileName / parseHunkHeader / parseRange
-// ============================================================
 
 func TestParseFileNameGitPrefix(t *testing.T) {
 	name := parseFileName("--- a/src/main.go", "--- ")
@@ -150,9 +148,7 @@ func TestExtractOldLines(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 2. ParseMultiFileDiff / ParseFileDiff 基础测试
-// ============================================================
 
 func TestParse_EmptyInput(t *testing.T) {
 	cases := []string{"", " ", "\n", "\n\n\n", "\t\n "}
@@ -215,9 +211,7 @@ func TestParseAndApply(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 3. 文件名解析测试
-// ============================================================
 
 func TestParse_FileNameWithSpaces(t *testing.T) {
 	patch := "--- my file.go\n+++ my file.go\n@@ -1,1 +1,1 @@\n-old\n+new\n"
@@ -252,9 +246,7 @@ func TestParse_FilePath_DeepNested(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 4. Hunk 解析边界测试
-// ============================================================
 
 func TestParse_OnlyHunkHeader_NoBody(t *testing.T) {
 	patch := "--- a.go\n+++ a.go\n@@ -1,0 +1,0 @@\n"
@@ -407,9 +399,7 @@ func TestParse_OnlyDash_Line(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 5. 多文件/多 Hunk 解析测试
-// ============================================================
 
 func TestParse_ConsecutiveHunksInOneFile(t *testing.T) {
 	var hunks []string
@@ -520,9 +510,7 @@ func TestParseHunkEarlyTerminateOnFileSeparator(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 6. Hunk 行计数不准确 —— 优雅容错
-// ============================================================
 
 func TestParse_HunkCountsExceed_GracefulHandling(t *testing.T) {
 	patch := `--- a.go
@@ -611,9 +599,7 @@ func TestParse_WrongHunkCounts(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 7. git diff 扩展格式测试
-// ============================================================
 
 func TestParse_GitDiffWithMode(t *testing.T) {
 	patch := `diff --git a/cmd/main.go b/cmd/main.go
@@ -670,9 +656,7 @@ diff --git a/file2.go b/file2.go
 	}
 }
 
-// ============================================================
 // 8. 换行符 / CRLF 处理测试
-// ============================================================
 
 func TestParse_MixedCRLFandLF(t *testing.T) {
 	patch := "--- a.go\r\n+++ a.go\n@@ -1,2 +1,2 @@\r\n-old\n+new\r\n end\n"
@@ -709,9 +693,7 @@ func TestParse_WindowsCRLF(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 9. LLM 特有的解析容错测试
-// ============================================================
 
 func TestParse_LLM_MissingSpacePrefix_MultipleHunks(t *testing.T) {
 	patch := "--- a.go\n+++ a.go\n@@ -1,3 +1,3 @@\nline1\n-old1\n+new1\nline3\n@@ -10,3 +10,3 @@\nline10\n-old11\n+new11\nline12\n"

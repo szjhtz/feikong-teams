@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// ============================================================
 // 1. ApplyFileDiff 基础测试
-// ============================================================
 
 func TestApplyFileDiffNil(t *testing.T) {
 	result, err := ApplyFileDiff("content", nil)
@@ -62,9 +60,7 @@ func TestApplyFileDiffNoTrailingNewline(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 2. ApplyHunks 匹配策略测试 (exact / loose / fuzzy / normalized)
-// ============================================================
 
 func TestApply_ExactMatch(t *testing.T) {
 	original := "line1\nline2\nline3\nline4\nline5\n"
@@ -233,9 +229,7 @@ func TestMatchAtNormalized(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 3. PatchText 便捷函数测试
-// ============================================================
 
 func TestPatchText(t *testing.T) {
 	original := "line1\nline2\nline3\n"
@@ -278,9 +272,7 @@ func TestPatchText_NilHunks(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 4. 多文件 Diff & Apply 测试
-// ============================================================
 
 func TestMultiFileDiff(t *testing.T) {
 	changes := []FileChange{
@@ -435,9 +427,7 @@ func TestApplyMultiFileDiffMultipleChanges(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 5. 新建 / 修改 / 删除文件测试
-// ============================================================
 
 func TestApply_AllInsertions(t *testing.T) {
 	original := "line1\nline2\n"
@@ -620,9 +610,7 @@ func TestNewFile(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 6. 多 Hunk 同时修改测试
-// ============================================================
 
 func TestMultiHunkSameFile(t *testing.T) {
 	var oldLines, newLines []string
@@ -838,9 +826,7 @@ func TestApplyWithTrailingWhitespaceDiff(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 7. 部分应用（Partial Apply）测试
-// ============================================================
 
 func TestPartialApplySkipsFailedHunks(t *testing.T) {
 	oldLines := []string{
@@ -1092,9 +1078,7 @@ func TestApply_MultiFile_SequentialApply(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 8. 错误诊断测试
-// ============================================================
 
 func TestErrorDiagnosticContainsActualContent(t *testing.T) {
 	oldLines := []string{"aaa", "bbb", "ccc"}
@@ -1125,9 +1109,7 @@ func TestErrorDiagnosticContainsActualContent(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 9. 大文件 & 压力测试
-// ============================================================
 
 func TestApply_LargeFile_100Lines(t *testing.T) {
 	lines := make([]string, 100)
@@ -1217,9 +1199,7 @@ func TestLargeFilePartialApplyScenario(t *testing.T) {
 	t.Logf("partial apply: %d/%d hunks applied, %d failed", pae.Applied, pae.Total, len(pae.Errors))
 }
 
-// ============================================================
 // 10. LLM 特有边界测试
-// ============================================================
 
 func TestApply_FuzzyMatch_ShiftedLineNumbers(t *testing.T) {
 	lines := make([]string, 20)
@@ -1360,9 +1340,7 @@ func TestLLM_EmptyContextLine(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 11. splitLines 测试
-// ============================================================
 
 func TestSplitLines(t *testing.T) {
 	tests := []struct {

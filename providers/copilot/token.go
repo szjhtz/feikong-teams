@@ -73,7 +73,7 @@ func (tm *TokenManager) GetToken(ctx context.Context) (string, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
-	// double check
+	// 加锁后再次检查
 	if tm.token != nil && !tm.token.IsExpired() {
 		return tm.token.CopilotToken, nil
 	}

@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetScheduleTasksHandler returns all scheduled tasks
+// GetScheduleTasksHandler 返回调度任务列表。
 func GetScheduleTasksHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		s := scheduler.Global()
@@ -32,7 +32,7 @@ func GetScheduleTasksHandler() gin.HandlerFunc {
 	}
 }
 
-// CancelScheduleTaskHandler cancels a scheduled task
+// CancelScheduleTaskHandler 取消调度任务。
 func CancelScheduleTaskHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
@@ -62,7 +62,7 @@ func CancelScheduleTaskHandler() gin.HandlerFunc {
 	}
 }
 
-// GetTaskResultHandler returns the latest result for a task
+// GetTaskResultHandler 返回任务最新结果。
 func GetTaskResultHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
@@ -87,7 +87,7 @@ func GetTaskResultHandler() gin.HandlerFunc {
 	}
 }
 
-// GetTaskHistoryHandler returns the list of history entries for a task
+// GetTaskHistoryHandler 返回任务历史结果列表。
 func GetTaskHistoryHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
@@ -115,7 +115,7 @@ func GetTaskHistoryHandler() gin.HandlerFunc {
 	}
 }
 
-// GetTaskHistoryFileHandler returns a specific history file content
+// GetTaskHistoryFileHandler 返回指定历史结果内容。
 func GetTaskHistoryFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")

@@ -12,14 +12,14 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// LocalSkillInfo represents a locally installed skill
+// LocalSkillInfo 表示本地已安装技能。
 type LocalSkillInfo struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// ListLocalSkills lists all locally installed skills
+// ListLocalSkills 列出本地已安装技能。
 func ListLocalSkills() ([]LocalSkillInfo, error) {
 	skillsDir := filepath.Join(commonPkg.AppDir(), "skills")
 
@@ -71,7 +71,7 @@ func ListLocalSkills() ([]LocalSkillInfo, error) {
 	return skills, nil
 }
 
-// SkillFileEntry represents a file in a skill directory
+// SkillFileEntry 表示技能目录中的文件。
 type SkillFileEntry struct {
 	Name  string `json:"name"`
 	Path  string `json:"path"`
@@ -79,11 +79,11 @@ type SkillFileEntry struct {
 	Size  int64  `json:"size"`
 }
 
-// ListSkillFiles lists files in a skill directory (non-recursive for a given subpath)
+// ListSkillFiles 列出技能目录下指定路径的文件。
 func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
 	skillsDir := filepath.Join(commonPkg.AppDir(), "skills", slug)
 
-	// prevent path traversal
+	// 防止路径穿越
 	cleanSub := filepath.Clean(filepath.ToSlash(subPath))
 	if strings.HasPrefix(cleanSub, "..") {
 		return nil, fmt.Errorf("invalid path")
@@ -119,12 +119,12 @@ func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
 	return result, nil
 }
 
-// ReadSkillFile reads a file from a skill directory
+// ReadSkillFile 读取技能目录中的文件。
 func ReadSkillFile(slug, filePath string) (string, error) {
 	skillsDir := filepath.Join(commonPkg.AppDir(), "skills", slug)
 	fullPath := filepath.Join(skillsDir, filePath)
 
-	// prevent path traversal
+	// 防止路径穿越
 	cleanPath := filepath.Clean(fullPath)
 	if !strings.HasPrefix(cleanPath, filepath.Clean(skillsDir)+string(os.PathSeparator)) {
 		return "", fmt.Errorf("invalid path")
@@ -137,12 +137,12 @@ func ReadSkillFile(slug, filePath string) (string, error) {
 	return string(data), nil
 }
 
-// InstallSkillFromProvider installs a skill from the given provider
+// InstallSkillFromProvider 从指定 provider 安装技能。
 func InstallSkillFromProvider(ctx context.Context, slug, version string, provider Provider) error {
 	return installSkill(ctx, slug, version, provider)
 }
 
-// RemoveLocalSkill removes an installed skill by slug
+// RemoveLocalSkill 删除已安装技能。
 func RemoveLocalSkill(slug string) error {
 	targetDir := filepath.Join(commonPkg.AppDir(), "skills", slug)
 	if _, err := os.Stat(targetDir); os.IsNotExist(err) {

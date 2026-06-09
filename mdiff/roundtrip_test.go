@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// ============================================================
 // 1. 基础往返一致性（Round-trip）测试
-// ============================================================
 
 func TestRoundTripSimple(t *testing.T) {
 	roundTripTest(t, "line1\nline2\nline3\n", "line1\nchanged\nline3\n")
@@ -63,9 +61,7 @@ func TestRoundTripMultipleEmptyLines(t *testing.T) {
 	roundTripTest(t, "a\n\n\n\nb\n", "a\n\n\n\nc\n")
 }
 
-// ============================================================
 // 2. Multi-Hunk 往返测试
-// ============================================================
 
 func TestRoundTripMultiHunkRealWorld(t *testing.T) {
 	oldContent := `package handler
@@ -146,9 +142,7 @@ func HandleDelete(w http.ResponseWriter, r *http.Request) {
 	roundTripTest(t, oldContent, newContent)
 }
 
-// ============================================================
 // 3. Python 代码往返测试
-// ============================================================
 
 func TestRoundTripPythonMultiFunctionEdit(t *testing.T) {
 	oldContent := `import os
@@ -369,9 +363,7 @@ func TestRoundTripPythonLLMStyleDiff(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 4. HTML/CSS/JS/TS/Vue 代码往返测试
-// ============================================================
 
 func TestRoundTripHTMLMultiSectionEdit(t *testing.T) {
 	oldContent := `<!DOCTYPE html>
@@ -977,9 +969,7 @@ li.done span {
 	roundTripTest(t, oldContent, newContent)
 }
 
-// ============================================================
 // 5. 多文件往返测试
-// ============================================================
 
 func TestMultiFilePythonAndHTML(t *testing.T) {
 	files := map[string]string{
@@ -1080,9 +1070,7 @@ func TestRoundtrip_ThreeFiles_WithNewAndDelete(t *testing.T) {
 	}
 }
 
-// ============================================================
 // 6. 端到端（E2E）场景测试
-// ============================================================
 
 func TestE2E_MultiLanguage_ProjectPatch(t *testing.T) {
 	files := map[string]string{

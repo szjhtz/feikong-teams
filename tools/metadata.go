@@ -25,7 +25,7 @@ type ToolPolicy struct {
 }
 
 var toolPolicies = map[string]ToolPolicy{
-	// file
+	// 文件
 	"file_read":   readOnlyPolicy(approval.StoreFile, true),
 	"grep":        readOnlyPolicy(approval.StoreFile, true),
 	"file_list":   readOnlyPolicy(approval.StoreFile, true),
@@ -35,7 +35,7 @@ var toolPolicies = map[string]ToolPolicy{
 	"file_edit":   destructivePolicy(approval.StoreFile, true),
 	"file_patch":  destructivePolicy(approval.StoreFile, true),
 
-	// git
+	// Git 工具
 	"git_status":   readOnlyPolicy("", false),
 	"git_log":      readOnlyPolicy("", false),
 	"git_diff":     readOnlyPolicy("", false),
@@ -51,17 +51,17 @@ var toolPolicies = map[string]ToolPolicy{
 	"git_config":   destructivePolicy(approval.StoreGit, false),
 	"git_clean":    destructivePolicy(approval.StoreGit, false),
 
-	// command / dispatch
+	// 命令和分发
 	"execute":        destructivePolicy(approval.StoreCommand, false),
 	"dispatch_tasks": destructivePolicy(approval.StoreDispatch, false),
 
-	// ssh
+	// SSH 工具
 	"ssh_list_dir": readOnlyPolicy("", false),
 	"ssh_download": destructivePolicy("", false),
 	"ssh_execute":  destructivePolicy("", false),
 	"ssh_upload":   destructivePolicy("", false),
 
-	// script: bun
+	// Bun 脚本
 	"bun_init_env":        destructivePolicy("", false),
 	"bun_install_package": destructivePolicy("", false),
 	"bun_remove_package":  destructivePolicy("", false),
@@ -70,7 +70,7 @@ var toolPolicies = map[string]ToolPolicy{
 	"bun_list_package":    readOnlyPolicy("", false),
 	"bun_get_env_info":    readOnlyPolicy("", false),
 
-	// script: uv
+	// uv 脚本
 	"uv_init_env":        destructivePolicy("", false),
 	"uv_install_package": destructivePolicy("", false),
 	"uv_remove_package":  destructivePolicy("", false),
@@ -82,13 +82,13 @@ var toolPolicies = map[string]ToolPolicy{
 	"uv_get_env_info":    readOnlyPolicy("", false),
 	"uv_check_syntax":    readOnlyPolicy("", false),
 
-	// scheduler
+	// 调度器
 	"schedule_list":   readOnlyPolicy("", false),
 	"schedule_add":    destructivePolicy("", false),
 	"schedule_cancel": destructivePolicy("", false),
 	"schedule_delete": destructivePolicy("", false),
 
-	// todo
+	// TODO 工具
 	"todo_list":         readOnlyPolicy("", false),
 	"todo_add":          destructivePolicy("", false),
 	"todo_update":       destructivePolicy("", false),
@@ -97,7 +97,7 @@ var toolPolicies = map[string]ToolPolicy{
 	"todo_batch_delete": destructivePolicy("", false),
 	"todo_clear":        destructivePolicy("", false),
 
-	// search / fetch / doc / ask
+	// 搜索、抓取、文档和提问
 	"search":                 readOnlyPolicy("", false),
 	"fetch":                  readOnlyPolicy("", false),
 	"get_document_info":      readOnlyPolicy("", false),
@@ -106,7 +106,7 @@ var toolPolicies = map[string]ToolPolicy{
 	"read_document_by_lines": readOnlyPolicy("", false),
 	"ask_questions":          readOnlyPolicy("", false),
 
-	// excel read
+	// Excel 读取
 	"excel_open_workbook":       readOnlyPolicy("", false),
 	"excel_get_cell_value":      readOnlyPolicy("", false),
 	"excel_get_rows":            readOnlyPolicy("", false),
@@ -115,7 +115,7 @@ var toolPolicies = map[string]ToolPolicy{
 	"excel_get_sheet_data":      readOnlyPolicy("", false),
 	"excel_get_all_sheets_data": readOnlyPolicy("", false),
 
-	// excel write
+	// Excel 写入
 	"excel_create_workbook":        destructivePolicy("", false),
 	"excel_save_workbook":          destructivePolicy("", false),
 	"excel_set_workbook_props":     destructivePolicy("", false),

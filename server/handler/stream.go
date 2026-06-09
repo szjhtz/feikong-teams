@@ -21,8 +21,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// ==================== API Handlers ====================
-
 // StreamStartRequest 启动流式任务请求
 type StreamStartRequest struct {
 	SessionID string        `json:"session_id"`

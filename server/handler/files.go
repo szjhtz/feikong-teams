@@ -147,7 +147,7 @@ func SearchFilesHandler() gin.HandlerFunc {
 			if err != nil {
 				return nil
 			}
-			// skip hidden files/dirs
+			// 跳过隐藏文件和目录
 			if strings.HasPrefix(d.Name(), ".") {
 				if d.IsDir() {
 					return filepath.SkipDir
@@ -555,8 +555,7 @@ func DownloadFileHandler() gin.HandlerFunc {
 	}
 }
 
-// BatchDownloadHandler 批量下载：将多个文件/文件夹打包为单个 zip
-// JSON body: {"paths": ["path1", "path2", ...]}
+// BatchDownloadHandler 批量下载：将多个文件/文件夹打包为单个 zip。
 func BatchDownloadHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseDir, absBase, err := getWorkspaceDir()
@@ -756,7 +755,6 @@ func serveFileContent(c *gin.Context, fullPath string, info os.FileInfo) {
 
 // ServeFileHandler 以 inline 方式提供工作目录中的文件（用于 HTML 预览等场景）
 // 相对路径通过 URL wildcard 传入，浏览器可自然解析相对引用
-// Route: GET /api/fkteams/files/serve/*filepath
 func ServeFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseDir, absBase, err := getWorkspaceDir()

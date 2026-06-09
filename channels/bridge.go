@@ -505,7 +505,7 @@ func (rc *replyCollector) send(text string) {
 	}
 }
 
-// channelNameKey context key for channel name
+// channelNameKey 是通道名称的 context key。
 type channelNameKey struct{}
 
 // WithChannelName 将通道名称注入 context

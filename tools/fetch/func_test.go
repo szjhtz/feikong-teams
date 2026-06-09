@@ -68,14 +68,12 @@ func TestFetch(t *testing.T) {
 				return
 			}
 
-			// Check for error message in response
 			if resp.ErrorMessage != "" {
 				t.Logf("Response error: %s", resp.ErrorMessage)
 				if tt.req.URL != "" && (tt.req.URL == "https://example.com") {
 					t.Errorf("Unexpected error for valid URL: %s", resp.ErrorMessage)
 				}
 			} else {
-				// Valid response
 				if resp.Content == "" {
 					t.Error("Content is empty")
 				}
@@ -168,7 +166,7 @@ func TestProcessContent(t *testing.T) {
 				}
 				t.Logf("Result:\n%s", result)
 
-				// Verify markdown conversion quality
+				// 验证 Markdown 转换质量
 				if tt.format == "markdown" && tt.contentType == "text/html" {
 					if !containsAny(result, []string{"# Main Heading", "## Subheading"}) {
 						t.Error("Markdown should contain heading markers")
@@ -268,7 +266,7 @@ func TestConvertHTMLToMarkdown(t *testing.T) {
 	}
 }
 
-// containsAny checks if the text contains any of the substrings
+// containsAny 判断文本是否包含任一子串。
 func containsAny(text string, substrings []string) bool {
 	for _, substr := range substrings {
 		if len(substr) > 0 && len(text) >= len(substr) {

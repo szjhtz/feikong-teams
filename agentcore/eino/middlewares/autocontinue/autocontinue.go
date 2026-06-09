@@ -38,7 +38,7 @@ const (
 )
 
 // isTruncated 检查 FinishReason 是否表示 max_tokens 截断
-// OpenAI/DeepSeek: "length", Claude: "max_tokens", Gemini: "MAX_TOKENS"
+// 不同提供商返回值不同：OpenAI/DeepSeek 为 "length"，Claude 为 "max_tokens"，Gemini 为 "MAX_TOKENS"。
 func isTruncated(reason string) bool {
 	r := strings.ToLower(reason)
 	return r == "length" || r == "max_tokens"

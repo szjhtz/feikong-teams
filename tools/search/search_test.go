@@ -56,7 +56,6 @@ func TestTextSearchErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a test client with minimal configuration
 			client := &client{
 				httpCli: &http.Client{
 					Timeout: 10 * time.Second,
@@ -68,7 +67,6 @@ func TestTextSearchErrorHandling(t *testing.T) {
 			ctx := context.Background()
 			resp, err := client.TextSearch(ctx, tt.request)
 
-			// Should never return error, always return response
 			if err != nil {
 				t.Errorf("TextSearch() should not return error, got: %v", err)
 				return
@@ -79,7 +77,6 @@ func TestTextSearchErrorHandling(t *testing.T) {
 				return
 			}
 
-			// Check error message
 			hasErrorMessage := resp.ErrorMessage != ""
 			if hasErrorMessage != tt.wantErrorMessage {
 				t.Errorf("TextSearch() error message presence = %v, want %v. ErrorMessage: %s",
@@ -91,7 +88,6 @@ func TestTextSearchErrorHandling(t *testing.T) {
 					resp.ErrorMessage, tt.errorContains)
 			}
 
-			// Log the response
 			if resp.ErrorMessage != "" {
 				t.Logf("Error message: %s", resp.ErrorMessage)
 			}
@@ -106,7 +102,6 @@ func TestTextSearchErrorHandling(t *testing.T) {
 }
 
 func TestTextSearchResponseStructure(t *testing.T) {
-	// Test that response structure is correct
 	tests := []struct {
 		name     string
 		response *TextSearchResponse
@@ -141,7 +136,6 @@ func TestTextSearchResponseStructure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Verify response has expected fields
 			if tt.response.ErrorMessage != "" {
 				t.Logf("Has error message: %s", tt.response.ErrorMessage)
 				if len(tt.response.Results) > 0 {
@@ -190,7 +184,6 @@ func TestDoTextHTMLSearchErrorCodes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
 			}))

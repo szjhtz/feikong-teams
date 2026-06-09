@@ -2,9 +2,7 @@ package mdiff
 
 import "testing"
 
-// ============================================================
 // Diff 算法测试 (Myers)
-// ============================================================
 
 func TestDiffEmpty(t *testing.T) {
 	edits := Diff(nil, nil)

@@ -11,7 +11,7 @@ import (
 	"fkteams/channels/weixin/sdk/protocol"
 )
 
-// Credentials holds bot authentication data.
+// Credentials 表示机器人认证数据。
 type Credentials struct {
 	Token     string `json:"token"`
 	BaseURL   string `json:"baseUrl"`
@@ -20,12 +20,12 @@ type Credentials struct {
 	SavedAt   string `json:"savedAt,omitempty"`
 }
 
-// DefaultCredPath returns channels/weixin/credentials.json
+// DefaultCredPath 返回默认凭证路径。
 func DefaultCredPath() string {
 	return filepath.Join("channels", "weixin", "credentials.json")
 }
 
-// LoadCredentials loads stored credentials from disk.
+// LoadCredentials 从磁盘加载凭证。
 func LoadCredentials(path string) (*Credentials, error) {
 	if path == "" {
 		path = DefaultCredPath()
@@ -44,7 +44,7 @@ func LoadCredentials(path string) (*Credentials, error) {
 	return &creds, nil
 }
 
-// SaveCredentials persists credentials to disk with 0600 permissions.
+// SaveCredentials 将凭证保存到磁盘。
 func SaveCredentials(creds *Credentials, path string) error {
 	if path == "" {
 		path = DefaultCredPath()
@@ -57,7 +57,7 @@ func SaveCredentials(creds *Credentials, path string) error {
 	return os.WriteFile(path, append(data, '\n'), 0600)
 }
 
-// ClearCredentials removes stored credentials.
+// ClearCredentials 删除已保存凭证。
 func ClearCredentials(path string) error {
 	if path == "" {
 		path = DefaultCredPath()
@@ -65,7 +65,7 @@ func ClearCredentials(path string) error {
 	return os.Remove(path)
 }
 
-// LoginOptions configures the login flow.
+// LoginOptions 配置登录流程。
 type LoginOptions struct {
 	BaseURL   string
 	CredPath  string
@@ -75,8 +75,7 @@ type LoginOptions struct {
 	OnExpired func()
 }
 
-// Login performs QR code login, returning credentials.
-// If stored credentials exist and Force is false, returns them directly.
+// Login 执行扫码登录并返回凭证。
 func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Credentials, error) {
 	baseURL := opts.BaseURL
 	if baseURL == "" {

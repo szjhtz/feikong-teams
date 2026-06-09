@@ -21,7 +21,7 @@ const (
 	ChannelVersion = "2.0.0"
 )
 
-// APIError is returned when the iLink API returns a non-zero ret or HTTP error.
+// APIError 表示 iLink API 返回的业务或 HTTP 错误。
 type APIError struct {
 	Message    string
 	HTTPStatus int
@@ -32,12 +32,12 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("ilink api: %s (http=%d, errcode=%d)", e.Message, e.HTTPStatus, e.ErrCode)
 }
 
-// IsSessionExpired returns true if this error indicates session timeout.
+// IsSessionExpired 判断错误是否为会话过期。
 func (e *APIError) IsSessionExpired() bool {
 	return e.ErrCode == -14
 }
 
-// RandomWechatUIN generates the X-WECHAT-UIN header value.
+// RandomWechatUIN 生成 X-WECHAT-UIN 请求头。
 func RandomWechatUIN() string {
 	var buf [4]byte
 	rand.Read(buf[:])
@@ -45,7 +45,7 @@ func RandomWechatUIN() string {
 	return base64.StdEncoding.EncodeToString([]byte(strconv.FormatUint(uint64(val), 10)))
 }
 
-// AuthHeaders returns the standard iLink POST headers.
+// AuthHeaders 返回 iLink POST 请求头。
 func AuthHeaders(token string) http.Header {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
@@ -59,34 +59,34 @@ func baseInfo() map[string]string {
 	return map[string]string{"channel_version": ChannelVersion}
 }
 
-// Client wraps HTTP calls to the iLink API.
+// Client 封装 iLink API 请求。
 type Client struct {
 	HTTP *http.Client
 }
 
-// NewClient creates a protocol client with sensible defaults.
+// NewClient 创建协议客户端。
 func NewClient() *Client {
 	return &Client{
 		HTTP: &http.Client{Timeout: 45 * time.Second},
 	}
 }
 
-// QRCodeResponse from get_bot_qrcode.
+// QRCodeResponse 是 get_bot_qrcode 响应。
 type QRCodeResponse struct {
 	QRCode       string `json:"qrcode"`
 	QRCodeImgURL string `json:"qrcode_img_content"`
 }
 
-// QRStatusResponse from get_qrcode_status.
+// QRStatusResponse 是 get_qrcode_status 响应。
 type QRStatusResponse struct {
-	Status   string `json:"status"` // wait, scaned, confirmed, expired
+	Status   string `json:"status"` // wait/scaned/confirmed/expired
 	BotToken string `json:"bot_token,omitempty"`
 	BotID    string `json:"ilink_bot_id,omitempty"`
 	UserID   string `json:"ilink_user_id,omitempty"`
 	BaseURL  string `json:"baseurl,omitempty"`
 }
 
-// GetUpdatesResponse from getupdates.
+// GetUpdatesResponse 是 getupdates 响应。
 type GetUpdatesResponse struct {
 	Ret           int               `json:"ret"`
 	Msgs          []json.RawMessage `json:"msgs"`
@@ -95,13 +95,13 @@ type GetUpdatesResponse struct {
 	ErrMsg        string            `json:"errmsg,omitempty"`
 }
 
-// GetConfigResponse from getconfig.
+// GetConfigResponse 是 getconfig 响应。
 type GetConfigResponse struct {
 	TypingTicket string `json:"typing_ticket,omitempty"`
 	Ret          int    `json:"ret,omitempty"`
 }
 
-// GetQRCode requests a new QR code for login.
+// GetQRCode 请求登录二维码。
 func (c *Client) GetQRCode(ctx context.Context, baseURL string) (*QRCodeResponse, error) {
 	u := baseURL + "/ilink/bot/get_bot_qrcode?bot_type=3"
 	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
@@ -117,7 +117,7 @@ func (c *Client) GetQRCode(ctx context.Context, baseURL string) (*QRCodeResponse
 	return &result, nil
 }
 
-// PollQRStatus polls the QR code scan status.
+// PollQRStatus 轮询二维码扫码状态。
 func (c *Client) PollQRStatus(ctx context.Context, baseURL, qrcode string) (*QRStatusResponse, error) {
 	u := baseURL + "/ilink/bot/get_qrcode_status?qrcode=" + url.QueryEscape(qrcode)
 	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
@@ -132,7 +132,7 @@ func (c *Client) PollQRStatus(ctx context.Context, baseURL, qrcode string) (*QRS
 	return &result, nil
 }
 
-// apiPost sends a POST to the iLink API and parses the response.
+// apiPost 发送 iLink POST 请求并解析响应。
 func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, body any, timeout time.Duration) (json.RawMessage, error) {
 	data, _ := json.Marshal(body)
 	u := baseURL + endpoint
@@ -155,7 +155,6 @@ func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, b
 		return nil, &APIError{Message: string(raw), HTTPStatus: resp.StatusCode}
 	}
 
-	// Check ret != 0
 	var check struct {
 		Ret     int    `json:"ret"`
 		ErrCode int    `json:"errcode"`
@@ -177,7 +176,7 @@ func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, b
 	return json.RawMessage(raw), nil
 }
 
-// GetUpdates performs a long-poll for new messages.
+// GetUpdates 长轮询获取新消息。
 func (c *Client) GetUpdates(ctx context.Context, baseURL, token, cursor string) (*GetUpdatesResponse, error) {
 	body := map[string]any{
 		"get_updates_buf": cursor,
@@ -192,7 +191,7 @@ func (c *Client) GetUpdates(ctx context.Context, baseURL, token, cursor string) 
 	return &result, nil
 }
 
-// SendMessage sends a message through the iLink API.
+// SendMessage 通过 iLink API 发送消息。
 func (c *Client) SendMessage(ctx context.Context, baseURL, token string, msg any) error {
 	body := map[string]any{
 		"msg":       msg,
@@ -202,7 +201,7 @@ func (c *Client) SendMessage(ctx context.Context, baseURL, token string, msg any
 	return err
 }
 
-// GetConfig gets the typing ticket for a user.
+// GetConfig 获取用户的 typing ticket。
 func (c *Client) GetConfig(ctx context.Context, baseURL, token, userID, contextToken string) (*GetConfigResponse, error) {
 	body := map[string]any{
 		"ilink_user_id": userID,
@@ -218,7 +217,7 @@ func (c *Client) GetConfig(ctx context.Context, baseURL, token, userID, contextT
 	return &result, nil
 }
 
-// SendTyping sends or cancels the typing indicator.
+// SendTyping 发送或取消输入中状态。
 func (c *Client) SendTyping(ctx context.Context, baseURL, token, userID, ticket string, status int) error {
 	body := map[string]any{
 		"ilink_user_id": userID,
@@ -230,7 +229,7 @@ func (c *Client) SendTyping(ctx context.Context, baseURL, token, userID, ticket 
 	return err
 }
 
-// GetUploadURLRequest holds parameters for getuploadurl.
+// GetUploadURLRequest 是 getuploadurl 请求参数。
 type GetUploadURLRequest struct {
 	FileKey     string `json:"filekey"`
 	MediaType   int    `json:"media_type"`
@@ -242,12 +241,12 @@ type GetUploadURLRequest struct {
 	AESKey      string `json:"aeskey,omitempty"`
 }
 
-// GetUploadURLResponse from getuploadurl.
+// GetUploadURLResponse 是 getuploadurl 响应。
 type GetUploadURLResponse struct {
 	UploadParam string `json:"upload_param"`
 }
 
-// GetUploadURL requests an upload URL for CDN media upload.
+// GetUploadURL 请求 CDN 上传地址。
 func (c *Client) GetUploadURL(ctx context.Context, baseURL, token string, req GetUploadURLRequest) (*GetUploadURLResponse, error) {
 	body := map[string]any{
 		"filekey":       req.FileKey,
@@ -271,7 +270,7 @@ func (c *Client) GetUploadURL(ctx context.Context, baseURL, token string, req Ge
 	return &result, nil
 }
 
-// BuildMediaMessage creates a media message payload.
+// BuildMediaMessage 构建媒体消息载荷。
 func BuildMediaMessage(userID, contextToken string, itemList []map[string]any) map[string]any {
 	return map[string]any{
 		"from_user_id":  "",
@@ -284,7 +283,7 @@ func BuildMediaMessage(userID, contextToken string, itemList []map[string]any) m
 	}
 }
 
-// BuildTextMessage creates a text message payload.
+// BuildTextMessage 构建文本消息载荷。
 func BuildTextMessage(userID, contextToken, text string) map[string]any {
 	return map[string]any{
 		"from_user_id":  "",
@@ -300,7 +299,6 @@ func BuildTextMessage(userID, contextToken, text string) map[string]any {
 }
 
 func newUUID() string {
-	// Simple UUID v4
 	var buf [16]byte
 	rand.Read(buf[:])
 	buf[6] = (buf[6] & 0x0f) | 0x40

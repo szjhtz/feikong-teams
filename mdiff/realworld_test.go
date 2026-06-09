@@ -5,11 +5,7 @@ import (
 	"testing"
 )
 
-// ============================================================
 // 真实语言 patch 测试 — 模拟 LLM 对 HTML/JS/CSS/Python 的修改
-// ============================================================
-
-// --------------- HTML ---------------
 
 const htmlOriginal = `<!DOCTYPE html>
 <html lang="en">
@@ -126,8 +122,6 @@ func TestHTML_Roundtrip(t *testing.T) {
 		t.Errorf("roundtrip failed:\n  got:  %q\n  want: %q", result, newHTML)
 	}
 }
-
-// --------------- JavaScript ---------------
 
 const jsOriginal = `import React, { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -255,8 +249,6 @@ func TestJS_Roundtrip(t *testing.T) {
 		t.Errorf("JS roundtrip mismatch")
 	}
 }
-
-// --------------- CSS ---------------
 
 const cssOriginal = `.app {
     max-width: 1200px;
@@ -387,8 +379,6 @@ func TestCSS_Roundtrip(t *testing.T) {
 		t.Errorf("CSS roundtrip mismatch")
 	}
 }
-
-// --------------- Python ---------------
 
 const pythonOriginal = `import os
 import logging
@@ -546,8 +536,6 @@ func TestPython_Roundtrip(t *testing.T) {
 	}
 }
 
-// --------------- 多文件多语言 ---------------
-
 func TestMultiLang_HTMLJSCSSPython(t *testing.T) {
 	files := map[string]string{
 		"index.html": htmlOriginal,
@@ -622,8 +610,6 @@ func TestMultiLang_HTMLJSCSSPython(t *testing.T) {
 		t.Error("Python debug not changed")
 	}
 }
-
-// --------------- Go ---------------
 
 const goOriginal = `package main
 
@@ -715,8 +701,6 @@ func TestGo_Roundtrip(t *testing.T) {
 	}
 }
 
-// --------------- TypeScript ---------------
-
 const tsOriginal = `interface User {
     id: number;
     name: string;
@@ -801,8 +785,6 @@ func TestTS_Roundtrip(t *testing.T) {
 		t.Errorf("TS roundtrip mismatch")
 	}
 }
-
-// --------------- JSON/YAML config ---------------
 
 const jsonOriginal = `{
     "name": "my-project",

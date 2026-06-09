@@ -5,7 +5,7 @@ import (
 	"io/fs"
 )
 
-// FS 嵌入整个 web 目录
+// FS 嵌入整个 web 目录。
 //
 //go:embed assets css js index.html login.html preview.html session_share.html
 var FS embed.FS

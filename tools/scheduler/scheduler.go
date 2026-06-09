@@ -399,7 +399,7 @@ func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr stri
 						tasks.Tasks[i].Status = "failed"
 						log.Printf("[scheduler] cron parse failed: taskID=%s, err=%v", taskID, cronErr)
 					} else {
-						// if the next cron-aligned time is too close, skip to the one after
+						// 避免紧贴当前时间重复触发
 						if nextRun.Sub(now) < 30*time.Second {
 							nextRun, cronErr = s.ComputeNextRun(cronExpr, nextRun)
 							if cronErr != nil {
@@ -543,7 +543,7 @@ func (s *Scheduler) saveTasks(list *ScheduledTaskList) error {
 	return nil
 }
 
-// ReadTaskResult reads the execution result for a task
+// ReadTaskResult 读取任务执行结果。
 func (s *Scheduler) ReadTaskResult(taskID string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
