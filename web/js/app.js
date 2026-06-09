@@ -38,6 +38,8 @@ class FKTeamsChat {
     this._lastMainScrollTop = 0; // 用于判断用户是否主动向上查看历史内容
     this._touchScrollStartY = null;
     this._keyboardViewportRAF = null;
+    this._keyboardOpen = false;
+    this._suppressScrollStateUntil = 0;
     this.fileSuggestions = null; // 文件建议弹窗
     this.selectedFileIndex = -1; // 当前选中的文件索引
     this.currentPath = ""; // 当前浏览的路径
@@ -368,18 +370,32 @@ class FKTeamsChat {
   updateKeyboardViewport() {
     const viewport = window.visualViewport;
     const height = viewport ? viewport.height : window.innerHeight;
+    const wasPinnedToBottom = this.isNearMainContentBottom(120) || !this.userScrolledUp;
     if (height > 0) {
       document.documentElement.style.setProperty("--app-viewport-height", `${height}px`);
     }
     const keyboardOpen = !!(viewport && window.innerHeight - viewport.height > 80);
+    const keyboardStateChanged = keyboardOpen !== this._keyboardOpen;
+    this._keyboardOpen = keyboardOpen;
     document.body.classList.toggle("mobile-keyboard-open", keyboardOpen);
-    if (document.activeElement === this.messageInput) {
+    if (keyboardOpen && wasPinnedToBottom) {
+      this.keepConversationBottomVisible();
+    } else if (document.activeElement === this.messageInput) {
       this.keepInputVisible();
+    }
+    if (!keyboardOpen && keyboardStateChanged) {
+      document.documentElement.style.removeProperty("--app-viewport-height");
     }
   }
 
   handleInputFocus() {
     this.scheduleKeyboardViewportUpdate();
+    if (this.isNearMainContentBottom(120) || !this.userScrolledUp) {
+      this.keepConversationBottomVisible();
+      setTimeout(() => this.keepConversationBottomVisible(), 80);
+      setTimeout(() => this.keepConversationBottomVisible(), 260);
+      return;
+    }
     setTimeout(() => this.keepInputVisible(), 80);
     setTimeout(() => this.keepInputVisible(), 260);
   }
@@ -403,6 +419,26 @@ class FKTeamsChat {
     }
   }
 
+  isNearMainContentBottom(threshold = 80) {
+    if (!this.mainContent) return true;
+    const { scrollTop, scrollHeight, clientHeight } = this.mainContent;
+    return scrollHeight - scrollTop - clientHeight <= threshold;
+  }
+
+  keepConversationBottomVisible() {
+    if (!this.mainContent) return;
+    this._suppressScrollStateUntil = Date.now() + 450;
+    this.userScrolledUp = false;
+    this.showScrollToBottomBtn(false);
+    const stickToBottom = () => {
+      this.mainContent.scrollTop = this.mainContent.scrollHeight;
+      this._lastMainScrollTop = this.mainContent.scrollTop;
+    };
+    requestAnimationFrame(stickToBottom);
+    setTimeout(stickToBottom, 80);
+    setTimeout(stickToBottom, 260);
+  }
+
   pauseAutoScrollForUser() {
     if (!this.mainContent || !this.messagesContainer) return;
     const hasMessages = this.messagesContainer.querySelector(".message");
@@ -418,6 +454,10 @@ class FKTeamsChat {
 
   handleScroll() {
     const { scrollTop, scrollHeight, clientHeight } = this.mainContent;
+    if (this._suppressScrollStateUntil && Date.now() < this._suppressScrollStateUntil) {
+      this._lastMainScrollTop = scrollTop;
+      return;
+    }
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     const scrollingUp = scrollTop < (this._lastMainScrollTop || 0) - 1;
     const hasMessages =
