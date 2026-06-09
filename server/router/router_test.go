@@ -1,6 +1,10 @@
 package router
 
 import (
+	"fkteams/web"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -68,6 +72,67 @@ func TestNewEngineAddsMiddlewareAndRoutesCanBeRegistered(t *testing.T) {
 
 	if len(engine.Routes()) == 0 {
 		t.Fatal("engine should have registered routes")
+	}
+}
+
+func TestServeHTMLVersionsStaticAssets(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.GET("/", func(c *gin.Context) {
+		serveHTML(c, web.GetFS(), "index.html")
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("expected no-cache html response, got %q", got)
+	}
+
+	body := recorder.Body.String()
+	for _, ref := range []string{
+		"/static/css/style.css?v=",
+		"/static/js/history.js?v=",
+		"/static/assets/fkteams-logo.svg?v=",
+	} {
+		if !strings.Contains(body, ref) {
+			t.Fatalf("expected html to contain versioned ref %q", ref)
+		}
+	}
+}
+
+func TestServeStaticStyleVersionsLocalCSSImports(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.GET("/static/*filepath", serveStatic(web.GetFS()))
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/static/css/style.css?v=test", nil)
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("expected immutable static response, got %q", got)
+	}
+
+	body := recorder.Body.String()
+	for _, ref := range []string{
+		"url('variables.css?v=",
+		"url('layout.css?v=",
+		"url('messages.css?v=",
+	} {
+		if !strings.Contains(body, ref) {
+			t.Fatalf("expected css to contain versioned import %q", ref)
+		}
+	}
+	if strings.Contains(body, "fonts.googleapis.com/css2?family=Caveat") {
+		t.Fatal("style.css should not inline external font imports")
 	}
 }
 

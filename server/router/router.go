@@ -5,11 +5,21 @@ import (
 	"fkteams/appstate"
 	"fkteams/server/handler"
 	"fkteams/server/middleware"
+	"fkteams/version"
 	"fkteams/web"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+)
+
+var (
+	staticAssetRefRe = regexp.MustCompile(`(/static/(?:assets|css|js)/[^"'<>?\s)]+)(?:\?[^"'<>\s)]*)?`)
+	cssImportURLRe   = regexp.MustCompile(`url\((['"]?)([^'")]+\.css)(?:\?[^'")]*)?(['"]?)\)`)
 )
 
 // newEngine 创建带公共中间件的 Gin 引擎
@@ -191,11 +201,7 @@ func InitWithState(state *appstate.State) (*gin.Engine, error) {
 	r := newEngine(authEnabled)
 
 	webFS := web.GetFS()
-	fileServer := http.StripPrefix("/static", http.FileServer(http.FS(webFS)))
-	r.GET("/static/*filepath", func(c *gin.Context) {
-		c.Header("Cache-Control", "public, max-age=86400")
-		fileServer.ServeHTTP(c.Writer, c.Request)
-	})
+	r.GET("/static/*filepath", serveStatic(webFS))
 	r.GET("/favicon.ico", func(c *gin.Context) {
 		data, err := webFS.Open("assets/favicon.ico")
 		if err != nil {
@@ -209,52 +215,112 @@ func InitWithState(state *appstate.State) (*gin.Engine, error) {
 
 	if authEnabled {
 		serveLogin := func(c *gin.Context) {
-			data, err := webFS.Open("login.html")
-			if err != nil {
-				c.String(http.StatusNotFound, "Page not found")
-				return
-			}
-			defer data.Close()
-			c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+			serveHTML(c, webFS, "login.html")
 		}
 		r.GET("/login", serveLogin)
 	}
 
 	serveIndex := func(c *gin.Context) {
-		data, err := webFS.Open("index.html")
-		if err != nil {
-			c.String(http.StatusNotFound, "Page not found")
-			return
-		}
-		defer data.Close()
-		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+		serveHTML(c, webFS, "index.html")
 	}
 	r.GET("/", serveIndex)
 	r.GET("/chat", serveIndex)
 
 	// 文件分享预览页面
 	servePreview := func(c *gin.Context) {
-		data, err := webFS.Open("preview.html")
-		if err != nil {
-			c.String(http.StatusNotFound, "Page not found")
-			return
-		}
-		defer data.Close()
-		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+		serveHTML(c, webFS, "preview.html")
 	}
 	r.GET("/p/:linkId", servePreview)
 	r.GET("/s/:shareID", func(c *gin.Context) {
-		data, err := webFS.Open("session_share.html")
-		if err != nil {
-			c.String(http.StatusNotFound, "Page not found")
-			return
-		}
-		defer data.Close()
-		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+		serveHTML(c, webFS, "session_share.html")
 	})
 
 	registerAPIRoutesWithState(r, authEnabled, state)
 	return r, nil
+}
+
+func serveStatic(webFS fs.FS) gin.HandlerFunc {
+	fileServer := http.StripPrefix("/static", http.FileServer(http.FS(webFS)))
+	return func(c *gin.Context) {
+		setStaticCacheHeader(c)
+		path := strings.TrimPrefix(c.Param("filepath"), "/")
+		if path == "css/style.css" {
+			data, err := fs.ReadFile(webFS, path)
+			if err != nil {
+				c.String(http.StatusNotFound, "static file not found")
+				return
+			}
+			c.Data(http.StatusOK, "text/css; charset=utf-8", []byte(versionCSSImports(string(data))))
+			return
+		}
+		fileServer.ServeHTTP(c.Writer, c.Request)
+	}
+}
+
+func serveHTML(c *gin.Context, webFS fs.FS, filename string) {
+	data, err := fs.ReadFile(webFS, filename)
+	if err != nil {
+		c.String(http.StatusNotFound, "Page not found")
+		return
+	}
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(versionStaticAssetRefs(string(data))))
+}
+
+func setStaticCacheHeader(c *gin.Context) {
+	if c.Query("v") != "" {
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		return
+	}
+	c.Header("Cache-Control", "no-cache")
+}
+
+func versionStaticAssetRefs(content string) string {
+	assetVersion := staticAssetVersion()
+	return staticAssetRefRe.ReplaceAllStringFunc(content, func(match string) string {
+		return appendAssetVersion(match, assetVersion)
+	})
+}
+
+func versionCSSImports(content string) string {
+	assetVersion := staticAssetVersion()
+	return cssImportURLRe.ReplaceAllStringFunc(content, func(match string) string {
+		submatches := cssImportURLRe.FindStringSubmatch(match)
+		if len(submatches) != 4 {
+			return match
+		}
+
+		ref := submatches[2]
+		if strings.Contains(ref, "://") || strings.HasPrefix(ref, "/") || strings.HasPrefix(ref, "data:") {
+			return match
+		}
+
+		quote := submatches[1]
+		if quote == "" {
+			quote = submatches[3]
+		}
+		return "url(" + quote + appendAssetVersion(ref, assetVersion) + quote + ")"
+	})
+}
+
+func appendAssetVersion(ref string, assetVersion string) string {
+	if strings.Contains(ref, "v=") {
+		return ref
+	}
+	separator := "?"
+	if strings.Contains(ref, "?") {
+		separator = "&"
+	}
+	return ref + separator + "v=" + assetVersion
+}
+
+func staticAssetVersion() string {
+	info := version.Get()
+	token := strings.TrimSpace(info.Version + "-" + info.BuildTime)
+	if token == "-" || token == "" {
+		token = "dev"
+	}
+	return url.QueryEscape(token)
 }
 
 // InitAPI 初始化纯 API 路由（无 Web 界面）
