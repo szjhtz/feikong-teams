@@ -3,10 +3,10 @@ package chat
 
 import (
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events/log"
 	"fkteams/fkenv"
-	"fkteams/g"
 	"fkteams/log"
 	"fkteams/memory"
 	"fmt"
@@ -15,11 +15,16 @@ import (
 
 // BuildTurnInput 构建一轮输入（长期记忆 + 对话历史 + 用户输入）
 func BuildTurnInput(recorder *eventlog.HistoryRecorder, userInput string) engine.TurnInput {
+	return BuildTurnInputWithMemory(recorder, userInput, nil)
+}
+
+// BuildTurnInputWithMemory 构建一轮输入并按需注入长期记忆。
+func BuildTurnInputWithMemory(recorder *eventlog.HistoryRecorder, userInput string, manager appstate.MemoryManager) engine.TurnInput {
 	var contextMessages []agentcore.Message
 
 	// 注入长期记忆
-	if g.MemoryManager != nil {
-		memories := g.MemoryManager.Search(userInput, 5)
+	if manager != nil {
+		memories := manager.Search(userInput, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
 			contextMessages = append(contextMessages, agentcore.Message{Role: agentcore.RoleSystem, Content: memCtx})
 		}
@@ -40,11 +45,16 @@ func BuildTurnInput(recorder *eventlog.HistoryRecorder, userInput string) engine
 
 // BuildMultimodalTurnInput 构建一轮多模态输入（长期记忆 + 对话历史 + 多模态内容）
 func BuildMultimodalTurnInput(recorder *eventlog.HistoryRecorder, textContent string, parts []agentcore.ContentPart) engine.TurnInput {
+	return BuildMultimodalTurnInputWithMemory(recorder, textContent, parts, nil)
+}
+
+// BuildMultimodalTurnInputWithMemory 构建多模态输入并按需注入长期记忆。
+func BuildMultimodalTurnInputWithMemory(recorder *eventlog.HistoryRecorder, textContent string, parts []agentcore.ContentPart, manager appstate.MemoryManager) engine.TurnInput {
 	var contextMessages []agentcore.Message
 
 	// 注入长期记忆（使用文本部分进行搜索）
-	if g.MemoryManager != nil {
-		memories := g.MemoryManager.Search(textContent, 5)
+	if manager != nil {
+		memories := manager.Search(textContent, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
 			contextMessages = append(contextMessages, agentcore.Message{Role: agentcore.RoleSystem, Content: memCtx})
 		}

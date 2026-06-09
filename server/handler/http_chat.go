@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
@@ -28,6 +29,11 @@ type ChatRequest struct {
 
 // ChatHandler HTTP POST 聊天处理器，支持普通 JSON 响应和 SSE 流式响应
 func ChatHandler() gin.HandlerFunc {
+	return ChatHandlerWithState(nil)
+}
+
+// ChatHandlerWithState HTTP POST 聊天处理器，使用显式应用状态。
+func ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ChatRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -49,7 +55,7 @@ func ChatHandler() gin.HandlerFunc {
 			mode = "team"
 		}
 
-		ctx := c.Request.Context()
+		ctx := appstate.WithState(c.Request.Context(), state)
 		r, err := resolveRunner(ctx, mode, req.AgentName)
 		if err != nil {
 			log.Printf("failed to resolve runner: mode=%s, agent=%s, err=%v", mode, req.AgentName, err)
@@ -62,18 +68,19 @@ func ChatHandler() gin.HandlerFunc {
 		}
 
 		recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
+		manager := memoryFromState(state)
+		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
 		if req.Stream {
-			handleStreamChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText)
+			handleStreamChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
 		} else {
-			handleSyncChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText)
+			handleSyncChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
 		}
 	}
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string) {
+func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -105,7 +112,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 				c.Writer.Flush()
 				return
 			}
-			finishChat(recorder, sessionID, userDisplayText)
+			finishChat(recorder, sessionID, userDisplayText, manager)
 			data, _ := json.Marshal(map[string]string{"type": string(events.NotifyProcessingEnd), "message": "处理完成"})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
@@ -117,7 +124,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string) {
+func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
@@ -137,7 +144,7 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 				finishErrorChat(recorder, sessionID, userDisplayText, err)
 				return
 			}
-			finishChat(recorder, sessionID, userDisplayText)
+			finishChat(recorder, sessionID, userDisplayText, manager)
 		}).
 		Run(taskCtx)
 	if runErr != nil {

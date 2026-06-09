@@ -2,6 +2,7 @@
 package router
 
 import (
+	"fkteams/appstate"
 	"fkteams/server/handler"
 	"fkteams/server/middleware"
 	"fkteams/web"
@@ -28,8 +29,13 @@ func newEngine(authEnabled bool) *gin.Engine {
 
 // registerAPIRoutes 注册公共 API 路由
 func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
+	registerAPIRoutesWithState(r, authEnabled, nil)
+}
+
+// registerAPIRoutesWithState 注册带应用状态的公共 API 路由。
+func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate.State) {
 	r.GET("/health", handler.HealthHandler())
-	r.GET("/ws", handler.WebSocketHandler())
+	r.GET("/ws", handler.WebSocketHandlerWithState(state))
 
 	// OpenAI 兼容 API（独立的 API Key 认证）
 	v1 := r.Group("/v1", middleware.APIKeyAuth())
@@ -49,12 +55,12 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		apiV1.GET("/agents", handler.GetAgentsHandler())
 
 		// 聊天 API
-		apiV1.POST("/chat", handler.ChatHandler())
+		apiV1.POST("/chat", handler.ChatHandlerWithState(state))
 
 		// 流式任务 API（前端订阅模式，支持断线重连）
 		stream := apiV1.Group("/stream")
 		{
-			stream.POST("/start", handler.StreamStartHandler())
+			stream.POST("/start", handler.StreamStartHandlerWithState(state))
 			stream.POST("/steer", handler.StreamSteerHandler())
 			stream.GET("/queue/:sessionID", handler.StreamQueueHandler())
 			stream.PATCH("/queue/:sessionID/:queueID", handler.StreamQueueUpdateHandler())
@@ -143,16 +149,16 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		// 长期记忆管理 API
 		memory := apiV1.Group("/memory")
 		{
-			memory.GET("", handler.GetMemoryListHandler())
-			memory.DELETE("", handler.DeleteMemoryHandler())
-			memory.POST("/clear", handler.ClearMemoryHandler())
+			memory.GET("", handler.GetMemoryListHandlerWithState(state))
+			memory.DELETE("", handler.DeleteMemoryHandlerWithState(state))
+			memory.POST("/clear", handler.ClearMemoryHandlerWithState(state))
 		}
 
 		// 配置管理 API
 		configGroup := apiV1.Group("/config")
 		{
 			configGroup.GET("", handler.GetConfigHandler())
-			configGroup.PUT("", handler.UpdateConfigHandler())
+			configGroup.PUT("", handler.UpdateConfigHandlerWithState(state))
 			configGroup.GET("/tools", handler.GetToolNamesHandler())
 			configGroup.GET("/template-vars", handler.GetTemplateVarsHandler())
 		}
@@ -169,6 +175,11 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 
 // Init 初始化并返回配置好的 Gin 路由引擎（含 Web 界面）
 func Init() (*gin.Engine, error) {
+	return InitWithState(nil)
+}
+
+// InitWithState 初始化并返回带应用状态的 Gin 路由引擎（含 Web 界面）。
+func InitWithState(state *appstate.State) (*gin.Engine, error) {
 	authEnabled, err := handler.AuthEnabled()
 	if err != nil {
 		return nil, fmt.Errorf("check auth config: %w", err)
@@ -239,18 +250,23 @@ func Init() (*gin.Engine, error) {
 		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
 	})
 
-	registerAPIRoutes(r, authEnabled)
+	registerAPIRoutesWithState(r, authEnabled, state)
 	return r, nil
 }
 
 // InitAPI 初始化纯 API 路由（无 Web 界面）
 func InitAPI() (*gin.Engine, error) {
+	return InitAPIWithState(nil)
+}
+
+// InitAPIWithState 初始化带应用状态的纯 API 路由。
+func InitAPIWithState(state *appstate.State) (*gin.Engine, error) {
 	authEnabled, err := handler.AuthEnabled()
 	if err != nil {
 		return nil, fmt.Errorf("check auth config: %w", err)
 	}
 
 	r := newEngine(authEnabled)
-	registerAPIRoutes(r, authEnabled)
+	registerAPIRoutesWithState(r, authEnabled, state)
 	return r, nil
 }

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fkteams/agents"
+	"fkteams/appstate"
 
 	"fkteams/config"
 
@@ -91,8 +92,8 @@ func runtimeChatHistoryMarkdown(interactive bool) string {
 	return sb.String()
 }
 
-func runtimeMemoryMarkdown() string {
-	entries, err := runtimeMemoryEntries()
+func runtimeMemoryMarkdown(manager appstate.MemoryManager) string {
+	entries, err := runtimeMemoryEntriesFrom(manager)
 	if err != nil {
 		return err.Error()
 	}

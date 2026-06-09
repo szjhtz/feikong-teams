@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	agentruntime "fkteams/agentcore/runtime"
+	"fkteams/appstate"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
 	"fkteams/tools"
@@ -130,8 +131,12 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 
 	// 通过名称解析工具
 	toolList := append([]agentcore.Tool(nil), b.tools...)
+	var cleaner *rootcommon.ResourceCleaner
+	if state := appstate.FromContext(ctx); state != nil {
+		cleaner = state.Cleaner()
+	}
 	for _, name := range b.toolNames {
-		resolved, err := tools.GetToolsByName(name)
+		resolved, err := tools.GetToolsByNameWithCleaner(name, cleaner)
 		if err != nil {
 			return nil, fmt.Errorf("init tool %s: %w", name, err)
 		}

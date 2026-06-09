@@ -7,7 +7,6 @@ import (
 	"fkteams/cli"
 	commonPkg "fkteams/common"
 	"fkteams/config"
-	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/runner"
 	"fmt"
@@ -47,6 +46,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		lifecycle.WithExitSignals(syscall.SIGTERM, syscall.SIGHUP),
 	)
 	cfg := app.Config()
+	state := app.State()
 
 	var inputHistory []string
 	app.OnInit(func(ctx context.Context) error {
@@ -72,7 +72,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	})
 
 	if cfg.MemoryEnabled {
-		app.RegisterService(lifecycle.NewMemoryService(cfg.WorkspaceDir))
+		app.RegisterService(lifecycle.NewMemoryService(cfg.WorkspaceDir, state))
 		if query != "" {
 			pterm.Info.Println("全局长期记忆已启用")
 		}
@@ -84,6 +84,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	var session *cli.Session
 	app.OnReady(func(ctx context.Context) error {
 		session = cli.NewSession(currentMode, inputHistory, createModeRunner)
+		session.SetMemoryManager(state.Memory())
 		session.ApproveStores = approve
 		cli.SetTemporarySession(temporarySession)
 		if resumeSession != "" {
@@ -109,15 +110,15 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		}
 		if cfg.MemoryEnabled && query != "" {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
-			cli.FlushSessionMemory()
+			cli.FlushSessionMemoryWithManager(state.Memory())
 		} else if cfg.MemoryEnabled {
-			cli.FlushSessionMemory()
+			cli.FlushSessionMemoryWithManager(state.Memory())
 		}
 		return nil
 	})
 
 	app.OnCleanup(func(ctx context.Context) error {
-		g.RunProcessCleanup()
+		state.RunProcessCleanup()
 		history := inputHistory
 		if session != nil {
 			history = session.InputHistory

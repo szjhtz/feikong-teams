@@ -3,6 +3,7 @@ package chat
 import (
 	"fkteams/agentcore"
 	"fkteams/events/log"
+	"fkteams/memory"
 	"strings"
 	"testing"
 )
@@ -21,6 +22,29 @@ func TestBuildTurnInputReturnsTurnInput(t *testing.T) {
 	}
 }
 
+func TestBuildTurnInputWithMemoryInjectsMemoryContext(t *testing.T) {
+	recorder := eventlog.NewHistoryRecorder()
+	manager := &testMemoryManager{
+		entries: []memory.MemoryEntry{{
+			Type:    memory.Preference,
+			Summary: "用户偏好中文回复",
+			Detail:  "回答需要简洁明确",
+		}},
+	}
+
+	input := BuildTurnInputWithMemory(recorder, "hello", manager)
+
+	if manager.query != "hello" || manager.topK != 5 {
+		t.Fatalf("search query = %q/%d, want hello/5", manager.query, manager.topK)
+	}
+	if len(input.Context) == 0 || input.Context[0].Role != agentcore.RoleSystem {
+		t.Fatalf("context = %#v, want memory system message", input.Context)
+	}
+	if !strings.Contains(input.Context[0].Content, "用户偏好中文回复") {
+		t.Fatalf("memory context = %q, want injected summary", input.Context[0].Content)
+	}
+}
+
 func TestBuildMultimodalTurnInputReturnsDisplayText(t *testing.T) {
 	recorder := eventlog.NewHistoryRecorder()
 	parts := []agentcore.ContentPart{TextPart("describe this")}
@@ -35,6 +59,26 @@ func TestBuildMultimodalTurnInputReturnsDisplayText(t *testing.T) {
 		t.Fatalf("messages = %#v, want multimodal user message", messages)
 	}
 }
+
+type testMemoryManager struct {
+	query   string
+	topK    int
+	entries []memory.MemoryEntry
+}
+
+func (m *testMemoryManager) Search(query string, topK int) []memory.MemoryEntry {
+	m.query = query
+	m.topK = topK
+	return m.entries
+}
+func (m *testMemoryManager) ExtractFromRecorder(*eventlog.HistoryRecorder, string) {}
+func (m *testMemoryManager) FlushFromRecorder(*eventlog.HistoryRecorder, string)   {}
+func (m *testMemoryManager) List() []memory.MemoryEntry                            { return m.entries }
+func (m *testMemoryManager) Delete(string) int                                     { return 0 }
+func (m *testMemoryManager) Count() int                                            { return len(m.entries) }
+func (m *testMemoryManager) Clear()                                                { m.entries = nil }
+func (m *testMemoryManager) ResetLLM(memory.LLMClient)                             {}
+func (m *testMemoryManager) Wait()                                                 {}
 
 func TestHistoryRecorderKeepsMultimodalUserInput(t *testing.T) {
 	recorder := eventlog.NewHistoryRecorder()

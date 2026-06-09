@@ -4,11 +4,11 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/agents/toolmeta"
+	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/chat"
 	"fkteams/events/log"
-	"fkteams/g"
 	"fkteams/runner"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/ask"
@@ -35,17 +35,17 @@ func resolveRunner(ctx context.Context, mode, agentName string) (agentcore.Runne
 // --- 聊天输入构建 ---
 
 // buildChatInput 构建输入消息（含历史），支持多模态
-func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart) (input engine.TurnInput, displayText string) {
+func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart, manager appstate.MemoryManager) (input engine.TurnInput, displayText string) {
 	if len(contents) > 0 {
 		parts := convertContentParts(contents)
 		displayText = chat.ExtractTextFromParts(parts)
 		if displayText == "" {
 			displayText = message
 		}
-		input = chat.BuildMultimodalTurnInput(recorder, displayText, parts)
+		input = chat.BuildMultimodalTurnInputWithMemory(recorder, displayText, parts, manager)
 	} else {
 		displayText = message
-		input = chat.BuildTurnInput(recorder, message)
+		input = chat.BuildTurnInputWithMemory(recorder, message, manager)
 	}
 	return
 }
@@ -67,7 +67,7 @@ func queuedChatMessage(kind taskstream.QueueKind, message string, contents []Con
 	return queued
 }
 
-func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.QueuedMessage) engine.TurnInput {
+func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.QueuedMessage, manager appstate.MemoryManager) engine.TurnInput {
 	if len(msg.Parts) > 0 {
 		displayText := chat.ExtractTextFromParts(msg.Parts)
 		if displayText == "" {
@@ -76,9 +76,9 @@ func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.Que
 		if displayText == "" {
 			displayText = msg.Text
 		}
-		return chat.BuildMultimodalTurnInput(recorder, displayText, msg.Parts)
+		return chat.BuildMultimodalTurnInputWithMemory(recorder, displayText, msg.Parts, manager)
 	}
-	return chat.BuildTurnInput(recorder, msg.Text)
+	return chat.BuildTurnInputWithMemory(recorder, msg.Text, manager)
 }
 
 func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
@@ -185,12 +185,12 @@ func updateSessionTitleAndStatus(sessionID, userInput, status string) {
 }
 
 // finishChat 保存历史、更新元数据、提取记忆
-func finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {
+func finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, manager appstate.MemoryManager) {
 	recorder.FinalizeCurrent()
 	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 	ensureSessionMetadataWithStatus(sessionID, userInput, "completed")
-	if g.MemoryManager != nil {
-		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+	if manager != nil {
+		manager.ExtractFromRecorder(recorder, sessionID)
 	}
 }
 

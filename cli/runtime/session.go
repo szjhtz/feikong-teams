@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/events/log"
 	"fmt"
@@ -26,6 +27,7 @@ type Session struct {
 	currentAgent     string
 	createModeRunner ModeRunnerCreator
 	callbackBuilder  func(*eventlog.HistoryRecorder) func(events.Event) error
+	memory           appstate.MemoryManager
 }
 
 // NewSession 创建交互会话
@@ -41,6 +43,11 @@ func NewSession(mode WorkMode, inputHistory []string, createModeRunner ModeRunne
 // GetQueryState 获取查询状态
 func (s *Session) GetQueryState() *QueryState {
 	return s.queryState
+}
+
+// SetMemoryManager 设置会话使用的长期记忆管理器。
+func (s *Session) SetMemoryManager(manager appstate.MemoryManager) {
+	s.memory = manager
 }
 
 // StartSignalHandler 监听系统信号（SIGINT 运行时取消查询；其他信号转发为退出信号）
@@ -85,6 +92,7 @@ func (s *Session) HandleDirect(ctx context.Context, r agentcore.Runner, exitSign
 	fmt.Printf("\033[1;90m╰─▶ %s\033[0m\n", query)
 
 	executor := NewQueryExecutor(r, s.queryState)
+	executor.SetMemoryManager(s.memory)
 	executor.SetAutoReject(true)
 	executor.SetApproveStores(s.ApproveStores)
 	if s.callbackBuilder != nil {

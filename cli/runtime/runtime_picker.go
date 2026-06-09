@@ -2,9 +2,9 @@ package runtime
 
 import (
 	"fkteams/agents"
+	"fkteams/appstate"
 
 	"fkteams/events/log"
-	"fkteams/g"
 	"fkteams/memory"
 
 	"fkteams/tools/scheduler"
@@ -90,8 +90,8 @@ func newSessionPicker() (*runtimePicker, error) {
 	return newRuntimePicker(runtimePickerSession, "加载聊天历史", items, 12), nil
 }
 
-func newMemoryDeletePicker() (*runtimePicker, error) {
-	entries, err := runtimeMemoryEntries()
+func newMemoryDeletePicker(manager appstate.MemoryManager) (*runtimePicker, error) {
+	entries, err := runtimeMemoryEntriesFrom(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -380,10 +380,14 @@ func runtimeSessionPickerItems() ([]runtimePickerItem, error) {
 }
 
 func runtimeMemoryEntries() ([]memory.MemoryEntry, error) {
-	if g.MemoryManager == nil {
+	return runtimeMemoryEntriesFrom(nil)
+}
+
+func runtimeMemoryEntriesFrom(manager appstate.MemoryManager) ([]memory.MemoryEntry, error) {
+	if manager == nil {
 		return nil, fmt.Errorf("长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 	}
-	return g.MemoryManager.List(), nil
+	return manager.List(), nil
 }
 
 func runtimeScheduledTasks(status string) ([]scheduler.ScheduledTask, error) {

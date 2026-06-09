@@ -4,12 +4,12 @@ package runtime
 import (
 	"context"
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/chat"
 	"fkteams/events/log"
-	"fkteams/g"
 	"fkteams/report"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -93,6 +93,7 @@ type QueryExecutor struct {
 	view          QueryView
 	steeringMu    sync.Mutex
 	steering      []agentcore.Message
+	memory        appstate.MemoryManager
 }
 
 // NewQueryExecutor 创建查询执行器
@@ -124,6 +125,11 @@ func (e *QueryExecutor) SetApproveStores(s string) {
 // SetRunner 设置 runner
 func (e *QueryExecutor) SetRunner(runner agentcore.Runner) {
 	e.runner = runner
+}
+
+// SetMemoryManager 设置执行器使用的长期记忆管理器。
+func (e *QueryExecutor) SetMemoryManager(manager appstate.MemoryManager) {
+	e.memory = manager
 }
 
 // SetCallbackBuilder 设置事件回调构造器，用于 JSON 等非默认输出格式。
@@ -260,9 +266,15 @@ func BuildTurnInput(input string) engine.TurnInput {
 	return chat.BuildTurnInput(recorder, input)
 }
 
+// BuildTurnInputWithMemory 构建包含显式长期记忆依赖的一轮输入。
+func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) engine.TurnInput {
+	recorder := getCliRecorder()
+	return chat.BuildTurnInputWithMemory(recorder, input, manager)
+}
+
 // Execute 执行查询
 func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
-	turnInput := BuildTurnInput(input)
+	turnInput := BuildTurnInputWithMemory(input, e.memory)
 	recorder := getCliRecorder()
 
 	// 缓存第一次输入作为会话标题（不立即创建文件，等用户保存时才写入）
@@ -339,7 +351,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		}
 
 		if next, ok := e.drainSteeringMessage(); ok && queryCtx.Err() == nil {
-			currentInput = chat.BuildTurnInput(recorder, next.DisplayText())
+			currentInput = chat.BuildTurnInputWithMemory(recorder, next.DisplayText(), e.memory)
 			continue
 		}
 		break
@@ -349,8 +361,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		e.view.Flush()
 	}
 
-	if g.MemoryManager != nil {
-		g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
+	if e.memory != nil {
+		e.memory.ExtractFromRecorder(recorder, activeSessionID)
 	}
 
 	elapsed := time.Since(startTime).Round(time.Millisecond)
@@ -441,11 +453,16 @@ func SaveChatHistoryToHTML() (string, error) {
 
 // FlushSessionMemory 退出前强制提取当前会话的剩余记忆
 func FlushSessionMemory() {
-	if g.MemoryManager == nil {
+	FlushSessionMemoryWithManager(nil)
+}
+
+// FlushSessionMemoryWithManager 退出前强制提取当前会话的剩余记忆。
+func FlushSessionMemoryWithManager(manager appstate.MemoryManager) {
+	if manager == nil {
 		return
 	}
 	recorder := getCliRecorder()
-	g.MemoryManager.FlushFromRecorder(recorder, activeSessionID)
+	manager.FlushFromRecorder(recorder, activeSessionID)
 }
 
 // SaveCLISessionHistory 保存 CLI 模式的可恢复会话历史。

@@ -3,9 +3,9 @@ package handler
 import (
 	"fkteams/agents"
 	agentcommon "fkteams/agents/common"
+	"fkteams/appstate"
 	"fkteams/channels"
 	"fkteams/config"
-	"fkteams/g"
 	"fkteams/log"
 	"fkteams/memory"
 	"fkteams/tools"
@@ -76,6 +76,11 @@ func GetConfigHandler() gin.HandlerFunc {
 
 // UpdateConfigHandler 更新配置（敏感字段合并旧值）
 func UpdateConfigHandler() gin.HandlerFunc {
+	return UpdateConfigHandlerWithState(nil)
+}
+
+// UpdateConfigHandlerWithState 更新配置并使用显式应用状态重载依赖。
+func UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var newCfg config.Config
 		if err := c.ShouldBindJSON(&newCfg); err != nil {
@@ -151,15 +156,16 @@ func UpdateConfigHandler() gin.HandlerFunc {
 		ClearRunnerCache()
 		mcp.ClearCache()
 		channels.ResetAllBridges()
-		resetMemoryLLM()
+		resetMemoryLLM(state)
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
 }
 
 // resetMemoryLLM 使用当前配置重建 MemoryManager 的 LLM 客户端
-func resetMemoryLLM() {
-	if g.MemoryManager == nil {
+func resetMemoryLLM(state *appstate.State) {
+	manager := memoryFromState(state)
+	if manager == nil {
 		return
 	}
 	chatModel, err := agentcommon.NewChatModel()
@@ -172,7 +178,7 @@ func resetMemoryLLM() {
 		log.Printf("[memory] 适配模型失败，记忆服务继续使用旧模型: %v", err)
 		return
 	}
-	g.MemoryManager.ResetLLM(llmClient)
+	manager.ResetLLM(llmClient)
 	log.Println("[memory] 记忆服务模型已更新")
 }
 

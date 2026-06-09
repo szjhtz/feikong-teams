@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	cliruntime "fkteams/cli/runtime"
 	"fkteams/engine"
 	"fkteams/events"
@@ -51,6 +52,10 @@ func BuildTurnInput(input string) engine.TurnInput {
 	return cliruntime.BuildTurnInput(input)
 }
 
+func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) engine.TurnInput {
+	return cliruntime.BuildTurnInputWithMemory(input, manager)
+}
+
 func HandleCtrlC(state *QueryState) {
 	cliruntime.HandleCtrlC(state)
 }
@@ -61,6 +66,10 @@ func SaveChatHistoryToHTML() (string, error) {
 
 func FlushSessionMemory() {
 	cliruntime.FlushSessionMemory()
+}
+
+func FlushSessionMemoryWithManager(manager appstate.MemoryManager) {
+	cliruntime.FlushSessionMemoryWithManager(manager)
 }
 
 func SaveCLISessionHistory() bool {

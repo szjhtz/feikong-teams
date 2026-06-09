@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"fkteams/events/log"
-	"fkteams/g"
 
 	"fkteams/tools/scheduler"
 	"fkteams/tui"
@@ -183,13 +182,13 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 			picker, err := newScheduleDeletePicker()
 			return m.openRuntimePicker(picker, err, "删除定时任务")
 		case "list_memory":
-			m.appendBlock(runtimeBlockSystem, "长期记忆", runtimeMemoryMarkdown())
+			m.appendBlock(runtimeBlockSystem, "长期记忆", runtimeMemoryMarkdown(m.runtime.session.memory))
 			return m, nil
 		case "delete_memory":
 			if args != "" {
 				return m.deleteRuntimeMemory(args), nil
 			}
-			picker, err := newMemoryDeletePicker()
+			picker, err := newMemoryDeletePicker(m.runtime.session.memory)
 			return m.openRuntimePicker(picker, err, "删除长期记忆")
 		case "clear_memory":
 			m.picker = newConfirmPicker("清空所有长期记忆", "clear_memory")
@@ -361,11 +360,12 @@ func (m runtimeModel) loadRuntimeSession(sessionID string) runtimeModel {
 }
 
 func (m runtimeModel) deleteRuntimeMemory(summary string) runtimeModel {
-	if g.MemoryManager == nil {
+	manager := m.runtime.session.memory
+	if manager == nil {
 		m.appendBlock(runtimeBlockError, "删除长期记忆失败", "长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 		return m
 	}
-	deleted := g.MemoryManager.Delete(summary)
+	deleted := manager.Delete(summary)
 	if deleted == 0 {
 		m.appendBlock(runtimeBlockSystem, "长期记忆", "未找到匹配的记忆条目: "+summary)
 		return m
@@ -375,16 +375,17 @@ func (m runtimeModel) deleteRuntimeMemory(summary string) runtimeModel {
 }
 
 func (m runtimeModel) clearRuntimeMemory() runtimeModel {
-	if g.MemoryManager == nil {
+	manager := m.runtime.session.memory
+	if manager == nil {
 		m.appendBlock(runtimeBlockError, "清空长期记忆失败", "长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 		return m
 	}
-	count := g.MemoryManager.Count()
+	count := manager.Count()
 	if count == 0 {
 		m.appendBlock(runtimeBlockSystem, "长期记忆", "当前没有记忆条目")
 		return m
 	}
-	g.MemoryManager.Clear()
+	manager.Clear()
 	m.appendBlock(runtimeBlockSystem, "长期记忆", fmt.Sprintf("已清空 %d 条长期记忆", count))
 	return m
 }

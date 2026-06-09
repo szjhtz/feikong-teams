@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
-	"fkteams/g"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -32,6 +32,11 @@ type StreamStartRequest struct {
 
 // StreamStartHandler 启动流式任务（任务在后台执行，前端通过 SSE 订阅事件流）
 func StreamStartHandler() gin.HandlerFunc {
+	return StreamStartHandlerWithState(nil)
+}
+
+// StreamStartHandlerWithState 启动流式任务并使用显式应用状态。
+func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req StreamStartRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -70,7 +75,7 @@ func StreamStartHandler() gin.HandlerFunc {
 			mode = "team"
 		}
 
-		ctx := context.Background()
+		ctx := appstate.WithState(context.Background(), state)
 		r, err := resolveRunner(ctx, mode, req.AgentName)
 		if err != nil {
 			log.Printf("failed to resolve runner: mode=%s, agent=%s, err=%v", mode, req.AgentName, err)
@@ -83,7 +88,8 @@ func StreamStartHandler() gin.HandlerFunc {
 		}
 
 		recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
+		manager := memoryFromState(state)
+		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
 		// 创建任务——统一使用 GlobalStreams
 		taskCtx, taskCancel := context.WithCancel(ctx)
@@ -109,7 +115,7 @@ func StreamStartHandler() gin.HandlerFunc {
 		})
 
 		// 后台执行任务
-		go runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText)
+		go runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager)
 
 		OK(c, gin.H{
 			"session_id": sessionID,
@@ -322,7 +328,7 @@ func streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream 
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string, manager appstate.MemoryManager) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
@@ -378,7 +384,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
-			currentInput = buildQueuedChatInput(recorder, queued)
+			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
 			publishQueuedExecutionStart(stream, sessionID, queued)
 			continue
@@ -391,8 +397,8 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			"message":    "处理完成",
 		})
 		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
-		if g.MemoryManager != nil {
-			g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+		if manager != nil {
+			manager.ExtractFromRecorder(recorder, sessionID)
 		}
 		return
 	}

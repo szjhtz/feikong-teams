@@ -3,12 +3,12 @@ package server
 
 import (
 	"context"
+	"fkteams/appstate"
 	"fkteams/channels"
 	_ "fkteams/channels/discord"
 	_ "fkteams/channels/qq"
 	_ "fkteams/channels/weixin"
 	"fkteams/config"
-	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/log"
 	"fkteams/server/handler"
@@ -31,10 +31,11 @@ const (
 
 // httpService HTTP 服务，实现 lifecycle.Service 接口
 type httpService struct {
-	host     string       // 监听地址
-	port     int          // 监听端口
-	logLevel string       // 日志级别
-	mode     serverMode   // 服务模式
+	host     string     // 监听地址
+	port     int        // 监听端口
+	logLevel string     // 日志级别
+	mode     serverMode // 服务模式
+	state    *appstate.State
 	server   *http.Server // HTTP 服务实例
 }
 
@@ -57,9 +58,9 @@ func (s *httpService) Start(ctx context.Context) error {
 		err error
 	)
 	if s.mode == ModeAPI {
-		h, err = router.InitAPI()
+		h, err = router.InitAPIWithState(s.state)
 	} else {
-		h, err = router.Init()
+		h, err = router.InitWithState(s.state)
 	}
 	if err != nil {
 		return fmt.Errorf("init router: %w", err)
@@ -121,12 +122,13 @@ func run(mode serverMode, opts *ServeOptions) error {
 
 	app := lifecycle.New()
 	appCfg := app.Config()
+	state := app.State()
 
 	// 注册关闭回调供 API 调用
 	lifecycle.SetShutdownFunc(func() { app.Shutdown() })
 
 	if appCfg.MemoryEnabled {
-		app.RegisterService(lifecycle.NewMemoryService(appCfg.WorkspaceDir))
+		app.RegisterService(lifecycle.NewMemoryService(appCfg.WorkspaceDir, state))
 	}
 	if appCfg.SchedulerEnabled {
 		app.RegisterService(lifecycle.NewSchedulerService(appCfg.SchedulerDir))
@@ -151,11 +153,12 @@ func run(mode serverMode, opts *ServeOptions) error {
 		port:     port,
 		logLevel: cfg.Server.LogLevel,
 		mode:     mode,
+		state:    state,
 	}
 	app.RegisterService(httpSvc)
 
 	// 注册消息通道
-	if svc, err := channels.Setup(cfg.Channels.List()); err != nil {
+	if svc, err := channels.SetupWithState(cfg.Channels.List(), state); err != nil {
 		return fmt.Errorf("setup channels: %w", err)
 	} else if svc != nil {
 		app.RegisterService(svc)
@@ -178,7 +181,7 @@ func run(mode serverMode, opts *ServeOptions) error {
 	})
 
 	app.OnCleanup(func(ctx context.Context) error {
-		g.RunProcessCleanup()
+		state.RunProcessCleanup()
 
 		// 如有待重启请求，启动新进程
 		if err := lifecycle.ExecutePendingRestart(); err != nil {

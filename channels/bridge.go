@@ -3,12 +3,12 @@ package channels
 import (
 	"context"
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/chat"
 	"fkteams/events/log"
-	"fkteams/g"
 	"fkteams/log"
 	"fkteams/runner"
 	"fkteams/tools/approval"
@@ -55,6 +55,7 @@ var channelHistoryDir = common.SessionsDir()
 type Bridge struct {
 	manager *Manager
 	mode    string // 运行模式: team, deep, roundtable, custom 或智能体名称
+	state   *appstate.State
 
 	runnerMu  sync.Mutex
 	runner    agentcore.Runner
@@ -66,12 +67,18 @@ type Bridge struct {
 
 // NewBridge 创建消息桥接器
 func NewBridge(manager *Manager, mode string) *Bridge {
+	return NewBridgeWithState(manager, mode, nil)
+}
+
+// NewBridgeWithState 创建带应用状态的消息桥接器。
+func NewBridgeWithState(manager *Manager, mode string, state *appstate.State) *Bridge {
 	if mode == "" {
 		mode = "team"
 	}
 	return &Bridge{
 		manager: manager,
 		mode:    mode,
+		state:   state,
 		queues:  make(map[string]*sessionQueue),
 	}
 }
@@ -207,6 +214,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 
 	// 使用独立 context：入队消息的原始 ctx 可能已被取消（如 typing ctx）
 	ctx := WithChannelName(context.Background(), channelName)
+	ctx = appstate.WithState(ctx, b.state)
 
 	r, err := b.getRunner(ctx)
 	if err != nil {
@@ -242,7 +250,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	}
 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
-	turnInput := chat.BuildTurnInput(recorder, combinedInput)
+	turnInput := chat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
@@ -275,8 +283,8 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 				status = "error"
 			}
 			saveChannelSessionMetadata(sessionID, combinedInput, status)
-			if g.MemoryManager != nil {
-				g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+			if manager := b.memoryManager(); manager != nil {
+				manager.ExtractFromRecorder(recorder, sessionID)
 			}
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")
@@ -286,6 +294,13 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	if runErr != nil {
 		log.Printf("[bridge] task failed: session=%s, err=%v", sessionID, runErr)
 	}
+}
+
+func (b *Bridge) memoryManager() appstate.MemoryManager {
+	if b == nil || b.state == nil {
+		return nil
+	}
+	return b.state.Memory()
 }
 
 // saveChannelSessionMetadata 保存通道会话的元数据

@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fkteams/g"
+	"fkteams/appstate"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,19 +9,31 @@ import (
 
 // GetMemoryListHandler 获取所有长期记忆条目
 func GetMemoryListHandler() gin.HandlerFunc {
+	return GetMemoryListHandlerWithState(nil)
+}
+
+// GetMemoryListHandlerWithState 获取所有长期记忆条目。
+func GetMemoryListHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if g.MemoryManager == nil {
+		manager := memoryFromState(state)
+		if manager == nil {
 			OK(c, []any{})
 			return
 		}
-		OK(c, g.MemoryManager.List())
+		OK(c, manager.List())
 	}
 }
 
 // DeleteMemoryHandler 删除指定摘要的记忆条目
 func DeleteMemoryHandler() gin.HandlerFunc {
+	return DeleteMemoryHandlerWithState(nil)
+}
+
+// DeleteMemoryHandlerWithState 删除指定摘要的记忆条目。
+func DeleteMemoryHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if g.MemoryManager == nil {
+		manager := memoryFromState(state)
+		if manager == nil {
 			Fail(c, http.StatusBadRequest, "长期记忆未启用")
 			return
 		}
@@ -34,7 +46,7 @@ func DeleteMemoryHandler() gin.HandlerFunc {
 			return
 		}
 
-		deleted := g.MemoryManager.Delete(req.Summary)
+		deleted := manager.Delete(req.Summary)
 		if deleted > 0 {
 			OK(c, gin.H{"deleted": deleted})
 		} else {
@@ -45,13 +57,26 @@ func DeleteMemoryHandler() gin.HandlerFunc {
 
 // ClearMemoryHandler 清空所有长期记忆
 func ClearMemoryHandler() gin.HandlerFunc {
+	return ClearMemoryHandlerWithState(nil)
+}
+
+// ClearMemoryHandlerWithState 清空所有长期记忆。
+func ClearMemoryHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if g.MemoryManager == nil {
+		manager := memoryFromState(state)
+		if manager == nil {
 			Fail(c, http.StatusBadRequest, "长期记忆未启用")
 			return
 		}
-		count := g.MemoryManager.Count()
-		g.MemoryManager.Clear()
+		count := manager.Count()
+		manager.Clear()
 		OK(c, gin.H{"cleared": count})
 	}
+}
+
+func memoryFromState(state *appstate.State) appstate.MemoryManager {
+	if state == nil {
+		return nil
+	}
+	return state.Memory()
 }

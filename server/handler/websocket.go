@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agentcore"
+	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
-	"fkteams/g"
 	"fkteams/server/handler/taskstream"
 	"fkteams/server/origin"
 	"fkteams/tools/approval"
@@ -42,6 +42,11 @@ type WSMessage struct {
 
 // WebSocketHandler 处理 WebSocket 连接
 func WebSocketHandler() gin.HandlerFunc {
+	return WebSocketHandlerWithState(nil)
+}
+
+// WebSocketHandlerWithState 处理 WebSocket 连接并使用显式应用状态。
+func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
@@ -116,7 +121,7 @@ func WebSocketHandler() gin.HandlerFunc {
 					_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
 					continue
 				}
-				go handleChatMessage(sm, wsMsg, writeJSON)
+				go handleChatMessage(sm, wsMsg, writeJSON, state)
 
 			case "steer", "steering":
 				handleSteeringMessage(wsMsg, writeJSON)
@@ -274,7 +279,7 @@ func wsEventCallbackBuffered(recorder *eventlog.HistoryRecorder, sessionID strin
 // --- WebSocket 聊天处理 ---
 
 // handleChatMessage 处理 WebSocket 聊天消息
-func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error) {
+func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error, state *appstate.State) {
 	sessionID := wsMsg.SessionID
 	mode := wsMsg.Mode
 	if mode == "" {
@@ -295,7 +300,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	}
 
 	// 任务 context 独立于连接——断连不会自动取消任务
-	taskCtx, taskCancel := context.WithCancel(context.Background())
+	taskCtx, taskCancel := context.WithCancel(appstate.WithState(context.Background(), state))
 	defer taskCancel()
 
 	// 注册到统一 TaskStream（支持断线重连 + Push/Pull 消费）
@@ -330,7 +335,8 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 
 	// 构建输入消息
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
+	manager := memoryFromState(state)
+	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
 	stream.Publish(map[string]any{
 		"type":       events.NotifyUserMessage,
 		"session_id": sessionID,
@@ -385,7 +391,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
-			currentInput = buildQueuedChatInput(recorder, queued)
+			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
 			publishQueuedExecutionStart(stream, sessionID, queued)
 			continue
@@ -398,8 +404,8 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			"message":    "处理完成",
 		})
 		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
-		if g.MemoryManager != nil {
-			g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+		if manager != nil {
+			manager.ExtractFromRecorder(recorder, sessionID)
 		}
 		return
 	}

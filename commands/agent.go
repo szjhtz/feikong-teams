@@ -12,7 +12,6 @@ import (
 	commonPkg "fkteams/common"
 	"fkteams/config"
 	"fkteams/events/view"
-	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/runner"
 
@@ -127,6 +126,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		lifecycle.WithExitSignals(syscall.SIGTERM, syscall.SIGHUP),
 	)
 	cfg := app.Config()
+	state := app.State()
 
 	var inputHistory []string
 	app.OnInit(func(ctx context.Context) error {
@@ -152,6 +152,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	var session *cli.Session
 	app.OnReady(func(ctx context.Context) error {
 		session = cli.NewSession(cli.ModeTeam, inputHistory, nil)
+		session.SetMemoryManager(state.Memory())
 		session.SetCurrentAgent(agentName)
 		cli.SetTemporarySession(temporarySession)
 		if resumeSession != "" {
@@ -190,7 +191,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	})
 
 	app.OnCleanup(func(ctx context.Context) error {
-		g.RunProcessCleanup()
+		state.RunProcessCleanup()
 		history := inputHistory
 		if session != nil {
 			history = session.InputHistory

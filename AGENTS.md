@@ -86,7 +86,7 @@ config/                     # TOML 配置（atomic.Pointer 全局单例，支持
 providers/                  # agentcore 外层模型提供者注册、检测和模型列表获取
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
 web/                        # 内嵌前端（//go:embed）
-g/                          # 全局变量（MemoryManager / ProcessCleaner）
+appstate/                   # 应用实例运行时状态（记忆管理器 / 资源清理器）
 common/                     # 跨模块共享（会话 ID / 目录路径 / 重试判断）
 fkenv/                      # 环境变量读取
 log/                        # 日志配置（lumberjack 轮转）

@@ -4,7 +4,6 @@ import (
 	"fkteams/agentcore"
 	"fkteams/common"
 	"fkteams/config"
-	"fkteams/g"
 	"fkteams/tools/ask"
 	"fkteams/tools/command"
 	"fkteams/tools/doc"
@@ -22,10 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 )
-
-var cmdCleanupOnce sync.Once
 
 // workspacePath 返回工作区目录路径
 func workspacePath() string {
@@ -38,6 +34,11 @@ func runtimeDir() string {
 }
 
 func GetToolsByName(name string) ([]agentcore.Tool, error) {
+	return GetToolsByNameWithCleaner(name, nil)
+}
+
+// GetToolsByNameWithCleaner 按名称返回工具列表，并按需注册进程级清理函数。
+func GetToolsByNameWithCleaner(name string, cleaner *common.ResourceCleaner) ([]agentcore.Tool, error) {
 	switch name {
 	case "file":
 		fileTools, err := file.NewFileTools(workspacePath())
@@ -75,19 +76,21 @@ func GetToolsByName(name string) ([]agentcore.Tool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
 		}
-		g.ProcessCleaner.Add(func() error {
-			sshTools.Close()
-			return nil
-		})
+		if cleaner != nil {
+			cleaner.Add(func() error {
+				sshTools.Close()
+				return nil
+			})
+		}
 		return sshTools.GetTools()
 	case "command":
-		cmdCleanupOnce.Do(func() {
-			g.ProcessCleaner.Add(func() error {
+		if cleaner != nil {
+			cleaner.Add(func() error {
 				command.TerminateAll()
 				command.CleanupTempFiles(workspacePath())
 				return nil
 			})
-		})
+		}
 		return command.NewCommandTools(workspacePath()).GetTools()
 	case "scheduler":
 		s, err := scheduler.InitGlobal(common.SchedulerDir())

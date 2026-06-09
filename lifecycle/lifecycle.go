@@ -4,6 +4,7 @@ package lifecycle
 
 import (
 	"context"
+	"fkteams/appstate"
 	"fkteams/log"
 	"fmt"
 	"os"
@@ -63,6 +64,7 @@ type Service interface {
 // Application 应用程序生命周期管理器
 type Application struct {
 	config       *AppConfig           // 应用配置
+	state        *appstate.State      // 应用运行时状态
 	hooks        map[Phase][]HookFunc // 各阶段的钩子函数
 	services     []Service            // 注册的后台服务
 	mu           sync.Mutex           // 保护并发访问
@@ -79,6 +81,7 @@ func New(opts ...Option) *Application {
 
 	return &Application{
 		config: cfg,
+		state:  appstate.New(),
 		hooks:  make(map[Phase][]HookFunc),
 		exitCh: make(chan os.Signal, 1),
 	}
@@ -87,6 +90,11 @@ func New(opts ...Option) *Application {
 // Config 返回应用配置
 func (app *Application) Config() *AppConfig {
 	return app.config
+}
+
+// State 返回应用实例的运行时状态。
+func (app *Application) State() *appstate.State {
+	return app.state
 }
 
 // CurrentPhase 返回当前生命周期阶段
@@ -139,6 +147,7 @@ func (app *Application) ExitCh() chan os.Signal {
 // Run 执行完整生命周期，阻塞直到收到退出信号或 context 取消
 func (app *Application) Run(ctx context.Context) error {
 	appCtx, cancel := context.WithCancel(ctx)
+	appCtx = appstate.WithState(appCtx, app.state)
 	defer cancel()
 
 	if err := app.executePhase(appCtx, PhaseInit); err != nil {

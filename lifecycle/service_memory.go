@@ -3,7 +3,7 @@ package lifecycle
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/g"
+	"fkteams/appstate"
 	"fkteams/log"
 	"fkteams/memory"
 )
@@ -11,12 +11,14 @@ import (
 // MemoryService 长期记忆服务，封装 memory.Manager 的生命周期管理
 type MemoryService struct {
 	workspaceDir string
+	state        *appstate.State
 }
 
 // NewMemoryService 创建记忆服务
-func NewMemoryService(workspaceDir string) *MemoryService {
+func NewMemoryService(workspaceDir string, state *appstate.State) *MemoryService {
 	return &MemoryService{
 		workspaceDir: workspaceDir,
+		state:        state,
 	}
 }
 
@@ -35,16 +37,16 @@ func (s *MemoryService) Start(ctx context.Context) error {
 		log.Printf("[memory] 适配模型失败，记忆服务未启动: %v", err)
 		return nil
 	}
-	g.MemoryManager = memory.NewManager(s.workspaceDir, llmClient, nil)
+	s.state.SetMemory(memory.NewManager(s.workspaceDir, llmClient, nil))
 	log.Println("[memory] 长期记忆服务已启动")
 	return nil
 }
 
 // Stop 等待记忆提取完成后停止服务
 func (s *MemoryService) Stop(ctx context.Context) error {
-	if g.MemoryManager != nil {
+	if manager := s.state.Memory(); manager != nil {
 		log.Println("[memory] 正在等待记忆提取完成...")
-		g.MemoryManager.Wait()
+		manager.Wait()
 		log.Println("[memory] 记忆提取完成")
 	}
 	return nil
