@@ -228,6 +228,11 @@
     gap: 4px;
 }
 
+.sidebar-session-list.loading {
+    min-height: 100%;
+    justify-content: center;
+}
+
 .sidebar-session-empty {
     padding: 24px 12px;
     text-align: center;

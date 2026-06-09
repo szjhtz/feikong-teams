@@ -72,7 +72,15 @@ test("history action splits assistant text timeline", () => {
 test("sidebar history shows loading before debounced fetch", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   let debounceCalled = false;
-  chat.sidebarSessionList = { innerHTML: '<div class="sidebar-session-empty">暂无会话记录</div>' };
+  const classes = new Set();
+  chat.sidebarSessionList = {
+    innerHTML: '<div class="sidebar-session-empty">暂无会话记录</div>',
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+      contains(name) { return classes.has(name); },
+    },
+  };
   chat.debounce = () => {
     debounceCalled = true;
   };
@@ -80,6 +88,29 @@ test("sidebar history shows loading before debounced fetch", () => {
   chat.loadSidebarHistory();
 
   assert.equal(debounceCalled, true);
+  assert.equal(chat.sidebarSessionList.classList.contains("loading"), true);
   assert.match(chat.sidebarSessionList.innerHTML, /sidebar-session-loading/);
   assert.match(chat.sidebarSessionList.innerHTML, /加载中/);
+});
+
+test("sidebar session render clears loading layout", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const classes = new Set(["loading"]);
+  chat.sidebarSessionList = {
+    innerHTML: "",
+    appendChild() {},
+    querySelectorAll() { return []; },
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+      contains(name) { return classes.has(name); },
+    },
+  };
+  chat._sidebarMenuOutsideBound = true;
+  chat.escapeHtml = (value) => String(value || "");
+  chat.formatTime = () => "";
+
+  chat.renderSidebarSessions([]);
+
+  assert.equal(chat.sidebarSessionList.classList.contains("loading"), false);
 });

@@ -60,6 +60,7 @@ FKTeamsChat.prototype.loadSidebarHistory = function () {
 
 FKTeamsChat.prototype.showSidebarHistoryLoading = function () {
   if (!this.sidebarSessionList) return;
+  this.sidebarSessionList.classList.add("loading");
   this.sidebarSessionList.innerHTML =
     '<div class="sidebar-session-loading">' +
     '<span class="sidebar-session-loading-spinner"></span>' +
@@ -73,6 +74,7 @@ FKTeamsChat.prototype._doLoadSidebarHistory = async function () {
   try {
     const response = await this.fetchWithAuth("/api/fkteams/sessions");
     if (!response.ok) {
+      this.sidebarSessionList.classList.remove("loading");
       this.sidebarSessionList.innerHTML =
         '<div class="sidebar-session-empty">加载失败</div>';
       return;
@@ -80,6 +82,7 @@ FKTeamsChat.prototype._doLoadSidebarHistory = async function () {
 
     const result = await response.json();
     if (result.code !== 0 || !result.data || !result.data.sessions) {
+      this.sidebarSessionList.classList.remove("loading");
       this.sidebarSessionList.innerHTML =
         '<div class="sidebar-session-empty">暂无会话记录</div>';
       return;
@@ -88,6 +91,7 @@ FKTeamsChat.prototype._doLoadSidebarHistory = async function () {
     this.renderSidebarSessions(result.data.sessions);
   } catch (error) {
     console.error("Error loading sidebar history:", error);
+    this.sidebarSessionList.classList.remove("loading");
     this.sidebarSessionList.innerHTML =
       '<div class="sidebar-session-empty">加载失败</div>';
   }
@@ -95,6 +99,7 @@ FKTeamsChat.prototype._doLoadSidebarHistory = async function () {
 
 FKTeamsChat.prototype.renderSidebarSessions = function (files) {
   if (!this.sidebarSessionList) return;
+  this.sidebarSessionList.classList.remove("loading");
   if (!this._sidebarMenuOutsideBound) {
     this._sidebarMenuOutsideBound = true;
     document.addEventListener("click", () => this.closeSidebarSessionMenus());
