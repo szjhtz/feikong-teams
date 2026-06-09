@@ -53,7 +53,8 @@ func (gt *GitTools) validatePath(userPath string) (string, error) {
 		return "", fmt.Errorf("无法解析路径: %w", err)
 	}
 
-	if !strings.HasPrefix(absPath, gt.baseDir) {
+	rel, err := filepath.Rel(gt.baseDir, absPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("访问被拒绝: 路径 %s 不在允许的目录 %s 内", absPath, gt.baseDir)
 	}
 
