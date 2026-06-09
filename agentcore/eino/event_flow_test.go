@@ -2,6 +2,7 @@ package eino
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,100 @@ import (
 	"fkteams/common"
 	"fkteams/internal/testmodel"
 )
+
+func TestRunnerEmitsLifecycleEventsInOrder(t *testing.T) {
+	ctx := context.Background()
+	model := testmodel.New().EnqueueStream(testmodel.AssistantMessage("done"))
+	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+		Name:          "lifecycle",
+		Description:   "lifecycle",
+		Model:         model,
+		MaxIterations: 2,
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	got, err := runAgentForTestResult(t, ctx, agent, true)
+	if err != nil {
+		t.Fatalf("run agent: %v", err)
+	}
+	if len(got) < 6 {
+		t.Fatalf("expected lifecycle and message events, got %#v", got)
+	}
+	if got[0].Type != agentcore.EventAgentStart || got[0].RunID != "event-flow-test" {
+		t.Fatalf("first event = %#v, want agent_start", got[0])
+	}
+	if got[1].Type != agentcore.EventTurnStart || got[1].TurnID != "event-flow-test:turn:1" {
+		t.Fatalf("second event = %#v, want turn_start", got[1])
+	}
+
+	userStartIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventMessageStart && event.Role == agentcore.RoleUser
+	}, "user message start")
+	userEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventMessageEnd && event.Role == agentcore.RoleUser && event.Content == "start"
+	}, "user message end")
+	assistantIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventMessageDelta &&
+			event.Role == agentcore.RoleAssistant &&
+			event.Content == "done"
+	}, "assistant output")
+	turnEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventTurnEnd
+	}, "turn end")
+	agentEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventAgentEnd
+	}, "agent end")
+
+	requireBefore(t, got, userStartIdx, userEndIdx, "user message start", "user message end")
+	requireBefore(t, got, userEndIdx, assistantIdx, "user message end", "assistant output")
+	requireBefore(t, got, assistantIdx, turnEndIdx, "assistant output", "turn end")
+	requireBefore(t, got, turnEndIdx, agentEndIdx, "turn end", "agent end")
+	if agentEndIdx != len(got)-1 {
+		t.Fatalf("agent_end should be final event; index=%d len=%d events=%#v", agentEndIdx, len(got), got)
+	}
+}
+
+func TestRunnerEmitsErrorAndClosesLifecycleOnModelError(t *testing.T) {
+	ctx := context.Background()
+	modelErr := errors.New("model boom")
+	model := testmodel.New().EnqueueGenerate(agentcore.Message{}, modelErr)
+	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+		Name:          "lifecycle-error",
+		Description:   "lifecycle error",
+		Model:         model,
+		MaxIterations: 2,
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	got, err := runAgentForTestResult(t, ctx, agent, false)
+	if err != nil {
+		t.Fatalf("run error = %v, want nil; events=%#v", err, got)
+	}
+	if len(got) < 3 {
+		t.Fatalf("expected start and error events, got %#v", got)
+	}
+	if got[0].Type != agentcore.EventAgentStart || got[1].Type != agentcore.EventTurnStart {
+		t.Fatalf("expected agent_start then turn_start, got %#v", got)
+	}
+	errorIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventError && strings.Contains(event.Error, "model boom")
+	}, "model error")
+	turnEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventTurnEnd
+	}, "turn end after error")
+	agentEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+		return event.Type == agentcore.EventAgentEnd
+	}, "agent end after error")
+	requireBefore(t, got, errorIdx, turnEndIdx, "model error", "turn end")
+	requireBefore(t, got, turnEndIdx, agentEndIdx, "turn end", "agent end")
+	if agentEndIdx != len(got)-1 {
+		t.Fatalf("agent_end should be final event; index=%d len=%d events=%#v", agentEndIdx, len(got), got)
+	}
+}
 
 func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 	ctx := context.Background()
@@ -399,6 +494,16 @@ func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
 func runAgentForTest(t *testing.T, ctx context.Context, agent agentcore.Agent, streaming bool) []agentcore.Event {
 	t.Helper()
 
+	events, err := runAgentForTestResult(t, ctx, agent, streaming)
+	if err != nil {
+		t.Fatalf("run agent: %v", err)
+	}
+	return events
+}
+
+func runAgentForTestResult(t *testing.T, ctx context.Context, agent agentcore.Agent, streaming bool) ([]agentcore.Event, error) {
+	t.Helper()
+
 	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: streaming,
@@ -419,10 +524,7 @@ func runAgentForTest(t *testing.T, ctx context.Context, agent agentcore.Agent, s
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatalf("run agent: %v", err)
-	}
-	return events
+	return events, err
 }
 
 func requireEventIndex(t *testing.T, events []agentcore.Event, match func(agentcore.Event) bool, name string) int {
