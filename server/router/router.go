@@ -177,7 +177,11 @@ func Init() (*gin.Engine, error) {
 	r := newEngine(authEnabled)
 
 	webFS := web.GetFS()
-	r.StaticFS("/static", http.FS(webFS))
+	fileServer := http.StripPrefix("/static", http.FileServer(http.FS(webFS)))
+	r.GET("/static/*filepath", func(c *gin.Context) {
+		c.Header("Cache-Control", "public, max-age=86400")
+		fileServer.ServeHTTP(c.Writer, c.Request)
+	})
 	r.GET("/favicon.ico", func(c *gin.Context) {
 		data, err := webFS.Open("assets/favicon.ico")
 		if err != nil {
