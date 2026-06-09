@@ -236,6 +236,33 @@
     font-size: 16px;
 }
 
+.sidebar-session-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 12px;
+    color: var(--text-tertiary);
+    font-family: var(--font-hand);
+    font-size: 16px;
+}
+
+.sidebar-session-loading-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    flex: 0 0 auto;
+    animation: sidebar-loading-spin 0.8s linear infinite;
+}
+
+@keyframes sidebar-loading-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .sidebar-session-item {
     display: flex;
     align-items: center;

@@ -47,6 +47,7 @@ FKTeamsChat.prototype.createNewSession = async function (silent, title) {
 // ===== 侧边栏历史会话 =====
 
 FKTeamsChat.prototype.loadSidebarHistory = function () {
+  this.showSidebarHistoryLoading();
   // 防抖：短时间多次调用只执行最后一次，避免频繁请求
   this.debounce(
     "sidebarHistory",
@@ -55,6 +56,15 @@ FKTeamsChat.prototype.loadSidebarHistory = function () {
     },
     300,
   );
+};
+
+FKTeamsChat.prototype.showSidebarHistoryLoading = function () {
+  if (!this.sidebarSessionList) return;
+  this.sidebarSessionList.innerHTML =
+    '<div class="sidebar-session-loading">' +
+    '<span class="sidebar-session-loading-spinner"></span>' +
+    '<span>加载中...</span>' +
+    "</div>";
 };
 
 FKTeamsChat.prototype._doLoadSidebarHistory = async function () {

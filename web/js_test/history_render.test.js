@@ -68,3 +68,18 @@ test("history action splits assistant text timeline", () => {
   assert.equal(bodies[0].html, "before");
   assert.equal(bodies[1].html, "after");
 });
+
+test("sidebar history shows loading before debounced fetch", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let debounceCalled = false;
+  chat.sidebarSessionList = { innerHTML: '<div class="sidebar-session-empty">暂无会话记录</div>' };
+  chat.debounce = () => {
+    debounceCalled = true;
+  };
+
+  chat.loadSidebarHistory();
+
+  assert.equal(debounceCalled, true);
+  assert.match(chat.sidebarSessionList.innerHTML, /sidebar-session-loading/);
+  assert.match(chat.sidebarSessionList.innerHTML, /加载中/);
+});
