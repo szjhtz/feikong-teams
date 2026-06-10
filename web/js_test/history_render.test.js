@@ -53,6 +53,35 @@ function fakeElement() {
   };
 }
 
+function withFakeLocalStorage(fn) {
+  const oldLocalStorage = global.localStorage;
+  const store = new Map();
+  global.localStorage = {
+    getItem(key) {
+      return store.has(key) ? store.get(key) : null;
+    },
+    setItem(key, value) {
+      store.set(key, String(value));
+    },
+    removeItem(key) {
+      store.delete(key);
+    },
+  };
+  try {
+    const result = fn(store);
+    if (result && typeof result.finally === "function") {
+      return result.finally(() => {
+        global.localStorage = oldLocalStorage;
+      });
+    }
+    global.localStorage = oldLocalStorage;
+    return result;
+  } catch (err) {
+    global.localStorage = oldLocalStorage;
+    throw err;
+  }
+}
+
 test("history action splits assistant text timeline", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   const bodies = [];
@@ -170,3 +199,69 @@ test("sidebar session render shows labels for stored statuses", () => {
     global.document = oldDocument;
   }
 });
+
+test("show home page clears selected session state", () => withFakeLocalStorage((store) => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let cleared = false;
+  let queueCleared = false;
+  let activeUpdated = false;
+  store.set("fk_session_id", "session-1");
+  chat._startupSessionId = "session-1";
+  chat.sessionId = "session-1";
+  chat._hasLoadedSession = true;
+  chat.isProcessing = true;
+  chat.sessionIdInput = { value: "session-1" };
+  chat._saveSessionDOM = () => {};
+  chat.hideChatLoading = () => {};
+  chat.clearChatUI = () => { cleared = true; };
+  chat.handleQueueUpdated = (event) => { queueCleared = Array.isArray(event.queue) && event.queue.length === 0; };
+  chat.updateStatus = () => {};
+  chat.updateSendButtonState = () => {};
+  chat.updateSidebarSessionActive = () => { activeUpdated = true; };
+
+  chat.showHomePage();
+
+  assert.equal(store.has("fk_session_id"), false);
+  assert.equal(chat._startupSessionId, "");
+  assert.equal(chat.sessionId, "");
+  assert.equal(chat._hasLoadedSession, false);
+  assert.equal(chat.isProcessing, false);
+  assert.equal(chat.sessionIdInput.value, "");
+  assert.equal(cleared, true);
+  assert.equal(queueCleared, true);
+  assert.equal(activeUpdated, true);
+}));
+
+test("missing loaded session falls back to home page", async () => withFakeLocalStorage(async (store) => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let saveCount = 0;
+  let homeOptions = null;
+  store.set("fk_session_id", "missing-session");
+  chat.sessionId = "";
+  chat._hasLoadedSession = false;
+  chat.sessionIdInput = { value: "" };
+  chat.messagesContainer = { innerHTML: "" };
+  chat._saveSessionDOM = () => {
+    if (chat.sessionId) saveCount += 1;
+  };
+  chat.showChatLoading = () => {};
+  chat.hideChatLoading = () => {};
+  chat.hideHistoryModal = () => {};
+  chat.fetchWithAuth = async () => ({ ok: false, status: 404 });
+  chat.showHomePage = (options) => {
+    homeOptions = options;
+    store.delete("fk_session_id");
+    chat.sessionId = "";
+    chat._hasLoadedSession = false;
+    chat.sessionIdInput.value = "";
+  };
+
+  await chat._loadSession("missing-session");
+
+  assert.equal(saveCount, 0);
+  assert.deepEqual(homeOptions, { skipSaveCurrentDOM: true });
+  assert.equal(store.has("fk_session_id"), false);
+  assert.equal(chat.sessionId, "");
+  assert.equal(chat._hasLoadedSession, false);
+  assert.equal(chat.sessionIdInput.value, "");
+}));

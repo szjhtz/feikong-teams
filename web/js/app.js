@@ -171,7 +171,7 @@ class FKTeamsChat {
     }
     this.loadAgents();
     this.loadVersion();
-    this.restoreStartupSessionIfActive();
+    this.restoreStartupSession();
     this.connect();
   }
 
@@ -223,24 +223,13 @@ class FKTeamsChat {
     }
   }
 
-  async restoreStartupSessionIfActive() {
+  restoreStartupSession() {
     const sessionId = this._startupSessionId;
-    if (!sessionId || !this.messagesContainer?.querySelector(".welcome-message")) {
+    if (!sessionId) {
+      this.showHomePage({ clearStoredSession: false });
       return;
     }
-    try {
-      const response = await this.fetchWithAuth(
-        `/api/fkteams/sessions/${encodeURIComponent(sessionId)}`,
-        { cache: "no-cache" },
-      );
-      if (!response.ok) return;
-      const result = await response.json();
-      if (result.code === 0 && result.data?.active_task) {
-        this.loadSession(sessionId);
-      }
-    } catch (error) {
-      console.error("Error checking startup session:", error);
-    }
+    this.loadSession(sessionId);
   }
 
   bindEvents() {

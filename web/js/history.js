@@ -4,6 +4,35 @@
 
 // ===== 新增会话 =====
 
+FKTeamsChat.prototype.showHomePage = function (options) {
+  const clearStoredSession = options?.clearStoredSession !== false;
+  if (clearStoredSession) {
+    localStorage.removeItem("fk_session_id");
+  }
+  this._startupSessionId = "";
+  if (!options?.skipSaveCurrentDOM) {
+    this._saveSessionDOM();
+  }
+  this.sessionId = "";
+  this._hasLoadedSession = false;
+  this.isProcessing = false;
+  if (this.sessionIdInput) {
+    this.sessionIdInput.value = "";
+  }
+  if (typeof this.handleQueueUpdated === "function") {
+    this.handleQueueUpdated({ queue: [] });
+  }
+  if (typeof this.updateStatus === "function" && this.ws && this.ws.readyState === 1) {
+    this.updateStatus("connected", "已连接");
+  }
+  if (typeof this.updateSendButtonState === "function") {
+    this.updateSendButtonState();
+  }
+  this.hideChatLoading();
+  this.clearChatUI();
+  this.updateSidebarSessionActive();
+};
+
 FKTeamsChat.prototype.createNewSession = async function (silent, title) {
   // 保存当前会话的 DOM 状态
   this._saveSessionDOM();
@@ -883,14 +912,11 @@ FKTeamsChat.prototype._loadSession = async function (sessionId) {
       if (this.sessionId !== sessionId) return;
       this.hideChatLoading();
       if (response.status === 404) {
-        // 服务端会话已删除，清理本地残留
-        localStorage.removeItem("fk_session_id");
-        this.sessionId = "";
-        this._hasLoadedSession = false;
+        this.showHomePage({ skipSaveCurrentDOM: true });
       } else {
         this.showNotification("加载会话失败", "error");
+        this.clearChatUI();
       }
-      this.clearChatUI();
       return;
     }
     const result = await response.json();
@@ -966,7 +992,7 @@ FKTeamsChat.prototype.checkAndLoadSessionHistory = async function (sessionId) {
     if (fileExists) {
       this.loadSession(sessionId);
     } else {
-      this.clearChatUI();
+      this.showHomePage();
     }
   } catch (error) {
     console.error("Error checking session history:", error);
