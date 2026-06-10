@@ -2,6 +2,7 @@
   const state = {
     shareID: decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || ""),
     info: null,
+    questions: [],
   };
 
   const els = {
@@ -12,6 +13,8 @@
     passwordInput: document.getElementById("share-password-input"),
     passwordSubmit: document.getElementById("share-password-submit"),
     passwordError: document.getElementById("share-password-error"),
+    questionNav: document.getElementById("share-question-nav"),
+    questionNavList: document.getElementById("share-question-nav-list"),
   };
 
   function escapeHtml(text) {
@@ -25,17 +28,26 @@
     try {
       if (window.marked) {
         const footnotes = extractFootnotes(text);
-        const html = replaceFootnotePlaceholders(
+        let html = replaceFootnotePlaceholders(
           markedInstance().parse(footnotes.text),
           footnotes.definitions,
           footnotes.orderedNums,
         );
+        html = wrapMarkdownTables(html);
         return footnotes.items.length > 0 ? buildSourcesCard(html, footnotes.items) : html;
       }
     } catch (err) {
       console.error("render markdown error:", err);
     }
     return escapeHtml(text || "").replace(/\n/g, "<br>");
+  }
+
+  function wrapMarkdownTables(html) {
+    if (!html || !html.includes("<table")) return html;
+    return html.replace(/<table([\s\S]*?)<\/table>/g, function (match) {
+      if (match.includes('class="markdown-table-wrap"')) return match;
+      return '<div class="markdown-table-wrap">' + match + "</div>";
+    });
   }
 
   function markedInstance() {
@@ -257,11 +269,14 @@
   }
 
   function renderMessages(messages) {
+    state.questions = [];
     if (!messages.length) {
       els.content.innerHTML = '<div class="share-empty">这个分享暂无会话内容</div>';
+      updateQuestionNav();
       return;
     }
     els.content.innerHTML = buildMessageBlocks(messages).map(renderBlock).join("");
+    updateQuestionNav();
   }
 
   function buildMessageBlocks(messages) {
@@ -292,7 +307,7 @@
         blocks.push(...inserted);
         continue;
       }
-      blocks.push({ type: "message", message: msg });
+      blocks.push({ type: "message", message: msg, index });
     }
     return blocks;
   }
@@ -331,7 +346,7 @@
 
   function renderBlock(block) {
     if (block.type === "members") return renderMemberGroup(block.messages);
-    return renderMessage(block.message);
+    return renderMessage(block.message, block.index);
   }
 
   function isLegacyMemberMessage(msg) {
@@ -479,14 +494,21 @@
     `;
   }
 
-  function renderMessage(msg) {
+  function renderMessage(msg, index) {
     const agent = msg.member_name || msg.agent_name || "成员";
     const time = msg.start_time ? new Date(msg.start_time).toLocaleString("zh-CN") : "";
     const events = renderEvents(msg.events || []);
     if (!events) return "";
     const roleClass = msg.agent_name === "用户" ? " user" : "";
+    const messageID = roleClass ? shareMessageID(msg, index) : "";
+    if (roleClass) {
+      const content = extractUserQuestionText(msg);
+      if (content) {
+        state.questions.push({ id: messageID, content, time });
+      }
+    }
     return `
-      <article class="share-message${roleClass}">
+      <article class="share-message${roleClass}"${messageID ? ` data-message-id="${escapeHtml(messageID)}"` : ""}>
         <div class="share-message-head">
           <span class="share-agent">${escapeHtml(agent)}</span>
           <span class="share-time">${escapeHtml(time)}</span>
@@ -506,7 +528,7 @@
       return `<div class="share-event markdown-body">${renderMarkdown(event.content || "")}</div>`;
     }
     if (event.type === "reasoning") {
-      return `<div class="share-event reasoning">${escapeHtml(event.content || "")}</div>`;
+      return renderReasoning(event.content || "");
     }
     if (event.type === "tool_call" && event.tool_call) {
       if (isAgentTool(event.tool_call)) return "";
@@ -520,6 +542,71 @@
       return `<div class="share-event error">${escapeHtml(event.content || "执行失败")}</div>`;
     }
     return "";
+  }
+
+  function renderReasoning(content) {
+    if (!content) return "";
+    return `
+      <details class="share-event share-reasoning">
+        <summary>
+          <svg class="share-reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
+          <span>思考过程</span>
+          <svg class="share-reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="share-reasoning-content markdown-body markdown-body-compact">${renderMarkdown(content)}</div>
+      </details>
+    `;
+  }
+
+  function shareMessageID(msg, index) {
+    const raw = msg?.start_time || msg?.message_id || `idx-${index ?? state.questions.length}`;
+    return "share-question-" + String(raw).replace(/[^a-zA-Z0-9_-]+/g, "-");
+  }
+
+  function extractUserQuestionText(msg) {
+    let text = "";
+    (msg?.events || []).forEach((event) => {
+      if (event.type === "text" && event.content) text += event.content;
+    });
+    return compactText(text, 120);
+  }
+
+  function updateQuestionNav() {
+    if (!els.questionNav || !els.questionNavList) return;
+    if (!state.questions.length) {
+      els.questionNav.style.display = "none";
+      els.questionNavList.innerHTML = "";
+      return;
+    }
+
+    els.questionNav.style.display = "";
+    els.questionNavList.innerHTML = "";
+    [...state.questions].reverse().forEach((question, index) => {
+      const actualIndex = state.questions.length - index;
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "share-question-nav-item";
+      if (index === 0) item.classList.add("active");
+      item.dataset.questionId = question.id;
+      const shortText = question.content.length > 24 ? question.content.slice(0, 24) + "..." : question.content;
+      item.innerHTML = `
+        <span class="share-question-nav-dot"></span>
+        <span class="share-question-nav-index">${actualIndex}</span>
+        <span class="share-question-nav-text">${escapeHtml(shortText)}</span>
+      `;
+      item.addEventListener("click", () => scrollToQuestion(question.id));
+      els.questionNavList.appendChild(item);
+    });
+  }
+
+  function scrollToQuestion(questionID) {
+    const escapedID = window.CSS && CSS.escape ? CSS.escape(questionID) : String(questionID).replace(/"/g, '\\"');
+    const target = els.content?.querySelector(`[data-message-id="${escapedID}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    els.questionNavList?.querySelectorAll(".share-question-nav-item").forEach((item) => {
+      item.classList.toggle("active", item.dataset.questionId === questionID);
+    });
   }
 
   function renderToolCall(tool) {
