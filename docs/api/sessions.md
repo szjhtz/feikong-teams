@@ -16,6 +16,8 @@
         "session_id": "550e8400-e29b-41d4-a716-446655440000",
         "title": "帮我查一下天气",
         "status": "completed",
+        "current_agent": "coder",
+        "active_task": false,
         "size": 2048,
         "mod_time": "2025-01-01T12:00:00Z"
       }
@@ -28,7 +30,9 @@
 | ------------ | ------------------------------------------------------------ |
 | `session_id` | 会话 ID（UUID）                                              |
 | `title`      | 会话标题（首次提交时从用户输入截取，未提交时为"未命名会话"） |
-| `status`     | 会话状态：`idle`、`processing`、`completed`                  |
+| `status`     | 会话状态：`idle`、`active`、`processing`、`completed`、`cancelled`、`error` |
+| `current_agent` | 当前会话固定智能体，可能为空或省略 |
+| `active_task` | 内存中是否有可订阅的运行中/刚完成流式任务 |
 | `size`       | 历史文件大小（字节，无历史文件时为 0）                       |
 | `mod_time`   | 修改时间（RFC3339，无历史文件时取 metadata 更新时间）        |
 
@@ -50,13 +54,15 @@
 
 ```json
 {
-  "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "title": "新的会话"
 }
 ```
 
 | 字段         | 类型   | 必填 | 说明            |
 | ------------ | ------ | ---- | --------------- |
-| `session_id` | string | 是   | 会话 ID（UUID） |
+| `session_id` | string | 否   | 会话 ID；不提供时后端生成 UUID |
+| `title`      | string | 否   | 初始标题，默认 `"未命名会话"`，最长 50 个 rune |
 
 **成功响应** (200)：
 
@@ -81,6 +87,7 @@
   "message": "success",
   "data": {
     "session_id": "550e8400-e29b-41d4-a716-446655440000",
+    "current_agent": "",
     "message": "session already exists"
   }
 }
@@ -116,6 +123,8 @@
   "message": "success",
   "data": {
     "session_id": "550e8400-e29b-41d4-a716-446655440000",
+    "current_agent": "coder",
+    "active_task": false,
     "messages": []
   }
 }
@@ -126,9 +135,8 @@
 | 状态码 | message                 | 说明                   |
 | ------ | ----------------------- | ---------------------- |
 | 400    | invalid session ID      | 会话 ID 含 `..` 或 `/` |
-| 404    | session not found       | 历史文件不存在         |
+| 404    | session not found       | 历史和元数据均不存在，且没有活跃任务 |
 | 500    | failed to read history  | 读取文件失败           |
-| 500    | failed to parse history | JSON 解析失败          |
 
 ---
 
@@ -205,3 +213,47 @@
 | 404    | session not found       | 元数据文件不存在 |
 | 500    | failed to read metadata | 读取元数据失败   |
 | 500    | failed to save metadata | 保存元数据失败   |
+
+---
+
+## POST /api/fkteams/sessions/agent
+
+更新会话当前固定智能体。前端用于记住某个会话当前直接对话的智能体；传空字符串表示回到团队模式。
+
+**请求 Body**：
+
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "current_agent": "coder"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `session_id` | string | 是 | 会话 ID |
+| `current_agent` | string | 否 | 智能体名称，空字符串表示不固定 |
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "message": "agent updated",
+    "session_id": "550e8400-e29b-41d4-a716-446655440000",
+    "current_agent": "coder"
+  }
+}
+```
+
+**失败响应**：
+
+| 状态码 | message | 说明 |
+| ------ | ------- | ---- |
+| 400 | `invalid request body` | 请求体解析失败 |
+| 400 | `invalid session ID` | ID 不合法 |
+| 404 | `session not found` | 元数据不存在 |
+| 500 | `failed to read metadata` | 读取元数据失败 |
+| 500 | `failed to save metadata` | 保存元数据失败 |

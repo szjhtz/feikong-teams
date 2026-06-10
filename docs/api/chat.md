@@ -1,325 +1,350 @@
-# 聊天接口
+# 聊天 API
+
+聊天能力有三种入口：
+
+| 入口 | 适用场景 | 特点 |
+| ---- | -------- | ---- |
+| `POST /api/fkteams/chat` | 普通 HTTP 调用 | 同步 JSON 或请求内 SSE；连接断开会影响本次请求 |
+| `GET /ws` | Web 前端交互 | WebSocket 推送、HITL、运行中队列、断线后可 `resume` |
+| `POST /api/fkteams/stream/start` | 推荐的后台任务入口 | 任务与连接解耦，详见 [流式任务 API](stream.md) |
 
 ## POST /api/fkteams/chat
 
-通过 HTTP 发送聊天消息，支持同步和 SSE 流式两种响应模式。
+通过 HTTP 发送聊天消息，支持同步响应和 SSE 流式响应。
 
-> SSE 和同步模式默认自动拒绝危险命令（无人工审批流程）。WebSocket 模式支持完整的人工审批（HITL）流程，详见下方 WebSocket 协议说明。
+> HTTP 聊天默认使用非交互式中断处理。需要完整 HITL 审批或运行中排队管理时，使用 WebSocket 或后台流式任务接口。
 
 **请求 Body**：
 
 ```json
 {
-  "session_id": "string",
+  "session_id": "可选，不提供则自动生成 UUID",
   "message": "string",
-  "mode": "string",
+  "mode": "team",
   "agent_name": "string",
   "stream": false,
   "contents": []
 }
 ```
 
-| 字段         | 类型   | 必填 | 说明                                                                                                                |
-| ------------ | ------ | ---- | ------------------------------------------------------------------------------------------------------------------- |
-| `message`    | string | 条件 | 用户输入的文本（`message` 和 `contents` 至少提供一个）                                                              |
-| `session_id` | string | 否   | 会话标识，默认 `"default"`                                                                                          |
-| `mode`       | string | 否   | 运行模式：`team`（默认）、`roundtable`、`custom`、`deep`；兼容旧值 `supervisor`                                   |
-| `agent_name` | string | 否   | 指定单个智能体直接对话（优先级高于 mode）                                                                           |
-| `stream`     | bool   | 否   | 是否使用 SSE 流式响应，默认 `false`                                                                                 |
-| `contents`   | array  | 否   | 多模态内容部分（存在时优先于 `message`），每项包含 `type`、`text`、`url`、`base64_data`、`mime_type`、`detail` 字段 |
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `session_id` | string | 否 | 会话 ID；不提供时自动生成 UUID |
+| `message` | string | 条件 | 用户文本，和 `contents` 至少提供一个 |
+| `mode` | string | 否 | 运行模式，默认 `team`；具体值由 Runner 缓存解析 |
+| `agent_name` | string | 否 | 指定单个智能体，优先于 `mode` |
+| `stream` | bool | 否 | 是否返回请求内 SSE，默认 `false` |
+| `contents` | array | 条件 | 多模态内容；存在时优先用于构建输入 |
 
-**同步响应** (`stream: false`)：
+`contents` 元素结构：
+
+```json
+{
+  "type": "text",
+  "text": "文本内容",
+  "url": "https://example.com/image.png",
+  "base64_data": "...",
+  "mime_type": "image/png",
+  "detail": "auto"
+}
+```
+
+| `type` | 使用字段 |
+| ------ | -------- |
+| `text` | `text` |
+| `image_url` | `url`、`detail`，`detail` 支持 `high`、`low`、`auto` |
+| `image_base64` | `base64_data`、`mime_type`，`mime_type` 默认 `image/png` |
+| `audio_url` | `url` |
+| `video_url` | `url` |
+| `file_url` | `url` |
+
+**同步响应**（`stream: false`）：
 
 ```json
 {
   "code": 0,
   "message": "success",
   "data": {
-    "session_id": "default",
-    "content": "完整的回复文本",
+    "session_id": "550e8400-e29b-41d4-a716-446655440000",
+    "content": "完整回复文本",
     "events": []
   }
 }
 ```
 
-`events` 数组中每个元素为 Agent 事件对象（结构见 [Agent 事件消息](#agent-事件消息)），按执行顺序排列。
+`events` 是原始 Agent 事件数组，按执行顺序返回。
 
-**SSE 流式响应** (`stream: true`)：
+**SSE 响应**（`stream: true`）：
 
-返回 `text/event-stream`（`Cache-Control: no-cache`，`Connection: keep-alive`），每个事件的格式为：
-
-```
-data: {"type":"stream_chunk","agent_name":"coder","content":"..."}
+```text
+data: {"type":"message_delta","agent_name":"coder","content":"..."}
 
 data: {"type":"processing_end","message":"处理完成"}
-
 ```
 
-事件结构与 WebSocket 的 Agent 事件消息相同。
+该 SSE 只存在于当前 HTTP 请求内，不提供后台续接能力；需要续接时使用 [流式任务 API](stream.md)。
 
 **失败响应**：
 
-| 状态码 | message                         | 说明                       |
-| ------ | ------------------------------- | -------------------------- |
-| 400    | invalid request: \<详情\>       | 请求体解析失败             |
-| 400    | message or contents is required | message 和 contents 均为空 |
-| 400    | agent not found: \<agent_name\> | 指定的智能体不存在         |
-| 500    | \<错误详情\>                    | Runner 创建或其他内部错误  |
-
----
+| 状态码 | message | 说明 |
+| ------ | ------- | ---- |
+| 400 | `invalid request: ...` | 请求体解析失败 |
+| 400 | `message or contents is required` | 消息为空 |
+| 400 | Runner 错误详情 | `agent_name` 指定的智能体不可用 |
+| 500 | Runner 错误详情 | Runner 创建或执行失败 |
 
 ## WebSocket
 
 ### 连接
 
-- **URL**：`ws://<host>/ws` 或 `wss://<host>/ws`
-- **认证**：启用认证时通过 `?token=<token>` 参数传递
-- **连接建立后**：服务器自动发送 `connected` 消息
-- **服务关闭时**：服务端主动关闭所有连接（`CloseGoingAway`，消息 `"server shutting down"`）
+```text
+ws://<host>/ws
+wss://<host>/ws
+```
 
-### 客户端 → 服务器
-
-所有消息使用统一 JSON 结构：
+启用登录认证时，Token 可以通过 `?token=<token>` 或 `fk_token` Cookie 传递。连接建立后服务端发送：
 
 ```json
 {
-  "type": "string",
-  "session_id": "string",
-  "message": "string",
-  "mode": "string",
-  "agent_name": "string",
-  "decision": 0,
-  "contents": [
-    {
-      "type": "text|image_url|image_base64|audio_url|video_url|file_url",
-      "text": "string",
-      "url": "string",
-      "base64_data": "string",
-      "mime_type": "string",
-      "detail": "high|low|auto"
-    }
-  ]
+  "type": "connected",
+  "message": "欢迎连接到非空小队"
 }
 ```
 
-> 所有字段均为 `omitempty`，按消息类型选择性填写。
+服务关闭时，后端会主动关闭所有连接。
 
-#### chat / follow_up — 发送聊天消息
+### 客户端消息结构
 
-| 字段         | 类型   | 说明                                                           |
-| ------------ | ------ | -------------------------------------------------------------- |
-| `session_id` | string | 会话标识，默认 `"default"`                                     |
-| `message`    | string | 用户输入的文本                                                 |
-| `mode`       | string | 运行模式：`team`（默认）、`roundtable`、`custom`、`deep`；兼容旧值 `supervisor` |
-| `agent_name` | string | 指定单个智能体直接对话（优先级高于 mode）                      |
-| `contents`   | array  | 多模态内容部分（可选，存在时优先于 `message` 字段）            |
+```json
+{
+  "type": "chat",
+  "session_id": "会话 ID",
+  "offset": 0,
+  "message": "用户消息",
+  "mode": "team",
+  "agent_name": "coder",
+  "decision": 1,
+  "contents": [],
+  "ask_selected": ["选项 A"],
+  "ask_free_text": "补充文本"
+}
+```
 
-如果同一会话已有运行中的任务，`chat` / `follow_up` 会作为 follow-up 排队；当前 Agent 停止后继续处理，不会取消当前任务。排队成功后会收到 `user_message`（含 `queued`、`queue_id`、`queue_kind`、`queued_count`）和 `queue_updated` 快照事件。
+字段按消息类型选择性填写。
 
-**处理流程**：
+### chat / follow_up
 
-1. 创建独立可取消 context（`context.WithCancel(connCtx)`）
-2. 获取或创建会话的 HistoryRecorder（自动加载文件历史）
-3. 构建输入消息（如有历史记录则注入 SystemMessage 作为上下文摘要）
-4. 根据 `agent_name` 或 `mode` 获取/创建 Runner（带缓存）
-5. 更新会话 title（首次提交时从默认标题更新为用户输入）和 status 为 `"processing"`
-6. 发送 `processing_start` → 执行 Runner（支持 HITL 审批中断）→ 发送 `processing_end`
-7. 保存聊天历史到文件，更新 status 为 `"completed"`
+发送用户消息。WebSocket 的 `chat` 和 `follow_up` 必须显式携带 `session_id`。
 
-#### steer / steering — 转向运行中的任务
+```json
+{
+  "type": "chat",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "帮我分析这个问题",
+  "mode": "team"
+}
+```
 
-`steer` 用于在当前任务运行时发送转向消息。消息会在当前模型输出结束、工具调用完成后，于下一次模型调用前注入上下文；不会中断正在输出的 token，也不会强杀正在执行的工具。
-排队后的队列项可在尚未消费前通过 Stream 队列管理 API 修改、删除、调整同类顺序，或在 `follow_up` / `steering` 间切换。
+如果会话已有运行中任务，消息会追加为 `follow_up` 队列项，服务端推送：
 
-| 字段         | 类型   | 说明                                                |
-| ------------ | ------ | --------------------------------------------------- |
-| `session_id` | string | 正在运行的会话 ID                                  |
-| `message`    | string | 转向文本（与 `contents` 至少提供一个）              |
-| `contents`   | array  | 多模态内容部分（可选，存在时优先于 `message` 字段） |
+- `user_message`，包含 `queued=true`、`queue_id`、`queue_kind`、`queued_count`
+- `queue_updated`，包含最新 `queue` 快照
 
-**示例**：
+### steer / steering
+
+向运行中任务追加 steering。
 
 ```json
 {
   "type": "steer",
-  "session_id": "550e8400-...",
-  "message": "停止当前方向，先检查最新的错误日志"
-}
-```
-
-**Runner 创建规则**：
-
-| 条件              | Runner 类型         |
-| ----------------- | ------------------- |
-| `agent_name` 非空 | 单智能体 Runner     |
-| `mode=roundtable` | 圆桌会议 Runner     |
-| `mode=custom`     | 自定义会议 Runner   |
-| `mode=deep`       | 深度分析 Runner     |
-| 其他              | 默认团队 Runner     |
-
-#### cancel — 取消当前任务
-
-取消该连接正在执行的任务（取消任务 context）。
-
-**服务器响应**：
-
-```json
-{
-  "type": "cancelled",
-  "session_id": "550e8400-...",
-  "message": "任务已取消"
-}
-```
-
-#### approval — 审批决定（HITL）
-
-当 Agent 执行危险操作（如命令执行、文件修改、Git 变更、子任务分发）时，服务端会发送 `approval_required` 事件等待用户审批，客户端通过此消息回复审批决定。
-
-| 字段       | 类型 | 说明                                                         |
-| ---------- | ---- | ------------------------------------------------------------ |
-| `decision` | int  | 审批决定：`0` 拒绝，`1` 允许一次，`2` 允许该项，`3` 全部允许 |
-
-**审批流程**：
-
-1. Agent 调用需审批的工具 → 触发中断
-2. 服务端发送 `approval_required` 事件（含审批描述）
-3. 客户端展示审批 UI 并等待用户操作
-4. 客户端发送 `{"type": "approval", "decision": <int>}`
-5. Agent 根据决定继续或中止执行
-
-#### clear_history — 清除会话历史
-
-> 此操作会**删除整个会话目录**（包括 history.jsonl 和 metadata.json），并从内存中移除会话记录。
-
-| 字段         | 类型   | 说明                              |
-| ------------ | ------ | --------------------------------- |
-| `session_id` | string | 要清除的会话 ID，默认 `"default"` |
-
-**服务器响应**：
-
-成功：`{"type": "history_cleared", "message": "历史记录已清除"}`
-
-失败：`{"type": "error", "error": "清除历史失败"}`
-
-#### load_history — 加载历史会话
-
-| 字段      | 类型   | 说明                         |
-| --------- | ------ | ---------------------------- |
-| `message` | string | 要加载的会话 ID（UUID 格式） |
-
-**服务器响应**：
-
-```json
-{
-  "type": "history_loaded",
-  "message": "历史记录已加载",
   "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "messages": []
+  "message": "先检查最新日志，再继续原任务"
 }
 ```
 
-> 历史文件不存在时返回空 messages 数组（新建会话尚无历史），不报错。ID 不合法时返回 `{"type": "error", "error": "无效的会话 ID"}`。
+失败时返回 `type=error`，例如 `no running task to steer`。
 
-#### ping — 心跳检测
+### resume
 
-**服务器响应**：`{"type": "pong"}`
-
-#### 未知类型
-
-发送未注册的 `type` 时，服务器返回：`{"type": "error", "error": "unknown message type"}`
-
----
-
-### 服务器 → 客户端
-
-#### 连接与控制消息
-
-> 所有与聊天任务相关的消息（`processing_start`、`processing_end`、`cancelled`、`error`、Agent 事件）均携带 `session_id` 字段，用于多会话隔离。
-
-| type               | 说明       | 附加字段                                           |
-| ------------------ | ---------- | -------------------------------------------------- |
-| `connected`        | 连接建立   | `message`（`"欢迎连接到非空小队"`）                |
-| `error`            | 错误通知   | `error`，可能含 `session_id`                       |
-| `pong`             | 心跳响应   | —                                                  |
-| `cancelled`        | 任务已取消 | `session_id`、`message`                            |
-| `history_cleared`  | 历史已清除 | `message`                                          |
-| `history_loaded`   | 历史已加载 | `session_id`、`message`、`messages`                |
-| `processing_start` | 开始处理   | `session_id`、`message`（`"开始处理您的请求..."`） |
-| `processing_end`   | 处理完成   | `session_id`、`message`（`"处理完成"`）            |
-
-#### Agent 事件消息
-
-所有 Agent 事件均携带 `session_id`，完整基础结构：
+断线后重新绑定当前会话的内存流，并从指定事件 offset 回放。
 
 ```json
 {
-  "type": "<事件类型>",
+  "type": "resume",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "offset": 42
+}
+```
+
+如果任务不存在或已结束，返回：
+
+```json
+{
+  "type": "processing_end",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "任务已完成或不存在"
+}
+```
+
+### cancel
+
+请求取消运行中的任务。
+
+```json
+{
+  "type": "cancel",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+服务端立即确认取消请求：
+
+```json
+{
+  "type": "cancellation_requested",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "取消请求已发送"
+}
+```
+
+任务真正取消后还会推送 `cancelled` 事件。
+
+### approval
+
+提交 HITL 审批决定。
+
+```json
+{
+  "type": "approval",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "decision": 1
+}
+```
+
+| decision | 含义 |
+| -------- | ---- |
+| `0` | 拒绝 |
+| `1` | 允许一次 |
+| `2` | 允许该项 |
+| `3` | 全部允许 |
+
+### ask_response
+
+提交 `ask_questions` 的回答。
+
+```json
+{
+  "type": "ask_response",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "ask_selected": ["选项 A"],
+  "ask_free_text": "补充说明"
+}
+```
+
+### ping
+
+```json
+{
+  "type": "ping"
+}
+```
+
+服务端返回：
+
+```json
+{
+  "type": "pong"
+}
+```
+
+未知 `type` 返回：
+
+```json
+{
+  "type": "error",
+  "error": "unknown message type"
+}
+```
+
+## 服务端事件
+
+WebSocket 和后台流式任务共享同一套任务事件结构。常见控制事件：
+
+| type | 说明 |
+| ---- | ---- |
+| `connected` | WebSocket 连接建立 |
+| `user_message` | 用户消息；排队时带 `queued`、`queue_id`、`queue_kind` |
+| `processing_start` | 某个轮次开始处理 |
+| `processing_end` | 当前任务全部完成 |
+| `queue_updated` | 未消费队列快照 |
+| `ask_questions` | 需要用户回答问题 |
+| `approval_required` | 需要用户审批 |
+| `cancelled` | 任务被取消 |
+| `error` | 错误 |
+| `pong` | 心跳响应 |
+
+Agent 事件基础字段：
+
+```json
+{
+  "type": "message_delta",
   "session_id": "string",
+  "run_id": "string",
+  "turn_id": "string",
+  "message_id": "string",
   "agent_name": "string",
   "run_path": "string",
+  "role": "assistant",
+  "delta_kind": "output",
   "content": "string",
-  "detail": "string",
+  "delta": "string",
   "reasoning_content": "string",
   "tool_calls": [],
+  "tool_call_ref": "string",
+  "tool_name": "string",
+  "tool_display_name": "string",
+  "tool_kind": "string",
   "action_type": "string",
-  "error": "string"
+  "detail": "string",
+  "error": "string",
+  "stream_event_id": 0
 }
 ```
 
-> 所有字段均为可选（`omitempty`），仅在有值时出现。
+字段均为按需返回。`stream_event_id` 由 taskstream 注入，用于 WebSocket `resume` 或 SSE 续接。
 
-| type                   | 触发场景                  | 关键字段                                            |
-| ---------------------- | ------------------------- | --------------------------------------------------- |
-| `message`              | Agent 输出完整消息        | `content`，可能含 `tool_calls`、`reasoning_content` |
-| `tool_result`          | Tool 返回完整结果         | `content`                                           |
-| `stream_chunk`         | 流式输出文本块            | `content`                                           |
-| `reasoning_chunk`      | 推理/思考过程流式增量     | `content`（仅推理模型）                             |
-| `tool_result_chunk`    | Tool 流式输出块           | `content`                                           |
-| `tool_calls_preparing` | 识别到工具调用开始        | `tool_calls[].name`                                 |
-| `tool_calls`           | 完整的工具调用信息        | `tool_calls[].name`、`tool_calls[].arguments`       |
-| `action`               | Agent 执行动作            | `action_type`、`content`                            |
-| `dispatch_progress`    | 子任务并行执行进度        | `action_type`、`detail`（见下方说明）               |
-| `approval_required`    | 需要用户审批（HITL 中断） | `session_id`、`message`（审批描述）                 |
-| `error`                | Agent 执行错误            | `error`                                             |
+常见 Agent `type`：
 
-**action_type 子类型**：
+| type | 说明 |
+| ---- | ---- |
+| `agent_start` / `agent_end` | 智能体执行开始/结束 |
+| `turn_start` / `turn_end` | 轮次开始/结束 |
+| `message_start` / `message_delta` / `message_end` | 模型消息生命周期 |
+| `tool_start` / `tool_update` / `tool_end` | 工具调用生命周期 |
+| `action` | 转交、审批、提问、压缩等动作 |
+| `usage` | Token 用量 |
+| `error` | 执行错误 |
+| `member_update` | 成员智能体更新 |
 
-| action_type         | 说明                     | content / 备注                                                  |
-| ------------------- | ------------------------ | --------------------------------------------------------------- |
-| `transfer`          | 转交到其他 Agent         | `"Transfer to agent: <name>"`                                   |
-| `exit`              | Agent 执行完成           | `"Agent execution completed"`                                   |
-| `approval_required` | 需要审批（记录在历史中） | 审批描述文本                                                    |
-| `approval_decision` | 审批决定（记录在历史中） | `"已拒绝"`/`"已允许（一次）"`/`"已允许（该项）"`/`"已全部允许"` |
+常见 `action_type`：
 
-> `interrupted` 类型在 WebSocket 模式下被过滤不发送（由 `approval_required` 消息替代），仅记录在历史中。
+| action_type | 说明 |
+| ----------- | ---- |
+| `transfer` | 转交到其他智能体 |
+| `exit` | 智能体退出 |
+| `ask_questions` | 记录提问 |
+| `ask_response` | 记录回答 |
+| `approval_required` | 记录审批请求 |
+| `approval_decision` | 记录审批决定 |
+| `context_compress_start` / `context_compress` | 上下文压缩 |
 
-**tool_calls 结构**：
+## 队列顺序语义
 
-```json
-{
-  "name": "function_name",
-  "arguments": "{\"key\": \"value\"}"
-}
-```
+运行中产生的队列项必须按用户交互顺序渲染：
 
-**dispatch_progress 的 detail 结构**：
+1. 当前用户问题产生 `user_message` 和 `processing_start`。
+2. 当前智能体持续推送回复事件。
+3. 运行中追加的问题先以 `queued=true` 展示在队列区。
+4. 当队列项开始执行时，服务端推送带 `queued_executing=true` 的 `user_message` 或 `processing_start`，客户端再把它提升为正式轮次。
 
-子任务并行分发中间件通过 `dispatch_progress` 事件实时推送各子任务的执行进度。`detail` 字段为 JSON 字符串：
-
-```json
-{
-  "task_index": 0,
-  "description": "子任务描述",
-  "event_type": "start|op|content|done|error|timeout",
-  "event_detail": "具体信息"
-}
-```
-
-| event_type | 说明           | event_detail |
-| ---------- | -------------- | ------------ |
-| `start`    | 子任务开始执行 | 空           |
-| `op`       | 工具操作       | 操作描述     |
-| `content`  | 子任务输出内容 | 文本内容     |
-| `done`     | 子任务完成     | 空           |
-| `error`    | 子任务出错     | 错误信息     |
-| `timeout`  | 子任务超时     | 空           |
+前端不应仅按接收时间把排队问题直接追加到结果流后面；应优先使用 `run_id`、`turn_id`、`queue_id` 和 `queued_executing` 维护轮次归属。

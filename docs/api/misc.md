@@ -2,9 +2,9 @@
 
 ## GET /health
 
-健康检查接口，用于容器编排和负载均衡的健康探测。
+健康检查，用于容器编排和负载均衡。
 
-**成功响应** (200)：
+**成功响应**：
 
 ```json
 {
@@ -20,20 +20,18 @@
 
 ## POST /api/fkteams/login
 
-> 仅在认证启用时可用（`config.toml` 中 `[server.auth] enabled = true` 时注册该路由）
-
-用户登录获取 Token。
+登录获取 Token。仅在 `[server.auth] enabled = true` 时注册。
 
 **请求 Body**：
 
 ```json
 {
-  "username": "string",
-  "password": "string"
+  "username": "admin",
+  "password": "your_password"
 }
 ```
 
-**成功响应** (200)：
+**成功响应**：
 
 ```json
 {
@@ -45,14 +43,14 @@
 }
 ```
 
+Token payload 为 `username|expiry(RFC3339)`，有效期 7 天，签名为 HMAC-SHA256。服务端不主动设置 Cookie，前端自行保存。
+
 **失败响应**：
 
-| 状态码 | message          | 说明           |
-| ------ | ---------------- | -------------- |
-| 400    | 请求格式错误     | 请求体解析失败 |
-| 401    | 用户名或密码错误 | 凭证不匹配     |
-
-Token 格式为 `hex(payload).hex(hmac-sha256)`，payload 为 `username|expiry(RFC3339)`，有效期 7 天。Token 由客户端自行管理，服务端不设置 Cookie。
+| 状态码 | message | 说明 |
+| ------ | ------- | ---- |
+| 400 | `请求格式错误` | 请求体解析失败 |
+| 401 | `用户名或密码错误` | 凭证不匹配 |
 
 ---
 
@@ -60,15 +58,13 @@ Token 格式为 `hex(payload).hex(hmac-sha256)`，payload 为 `username|expiry(R
 
 获取服务版本信息。
 
-**成功响应** (200)：
-
 ```json
 {
   "code": 0,
   "message": "success",
   "data": {
     "version": "0.0.1",
-    "buildDate": "2025-01-01 00:00:00"
+    "buildDate": "2026-06-10 16:53:39"
   }
 }
 ```
@@ -77,9 +73,7 @@ Token 格式为 `hex(payload).hex(hmac-sha256)`，payload 为 `username|expiry(R
 
 ## GET /api/fkteams/agents
 
-获取所有可用智能体列表。
-
-**成功响应** (200)：
+获取所有可用智能体。
 
 ```json
 {
@@ -87,9 +81,82 @@ Token 格式为 `hex(payload).hex(hmac-sha256)`，payload 为 `username|expiry(R
   "message": "success",
   "data": [
     {
-      "name": "string",
-      "description": "string"
+      "name": "coder",
+      "description": "软件工程师",
+      "aliases": ["code"]
     }
   ]
 }
 ```
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `name` | 智能体名称 |
+| `description` | 描述 |
+| `aliases` | 别名数组，可能为空或省略 |
+
+---
+
+## GET /api/fkteams/favicon
+
+来源图标代理。常用于 Web 前端展示搜索结果/引用来源 favicon。
+
+**Query 参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `domain` | string | 否 | 域名 |
+| `url` | string | 否 | 完整 URL；未提供 `domain` 时从 URL 提取域名 |
+| `size` | int | 否 | 图标尺寸，默认由后端处理 |
+
+**成功响应**：返回图标二进制，`Content-Type` 可能为 `image/x-icon`、`image/png`、`image/svg+xml` 等。
+
+上游不可用时会返回 fallback SVG。
+
+---
+
+## POST /api/fkteams/shutdown
+
+请求服务优雅关闭。仅当生命周期管理器可用时成功。
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "message": "server is shutting down"
+  }
+}
+```
+
+**失败响应**：
+
+| 状态码 | message |
+| ------ | ------- |
+| 500 | `shutdown not available` |
+
+---
+
+## POST /api/fkteams/restart
+
+请求服务优雅重启。仅当生命周期管理器可用时成功。
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "message": "server is restarting"
+  }
+}
+```
+
+**失败响应**：
+
+| 状态码 | message |
+| ------ | ------- |
+| 500 | `restart not available` |
