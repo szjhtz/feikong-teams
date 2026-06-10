@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 
@@ -316,11 +315,54 @@ func appendAssetVersion(ref string, assetVersion string) string {
 
 func staticAssetVersion() string {
 	info := version.Get()
-	token := strings.TrimSpace(info.Version + "-" + info.BuildTime)
-	if token == "-" || token == "" {
-		token = "dev"
+	versionToken := sanitizeAssetVersionPart(info.Version)
+	buildToken := compactBuildTime(info.BuildTime)
+	if versionToken != "" && buildToken != "" {
+		return versionToken + "-" + buildToken
 	}
-	return url.QueryEscape(token)
+	if versionToken != "" {
+		return versionToken
+	}
+	if buildToken != "" {
+		return buildToken
+	}
+	return "dev"
+}
+
+func compactBuildTime(buildTime string) string {
+	var digits strings.Builder
+	for _, r := range buildTime {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+	}
+	token := digits.String()
+	if len(token) >= 14 {
+		return token[:14]
+	}
+	return token
+}
+
+func sanitizeAssetVersionPart(value string) string {
+	value = strings.TrimSpace(value)
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		allowed := (r >= '0' && r <= '9') ||
+			(r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			r == '.' || r == '_' || r == '-'
+		if allowed {
+			b.WriteRune(r)
+			lastDash = r == '-'
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // InitAPI 初始化纯 API 路由（无 Web 界面）

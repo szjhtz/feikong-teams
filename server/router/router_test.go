@@ -136,6 +136,25 @@ func TestServeStaticStyleVersionsLocalCSSImports(t *testing.T) {
 	}
 }
 
+func TestStaticAssetVersionUsesCompactBuildTime(t *testing.T) {
+	got := compactBuildTime("2026-06-10 16:53:39")
+	if got != "20260610165339" {
+		t.Fatalf("compact build time = %q, want 20260610165339", got)
+	}
+
+	got = compactBuildTime("20260610165339")
+	if got != "20260610165339" {
+		t.Fatalf("numeric build time = %q, want 20260610165339", got)
+	}
+}
+
+func TestSanitizeAssetVersionPartAvoidsEscapedQueryCharacters(t *testing.T) {
+	got := sanitizeAssetVersionPart("0.0.1 beta+local")
+	if got != "0.0.1-beta-local" {
+		t.Fatalf("sanitized version = %q, want 0.0.1-beta-local", got)
+	}
+}
+
 func routeSet(routes gin.RoutesInfo) map[string]bool {
 	result := make(map[string]bool, len(routes))
 	for _, route := range routes {
