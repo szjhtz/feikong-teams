@@ -189,6 +189,13 @@ func GetToolNamesHandler() gin.HandlerFunc {
 	}
 }
 
+// GetToolCatalogHandler 获取可配置工具组详情
+func GetToolCatalogHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		OK(c, tools.GetAllToolInfos())
+	}
+}
+
 // GetTemplateVarsHandler 返回可用的模板变量列表（供前端提示词编辑器补全）
 func GetTemplateVarsHandler() gin.HandlerFunc {
 	type templateVar struct {

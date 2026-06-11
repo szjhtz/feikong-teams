@@ -37,6 +37,7 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 		"GET /api/fkteams/schedules/:id/history/:filename",
 		"GET /api/fkteams/skills/:slug/file",
 		"POST /api/fkteams/memory/clear",
+		"GET /api/fkteams/config/tool-catalog",
 		"GET /api/fkteams/config/template-vars",
 		"POST /api/fkteams/providers/models",
 		"POST /api/fkteams/shutdown",

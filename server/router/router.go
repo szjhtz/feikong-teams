@@ -172,6 +172,7 @@ func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate
 			configGroup.GET("", handler.GetConfigHandler())
 			configGroup.PUT("", handler.UpdateConfigHandlerWithState(state))
 			configGroup.GET("/tools", handler.GetToolNamesHandler())
+			configGroup.GET("/tool-catalog", handler.GetToolCatalogHandler())
 			configGroup.GET("/template-vars", handler.GetTemplateVarsHandler())
 		}
 
