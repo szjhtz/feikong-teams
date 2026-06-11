@@ -103,11 +103,11 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 
 		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 		initialRunID := newTurnRunID(sessionID)
-		stream.Publish(attachTurnMeta(map[string]any{
+		stream.Publish(attachContentParts(attachTurnMeta(map[string]any{
 			"type":       events.NotifyUserMessage,
 			"session_id": sessionID,
 			"content":    userDisplayText,
-		}, initialRunID))
+		}, initialRunID), messageContentParts(turnInput.Message)))
 
 		stream.Publish(attachTurnMeta(map[string]any{
 			"type":       events.NotifyProcessingStart,

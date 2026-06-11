@@ -98,13 +98,15 @@ var toolPolicies = map[string]ToolPolicy{
 	"todo_clear":        destructivePolicy("", false),
 
 	// 搜索、抓取、文档和提问
-	"search":                 readOnlyPolicy("", false),
-	"fetch":                  readOnlyPolicy("", false),
-	"get_document_info":      readOnlyPolicy("", false),
-	"read_document_smart":    readOnlyPolicy("", false),
-	"read_document_by_pages": readOnlyPolicy("", false),
-	"read_document_by_lines": readOnlyPolicy("", false),
-	"ask_questions":          readOnlyPolicy("", false),
+	"search":                  readOnlyPolicy("", false),
+	"fetch":                   readOnlyPolicy("", false),
+	"get_document_info":       readOnlyPolicy("", false),
+	"read_document_smart":     readOnlyPolicy("", false),
+	"read_document_by_pages":  readOnlyPolicy("", false),
+	"read_document_by_lines":  readOnlyPolicy("", false),
+	"ask_questions":           readOnlyPolicy("", false),
+	"session_attachment_list": readOnlyPolicy("", false),
+	"session_attachment_read": readOnlyPolicy("", false),
 
 	// Excel 读取
 	"excel_open_workbook":       readOnlyPolicy("", false),

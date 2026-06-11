@@ -338,11 +338,11 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	manager := memoryFromState(state)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
 	currentRunID := newTurnRunID(sessionID)
-	stream.Publish(attachTurnMeta(map[string]any{
+	stream.Publish(attachContentParts(attachTurnMeta(map[string]any{
 		"type":       events.NotifyUserMessage,
 		"session_id": sessionID,
 		"content":    userDisplayText,
-	}, currentRunID))
+	}, currentRunID), messageContentParts(turnInput.Message)))
 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)

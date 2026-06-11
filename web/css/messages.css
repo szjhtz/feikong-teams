@@ -670,6 +670,16 @@ a.source-item:hover {
   justify-content: flex-end;
 }
 
+.message.user .message-attachments {
+  justify-content: flex-end;
+  max-width: 85%;
+  margin-left: auto;
+}
+
+.message.user .message-attachments.single-attachment .attachment-preview-img {
+  border-radius: 14px 14px 4px 14px;
+}
+
 .message.user .message-body {
   background: var(--accent-primary);
   color: white;
@@ -1658,15 +1668,19 @@ a.source-item:hover {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
+  max-width: 100%;
 }
 
 .attachment-preview-img {
-  max-width: 200px;
-  max-height: 150px;
+  display: block;
+  max-width: min(320px, 100%);
+  max-height: 260px;
   border-radius: 8px;
-  border: 2px solid var(--border);
-  object-fit: cover;
+  border: 2px solid var(--border-color);
+  object-fit: contain;
+  background: var(--bg-secondary);
   cursor: pointer;
+  box-shadow: var(--shadow-sketch);
 }
 
 .attachment-preview-img:hover {
@@ -1767,6 +1781,15 @@ a.source-item:hover {
 
   .message.user .message-body {
     max-width: 92%;
+  }
+
+  .message.user .message-attachments {
+    max-width: 92%;
+  }
+
+  .attachment-preview-img {
+    max-width: min(260px, 100%);
+    max-height: 220px;
   }
 
   /* 代码块 */

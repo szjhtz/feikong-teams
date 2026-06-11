@@ -80,7 +80,7 @@ func (m *testMemoryManager) Clear()                                             
 func (m *testMemoryManager) ResetLLM(memory.LLMClient)                             {}
 func (m *testMemoryManager) Wait()                                                 {}
 
-func TestHistoryRecorderKeepsMultimodalUserInput(t *testing.T) {
+func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
 	recorder := eventlog.NewHistoryRecorder()
 	parts := []agentcore.ContentPart{
 		TextPart("describe this"),
@@ -99,11 +99,20 @@ func TestHistoryRecorderKeepsMultimodalUserInput(t *testing.T) {
 	if historyMessage.Role != agentcore.RoleUser {
 		t.Fatalf("history role = %q, want user", historyMessage.Role)
 	}
-	if len(historyMessage.UserInputMultiContent) != 2 {
-		t.Fatalf("history parts = %#v, want 2 parts", historyMessage.UserInputMultiContent)
+	if len(historyMessage.UserInputMultiContent) != 0 {
+		t.Fatalf("history parts = %#v, want omitted multimodal parts", historyMessage.UserInputMultiContent)
 	}
-	if historyMessage.UserInputMultiContent[1].URL != "https://example.com/a.png" {
-		t.Fatalf("image url = %q, want https://example.com/a.png", historyMessage.UserInputMultiContent[1].URL)
+	if !strings.Contains(historyMessage.Content, "describe this") {
+		t.Fatalf("history content = %q, want original text", historyMessage.Content)
+	}
+	if !strings.Contains(historyMessage.Content, "历史消息包含 1 张图片") {
+		t.Fatalf("history content = %q, want omitted image notice", historyMessage.Content)
+	}
+	if !strings.Contains(historyMessage.Content, "history:000000:00:01") {
+		t.Fatalf("history content = %q, want attachment id", historyMessage.Content)
+	}
+	if !strings.Contains(historyMessage.Content, "session_attachment_read") {
+		t.Fatalf("history content = %q, want read tool hint", historyMessage.Content)
 	}
 }
 
@@ -115,7 +124,7 @@ func TestAgentMessageToSchemaMessagesIncludesCancellationNotice(t *testing.T) {
 		},
 	}
 
-	messages := agentMessageToCoreMessages(msg)
+	messages := agentMessageToCoreMessages(msg, 0)
 	if len(messages) != 1 {
 		t.Fatalf("message count = %d, want 1", len(messages))
 	}
@@ -136,7 +145,7 @@ func TestAgentMessageToSchemaMessagesMarksCancelledAssistantOutput(t *testing.T)
 		},
 	}
 
-	messages := agentMessageToCoreMessages(msg)
+	messages := agentMessageToCoreMessages(msg, 0)
 	if len(messages) != 1 {
 		t.Fatalf("message count = %d, want 1", len(messages))
 	}

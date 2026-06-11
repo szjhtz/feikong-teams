@@ -242,6 +242,45 @@ test("queued executing user message renders from user_message event", () => {
   assert.deepEqual(rendered, { content: "later", queueID: "queue-1" });
 });
 
+test("queued executing user message forwards content parts", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let rendered = null;
+  const parts = [
+    { type: "text", text: "look" },
+    { type: "image_url", base64_data: "abc123", mime_type: "image/png" },
+  ];
+
+  chat.messagesContainer = { querySelectorAll: () => [] };
+  chat.beginRealtimeTurn = () => {};
+  chat.addQueuedFollowUpMessage = (content, queueID, attachments) => {
+    rendered = { content, queueID, attachments };
+  };
+
+  chat.handleUserMessageEvent({
+    type: "user_message",
+    content: "look",
+    content_parts: parts,
+    queued_executing: true,
+    queue_kind: "follow_up",
+    queue_id: "queue-1",
+  });
+
+  assert.deepEqual(rendered, { content: "look", queueID: "queue-1", attachments: parts });
+});
+
+test("message attachments render saved image parts", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  chat.escapeHtml = (value) => String(value || "");
+
+  const html = chat.renderMessageAttachments([
+    { type: "text", text: "look" },
+    { type: "image_url", base64_data: "abc123", mime_type: "image/png" },
+  ]);
+
+  assert.match(html, /message-attachments single-attachment/);
+  assert.match(html, /data:image\/png;base64,abc123/);
+});
+
 test("processing start does not render queued follow-up user card", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   const calls = [];

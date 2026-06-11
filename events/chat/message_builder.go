@@ -152,12 +152,12 @@ func buildHistoryMessages(recorder *eventlog.HistoryRecorder) []agentcore.Messag
 		messages = append(messages, agentcore.Message{Role: agentcore.RoleSystem, Content: "## 对话历史摘要\n" + summaryText + "\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。"})
 
 		// 摘要未覆盖的最近记录
-		for _, msg := range agentMessages[summarizedCount:] {
-			messages = append(messages, agentMessageToCoreMessages(msg)...)
+		for i, msg := range agentMessages[summarizedCount:] {
+			messages = append(messages, agentMessageToCoreMessages(msg, summarizedCount+i)...)
 		}
 	} else if len(agentMessages) > 0 {
-		for _, msg := range agentMessages {
-			messages = append(messages, agentMessageToCoreMessages(msg)...)
+		for i, msg := range agentMessages {
+			messages = append(messages, agentMessageToCoreMessages(msg, i)...)
 		}
 	}
 
@@ -225,7 +225,7 @@ func truncatePreview(s string, n int) string {
 
 // agentMessageToCoreMessages 将 AgentMessage 转为结构化消息列表。
 // 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
-func agentMessageToCoreMessages(msg eventlog.AgentMessage) []agentcore.Message {
+func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []agentcore.Message {
 	if msg.AgentName == "用户" {
 		var text strings.Builder
 		var parts []agentcore.ContentPart
@@ -236,12 +236,16 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage) []agentcore.Message {
 			text.WriteString(event.Content)
 			parts = append(parts, event.ContentParts...)
 		}
-		message := agentcore.Message{Role: agentcore.RoleUser, Content: text.String()}
-		if len(parts) > 0 {
-			message.Content = ""
-			message.UserInputMultiContent = parts
+		content := text.String()
+		refs := eventlog.AttachmentsForMessage(msg, messageIndex)
+		if notice := omittedContentPartsNotice(parts, refs); notice != "" {
+			content = strings.TrimSpace(content)
+			if content != "" {
+				content += "\n\n"
+			}
+			content += notice
 		}
-		return []agentcore.Message{message}
+		return []agentcore.Message{{Role: agentcore.RoleUser, Content: content}}
 	}
 
 	var messages []agentcore.Message
@@ -305,6 +309,52 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage) []agentcore.Message {
 
 	flushText()
 	return messages
+}
+
+func omittedContentPartsNotice(parts []agentcore.ContentPart, refs []eventlog.AttachmentRef) string {
+	counts := map[agentcore.ContentPartType]int{}
+	total := 0
+	for _, part := range parts {
+		if part.Type == agentcore.ContentPartText || part.Type == "" {
+			continue
+		}
+		counts[part.Type]++
+		total++
+	}
+	if total == 0 {
+		return ""
+	}
+	var labels []string
+	if n := counts[agentcore.ContentPartImageURL]; n > 0 {
+		labels = append(labels, fmt.Sprintf("%d 张图片", n))
+	}
+	if n := counts[agentcore.ContentPartAudioURL]; n > 0 {
+		labels = append(labels, fmt.Sprintf("%d 段音频", n))
+	}
+	if n := counts[agentcore.ContentPartVideoURL]; n > 0 {
+		labels = append(labels, fmt.Sprintf("%d 段视频", n))
+	}
+	if n := counts[agentcore.ContentPartFileURL]; n > 0 {
+		labels = append(labels, fmt.Sprintf("%d 个文件", n))
+	}
+	if len(labels) == 0 {
+		labels = append(labels, fmt.Sprintf("%d 个多模态附件", total))
+	}
+	var notice strings.Builder
+	fmt.Fprintf(&notice, "（历史消息包含 %s，已从当前模型上下文中省略。", strings.Join(labels, "、"))
+	if len(refs) > 0 {
+		notice.WriteString("如需查看附件，请调用 session_attachment_read，附件 ID：")
+		for i, ref := range refs {
+			if i > 0 {
+				notice.WriteString("、")
+			}
+			fmt.Fprintf(&notice, "%s(%s)", ref.ID, ref.Part.Type)
+		}
+	} else {
+		notice.WriteString("如需查看附件，请调用 session_attachment_list 或 session_attachment_read。")
+	}
+	notice.WriteString("）")
+	return notice.String()
 }
 
 func cancellationNotice(content string) string {

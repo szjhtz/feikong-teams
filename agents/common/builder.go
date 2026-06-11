@@ -135,7 +135,18 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	if state := appstate.FromContext(ctx); state != nil {
 		cleaner = state.Cleaner()
 	}
+	builtinTools, err := tools.GetBuiltinCapabilityToolsWithCleaner(cleaner)
+	if err != nil {
+		return nil, err
+	}
+	toolList = append(toolList, builtinTools...)
+
+	seenToolNames := make(map[string]bool, len(b.toolNames))
 	for _, name := range b.toolNames {
+		if seenToolNames[name] {
+			continue
+		}
+		seenToolNames[name] = true
 		resolved, err := tools.GetToolsByNameWithCleaner(name, cleaner)
 		if err != nil {
 			return nil, fmt.Errorf("init tool %s: %w", name, err)

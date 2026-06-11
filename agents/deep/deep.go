@@ -14,14 +14,20 @@ import (
 
 func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent, error) {
 
+	toolList, err := tools.GetBuiltinCapabilityTools()
+	if err != nil {
+		return nil, err
+	}
 	toolNames := []string{"file", "doc", "command", "search", "fetch"}
-	var toolList []agentcore.Tool
 	for _, toolName := range toolNames {
 		baseTools, err := tools.GetToolsByName(toolName)
 		if err != nil {
 			return nil, fmt.Errorf("init tool %s: %w", toolName, err)
 		}
 		toolList = append(toolList, baseTools...)
+	}
+	if err := tools.ClassifyTools(toolList); err != nil {
+		return nil, fmt.Errorf("classify tools: %w", err)
 	}
 	chatModel, err := common.NewChatModel()
 	if err != nil {

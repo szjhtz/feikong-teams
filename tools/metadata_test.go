@@ -94,8 +94,8 @@ func TestDocumentToolNamesUsePolicy(t *testing.T) {
 	}
 }
 
-func TestSearchAndAskToolNamesUsePolicy(t *testing.T) {
-	for _, name := range []string{"search", "fetch", "ask_questions"} {
+func TestSearchAskAndAttachmentToolNamesUsePolicy(t *testing.T) {
+	for _, name := range []string{"search", "fetch", "ask_questions", "session_attachment_list", "session_attachment_read"} {
 		policy := mustPolicy(t, name)
 		if !policy.ReadOnly {
 			t.Fatalf("%s should be read-only", name)

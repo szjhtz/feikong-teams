@@ -3,6 +3,7 @@ const test = require("node:test");
 
 global.FKTeamsChat = function () {};
 require("../js/history.js");
+require("../js/messages.js");
 
 function fakeAssistantMessage(body) {
   return {
@@ -118,6 +119,75 @@ test("history action splits assistant text timeline", () => {
   ]);
   assert.equal(bodies[0].html, "before");
   assert.equal(bodies[1].html, "after");
+});
+
+test("history user message renders saved image content parts", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const items = [];
+  const oldDocument = global.document;
+  global.document = {
+    createElement() {
+      return fakeElement();
+    },
+  };
+  chat.messagesContainer = {
+    appendChild(item) { items.push(item); },
+  };
+  chat.escapeHtml = (value) => String(value || "");
+  chat.formatHistoryTime = () => "09:05";
+  chat.getCurrentTime = () => "09:05";
+  chat.userQuestions = [];
+  chat.updateQuickNav = () => {};
+
+  try {
+    chat.renderHistoryUserMessage({
+      start_time: "2026-06-11T01:05:00Z",
+      events: [{
+        type: "text",
+        content: "图中有什么",
+        content_parts: [
+          { type: "text", text: "图中有什么" },
+          { type: "image_url", base64_data: "abc123", mime_type: "image/png" },
+        ],
+      }],
+    });
+  } finally {
+    global.document = oldDocument;
+  }
+
+  assert.equal(items.length, 1);
+  assert.match(items[0].innerHTML, /message-attachments/);
+  assert.match(items[0].innerHTML, /data:image\/png;base64,abc123/);
+  assert.match(items[0].innerHTML, /图中有什么/);
+});
+
+test("history agent message renders stored error event", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const items = [];
+  const oldDocument = global.document;
+  global.document = {
+    createElement() {
+      return fakeElement();
+    },
+  };
+  chat.messagesContainer = {
+    appendChild(item) { items.push(item); },
+  };
+  chat.escapeHtml = (value) => String(value || "");
+
+  try {
+    chat.renderHistoryAgentMessage({
+      agent_name: "coordinator",
+      events: [{ type: "error", content: "deepseek does not support image_url type" }],
+    });
+  } finally {
+    global.document = oldDocument;
+  }
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].className, "error-message");
+  assert.match(items[0].innerHTML, /\[coordinator\]/);
+  assert.match(items[0].innerHTML, /does not support image_url/);
 });
 
 test("sidebar history shows loading before debounced fetch", () => {

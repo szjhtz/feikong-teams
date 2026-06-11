@@ -1453,6 +1453,12 @@ FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
         currentContent = "";
         break;
 
+      case "error":
+        this.renderHistoryErrorMessage(evt.content, msg.agent_name);
+        currentMessageEl = null;
+        currentContent = "";
+        break;
+
       case "action":
         if (evt.action) {
           this.renderSingleAction(evt.action, msg.agent_name);
@@ -1467,15 +1473,23 @@ FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
 FKTeamsChat.prototype.renderHistoryUserMessage = function (msg) {
   // 从events中提取用户输入的文本
   let userContent = "";
+  let contentParts = [];
   if (msg.events && msg.events.length > 0) {
     msg.events.forEach((evt) => {
       if (evt.type === "text" && evt.content) {
         userContent += evt.content;
       }
+      if (evt.type === "text" && Array.isArray(evt.content_parts)) {
+        contentParts = contentParts.concat(evt.content_parts);
+      }
     });
   }
 
-  if (!userContent) return;
+  const attachmentsHtml = typeof this.renderMessageAttachments === "function"
+    ? this.renderMessageAttachments(contentParts)
+    : "";
+
+  if (!userContent && !attachmentsHtml) return;
 
   // 创建用户消息元素
   const messageEl = document.createElement("div");
@@ -1488,13 +1502,18 @@ FKTeamsChat.prototype.renderHistoryUserMessage = function (msg) {
     ? this.formatHistoryTime({ startTime: msg.start_time })
     : this.getCurrentTime();
 
+  const bodyHtml = userContent
+    ? `<div class="message-body">${this.escapeHtml(userContent)}</div>`
+    : "";
+
   messageEl.innerHTML = `
         <div class="message-content">
             <div class="message-header">
                 <span class="message-name">您</span>
                 <span class="message-time">${timeDisplay}</span>
             </div>
-            <div class="message-body">${this.escapeHtml(userContent)}</div>
+            ${attachmentsHtml}
+            ${bodyHtml}
         </div>
     `;
   this.messagesContainer.appendChild(messageEl);
@@ -1508,6 +1527,24 @@ FKTeamsChat.prototype.renderHistoryUserMessage = function (msg) {
   };
   this.userQuestions.push(question);
   this.updateQuickNav();
+};
+
+FKTeamsChat.prototype.renderHistoryErrorMessage = function (content, agentName) {
+  if (!content) return;
+  const escape = typeof this.escapeHtml === "function"
+    ? this.escapeHtml.bind(this)
+    : (value) => String(value || "");
+  const errorEl = document.createElement("div");
+  errorEl.className = "error-message";
+  errorEl.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <span>${agentName ? `[${escape(agentName)}] ` : ""}${escape(content)}</span>
+    `;
+  this.messagesContainer.appendChild(errorEl);
 };
 
 FKTeamsChat.prototype.renderSingleToolCall = function (tc) {

@@ -63,6 +63,23 @@ func attachTurnMeta(data map[string]any, runID string) map[string]any {
 	return data
 }
 
+func attachContentParts(data map[string]any, parts []agentcore.ContentPart) map[string]any {
+	if len(parts) > 0 {
+		data["content_parts"] = append([]agentcore.ContentPart(nil), parts...)
+	}
+	return data
+}
+
+func messageContentParts(message agentcore.Message) []agentcore.ContentPart {
+	if len(message.UserInputMultiContent) > 0 {
+		return append([]agentcore.ContentPart(nil), message.UserInputMultiContent...)
+	}
+	if len(message.MultiContent) > 0 {
+		return append([]agentcore.ContentPart(nil), message.MultiContent...)
+	}
+	return nil
+}
+
 // buildChatInput 构建输入消息（含历史），支持多模态
 func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart, manager appstate.MemoryManager) (input engine.TurnInput, displayText string) {
 	if len(contents) > 0 {
@@ -112,7 +129,7 @@ func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.Que
 
 func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
 	queued := stream.EnqueueMessage(queuedChatMessage(kind, message, contents))
-	stream.Publish(map[string]any{
+	stream.Publish(attachContentParts(map[string]any{
 		"type":         events.NotifyUserMessage,
 		"session_id":   sessionID,
 		"content":      queued.DisplayText,
@@ -120,7 +137,7 @@ func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskst
 		"queue_id":     queued.ID,
 		"queue_kind":   string(queued.Kind),
 		"queued_count": stream.QueuedCount(),
-	})
+	}, queued.Parts))
 	publishQueueUpdated(stream, sessionID)
 	return queued
 }
@@ -139,14 +156,14 @@ func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {
 
 func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, queued taskstream.QueuedMessage, runID string) {
 	if queued.Kind == taskstream.QueueFollowUp {
-		stream.Publish(attachTurnMeta(map[string]any{
+		stream.Publish(attachContentParts(attachTurnMeta(map[string]any{
 			"type":             events.NotifyUserMessage,
 			"session_id":       sessionID,
 			"content":          queued.DisplayText,
 			"queue_id":         queued.ID,
 			"queue_kind":       string(queued.Kind),
 			"queued_executing": true,
-		}, runID))
+		}, runID), queued.Parts))
 	}
 
 	message := "继续处理排队消息..."

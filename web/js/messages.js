@@ -1434,7 +1434,8 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
 
 FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
   const content = event.content || "";
-  if (!content) return;
+  const contentParts = event.content_parts || null;
+  if (!content && !Array.isArray(contentParts)) return;
   if (event.turn_id) {
     this.beginRealtimeTurn(event.turn_id);
   }
@@ -1445,7 +1446,7 @@ FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
 
   if (event.queued_executing) {
     if (event.queue_kind === "follow_up") {
-      this.addQueuedFollowUpMessage(content, event.queue_id || "");
+      this.addQueuedFollowUpMessage(content, event.queue_id || "", contentParts);
     }
     return;
   }
@@ -1456,7 +1457,7 @@ FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
 
   const welcomeMsg = this.messagesContainer.querySelector(".welcome-message");
   if (welcomeMsg) welcomeMsg.remove();
-  this.addUserMessage(content, null);
+  this.addUserMessage(content, contentParts);
 };
 
 FKTeamsChat.prototype.handleProcessingStart = function (event, eventSessionId) {
@@ -1476,14 +1477,14 @@ FKTeamsChat.prototype.handleProcessingStart = function (event, eventSessionId) {
   this.showThinkingIndicator(event.queued_executing ? "处理队列" : "思考中");
 };
 
-FKTeamsChat.prototype.addQueuedFollowUpMessage = function (content, queueID) {
-  if (!content) return;
+FKTeamsChat.prototype.addQueuedFollowUpMessage = function (content, queueID, attachments) {
+  if (!content && !Array.isArray(attachments)) return;
   if (queueID && this.messagesContainer?.querySelectorAll) {
     const existing = Array.from(this.messagesContainer.querySelectorAll(".message.user[data-queue-id]"))
       .find((el) => el.dataset.queueId === queueID);
     if (existing) return;
   }
-  this.addUserMessage(content, null, {
+  this.addUserMessage(content, attachments, {
     queueID,
     queuedExecuting: true,
   });
@@ -3104,6 +3105,39 @@ FKTeamsChat.prototype.continueAfterMaxIterations = function () {
   this.showThinkingIndicator("等待中");
 };
 
+FKTeamsChat.prototype.messageAttachmentItems = function (attachments) {
+  if (!Array.isArray(attachments)) return [];
+  return attachments
+    .map((att) => {
+      if (!att) return null;
+      if (att.type === "image" && att.base64) {
+        const mimeType = att.mimeType || att.mime_type || "image/png";
+        return { src: `data:${mimeType};base64,${att.base64}`, alt: "uploaded image" };
+      }
+      if (att.type === "image_url") {
+        if (att.base64_data) {
+          const mimeType = att.mime_type || att.mimeType || "image/png";
+          return { src: `data:${mimeType};base64,${att.base64_data}`, alt: "uploaded image" };
+        }
+        if (att.url) {
+          return { src: att.url, alt: "uploaded image" };
+        }
+      }
+      return null;
+    })
+    .filter(Boolean);
+};
+
+FKTeamsChat.prototype.renderMessageAttachments = function (attachments) {
+  const items = this.messageAttachmentItems(attachments);
+  if (items.length === 0) return "";
+  const className = "message-attachments" + (items.length === 1 ? " single-attachment" : "");
+  const previews = items
+    .map((item) => `<img class="attachment-preview-img" src="${this.escapeHtml(item.src)}" alt="${this.escapeHtml(item.alt)}" />`)
+    .join("");
+  return `<div class="${className}">${previews}</div>`;
+};
+
 FKTeamsChat.prototype.addUserMessage = function (content, attachments, options) {
   const messageEl = document.createElement("div");
   messageEl.className = "message user";
@@ -3115,20 +3149,10 @@ FKTeamsChat.prototype.addUserMessage = function (content, attachments, options) 
     messageEl.dataset.queuedExecuting = "1";
   }
 
-  let attachmentsHtml = "";
-  if (attachments && attachments.length > 0) {
-    const previews = attachments
-      .map((att) => {
-        if (att.type === "image") {
-          return `<img class="attachment-preview-img" src="data:${att.mimeType};base64,${att.base64}" alt="uploaded image" />`;
-        }
-        return "";
-      })
-      .join("");
-    if (previews) {
-      attachmentsHtml = `<div class="message-attachments">${previews}</div>`;
-    }
-  }
+  const attachmentsHtml = this.renderMessageAttachments(attachments);
+  const bodyHtml = content
+    ? `<div class="message-body">${this.escapeHtml(content)}</div>`
+    : "";
 
   messageEl.innerHTML = `
         <div class="message-content">
@@ -3137,7 +3161,7 @@ FKTeamsChat.prototype.addUserMessage = function (content, attachments, options) 
                 <span class="message-time">${this.getCurrentTime()}</span>
             </div>
             ${attachmentsHtml}
-            <div class="message-body">${this.escapeHtml(content)}</div>
+            ${bodyHtml}
         </div>
     `;
   const thinking = document.getElementById("thinking-indicator");
