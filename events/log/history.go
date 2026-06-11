@@ -86,6 +86,7 @@ type MessageEvent struct {
 	Type         MsgEventType            `json:"type"`
 	Content      string                  `json:"content,omitempty"`
 	ContentParts []agentcore.ContentPart `json:"content_parts,omitempty"`
+	Error        *events.FriendlyError   `json:"error,omitempty"`
 	ToolCall     *ToolCallRecord         `json:"tool_call,omitempty"`
 	Action       *ActionRecord           `json:"action,omitempty"`
 	Usage        *UsageRecord            `json:"usage,omitempty"`

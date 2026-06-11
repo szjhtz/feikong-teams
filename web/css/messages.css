@@ -1525,7 +1525,7 @@ a.source-item:hover {
 /* Error */
 .error-message {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 12px 14px;
   background: var(--error-light);
@@ -1578,6 +1578,55 @@ a.source-item:hover {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.error-message-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.error-message-title {
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.error-message-text {
+  margin-top: 2px;
+  line-height: 1.6;
+  color: var(--error);
+}
+
+.error-suggestions {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.error-details {
+  margin-top: 8px;
+  color: var(--text-secondary);
+}
+
+.error-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.error-details pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid rgba(203, 75, 75, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 /* Reasoning / Thinking Block */

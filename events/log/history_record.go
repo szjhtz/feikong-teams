@@ -374,9 +374,12 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	case EventError:
 		ctx := h.ensureMessageContext(event)
+		friendly := events.NormalizeFriendlyError(event.Error)
+		friendly.TechnicalDetail = truncateErrorContent(friendly.TechnicalDetail)
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Type:    MsgTypeError,
-			Content: truncateErrorContent(event.Error),
+			Content: friendly.Message,
+			Error:   &friendly,
 		})
 
 	}

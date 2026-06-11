@@ -517,6 +517,7 @@ func convertEventToMap(event events.Event) map[string]any {
 	}
 	if event.Error != "" {
 		result["error"] = event.Error
+		attachFriendlyError(result, event.Error)
 	}
 	if event.PromptTokens > 0 {
 		result["prompt_tokens"] = event.PromptTokens
@@ -528,6 +529,32 @@ func convertEventToMap(event events.Event) map[string]any {
 		result["total_tokens"] = event.TotalTokens
 	}
 	return result
+}
+
+func attachFriendlyError(result map[string]any, raw string) map[string]any {
+	if raw == "" {
+		return result
+	}
+	friendly := events.NormalizeFriendlyError(raw)
+	result["error_code"] = friendly.Code
+	result["error_title"] = friendly.Title
+	result["display_error"] = friendly.Message
+	result["technical_error"] = friendly.TechnicalDetail
+	if len(friendly.Suggestions) > 0 {
+		result["error_suggestions"] = friendly.Suggestions
+	}
+	return result
+}
+
+func errorEventPayload(sessionID, raw string) map[string]any {
+	payload := map[string]any{
+		"type":  events.NotifyError,
+		"error": raw,
+	}
+	if sessionID != "" {
+		payload["session_id"] = sessionID
+	}
+	return attachFriendlyError(payload, raw)
 }
 
 // ContentPart 多模态内容部分

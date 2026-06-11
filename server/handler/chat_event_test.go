@@ -111,6 +111,23 @@ func TestConvertEventToMapKeepsRunAndTurnID(t *testing.T) {
 	requireMapValue(t, got, "turn_id", "run-1:turn:1")
 }
 
+func TestConvertEventToMapAddsFriendlyErrorFields(t *testing.T) {
+	got := convertEventToMap(events.Event{
+		Type:  events.EventError,
+		Error: "deepseek does not support image_url type",
+	})
+
+	requireMapValue(t, got, "error", "deepseek does not support image_url type")
+	requireMapValue(t, got, "error_code", "model_unsupported_image_input")
+	requireMapValue(t, got, "error_title", "当前模型不支持图片输入")
+	if got["display_error"] == "" || got["technical_error"] == "" {
+		t.Fatalf("friendly error fields missing: %#v", got)
+	}
+	if _, ok := got["error_suggestions"].([]string); !ok {
+		t.Fatalf("error_suggestions = %#v, want []string", got["error_suggestions"])
+	}
+}
+
 func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) {
 	toolIndex := 0
 	got := convertEventToMap(events.Event{

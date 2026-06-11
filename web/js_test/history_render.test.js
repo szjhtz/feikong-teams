@@ -178,7 +178,17 @@ test("history agent message renders stored error event", () => {
   try {
     chat.renderHistoryAgentMessage({
       agent_name: "coordinator",
-      events: [{ type: "error", content: "deepseek does not support image_url type" }],
+      events: [{
+        type: "error",
+        content: "这次消息里包含图片，但当前模型不支持图片输入。",
+        error: {
+          code: "model_unsupported_image_input",
+          title: "当前模型不支持图片输入",
+          message: "这次消息里包含图片，但当前模型不支持图片输入。",
+          suggestions: ["切换到支持视觉输入的模型后重试。"],
+          technical_detail: "deepseek does not support image_url type",
+        },
+      }],
     });
   } finally {
     global.document = oldDocument;
@@ -187,6 +197,9 @@ test("history agent message renders stored error event", () => {
   assert.equal(items.length, 1);
   assert.equal(items[0].className, "error-message");
   assert.match(items[0].innerHTML, /\[coordinator\]/);
+  assert.match(items[0].innerHTML, /当前模型不支持图片输入/);
+  assert.match(items[0].innerHTML, /切换到支持视觉输入的模型后重试/);
+  assert.match(items[0].innerHTML, /技术详情/);
   assert.match(items[0].innerHTML, /does not support image_url/);
 });
 

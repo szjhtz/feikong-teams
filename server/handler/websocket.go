@@ -104,13 +104,13 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 
 			var wsMsg WSMessage
 			if err := json.Unmarshal(msgBytes, &wsMsg); err != nil {
-				_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "invalid message format"})
+				_ = writeJSON(errorEventPayload("", "invalid message format"))
 				continue
 			}
 
 			// chat/steer 消息二次校验 token，防止 WS 长时间连接后 token 过期仍可操作
 			if (wsMsg.Type == "chat" || wsMsg.Type == "follow_up" || wsMsg.Type == "steer" || wsMsg.Type == "steering") && authEnabled && !ValidateToken(wsToken) {
-				_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "登录已过期，请重新登录"})
+				_ = writeJSON(errorEventPayload("", "登录已过期，请重新登录"))
 				conn.Close()
 				break
 			}
@@ -118,7 +118,7 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			switch wsMsg.Type {
 			case "chat", "follow_up":
 				if wsMsg.SessionID == "" {
-					_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
+					_ = writeJSON(errorEventPayload("", "session_id is required"))
 					continue
 				}
 				go handleChatMessage(sm, wsMsg, writeJSON, state)
@@ -129,7 +129,7 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			case "resume":
 				sid := wsMsg.SessionID
 				if sid == "" {
-					_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
+					_ = writeJSON(errorEventPayload("", "session_id is required"))
 					continue
 				}
 				stream := GlobalStreams.Get(sid)
@@ -184,7 +184,7 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 				_ = writeJSON(map[string]any{"type": events.NotifyPong})
 
 			default:
-				_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "unknown message type"})
+				_ = writeJSON(errorEventPayload("", "unknown message type"))
 			}
 		}
 	}
@@ -286,11 +286,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		mode = "team"
 	}
 	if wsMsg.Message == "" && len(wsMsg.Contents) == 0 {
-		_ = writeJSON(map[string]any{
-			"type":       events.NotifyError,
-			"session_id": sessionID,
-			"error":      "message or contents is required",
-		})
+		_ = writeJSON(errorEventPayload(sessionID, "message or contents is required"))
 		return
 	}
 
@@ -329,7 +325,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
-		stream.Publish(map[string]any{"type": events.NotifyError, "session_id": sessionID, "error": err.Error()})
+		stream.Publish(errorEventPayload(sessionID, err.Error()))
 		return
 	}
 
@@ -383,7 +379,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			}
 			log.Printf("failed to run task: session=%s, err=%v", sessionID, runErr)
 			stream.SetStatus("error")
-			stream.Publish(map[string]any{"type": events.NotifyError, "session_id": sessionID, "error": runErr.Error()})
+			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
 			finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
 			return
 		}
@@ -417,24 +413,16 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 func handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) error) {
 	sessionID := wsMsg.SessionID
 	if sessionID == "" {
-		_ = writeJSON(map[string]any{"type": events.NotifyError, "error": "session_id is required"})
+		_ = writeJSON(errorEventPayload("", "session_id is required"))
 		return
 	}
 	if wsMsg.Message == "" && len(wsMsg.Contents) == 0 {
-		_ = writeJSON(map[string]any{
-			"type":       events.NotifyError,
-			"session_id": sessionID,
-			"error":      "message or contents is required",
-		})
+		_ = writeJSON(errorEventPayload(sessionID, "message or contents is required"))
 		return
 	}
 	stream := GlobalStreams.Get(sessionID)
 	if stream == nil || stream.Status() != "processing" {
-		_ = writeJSON(map[string]any{
-			"type":       events.NotifyError,
-			"session_id": sessionID,
-			"error":      "no running task to steer",
-		})
+		_ = writeJSON(errorEventPayload(sessionID, "no running task to steer"))
 		return
 	}
 	enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents)

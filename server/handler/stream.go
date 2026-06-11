@@ -376,11 +376,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			}
 			log.Printf("stream task error: session=%s, err=%v", sessionID, runErr)
 			stream.SetStatus("error")
-			stream.Publish(map[string]any{
-				"type":       events.NotifyError,
-				"session_id": sessionID,
-				"error":      runErr.Error(),
-			})
+			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
 			finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
 			return
 		}

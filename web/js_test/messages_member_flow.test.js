@@ -281,6 +281,25 @@ test("message attachments render saved image parts", () => {
   assert.match(html, /data:image\/png;base64,abc123/);
 });
 
+test("error renderer shows friendly message and technical details", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  chat.escapeHtml = (value) => String(value || "");
+
+  const html = chat.renderErrorContent({
+    title: "当前模型不支持图片输入",
+    message: "这次消息里包含图片，但当前模型不支持图片输入。",
+    technicalError: "deepseek does not support image_url type",
+    suggestions: ["切换到支持视觉输入的模型后重试。"],
+    agentName: "coordinator",
+  });
+
+  assert.match(html, /当前模型不支持图片输入/);
+  assert.match(html, /切换到支持视觉输入的模型后重试/);
+  assert.match(html, /技术详情/);
+  assert.match(html, /deepseek does not support image_url type/);
+  assert.match(html, /\[coordinator\]/);
+});
+
 test("processing start does not render queued follow-up user card", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   const calls = [];

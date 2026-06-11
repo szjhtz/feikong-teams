@@ -3031,6 +3031,11 @@ FKTeamsChat.prototype.handleError = function (event) {
 
   const errorEl = document.createElement("div");
   const isMaxIterations = errorMsg.includes("exceeds max iterations");
+  const displayError = event.display_error || errorMsg;
+  const errorTitle = event.error_title || "";
+  const suggestions = Array.isArray(event.error_suggestions) ? event.error_suggestions : [];
+  const technicalError = event.technical_error || errorMsg;
+  const agentPrefix = event.agent_name ? `[${this.escapeHtml(event.agent_name)}] ` : "";
 
   if (isMaxIterations) {
     errorEl.className = "error-message error-continuable";
@@ -3041,7 +3046,7 @@ FKTeamsChat.prototype.handleError = function (event) {
                 <line x1="12" y1="8" x2="12" y2="12"/>
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
             </svg>
-            <span>${event.agent_name ? `[${this.escapeHtml(event.agent_name)}] ` : ""}执行步数已达上限，任务自动停止。</span>
+            <span>${agentPrefix}${this.escapeHtml(displayError || "执行步数已达上限，任务自动停止。")}</span>
         </div>
         <button class="continue-btn" onclick="app.continueAfterMaxIterations()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3052,14 +3057,13 @@ FKTeamsChat.prototype.handleError = function (event) {
     `;
   } else {
     errorEl.className = "error-message";
-    errorEl.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="15" y1="9" x2="9" y2="15"/>
-            <line x1="9" y1="9" x2="15" y2="15"/>
-        </svg>
-        <span>${event.agent_name ? `[${this.escapeHtml(event.agent_name)}] ` : ""}${this.escapeHtml(event.error)}</span>
-    `;
+    errorEl.innerHTML = this.renderErrorContent({
+      title: errorTitle,
+      message: displayError,
+      technicalError,
+      suggestions,
+      agentName: event.agent_name || "",
+    });
   }
 
   this.messagesContainer.appendChild(errorEl);
@@ -3069,6 +3073,34 @@ FKTeamsChat.prototype.handleError = function (event) {
   this.handleQueueUpdated({ queue: [] });
   this.updateStatus("connected", "已连接");
   this.updateSendButtonState();
+};
+
+FKTeamsChat.prototype.renderErrorContent = function (error) {
+  const title = error?.title || "任务执行失败";
+  const message = error?.message || error?.technicalError || "任务执行时遇到了问题。";
+  const technicalError = error?.technicalError || "";
+  const suggestions = Array.isArray(error?.suggestions) ? error.suggestions : [];
+  const agentName = error?.agentName || "";
+  const showDetails = technicalError && technicalError !== message;
+  const suggestionsHtml = suggestions.length > 0
+    ? `<ul class="error-suggestions">${suggestions.map((item) => `<li>${this.escapeHtml(item)}</li>`).join("")}</ul>`
+    : "";
+  const detailsHtml = showDetails
+    ? `<details class="error-details"><summary>技术详情</summary><pre>${this.escapeHtml(technicalError)}</pre></details>`
+    : "";
+  return `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <div class="error-message-content">
+            <div class="error-message-title">${agentName ? `[${this.escapeHtml(agentName)}] ` : ""}${this.escapeHtml(title)}</div>
+            <div class="error-message-text">${this.escapeHtml(message)}</div>
+            ${suggestionsHtml}
+            ${detailsHtml}
+        </div>
+    `;
 };
 
 // 继续执行（达到最大步数后）

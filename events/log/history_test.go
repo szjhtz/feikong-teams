@@ -96,6 +96,32 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 	}
 }
 
+func TestHistoryRecorderStoresFriendlyError(t *testing.T) {
+	recorder := NewHistoryRecorder()
+
+	recorder.RecordEvent(Event{
+		Type:      EventError,
+		AgentName: "coordinator",
+		Error:     "deepseek does not support image_url type",
+	})
+	recorder.FinalizeCurrent()
+
+	messages := recorder.GetMessages()
+	if len(messages) != 1 || len(messages[0].Events) != 1 {
+		t.Fatalf("messages = %#v, want one error event", messages)
+	}
+	event := messages[0].Events[0]
+	if event.Type != MsgTypeError || event.Error == nil {
+		t.Fatalf("event = %#v, want friendly error record", event)
+	}
+	if event.Error.Code != "model_unsupported_image_input" {
+		t.Fatalf("error code = %q, want model_unsupported_image_input", event.Error.Code)
+	}
+	if event.Content == "" || event.Content == event.Error.TechnicalDetail {
+		t.Fatalf("content = %q, technical = %q, want friendly content", event.Content, event.Error.TechnicalDetail)
+	}
+}
+
 func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 	recorder := NewHistoryRecorder()
 	toolIndex := 0

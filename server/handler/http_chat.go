@@ -107,7 +107,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 				}
 				log.Printf("error processing event: %v", err)
 				finishErrorChat(recorder, sessionID, userDisplayText, err)
-				data, _ := json.Marshal(map[string]string{"type": string(events.NotifyError), "error": err.Error()})
+				data, _ := json.Marshal(errorEventPayload("", err.Error()))
 				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 				c.Writer.Flush()
 				return

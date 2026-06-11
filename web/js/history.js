@@ -1454,7 +1454,7 @@ FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
         break;
 
       case "error":
-        this.renderHistoryErrorMessage(evt.content, msg.agent_name);
+        this.renderHistoryErrorMessage(evt, msg.agent_name);
         currentMessageEl = null;
         currentContent = "";
         break;
@@ -1529,14 +1529,25 @@ FKTeamsChat.prototype.renderHistoryUserMessage = function (msg) {
   this.updateQuickNav();
 };
 
-FKTeamsChat.prototype.renderHistoryErrorMessage = function (content, agentName) {
-  if (!content) return;
+FKTeamsChat.prototype.renderHistoryErrorMessage = function (evt, agentName) {
+  const errorRecord = typeof evt === "object" && evt ? evt.error || {} : {};
+  const content = typeof evt === "string" ? evt : evt?.content || errorRecord.message || "";
+  if (!content && !errorRecord.technical_detail) return;
   const escape = typeof this.escapeHtml === "function"
     ? this.escapeHtml.bind(this)
     : (value) => String(value || "");
   const errorEl = document.createElement("div");
   errorEl.className = "error-message";
-  errorEl.innerHTML = `
+  if (typeof this.renderErrorContent === "function") {
+    errorEl.innerHTML = this.renderErrorContent({
+      title: errorRecord.title || "任务执行失败",
+      message: errorRecord.message || content,
+      technicalError: errorRecord.technical_detail || content,
+      suggestions: errorRecord.suggestions || [],
+      agentName,
+    });
+  } else {
+    errorEl.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
             <line x1="15" y1="9" x2="9" y2="15"/>
@@ -1544,6 +1555,7 @@ FKTeamsChat.prototype.renderHistoryErrorMessage = function (content, agentName) 
         </svg>
         <span>${agentName ? `[${escape(agentName)}] ` : ""}${escape(content)}</span>
     `;
+  }
   this.messagesContainer.appendChild(errorEl);
 };
 
