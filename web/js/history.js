@@ -1309,7 +1309,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
     this.sessionId = event.session_id;
     this.sessionIdInput.value = event.session_id;
     this._hasLoadedSession = true;
-    this.loadSidebarHistory();
+    this.updateSidebarSessionActive();
   }
 
   // 渲染历史消息

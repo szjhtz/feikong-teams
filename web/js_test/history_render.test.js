@@ -315,6 +315,31 @@ test("show home page clears selected session state", () => withFakeLocalStorage(
   assert.equal(activeUpdated, true);
 }));
 
+test("loaded session updates sidebar active state without reloading list", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let reloaded = false;
+  let activeUpdated = false;
+  chat.sessionIdInput = { value: "" };
+  chat.messagesContainer = { innerHTML: "" };
+  chat.hideChatLoading = () => {};
+  chat.clearChatUI = () => {};
+  chat.clearQuickNav = () => {};
+  chat.resetParallelState = () => {};
+  chat.scrollToBottom = () => {};
+  chat.agents = [];
+  chat.setCurrentAgent = () => {};
+  chat.loadSidebarHistory = () => { reloaded = true; };
+  chat.updateSidebarSessionActive = () => { activeUpdated = true; };
+
+  chat.handleHistoryLoaded({ session_id: "session-1", messages: [] });
+
+  assert.equal(chat.sessionId, "session-1");
+  assert.equal(chat.sessionIdInput.value, "session-1");
+  assert.equal(chat._hasLoadedSession, true);
+  assert.equal(activeUpdated, true);
+  assert.equal(reloaded, false);
+});
+
 test("missing loaded session falls back to home page", async () => withFakeLocalStorage(async (store) => {
   const chat = Object.create(FKTeamsChat.prototype);
   let saveCount = 0;
