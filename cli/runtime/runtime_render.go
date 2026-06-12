@@ -188,9 +188,27 @@ func (m runtimeModel) memberBlocksText(member *runtimeMemberState) string {
 	if !member.RenderDirty && member.RenderCache != "" {
 		return member.RenderCache
 	}
-	member.RenderCache = m.blocksText(member.Blocks)
+	var transcript strings.Builder
+	for i, block := range member.Blocks {
+		if i > 0 && shouldSpaceBeforeBlock(member.Blocks[i-1].Kind, block.Kind) {
+			transcript.WriteString("\n")
+		}
+		fmt.Fprintf(&transcript, "%s\n", m.renderMemberBlock(member, block))
+	}
+	member.RenderCache = tui.WrapLines(transcript.String(), m.contentWidth())
 	member.RenderDirty = false
 	return member.RenderCache
+}
+
+func (m runtimeModel) renderMemberBlock(member *runtimeMemberState, block runtimeBlock) string {
+	if block.Kind == runtimeBlockTool {
+		rendered := runtimeRenderToolBlock(block)
+		if askState := member.askForToolKey(block.ToolKey); askState != nil {
+			rendered += "\n" + m.renderAskPanel(*askState)
+		}
+		return rendered
+	}
+	return m.renderBlock(block)
 }
 
 func (m runtimeModel) blocksText(blocks []runtimeBlock) string {
@@ -275,6 +293,9 @@ func (m runtimeModel) renderInputBox() string {
 }
 
 func (m runtimeModel) renderMemberDetailInputValue() string {
+	if m.currentMemberPendingAsk() != nil {
+		return m.renderInputValue()
+	}
 	return tui.Dim("当前为成员详情，返回主界面后继续输入")
 }
 
@@ -288,6 +309,16 @@ func (m runtimeModel) renderInputValue() string {
 }
 
 func (m runtimeModel) memberDetailHint() string {
+	if askState := m.currentMemberPendingAsk(); askState != nil {
+		hints := []string{"回答当前成员 ask", "Enter 提交", "Esc 返回"}
+		if len(askState.Options) > 0 {
+			hints = append(hints, "可输入序号")
+		}
+		if askState.MultiSelect {
+			hints = append(hints, "多选逗号分隔")
+		}
+		return strings.Join(hints, " · ")
+	}
 	return strings.Join([]string{
 		"成员详情",
 		"Esc/Backspace 返回",
@@ -400,7 +431,7 @@ func (m runtimeModel) renderMemberSummary(block runtimeBlock) string {
 		status,
 		block.MemberTools,
 	)
-	if block.MemberStatus == "running" || block.MemberStatus == "error" {
+	if block.MemberStatus == "running" || block.MemberStatus == "waiting" || block.MemberStatus == "error" {
 		if member := m.members[block.MemberKey]; member != nil {
 			for _, toolLine := range tui.RenderToolChainLines(runtimeMemberToolChainItems(member), max(20, m.contentWidth()-4)) {
 				line += "\n" + tui.Dim(toolLine)
@@ -423,6 +454,8 @@ func runtimeMemberStatusText(status string) string {
 		return "已完成"
 	case "error":
 		return "失败"
+	case "waiting":
+		return "等待用户回答"
 	case "running":
 		return "运行中"
 	default:
@@ -469,4 +502,34 @@ func runtimeRenderToolBlock(block runtimeBlock) string {
 		return tui.ToolResult(block.ToolName, block.ToolArgs, block.ToolResult, block.ToolStatus)
 	}
 	return tui.ToolCall(block.ToolName, block.ToolArgs, block.ToolStatus)
+}
+
+func (m runtimeModel) renderAskPanel(askState runtimeAskState) string {
+	var sb strings.Builder
+	if askState.Question != "" {
+		fmt.Fprintf(&sb, "  %s %s\n", tui.Dim("问题:"), askState.Question)
+	}
+	if len(askState.Options) > 0 {
+		sb.WriteString(tui.Dim("  选项:") + "\n")
+		for i, option := range askState.Options {
+			fmt.Fprintf(&sb, "    %d. %s\n", i+1, option)
+		}
+	}
+	answer := runtimeAskResponseSummary(askState.Selected, askState.FreeText)
+	if askState.Answered {
+		if answer == "" {
+			answer = "已提交"
+		}
+		fmt.Fprintf(&sb, "  %s %s", tui.Dim("已回答:"), answer)
+		return strings.TrimRight(sb.String(), "\n")
+	}
+	hint := "在底部输入框回答后按 Enter 提交"
+	if len(askState.Options) > 0 {
+		hint = "输入选项序号或文本后按 Enter 提交"
+		if askState.MultiSelect {
+			hint = "多选用逗号分隔序号，或输入文本后按 Enter 提交"
+		}
+	}
+	fmt.Fprintf(&sb, "  %s %s", tui.Status("等待回答:"), tui.Dim(hint))
+	return strings.TrimRight(sb.String(), "\n")
 }

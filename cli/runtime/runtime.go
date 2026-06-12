@@ -7,6 +7,7 @@ import (
 	"fkteams/agents"
 
 	"fkteams/runner"
+	"fkteams/tools/ask"
 
 	"fmt"
 	"os"
@@ -33,6 +34,7 @@ type Runtime struct {
 	session     *Session
 	runner      agentcore.Runner
 	executor    *QueryExecutor
+	askBroker   *runtimeAskBroker
 	exitSignals chan os.Signal
 	program     *tea.Program
 }
@@ -53,8 +55,11 @@ func (r *Runtime) Run() error {
 	defer resetTerminalModes()
 
 	view := &runtimeQueryView{}
+	askBroker := newRuntimeAskBroker(view.send)
+	r.askBroker = askBroker
 	r.executor.SetApproveStores(r.session.ApproveStores)
 	r.executor.SetView(view)
+	r.executor.SetAskRuntimeHandler(askBroker.Handle)
 
 	model := newRuntimeModel(r)
 	p := tea.NewProgram(model)
@@ -99,6 +104,13 @@ func (r *Runtime) drainSteeringText() string {
 		return ""
 	}
 	return r.executor.DrainSteeringText()
+}
+
+func (r *Runtime) submitAsk(askID string, resp *ask.AskResponse) bool {
+	if r == nil || r.askBroker == nil {
+		return false
+	}
+	return r.askBroker.Submit(askID, resp)
 }
 
 func (r *Runtime) requestExit() {

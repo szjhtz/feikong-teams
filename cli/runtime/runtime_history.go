@@ -474,6 +474,107 @@ func (s *runtimeMemberState) markDirty() {
 	s.RenderDirty = true
 }
 
+func (s *runtimeMemberState) hasPendingAsk() bool {
+	if s == nil {
+		return false
+	}
+	for _, askState := range s.PendingAsks {
+		if !askState.Answered {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *runtimeMemberState) firstPendingAsk() *runtimeAskState {
+	if s == nil {
+		return nil
+	}
+	for i := range s.PendingAsks {
+		if !s.PendingAsks[i].Answered {
+			return &s.PendingAsks[i]
+		}
+	}
+	return nil
+}
+
+func (s *runtimeMemberState) askByID(askID string) *runtimeAskState {
+	if s == nil || askID == "" {
+		return nil
+	}
+	for i := range s.PendingAsks {
+		if s.PendingAsks[i].ID == askID {
+			return &s.PendingAsks[i]
+		}
+	}
+	return nil
+}
+
+func (s *runtimeMemberState) askForToolKey(toolKey string) *runtimeAskState {
+	if s == nil || toolKey == "" {
+		return nil
+	}
+	for i := range s.PendingAsks {
+		if runtimeAskToolKey(s.PendingAsks[i]) == toolKey {
+			return &s.PendingAsks[i]
+		}
+	}
+	return nil
+}
+
+func (s *runtimeMemberState) upsertAsk(askState runtimeAskState) {
+	if s == nil || askState.ID == "" {
+		return
+	}
+	s.markDirty()
+	for i := range s.PendingAsks {
+		if s.PendingAsks[i].ID == askState.ID {
+			s.PendingAsks[i] = askState
+			return
+		}
+	}
+	s.PendingAsks = append(s.PendingAsks, askState)
+}
+
+func (s *runtimeMemberState) markAskAnswered(askID string, selected []string, freeText string) bool {
+	if s == nil || askID == "" {
+		return false
+	}
+	for i := range s.PendingAsks {
+		if s.PendingAsks[i].ID != askID {
+			continue
+		}
+		s.PendingAsks[i].Answered = true
+		s.PendingAsks[i].Selected = append([]string(nil), selected...)
+		s.PendingAsks[i].FreeText = freeText
+		s.markDirty()
+		return true
+	}
+	return false
+}
+
+func (s *runtimeMemberState) removeAsk(askID string) bool {
+	if s == nil || askID == "" {
+		return false
+	}
+	for i := range s.PendingAsks {
+		if s.PendingAsks[i].ID != askID {
+			continue
+		}
+		s.PendingAsks = append(s.PendingAsks[:i], s.PendingAsks[i+1:]...)
+		s.markDirty()
+		return true
+	}
+	return false
+}
+
+func (s *runtimeMemberState) setStatusRunning() {
+	if s == nil || s.hasPendingAsk() {
+		return
+	}
+	s.Status = "running"
+}
+
 func (m *runtimeModel) markMembersDirty() {
 	for _, member := range m.members {
 		member.markDirty()

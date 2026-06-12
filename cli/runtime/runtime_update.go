@@ -53,6 +53,15 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runtimeAgentEventMsg:
 		m.applyEvent(msg.event)
 		return m, nil
+	case runtimeAskPendingMsg:
+		m.applyAskPending(msg.ask)
+		return m, nil
+	case runtimeAskAnsweredMsg:
+		m.applyAskAnswered(msg.askID, msg.selected, msg.freeText)
+		return m, nil
+	case runtimeAskCancelledMsg:
+		m.applyAskCancelled(msg.askID)
+		return m, nil
 	case runtimeCancellingMsg:
 		m.cancelling = true
 		m.status = "正在取消当前任务..."
@@ -136,7 +145,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.PasteMsg:
-		if m.memberView != "" {
+		if m.memberView != "" && m.currentMemberPendingAsk() == nil {
 			return m, nil
 		}
 		content := msg.Content
@@ -147,9 +156,14 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if m.memberView != "" {
 			switch msg.String() {
-			case "esc", "backspace", "left":
+			case "esc", "left":
 				m.memberView = ""
 				return m, nil
+			case "backspace":
+				if m.currentMemberPendingAsk() == nil || m.input.Value() == "" {
+					m.memberView = ""
+					return m, nil
+				}
 			case "up":
 				m.scrollCurrentView(runtimeWheelLines)
 				return m, nil
@@ -168,8 +182,13 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "end":
 				m.setCurrentScrollOffset(0)
 				return m, nil
+			case "enter":
+				if m.currentMemberPendingAsk() != nil {
+					return m.submitCurrentMemberAsk()
+				}
+				return m, nil
 			}
-			if msg.String() != "ctrl+c" {
+			if msg.String() != "ctrl+c" && m.currentMemberPendingAsk() == nil {
 				return m, nil
 			}
 		}

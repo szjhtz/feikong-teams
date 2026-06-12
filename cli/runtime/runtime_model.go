@@ -81,6 +81,7 @@ type runtimeMemberState struct {
 	ActiveOutput int
 	ActiveReason int
 	ToolCount    int
+	PendingAsks  []runtimeAskState
 	ScrollOffset int
 	RenderCache  string
 	RenderDirty  bool

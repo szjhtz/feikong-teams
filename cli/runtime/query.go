@@ -91,6 +91,7 @@ type QueryExecutor struct {
 	autoReject    bool
 	approveStores []string // 自动批准的 store 列表
 	view          QueryView
+	askRuntime    ask.RuntimeHandler
 	steeringMu    sync.Mutex
 	steering      []agentcore.Message
 	memory        appstate.MemoryManager
@@ -142,6 +143,11 @@ func (e *QueryExecutor) SetView(view QueryView) {
 	if view != nil {
 		e.view = view
 	}
+}
+
+// SetAskRuntimeHandler 设置运行时 ask_questions 处理器。
+func (e *QueryExecutor) SetAskRuntimeHandler(handler ask.RuntimeHandler) {
+	e.askRuntime = handler
 }
 
 func (e *QueryExecutor) QueueSteering(input string) bool {
@@ -337,6 +343,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			WithContext(approval.RegistryContext(approvalReg)).
 			WithContext(func(ctx context.Context) context.Context {
 				return agentcore.WithSteeringSource(ctx, steeringSource)
+			}).
+			WithContext(func(ctx context.Context) context.Context {
+				return ask.WithRuntimeHandler(ctx, e.askRuntime)
 			}).
 			Run(queryCtx)
 

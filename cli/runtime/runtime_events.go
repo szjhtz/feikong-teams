@@ -125,7 +125,7 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 	if member == nil {
 		return
 	}
-	member.Status = "running"
+	member.setStatusRunning()
 	agent := event.AgentName
 	if agent == "" {
 		agent = member.Name

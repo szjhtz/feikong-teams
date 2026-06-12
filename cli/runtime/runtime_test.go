@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/tools/ask"
 	"fkteams/tui"
 	"os"
 	"strings"
@@ -98,6 +99,143 @@ func TestRuntimeEnterWhileRunningQueuesSteering(t *testing.T) {
 	messages := executor.takeSteeringMessages(1)
 	if len(messages) != 1 || messages[0].Content != "change direction" {
 		t.Fatalf("expected queued steering message, got %#v", messages)
+	}
+}
+
+func TestRuntimeMemberAskSubmitDoesNotQueueSteering(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	executor := NewQueryExecutor(nil, state)
+	broker := newRuntimeAskBroker(func(tea.Msg) {})
+	responseCh := make(chan *ask.AskResponse, 1)
+	broker.pending["ask-1"] = responseCh
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		executor:    executor,
+		askBroker:   broker,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.members["member-1"] = &runtimeMemberState{
+		Key:    "member-1",
+		Name:   "tester",
+		Status: "waiting",
+		PendingAsks: []runtimeAskState{{
+			ID:        "ask-1",
+			MemberKey: "member-1",
+			Question:  "Choose one",
+			Options:   []string{"A", "B"},
+		}},
+	}
+	model.memberView = "member-1"
+	model.input.SetValue("2")
+	model.input.CursorEnd()
+
+	updated, cmd := model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("member ask submit should not start a command")
+	}
+	if got := model.input.Value(); got != "" {
+		t.Fatalf("member ask submit should clear input, got %q", got)
+	}
+	if messages := executor.takeSteeringMessages(1); len(messages) != 0 {
+		t.Fatalf("member ask submit should not queue steering, got %#v", messages)
+	}
+	select {
+	case resp := <-responseCh:
+		if resp.AskID != "ask-1" || len(resp.Selected) != 1 || resp.Selected[0] != "B" {
+			t.Fatalf("unexpected ask response: %#v", resp)
+		}
+	default:
+		t.Fatal("expected ask response to be submitted")
+	}
+}
+
+func TestRuntimeAskBrokerRoutesResponsesByAskID(t *testing.T) {
+	broker := newRuntimeAskBroker(func(tea.Msg) {})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	firstDone := make(chan *ask.AskResponse, 1)
+	secondDone := make(chan *ask.AskResponse, 1)
+	go func() {
+		resp, _ := broker.Handle(ctx, ask.RuntimeRequest{
+			ID:       "ask-1",
+			Info:     &ask.AskInfo{Question: "First?"},
+			Metadata: agentcore.InterruptMetadata{MemberCallID: "member-1"},
+		})
+		firstDone <- resp
+	}()
+	go func() {
+		resp, _ := broker.Handle(ctx, ask.RuntimeRequest{
+			ID:       "ask-2",
+			Info:     &ask.AskInfo{Question: "Second?"},
+			Metadata: agentcore.InterruptMetadata{MemberCallID: "member-2"},
+		})
+		secondDone <- resp
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		broker.mu.Lock()
+		pending := len(broker.pending)
+		broker.mu.Unlock()
+		if pending == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected both asks to become pending")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !broker.Submit("ask-2", &ask.AskResponse{AskID: "ask-2", Selected: []string{"B"}}) {
+		t.Fatal("expected ask-2 submit to succeed")
+	}
+
+	select {
+	case resp := <-secondDone:
+		if resp.AskID != "ask-2" || len(resp.Selected) != 1 || resp.Selected[0] != "B" {
+			t.Fatalf("unexpected second response: %#v", resp)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ask-2 should resume")
+	}
+	select {
+	case resp := <-firstDone:
+		t.Fatalf("ask-1 should not receive ask-2 response: %#v", resp)
+	default:
+	}
+}
+
+func TestRuntimeMemberWaitingStatusSurvivesMemberEvents(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.applyAskPending(runtimeAskState{
+		ID:        "ask-1",
+		MemberKey: "member-1",
+		Question:  "Choose one",
+	})
+	model.applyEvent(events.Event{
+		Type:         events.EventMessageDelta,
+		DeltaKind:    events.DeltaReasoning,
+		Content:      "thinking",
+		MemberCallID: "member-1",
+		MemberName:   "tester",
+	})
+
+	member := model.members["member-1"]
+	if member == nil {
+		t.Fatal("expected member to exist")
+	}
+	if member.Status != "waiting" {
+		t.Fatalf("pending ask member should stay waiting, got %q", member.Status)
 	}
 }
 
