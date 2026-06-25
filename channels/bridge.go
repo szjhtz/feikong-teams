@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/appdata"
 	appchat "fkteams/internal/app/chat"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/log"
 	"fkteams/tools/approval"
 	"path/filepath"
@@ -58,7 +58,7 @@ type Bridge struct {
 	state   *appstate.State
 
 	runnerMu  sync.Mutex
-	runner    agentcore.Runner
+	runner    runtimeport.Runner
 	runnerErr error
 
 	queueMu sync.Mutex
@@ -92,7 +92,7 @@ func (b *Bridge) ResetRunner() {
 }
 
 // getRunner 惰性创建 runner（线程安全）
-func (b *Bridge) getRunner(ctx context.Context) (agentcore.Runner, error) {
+func (b *Bridge) getRunner(ctx context.Context) (runtimeport.Runner, error) {
 	b.runnerMu.Lock()
 	defer b.runnerMu.Unlock()
 
@@ -266,7 +266,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		}),
 		appchat.WithHistory(recorder),
 		appchat.WithContext(approval.RegistryContext(approval.NewAutoApproveRegistry())),
-		appchat.OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
 				recorder.RecordEvent(events.Event{
@@ -375,16 +375,6 @@ type pendingToolCall struct {
 	args string
 }
 
-func channelEventToolCalls(event events.Event) []agentcore.ToolCall {
-	if event.ToolCall == nil {
-		return event.ToolCalls
-	}
-	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
-	toolCalls = append(toolCalls, *event.ToolCall)
-	toolCalls = append(toolCalls, event.ToolCalls...)
-	return toolCalls
-}
-
 func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector {
 	return &replyCollector{
 		manager:      mgr,
@@ -424,7 +414,7 @@ func (rc *replyCollector) handleEvent(event events.Event) error {
 		// 工具调用：flush 之前的文本，按 ToolCall.ID 记录所有工具调用
 		rc.flush()
 		rc.mu.Lock()
-		for _, tc := range channelEventToolCalls(event) {
+		for _, tc := range events.ToolCallsFromEvent(event) {
 			rc.pendingCalls[tc.ID] = pendingToolCall{
 				name: tc.Function.Name,
 				args: truncateText(tc.Function.Arguments, 200),

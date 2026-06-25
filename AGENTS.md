@@ -93,6 +93,7 @@ server/                     # HTTP 服务（Gin）
 channels/                   # 消息通道桥接
   channel.go                #   Channel 接口 + Manager 管理器 + Factory 工厂注册
   bridge.go                 #   Bridge — 连接通道和引擎，goroutine 串行处理会话消息
+                            #   通道桥接使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面
 events/                     # 事件协议与展示/历史
   types.go                  #   domain/event 事件类型别名和常量导出
   event.go                  #   context 事件回调、NormalizeEvent、DispatchEvent

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
 	"fkteams/events"
+	domainmessage "fkteams/internal/domain/message"
 )
 
 func TestBuildUserInputCombinesContentAndAttachments(t *testing.T) {
@@ -117,9 +117,9 @@ func TestReplyCollectorSendsToolSummaryFromEnd(t *testing.T) {
 	manager.channels[channel.name] = channel
 	rc := newReplyCollector(manager, channel.name, "chat-1")
 
-	toolCall := &agentcore.ToolCall{
+	toolCall := &domainmessage.ToolCall{
 		ID: "call-1",
-		Function: agentcore.FunctionCall{
+		Function: domainmessage.FunctionCall{
 			Name:      "search",
 			Arguments: `{"q":"天气"}`,
 		},
@@ -155,10 +155,10 @@ func TestReplyCollectorFlushesToolUpdateChunksBeforeText(t *testing.T) {
 
 	if err := rc.handleEvent(events.Event{
 		Type: events.EventToolStart,
-		ToolCalls: []agentcore.ToolCall{
+		ToolCalls: []domainmessage.ToolCall{
 			{
 				ID: "call-1",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "read_file",
 					Arguments: `{"path":"README.md"}`,
 				},
