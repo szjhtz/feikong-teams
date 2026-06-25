@@ -2,10 +2,10 @@ package common
 
 import (
 	"context"
-	"fkteams/fkenv"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/env"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/runtime/resources"
 	"fkteams/internal/runtime/retry"
@@ -193,7 +193,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 			return nil, fmt.Errorf("runtime does not support summary middleware")
 		}
 		maxTokens := runtimeport.DefaultMaxTokensBeforeSummary
-		if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
+		if v := env.Get(env.MaxTokensBeforeSummary); v != "" {
 			if n, _ := strconv.Atoi(v); n > 0 {
 				maxTokens = n
 			}

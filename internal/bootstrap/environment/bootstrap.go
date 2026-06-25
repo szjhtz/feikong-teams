@@ -1,7 +1,7 @@
 package environment
 
 import (
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 
 	"github.com/pterm/pterm"
 )
@@ -91,18 +91,18 @@ func runSelected(selectedOptions []string, mirror bool) {
 	pterm.Success.Println("环境初始化完成")
 }
 
-// appendProxyEnv 如果设置了 FEIKONG_PROXY_URL，注入 HTTP_PROXY/HTTPS_PROXY 环境变量
-func appendProxyEnv(env []string) []string {
-	proxyURL := fkenv.Get(fkenv.ProxyURL)
+// appendProxyEnv 如果设置了 FEIKONG_PROXY_URL，注入 HTTP_PROXY/HTTPS_PROXY 环境变量。
+func appendProxyEnv(values []string) []string {
+	proxyURL := env.Get(env.ProxyURL)
 	if proxyURL == "" {
-		return env
+		return values
 	}
 	pterm.Info.Printfln("使用代理: %s", proxyURL)
-	env = append(env,
+	values = append(values,
 		"HTTP_PROXY="+proxyURL,
 		"HTTPS_PROXY="+proxyURL,
 		"http_proxy="+proxyURL,
 		"https_proxy="+proxyURL,
 	)
-	return env
+	return values
 }

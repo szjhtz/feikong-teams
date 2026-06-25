@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 )
 
 type fakeProvider struct {
@@ -33,7 +33,7 @@ func (p fakeProvider) Download(context.Context, string, string) (io.ReadCloser, 
 
 func TestListReadAndRemoveLocalSkills(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 
 	writeSkill(t, appDir, "demo", `---
 name: Demo Skill
@@ -96,7 +96,7 @@ description: No explicit name
 
 func TestSkillFilePathTraversalRejected(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 	writeSkill(t, appDir, "demo", "---\nname: Demo\n---\n")
 
 	if _, err := ListSkillFiles("demo", "../"); err == nil || !strings.Contains(err.Error(), "invalid path") {
@@ -109,7 +109,7 @@ func TestSkillFilePathTraversalRejected(t *testing.T) {
 
 func TestInstallSkillFromProviderExtractsZipAndRejectsZipSlip(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 
 	zipData := makeZip(t, map[string]string{
 		"SKILL.md":        "---\nname: Demo\n---\n# Demo\n",

@@ -2,8 +2,8 @@ package search
 
 import (
 	"context"
-	"fkteams/fkenv"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/env"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,7 +12,7 @@ import (
 
 func NewDuckDuckGoTool(ctx context.Context) (runtimeport.Tool, error) {
 	// 1. 获取代理配置
-	proxyStr := fkenv.Get(fkenv.ProxyURL)
+	proxyStr := env.Get(env.ProxyURL)
 
 	var proxyFunc func(*http.Request) (*url.URL, error)
 

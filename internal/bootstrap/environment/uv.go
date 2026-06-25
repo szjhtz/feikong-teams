@@ -1,7 +1,7 @@
 package environment
 
 import (
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,7 +70,7 @@ func (u *uvInitializer) upgrade(uvPath string) error {
 
 // ConfigureMirror 当 FEIKONG_PROXY_URL 不为空或 mirror 为 true 时，配置 uv 国内镜像源
 func (u *uvInitializer) ConfigureMirror(mirror bool) {
-	proxyURL := fkenv.Get(fkenv.ProxyURL)
+	proxyURL := env.Get(env.ProxyURL)
 	if proxyURL == "" && !mirror {
 		return
 	}

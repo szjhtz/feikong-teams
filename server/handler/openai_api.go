@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fkteams/config"
-	"fkteams/fkenv"
 	"fkteams/internal/adapters/model/providers"
 	"fkteams/internal/adapters/model/providers/copilot"
+	"fkteams/internal/runtime/env"
 	"fmt"
 	"io"
 	"log"
@@ -188,7 +188,7 @@ func openAIError(errType, message string) gin.H {
 // newProxyHTTPClient 创建支持代理的 HTTP 客户端（长超时，适合 chat completions）
 func newProxyHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if proxyURL := fkenv.Get(fkenv.ProxyURL); proxyURL != "" {
+	if proxyURL := env.Get(env.ProxyURL); proxyURL != "" {
 		if u, err := url.Parse(proxyURL); err == nil {
 			transport.Proxy = http.ProxyURL(u)
 		}

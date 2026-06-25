@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"fkteams/fkenv"
 	"fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/env"
 )
 
 const (
@@ -20,7 +20,7 @@ const (
 
 // MaxIterations 返回智能体最大迭代次数，支持 FEIKONG_MAX_ITERATIONS 环境变量覆盖。
 func MaxIterations() int {
-	if v := fkenv.Get(fkenv.MaxIterations); v != "" {
+	if v := env.Get(env.MaxIterations); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			if n <= 0 {
 				return 1<<31 - 1

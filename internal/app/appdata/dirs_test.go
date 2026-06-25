@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 )
 
 func TestDirectoryHelpersUseAppDir(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 
 	if Dir() != appDir {
 		t.Fatalf("Dir = %q, want %q", Dir(), appDir)

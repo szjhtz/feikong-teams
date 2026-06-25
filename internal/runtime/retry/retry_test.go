@@ -6,22 +6,22 @@ import (
 	"net"
 	"testing"
 
-	"fkteams/fkenv"
 	"fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/env"
 )
 
 func TestMaxIterationsReadsEnvironment(t *testing.T) {
-	t.Setenv(fkenv.MaxIterations, "7")
+	t.Setenv(env.MaxIterations, "7")
 	if got := MaxIterations(); got != 7 {
 		t.Fatalf("MaxIterations = %d, want 7", got)
 	}
 
-	t.Setenv(fkenv.MaxIterations, "0")
+	t.Setenv(env.MaxIterations, "0")
 	if got := MaxIterations(); got != 1<<31-1 {
 		t.Fatalf("MaxIterations zero = %d, want unlimited sentinel", got)
 	}
 
-	t.Setenv(fkenv.MaxIterations, "bad")
+	t.Setenv(env.MaxIterations, "bad")
 	if got := MaxIterations(); got != defaultMaxIterations {
 		t.Fatalf("MaxIterations invalid = %d, want default", got)
 	}

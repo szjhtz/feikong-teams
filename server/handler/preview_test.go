@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 )
 
 func TestShareLinksFilePathUsesAppDir(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 
 	want := filepath.Join(appDir, "share", "share.json")
 	if got := shareLinksFilePath(); got != want {
@@ -22,7 +22,7 @@ func TestShareLinksFilePathUsesAppDir(t *testing.T) {
 
 func TestSaveShareLinksWritesToAppDir(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 	withPreviewStore(t, map[string]*previewLinkEntry{
 		"link-1": {
 			FilePaths: []string{"docs/report.pdf"},
@@ -47,7 +47,7 @@ func TestSaveShareLinksWritesToAppDir(t *testing.T) {
 
 func TestLoadShareLinksReadsFromAppDir(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 	withPreviewStore(t, map[string]*previewLinkEntry{})
 
 	shareDir := filepath.Join(appDir, "share")

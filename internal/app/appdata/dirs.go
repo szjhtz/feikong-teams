@@ -4,12 +4,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 )
 
 // Dir 返回应用数据目录，支持 FEIKONG_APP_DIR 环境变量覆盖。
 func Dir() string {
-	if d := fkenv.Get(fkenv.AppDir); d != "" {
+	if d := env.Get(env.AppDir); d != "" {
 		return d
 	}
 	home, err := os.UserHomeDir()

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/fkenv"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/runtime/env"
 
 	"github.com/gin-gonic/gin"
 )
@@ -192,7 +192,7 @@ func TestSanitizeUploadID(t *testing.T) {
 func setupWorkspaceDir(t *testing.T) string {
 	t.Helper()
 
-	t.Setenv(fkenv.AppDir, t.TempDir())
+	t.Setenv(env.AppDir, t.TempDir())
 	workspace := appdata.WorkspaceDir()
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		t.Fatalf("mkdir workspace: %v", err)

@@ -1,4 +1,4 @@
-package fkenv
+package env
 
 import "testing"
 

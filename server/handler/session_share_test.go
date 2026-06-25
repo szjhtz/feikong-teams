@@ -9,16 +9,16 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/fkenv"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/domain/message"
+	"fkteams/internal/runtime/env"
 
 	"github.com/gin-gonic/gin"
 )
 
 func TestSessionSharesFilePathUsesAppDir(t *testing.T) {
 	appDir := t.TempDir()
-	t.Setenv(fkenv.AppDir, appDir)
+	t.Setenv(env.AppDir, appDir)
 
 	want := filepath.Join(appDir, "share", sessionShareFileName)
 	if got := sessionSharesFilePath(); got != want {

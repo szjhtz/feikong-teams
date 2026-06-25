@@ -3,8 +3,8 @@ package deep
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/fkenv"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/env"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	retry "fkteams/internal/runtime/retry"
 	"fkteams/tools"
@@ -40,7 +40,7 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 		return nil, fmt.Errorf("runtime does not support deep agent middlewares")
 	}
 	maxTokens := runtimeport.DefaultMaxTokensBeforeSummary
-	if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
+	if v := env.Get(env.MaxTokensBeforeSummary); v != "" {
 		if n, _ := strconv.Atoi(v); n > 0 {
 			maxTokens = n
 		}

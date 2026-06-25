@@ -92,6 +92,15 @@ func TestRootProvidersPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootEnvPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "fkenv")); err == nil {
+		t.Fatal("root fkenv package exists; use internal/runtime/env")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -142,6 +151,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/providers" || strings.HasPrefix(importPath, "fkteams/providers/") {
 		t.Errorf("%s imports removed root providers package; use internal/adapters/model/providers", rel)
+	}
+	if importPath == "fkteams/fkenv" {
+		t.Errorf("%s imports removed root fkenv package; use internal/runtime/env", rel)
 	}
 }
 

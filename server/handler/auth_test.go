@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"fkteams/config"
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 
 	"github.com/gin-gonic/gin"
 )
@@ -115,7 +115,7 @@ func TestLoginHandler(t *testing.T) {
 func saveHandlerConfig(t *testing.T, cfg config.Config) {
 	t.Helper()
 
-	t.Setenv(fkenv.AppDir, t.TempDir())
+	t.Setenv(env.AppDir, t.TempDir())
 	if err := config.Save(&cfg); err != nil {
 		t.Fatalf("save config: %v", err)
 	}

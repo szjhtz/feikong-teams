@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"fkteams/config"
-	"fkteams/fkenv"
+	"fkteams/internal/runtime/env"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +31,7 @@ func TestMaxBodySizeRejectsLargeContentLength(t *testing.T) {
 }
 
 func TestCorsAllowsConfiguredOriginAndRejectsUnlisted(t *testing.T) {
-	t.Setenv(fkenv.AppDir, t.TempDir())
+	t.Setenv(env.AppDir, t.TempDir())
 	if err := config.Save(&config.Config{Server: config.Server{
 		AllowOrigins: []string{"https://app.example"},
 	}}); err != nil {
@@ -75,7 +75,7 @@ func TestCorsAllowsConfiguredOriginAndRejectsUnlisted(t *testing.T) {
 }
 
 func TestAPIKeyAuth(t *testing.T) {
-	t.Setenv(fkenv.AppDir, t.TempDir())
+	t.Setenv(env.AppDir, t.TempDir())
 	if err := config.Save(&config.Config{
 		OpenAIAPI: config.OpenAIAPI{APIKeys: []string{"sk-valid"}},
 	}); err != nil {

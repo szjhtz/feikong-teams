@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"fkteams/fkenv"
 	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
+	"fkteams/internal/runtime/env"
 	"fkteams/log"
 	"fkteams/memory"
 )
@@ -177,7 +177,7 @@ func buildHistoryMessages(recorder HistoryReader) []domainmessage.Message {
 
 // debugContextEnabled 检查是否启用上下文调试日志
 func debugContextEnabled() bool {
-	return fkenv.Get(fkenv.DebugContext) == "1"
+	return env.Get(env.DebugContext) == "1"
 }
 
 // logMessages 打印消息列表摘要

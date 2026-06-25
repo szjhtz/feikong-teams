@@ -1,5 +1,5 @@
-// Package fkenv 集中管理所有 FEIKONG_ 前缀的环境变量
-package fkenv
+// Package env 集中管理所有 FEIKONG_ 前缀的环境变量。
+package env
 
 import "os"
 
