@@ -265,7 +265,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			return rc.handleEvent(event)
 		}),
 		appchat.WithHistory(recorder),
-		appchat.WithContext(approval.RegistryContext(approval.NewAutoApproveRegistry())),
+		appchat.WithApprovalRegistry(approval.NewAutoApproveRegistry()),
 		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)

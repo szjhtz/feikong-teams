@@ -374,14 +374,9 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			appchat.WithHistory(recorder),
 			appchat.OnInterrupt(runtimeport.InterruptHandler(interruptHandler)),
 			appchat.NonInteractive(),
-			appchat.WithContext(approval.RegistryContext(approval.NewDefaultRegistry())),
-			appchat.WithContext(func(ctx context.Context) context.Context {
-				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
-			}),
-			appchat.WithContext(func(ctx context.Context) context.Context {
-				return runtimeport.WithSteeringSource(ctx, steeringSource)
-			},
-			),
+			appchat.WithApprovalRegistry(approval.NewDefaultRegistry()),
+			appchat.WithAskRuntimeHandler(buildMemberAskRuntimeHandler(stream, recorder, sessionID)),
+			appchat.WithSteeringSource(steeringSource),
 		)
 		if runErr != nil {
 			if isConnectionClosed(taskCtx, runErr) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -36,6 +38,9 @@ type turnOptions struct {
 	history          HistorySink
 	interruptHandler runtimeport.InterruptHandler
 	nonInteractive   bool
+	approvalRegistry *approval.Registry
+	steeringSource   runtimeport.SteeringSource
+	askHandler       ask.RuntimeHandler
 	contextHooks     []ContextHook
 	onFinish         func(ctx context.Context, result *runtimeport.RunResult, err error)
 }
@@ -70,6 +75,24 @@ func OnInterrupt(handler runtimeport.InterruptHandler) TurnOption {
 func NonInteractive() TurnOption {
 	return func(opts *turnOptions) {
 		opts.nonInteractive = true
+	}
+}
+
+func WithApprovalRegistry(registry *approval.Registry) TurnOption {
+	return func(opts *turnOptions) {
+		opts.approvalRegistry = registry
+	}
+}
+
+func WithSteeringSource(source runtimeport.SteeringSource) TurnOption {
+	return func(opts *turnOptions) {
+		opts.steeringSource = source
+	}
+}
+
+func WithAskRuntimeHandler(handler ask.RuntimeHandler) TurnOption {
+	return func(opts *turnOptions) {
+		opts.askHandler = handler
 	}
 }
 
@@ -127,6 +150,21 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, options ...TurnO
 	}
 	if opts.nonInteractive {
 		session.NonInteractive()
+	}
+	if opts.approvalRegistry != nil {
+		session.WithContext(func(ctx context.Context) context.Context {
+			return approval.WithRegistry(ctx, opts.approvalRegistry)
+		})
+	}
+	if opts.steeringSource != nil {
+		session.WithContext(func(ctx context.Context) context.Context {
+			return runtimeport.WithSteeringSource(ctx, opts.steeringSource)
+		})
+	}
+	if opts.askHandler != nil {
+		session.WithContext(func(ctx context.Context) context.Context {
+			return ask.WithRuntimeHandler(ctx, opts.askHandler)
+		})
 	}
 	for _, hook := range opts.contextHooks {
 		if hook != nil {

@@ -364,14 +364,9 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			}),
 			appchat.WithHistory(recorder),
 			appchat.OnInterrupt(runtimeport.InterruptHandler(interruptHandler)),
-			appchat.WithContext(approval.RegistryContext(approval.NewDefaultRegistry())),
-			appchat.WithContext(func(ctx context.Context) context.Context {
-				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
-			}),
-			appchat.WithContext(func(ctx context.Context) context.Context {
-				return runtimeport.WithSteeringSource(ctx, steeringSource)
-			},
-			),
+			appchat.WithApprovalRegistry(approval.NewDefaultRegistry()),
+			appchat.WithAskRuntimeHandler(buildMemberAskRuntimeHandler(stream, recorder, sessionID)),
+			appchat.WithSteeringSource(steeringSource),
 		)
 		if runErr != nil {
 			if isConnectionClosed(ctx, runErr) {

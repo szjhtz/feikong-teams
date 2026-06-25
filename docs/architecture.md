@@ -116,7 +116,7 @@ type Service interface {
 - 加载和保存 session/history。
 - 注入长期记忆。
 - 创建或复用 runner。
-- 装配 approval、ask、steering、hooks。
+- 通过类型化运行选项装配 approval、ask、steering、hooks，入口层不得直接散落这些 context key。
 - 分发事件到 history、stream、CLI view、channel reply。
 - 处理 follow-up 队列和 steering 队列。
 - 运行结束后提取记忆、更新 session metadata。

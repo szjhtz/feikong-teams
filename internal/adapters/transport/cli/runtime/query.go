@@ -346,14 +346,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			}),
 			appchat.WithHistory(recorder),
 			appchat.OnInterrupt(runtimeport.InterruptHandler(handler)),
-			appchat.WithContext(approval.RegistryContext(approvalReg)),
-			appchat.WithContext(func(ctx context.Context) context.Context {
-				return runtimeport.WithSteeringSource(ctx, steeringSource)
-			}),
-			appchat.WithContext(func(ctx context.Context) context.Context {
-				return ask.WithRuntimeHandler(ctx, e.askRuntime)
-			},
-			),
+			appchat.WithApprovalRegistry(approvalReg),
+			appchat.WithSteeringSource(steeringSource),
+			appchat.WithAskRuntimeHandler(e.askRuntime),
 		)
 
 		recorder.FinalizeCurrent()

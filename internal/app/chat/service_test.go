@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -54,6 +56,38 @@ func TestRunTurnRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
+func TestRunTurnInjectsTypedRuntimeCapabilities(t *testing.T) {
+	runner := &contextProbeRunner{}
+	steeringSource := func(context.Context) ([]message.Message, error) {
+		return []message.Message{{Role: message.RoleUser, Content: "steer"}}, nil
+	}
+	askHandler := func(context.Context, ask.RuntimeRequest) (*ask.AskResponse, error) {
+		return &ask.AskResponse{FreeText: "answer"}, nil
+	}
+
+	_, err := NewService().RunTurn(context.Background(), TurnRequest{
+		SessionID: "session-1",
+		Runner:    runner,
+		Input:     message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
+	},
+		WithApprovalRegistry(approval.NewAutoApproveRegistry()),
+		WithSteeringSource(steeringSource),
+		WithAskRuntimeHandler(askHandler),
+	)
+	if err != nil {
+		t.Fatalf("run turn: %v", err)
+	}
+	if !runner.sawApproval {
+		t.Fatal("runner did not observe approval registry")
+	}
+	if runner.steeringContent != "steer" {
+		t.Fatalf("steering content = %q, want steer", runner.steeringContent)
+	}
+	if runner.askAnswer != "answer" {
+		t.Fatalf("ask answer = %q, want answer", runner.askAnswer)
+	}
+}
+
 type fakeRunner struct {
 	input message.TurnInput
 	opts  runtimeport.RunOptions
@@ -71,5 +105,39 @@ func (r *fakeRunner) Run(ctx context.Context, input message.TurnInput, opts runt
 			return nil, err
 		}
 	}
+	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeMessageEnd}}, nil
+}
+
+type contextProbeRunner struct {
+	sawApproval     bool
+	steeringContent string
+	askAnswer       string
+}
+
+func (r *contextProbeRunner) Run(ctx context.Context, input message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+	if err := approval.Require(ctx, approval.StoreCommand, "echo", "echo"); err != nil {
+		return nil, err
+	}
+	r.sawApproval = true
+
+	source, ok := runtimeport.SteeringSourceFromContext(ctx)
+	if !ok {
+		tail := event.Event{Type: event.TypeError, Error: "missing steering source"}
+		return &runtimeport.RunResult{LastEvent: tail}, nil
+	}
+	messages, err := source(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) > 0 {
+		r.steeringContent = messages[0].Content
+	}
+
+	askCtx := runtimeport.WithInterruptMetadata(ctx, runtimeport.InterruptMetadata{MemberCallID: "member-1"})
+	resp, err := ask.AskQuestions(askCtx, &ask.AskRequest{Question: "continue?"})
+	if err != nil {
+		return nil, err
+	}
+	r.askAnswer = resp.FreeText
 	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeMessageEnd}}, nil
 }
