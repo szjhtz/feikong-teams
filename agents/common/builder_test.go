@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"fkteams/agentcore"
-	agentruntime "fkteams/agentcore/runtime"
 	agentscommon "fkteams/agents/common"
 	_ "fkteams/bootstrap/runtimes"
 	rootcommon "fkteams/common"
+	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/testmodel"
 )
 
@@ -26,7 +26,7 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	runner, err := agentruntime.Engine().NewRunner(ctx, agentcore.RunnerConfig{
+	runner, err := runtimeregistry.Engine().NewRunner(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
 		CheckPointStore: rootcommon.NewInMemoryStore(),

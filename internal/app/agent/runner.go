@@ -4,7 +4,6 @@ package agent
 import (
 	"context"
 	"fkteams/agentcore"
-	agentruntime "fkteams/agentcore/runtime"
 	"fkteams/agents"
 	"fkteams/agents/coordinator"
 	"fkteams/agents/custom"
@@ -15,6 +14,7 @@ import (
 	"fkteams/agents/toolmeta"
 	"fkteams/config"
 	"fkteams/internal/runtime/checkpoint"
+	runtimeregistry "fkteams/internal/runtime/registry"
 	"fmt"
 	"regexp"
 	"strings"
@@ -40,7 +40,7 @@ func agentToolName(name string, index int, used map[string]bool) string {
 
 func buildAgentTools(ctx context.Context, subAgents []agentcore.Agent) ([]agentcore.Tool, error) {
 	usedNames := make(map[string]bool, len(subAgents))
-	return agentruntime.Engine().NewAgentTools(ctx, subAgents, agentcore.AgentToolConfig{
+	return runtimeregistry.Engine().NewAgentTools(ctx, subAgents, agentcore.AgentToolConfig{
 		ToolName: func(displayName string, index int) string {
 			return agentToolName(displayName, index, usedNames)
 		},
@@ -64,7 +64,7 @@ func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Mod
 
 // newRunner 用共享配置创建 Runner
 func newRunner(ctx context.Context, agent agentcore.Agent) (agentcore.Runner, error) {
-	return agentruntime.Engine().NewRunner(ctx, agentcore.RunnerConfig{
+	return runtimeregistry.Engine().NewRunner(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
 		CheckPointStore: checkpoint.NewMemoryStore(),
@@ -131,7 +131,7 @@ func CreateLoopAgentRunner(ctx context.Context) (agentcore.Runner, error) {
 		}
 		subAgents = append(subAgents, agent)
 	}
-	loopAgent, err := agentruntime.Engine().NewLoopAgent(ctx, &agentcore.LoopAgentConfig{
+	loopAgent, err := runtimeregistry.Engine().NewLoopAgent(ctx, &agentcore.LoopAgentConfig{
 		Name:          "Roundtable",
 		Description:   "多智能体共同讨论并解决问题",
 		SubAgents:     subAgents,

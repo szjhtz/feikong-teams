@@ -3,10 +3,10 @@ package deep
 import (
 	"context"
 	"fkteams/agentcore"
-	agentruntime "fkteams/agentcore/runtime"
 	"fkteams/agents/common"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
+	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/tools"
 	"fmt"
 	"strconv"
@@ -34,7 +34,7 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 
-	engine := agentruntime.Engine()
+	engine := runtimeregistry.Engine()
 	middlewareProvider, ok := engine.(agentcore.AgentPipelineProvider)
 	if !ok {
 		return nil, fmt.Errorf("runtime does not support deep agent middlewares")

@@ -1,8 +1,7 @@
-package runtime
+package registry
 
 import (
-	"fkteams/agentcore"
-	toolmcp "fkteams/tools/mcp"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"sort"
 	"sync"
@@ -13,13 +12,13 @@ const DefaultRuntimeName = "eino"
 var registry = struct {
 	sync.RWMutex
 	defaultName string
-	engines     map[string]agentcore.Engine
+	engines     map[string]runtimeport.Engine
 }{
 	defaultName: DefaultRuntimeName,
-	engines:     make(map[string]agentcore.Engine),
+	engines:     make(map[string]runtimeport.Engine),
 }
 
-func Engine() agentcore.Engine {
+func Engine() runtimeport.Engine {
 	engine, err := EngineByName(DefaultName())
 	if err != nil {
 		panic(err)
@@ -27,7 +26,7 @@ func Engine() agentcore.Engine {
 	return engine
 }
 
-func Register(name string, engine agentcore.Engine) {
+func Register(name string, engine runtimeport.Engine) {
 	if name == "" {
 		panic("runtime name is empty")
 	}
@@ -37,10 +36,6 @@ func Register(name string, engine agentcore.Engine) {
 	registry.Lock()
 	registry.engines[name] = engine
 	registry.Unlock()
-
-	if provider, ok := engine.(agentcore.MCPToolProvider); ok {
-		toolmcp.RegisterToolProvider(provider.MCPTools)
-	}
 }
 
 func Use(name string) error {
@@ -59,7 +54,7 @@ func DefaultName() string {
 	return registry.defaultName
 }
 
-func EngineByName(name string) (agentcore.Engine, error) {
+func EngineByName(name string) (runtimeport.Engine, error) {
 	registry.RLock()
 	defer registry.RUnlock()
 	engine, ok := registry.engines[name]

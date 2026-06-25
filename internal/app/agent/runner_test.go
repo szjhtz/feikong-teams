@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fkteams/agentcore"
-	agentruntime "fkteams/agentcore/runtime"
 	"fkteams/agents/custom"
 	"fkteams/agents/toolmeta"
 	"fkteams/config"
+	runtimeregistry "fkteams/internal/runtime/registry"
 	"strings"
 	"testing"
 )
@@ -123,13 +123,13 @@ func TestCustomModeratorPromptUsesDefaultAndAppendsToolSection(t *testing.T) {
 
 func restoreRuntime(t *testing.T, name string, engine agentcore.Engine) {
 	t.Helper()
-	original := agentruntime.DefaultName()
-	agentruntime.Register(name, engine)
-	if err := agentruntime.Use(name); err != nil {
+	original := runtimeregistry.DefaultName()
+	runtimeregistry.Register(name, engine)
+	if err := runtimeregistry.Use(name); err != nil {
 		t.Fatalf("use runtime: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := agentruntime.Use(original); err != nil {
+		if err := runtimeregistry.Use(original); err != nil {
 			t.Fatalf("restore runtime: %v", err)
 		}
 	})

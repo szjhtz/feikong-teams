@@ -1,11 +1,10 @@
-package runtime
+package registry
 
 import (
 	"context"
+	runtimeport "fkteams/internal/ports/runtime"
 	"sort"
 	"testing"
-
-	"fkteams/agentcore"
 )
 
 func TestRegisterAndUseRuntime(t *testing.T) {
@@ -53,22 +52,22 @@ func TestRegisteredNamesAreSorted(t *testing.T) {
 
 type testEngine struct{}
 
-func (testEngine) NewChatModelAgent(context.Context, *agentcore.ChatAgentConfig) (agentcore.Agent, error) {
+func (testEngine) NewChatModelAgent(context.Context, *runtimeport.ChatAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (testEngine) NewLoopAgent(context.Context, *agentcore.LoopAgentConfig) (agentcore.Agent, error) {
+func (testEngine) NewLoopAgent(context.Context, *runtimeport.LoopAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (testEngine) NewDeepAgent(context.Context, *agentcore.DeepAgentConfig) (agentcore.Agent, error) {
+func (testEngine) NewDeepAgent(context.Context, *runtimeport.DeepAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (testEngine) NewRunner(context.Context, agentcore.RunnerConfig) (agentcore.Runner, error) {
+func (testEngine) NewRunner(context.Context, runtimeport.RunnerConfig) (runtimeport.Runner, error) {
 	return nil, nil
 }
 
-func (testEngine) NewAgentTools(context.Context, []agentcore.Agent, agentcore.AgentToolConfig) ([]agentcore.Tool, error) {
+func (testEngine) NewAgentTools(context.Context, []runtimeport.Agent, runtimeport.AgentToolConfig) ([]runtimeport.Tool, error) {
 	return nil, nil
 }

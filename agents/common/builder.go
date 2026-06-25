@@ -3,10 +3,10 @@ package common
 import (
 	"context"
 	"fkteams/agentcore"
-	agentruntime "fkteams/agentcore/runtime"
 	"fkteams/appstate"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
+	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/tools"
 	"fmt"
 	"runtime"
@@ -114,7 +114,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
 	}
-	engine := agentruntime.Engine()
+	engine := runtimeregistry.Engine()
 	coreModel, err := decorateChatModel(ctx, engine, coreModel)
 	if err != nil {
 		return nil, fmt.Errorf("decorate chat model: %w", err)

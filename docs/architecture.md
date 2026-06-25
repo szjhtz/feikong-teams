@@ -47,6 +47,7 @@ internal/app/
 
 internal/runtime/
   turn/             # runtime-independent turn executor
+  registry/         # runtime registry and default runtime selection
   middleware/       # runtime-neutral middleware contracts
   checkpoint/       # checkpoint implementations used by runtime ports
   queue/            # steering/follow-up queue primitives

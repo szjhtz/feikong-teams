@@ -37,6 +37,7 @@ internal/app/               # 应用用例层，入口只调用这里
   schedule/                 #   定时任务执行用例，调度任务通过 chat service 执行
 internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
+  registry/                 #   runtime engine 注册表和默认 runtime 选择
   checkpoint/               #   checkpoint 存储实现
 internal/adapters/runtime/
   eino/                     # CloudWeGo Eino ADK 适配层，唯一允许 import Eino 的目录
@@ -50,7 +51,6 @@ agentcore/                  # 过渡期核心类型导出层，最终收缩到 i
   agent.go                  #   Agent / Engine 抽象和 ChatAgentConfig / RunnerConfig 别名
   steering.go               #   SteeringSource context 能力，供运行时在模型调用边界消费转向消息
   model.go, tool.go         #   ChatModel / Tool 抽象别名
-  runtime/runtime.go        #   默认 runtime engine 注册和获取
 agents/                     # 智能体系统
   registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
   common/builder.go         #   AgentBuilder 构建器（WithTools / WithToolNames / WithSummary / WithSkills / Build）
