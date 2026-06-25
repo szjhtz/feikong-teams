@@ -3,7 +3,7 @@ package appstate
 import (
 	"context"
 	"errors"
-	"fkteams/memory"
+	"fkteams/internal/app/memory"
 	"testing"
 )
 

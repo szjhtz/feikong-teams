@@ -3,9 +3,10 @@ package services
 import (
 	"context"
 	"fkteams/agents/common"
+	memorymodel "fkteams/internal/adapters/model/memory"
 	"fkteams/internal/app/appstate"
+	"fkteams/internal/app/memory"
 	"fkteams/internal/runtime/log"
-	"fkteams/memory"
 )
 
 // MemoryService 长期记忆服务，封装 memory.Manager 的生命周期管理。
@@ -32,7 +33,7 @@ func (s *MemoryService) Start(ctx context.Context) error {
 		log.Printf("[memory] 创建模型失败，记忆服务未启动: %v", err)
 		return nil
 	}
-	llmClient, err := memory.NewLLMClient(chatModel)
+	llmClient, err := memorymodel.NewLLMClient(chatModel)
 	if err != nil {
 		log.Printf("[memory] 适配模型失败，记忆服务未启动: %v", err)
 		return nil

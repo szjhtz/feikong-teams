@@ -8,7 +8,7 @@ import (
 
 	"fkteams/config"
 	"fkteams/internal/app/appstate"
-	"fkteams/memory"
+	"fkteams/internal/app/memory"
 
 	"github.com/gin-gonic/gin"
 )

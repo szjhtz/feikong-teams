@@ -12,8 +12,8 @@ import (
 
 	"fkteams/internal/adapters/storage/file/history"
 	appschedule "fkteams/internal/app/schedule"
+	domainmemory "fkteams/internal/domain/memory"
 	domainschedule "fkteams/internal/domain/schedule"
-	"fkteams/memory"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -379,11 +379,11 @@ func runtimeSessionPickerItems() ([]runtimePickerItem, error) {
 	return items, nil
 }
 
-func runtimeMemoryEntries() ([]memory.MemoryEntry, error) {
+func runtimeMemoryEntries() ([]domainmemory.MemoryEntry, error) {
 	return runtimeMemoryEntriesFrom(nil)
 }
 
-func runtimeMemoryEntriesFrom(manager appstate.MemoryManager) ([]memory.MemoryEntry, error) {
+func runtimeMemoryEntriesFrom(manager appstate.MemoryManager) ([]domainmemory.MemoryEntry, error) {
 	if manager == nil {
 		return nil, fmt.Errorf("长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 	}

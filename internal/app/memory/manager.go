@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/runtime/log"
 	"path/filepath"
 	"sort"
@@ -303,24 +302,6 @@ func (m *Manager) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.entries)
-}
-
-// ConvertRecorderMessages 将 HistoryRecorder 的消息转为 memory.Message
-func ConvertRecorderMessages(recorder *eventlog.HistoryRecorder) []Message {
-	recorder.FinalizeCurrent()
-	agentMessages := recorder.GetMessages()
-	var msgs []Message
-	for _, am := range agentMessages {
-		role := "assistant"
-		if am.AgentName == "用户" || am.AgentName == "user" {
-			role = "user"
-		}
-		content := am.GetTextContent()
-		if content != "" {
-			msgs = append(msgs, Message{Role: role, Content: content})
-		}
-	}
-	return msgs
 }
 
 // shouldExtract 智能判断是否需要触发 LLM 提取

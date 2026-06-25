@@ -11,7 +11,6 @@ import (
 	"fkteams/internal/app/chat/taskstream"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/memory"
 	"fkteams/tools/ask"
 	"fmt"
 	"log"
@@ -244,7 +243,7 @@ func extractChatMemory(manager appstate.MemoryManager, recorder *eventlog.Histor
 	if manager == nil || recorder == nil {
 		return
 	}
-	messages := memory.ConvertRecorderMessages(recorder)
+	messages := eventlog.ConvertMemoryMessages(recorder)
 	if len(messages) == 0 {
 		return
 	}

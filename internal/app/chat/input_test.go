@@ -1,9 +1,9 @@
 package chat
 
 import (
+	"fkteams/internal/app/memory"
 	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
-	"fkteams/memory"
 	"strings"
 	"testing"
 )

@@ -1,8 +1,10 @@
-package memory
+package memorymodel
 
 import (
 	"context"
+
 	domainmessage "fkteams/internal/domain/message"
+	memoryport "fkteams/internal/ports/memory"
 	runtimeport "fkteams/internal/ports/runtime"
 
 	"fkteams/internal/adapters/model/providers/copilot"
@@ -12,8 +14,8 @@ type chatModelLLMAdapter struct {
 	model runtimeport.ChatModel
 }
 
-// NewLLMClient 基于核心模型创建 LLMClient
-func NewLLMClient(m runtimeport.ChatModel) (LLMClient, error) {
+// NewLLMClient 基于运行时模型创建长期记忆提取客户端。
+func NewLLMClient(m runtimeport.ChatModel) (memoryport.LLMClient, error) {
 	return &chatModelLLMAdapter{model: m}, nil
 }
 

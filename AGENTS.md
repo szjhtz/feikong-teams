@@ -38,10 +38,12 @@ internal/app/               # 应用用例层，入口只调用这里
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配
     taskstream/             #   运行中任务事件流、队列、interrupt 状态管理
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
+  memory/                   #   长期记忆检索、注入、提取、BM25 和 Markdown 持久化
   schedule/                 #   定时任务用例入口，工具/HTTP/CLI 只调用这里
   lifecycle/                #   Application 生命周期编排内核
                             #   用例层禁止依赖 agentcore 旧门面
 internal/domain/
+  memory/                   #   MemoryEntry / Message / MemoryType 等长期记忆值对象
   schedule/                 #   Task / Status / HistoryEntry 等调度领域模型
   session/                  #   会话 ID 与 context 绑定
 internal/runtime/           # 运行时无关内核
@@ -60,6 +62,7 @@ internal/runtime/           # 运行时无关内核
                             #   运行时内核禁止依赖 agentcore 旧门面
 internal/ports/             # 运行时无关端口契约
   hooks/                    #   HookPoint、HookHandler 和明确 payload 类型
+  memory/                   #   LLMClient 等长期记忆外部能力端口
   runtime/                  #   Runtime / Engine / Runner / Model / Tool 等端口
   scheduler/                #   Scheduler / TaskExecutor 调度端口
 internal/adapters/scheduler/
@@ -76,6 +79,7 @@ internal/adapters/runtime/
     providers/              #   OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot
 internal/adapters/model/
   providers/                #   模型 provider 注册、检测、模型列表和 Copilot 支撑
+  memory/                   #   runtime ChatModel 到长期记忆 LLMClient 的适配
     providerkit/            #   provider 共用 HTTP/config 辅助
     copilot/                #   GitHub Copilot OAuth/token/HTTP 支撑
 internal/adapters/storage/
@@ -111,8 +115,6 @@ events/                     # 事件协议与展示/历史
   view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
                             #   内部包必须使用 internal/runtime/events，展示层禁止依赖 agentcore 旧门面
 config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
-memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
-                            #   记忆模型适配使用 internal/ports/runtime 和 domain/message
 web/                        # 内嵌前端（//go:embed）
 tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环

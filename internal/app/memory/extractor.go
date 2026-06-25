@@ -9,17 +9,6 @@ import (
 	"unicode/utf8"
 )
 
-// LLMClient LLM 调用接口
-type LLMClient interface {
-	Complete(ctx context.Context, prompt string) (string, error)
-}
-
-// Message 对话消息
-type Message struct {
-	Role    string
-	Content string
-}
-
 // formatConversation 将消息列表转为纯文本，只保留 user 和 assistant 消息，
 // assistant 消息截断到 500 字，对话总长度不足 200 字时返回空字符串
 func formatConversation(messages []Message) string {

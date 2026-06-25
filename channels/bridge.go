@@ -12,7 +12,6 @@ import (
 	appchat "fkteams/internal/app/chat"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
-	"fkteams/memory"
 	"fkteams/tools/approval"
 	"path/filepath"
 	"strings"
@@ -309,7 +308,7 @@ func extractChannelMemory(manager appstate.MemoryManager, recorder *eventlog.His
 	if manager == nil || recorder == nil {
 		return
 	}
-	messages := memory.ConvertRecorderMessages(recorder)
+	messages := eventlog.ConvertMemoryMessages(recorder)
 	if len(messages) == 0 {
 		return
 	}

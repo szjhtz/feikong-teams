@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	appmemory "fkteams/internal/app/memory"
 	domainhistory "fkteams/internal/domain/history"
+	domainmemory "fkteams/internal/domain/memory"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/runtime/env"
 	"fkteams/internal/runtime/log"
-	"fkteams/memory"
 )
 
 type HistoryReader interface {
@@ -18,7 +19,7 @@ type HistoryReader interface {
 }
 
 type MemorySearcher interface {
-	Search(query string, topK int) []memory.MemoryEntry
+	Search(query string, topK int) []domainmemory.MemoryEntry
 }
 
 // BuildTurnInput 构建一轮输入（长期记忆 + 对话历史 + 用户输入）
@@ -33,7 +34,7 @@ func BuildTurnInputWithMemory(recorder HistoryReader, userInput string, manager 
 	// 注入长期记忆
 	if manager != nil {
 		memories := manager.Search(userInput, 5)
-		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
+		if memCtx := appmemory.BuildMemoryContext(memories); memCtx != "" {
 			contextMessages = append(contextMessages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: memCtx})
 		}
 	}
@@ -63,7 +64,7 @@ func BuildMultimodalTurnInputWithMemory(recorder HistoryReader, textContent stri
 	// 注入长期记忆（使用文本部分进行搜索）
 	if manager != nil {
 		memories := manager.Search(textContent, 5)
-		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
+		if memCtx := appmemory.BuildMemoryContext(memories); memCtx != "" {
 			contextMessages = append(contextMessages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: memCtx})
 		}
 	}

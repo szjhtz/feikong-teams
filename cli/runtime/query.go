@@ -20,7 +20,6 @@ import (
 	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/turn"
-	"fkteams/memory"
 	"fkteams/report"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -484,7 +483,7 @@ func extractSessionMemory(manager appstate.MemoryManager, recorder *eventlog.His
 	if manager == nil || recorder == nil {
 		return
 	}
-	messages := memory.ConvertRecorderMessages(recorder)
+	messages := eventlog.ConvertMemoryMessages(recorder)
 	if len(messages) == 0 {
 		return
 	}
@@ -499,7 +498,7 @@ func flushSessionMemory(manager appstate.MemoryManager, recorder *eventlog.Histo
 	if manager == nil || recorder == nil {
 		return
 	}
-	messages := memory.ConvertRecorderMessages(recorder)
+	messages := eventlog.ConvertMemoryMessages(recorder)
 	if len(messages) == 0 {
 		return
 	}
