@@ -6,8 +6,8 @@ package autocontinue
 import (
 	"context"
 	"encoding/json"
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"strings"
 
@@ -62,7 +62,7 @@ func newContinueTool() (tool.BaseTool, error) {
 }
 
 // ContinueTool 返回 continue_output 工具实例
-func ContinueTool() (agentcore.Tool, error) {
+func ContinueTool() (runtimeport.Tool, error) {
 	t, err := newContinueTool()
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func ContinueTool() (agentcore.Tool, error) {
 }
 
 // NewHandler 创建自动续接中间件，包含工具注册和 AfterModel 钩子。
-func NewHandler() (agentcore.AgentMiddleware, error) {
+func NewHandler() (runtimeport.AgentMiddleware, error) {
 	t, err := newContinueTool()
 	if err != nil {
 		return nil, err

@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/agentcore"
+	domainevent "fkteams/internal/domain/event"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
 	"fkteams/internal/testmodel"
 	"fkteams/tools/ask"
@@ -18,7 +20,7 @@ import (
 
 func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 	ctx := context.Background()
-	memberTool, err := agentcore.InferTool("member_echo", "member echo", func(_ context.Context, req *memberEchoRequest) (*memberEchoResponse, error) {
+	memberTool, err := runtimeport.InferTool("member_echo", "member echo", func(_ context.Context, req *memberEchoRequest) (*memberEchoResponse, error) {
 		return &memberEchoResponse{Text: "tool:" + req.Text}, nil
 	})
 	if err != nil {
@@ -27,23 +29,23 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 
 	memberModel := testmodel.New().
 		EnqueueStream(
-			agentcore.Message{Role: agentcore.RoleAssistant, ReasoningContent: "member-thinking"},
-			agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+			domainmessage.Message{Role: domainmessage.RoleAssistant, ReasoningContent: "member-thinking"},
+			domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				ID:    "member-tool-call",
 				Index: intPtr(0),
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "member_echo",
 					Arguments: `{"text":"hello"}`,
 				},
 			}}},
 		).
 		EnqueueStream(testmodel.AssistantMessage("member-done"))
-	memberAgent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	memberAgent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "member",
 		Description:        "member",
 		Model:              memberModel,
-		Tools:              []agentcore.Tool{memberTool},
+		Tools:              []runtimeport.Tool{memberTool},
 		MaxIterations:      4,
 		EmitInternalEvents: true,
 	})
@@ -51,7 +53,7 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 		t.Fatalf("create member agent: %v", err)
 	}
 
-	agentTools, err := NewAgentTools(ctx, []agentcore.Agent{memberAgent}, agentcore.AgentToolConfig{
+	agentTools, err := NewAgentTools(ctx, []runtimeport.Agent{memberAgent}, runtimeport.AgentToolConfig{
 		ToolName: func(string, int) string { return "ask_fkagent_member" },
 	})
 	if err != nil {
@@ -59,17 +61,17 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 	}
 
 	parentModel := testmodel.New().
-		EnqueueStream(agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+		EnqueueStream(domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 			ID:    "parent-member-call",
 			Index: intPtr(0),
 			Type:  "function",
-			Function: agentcore.FunctionCall{
+			Function: domainmessage.FunctionCall{
 				Name:      "ask_fkagent_member",
 				Arguments: `{"request":"do member task"}`,
 			},
 		}}}).
 		EnqueueStream(testmodel.AssistantMessage("parent-done"))
-	parentAgent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	parentAgent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "parent",
 		Description:        "parent",
 		Model:              parentModel,
@@ -83,31 +85,31 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 
 	got := runAgentForTest(t, ctx, parentAgent, true)
 
-	parentStartIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolStart &&
+	parentStartIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolStart &&
 			event.ToolCallID == "parent-member-call" &&
 			event.ToolName == "ask_fkagent_member" &&
 			event.ToolCallRef != ""
 	}, "parent member tool start")
-	memberReasoningIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+	memberReasoningIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-member-call" &&
 			event.ParentToolCallID == "parent-member-call" &&
 			event.MemberToolName == "ask_fkagent_member" &&
 			event.MemberName == "member" &&
-			event.DeltaKind == agentcore.DeltaReasoning &&
+			event.DeltaKind == domainevent.DeltaReasoning &&
 			strings.Contains(event.Content, "member-thinking")
 	}, "member-scoped reasoning")
-	memberToolStartIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+	memberToolStartIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-member-call" &&
-			event.Type == agentcore.EventToolStart &&
+			event.Type == domainevent.TypeToolStart &&
 			event.ToolName == "member_echo" &&
 			event.ToolCallRef != "" &&
 			event.ToolCallIndex != nil &&
 			*event.ToolCallIndex == 0
 	}, "member-scoped tool start")
-	memberToolResultIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
+	memberToolResultIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-member-call" &&
-			(event.Type == agentcore.EventToolUpdate || event.Type == agentcore.EventToolEnd) &&
+			(event.Type == domainevent.TypeToolUpdate || event.Type == domainevent.TypeToolEnd) &&
 			event.ToolName == "member_echo" &&
 			event.ToolCallRef != ""
 	}, "member-scoped tool result")
@@ -152,9 +154,9 @@ func TestAdaptInterruptsUnwrapsInterruptPayload(t *testing.T) {
 	got := adaptInterruptsFromRunner([]*adk.InterruptCtx{{
 		ID:          "interrupt-1",
 		IsRootCause: true,
-		Info: agentcore.InterruptPayload{
+		Info: runtimeport.InterruptPayload{
 			Info: "question",
-			Metadata: agentcore.InterruptMetadata{
+			Metadata: runtimeport.InterruptMetadata{
 				MemberCallID:   "member-call-from-payload",
 				MemberToolName: "ask_fkagent_writer",
 				MemberName:     "writer",
@@ -232,17 +234,17 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 	}
 
 	memberModel := testmodel.New().
-		EnqueueStream(agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+		EnqueueStream(domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 			ID:    "member-ask-call",
 			Index: intPtr(0),
 			Type:  "function",
-			Function: agentcore.FunctionCall{
+			Function: domainmessage.FunctionCall{
 				Name:      "ask_questions",
 				Arguments: `{"question":"Need input?","options":["A","B"]}`,
 			},
 		}}}).
 		EnqueueStream(testmodel.AssistantMessage("member resumed with answer"))
-	memberAgent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	memberAgent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "member",
 		Description:        "member",
 		Model:              memberModel,
@@ -254,7 +256,7 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 		t.Fatalf("create member agent: %v", err)
 	}
 
-	agentTools, err := NewAgentTools(ctx, []agentcore.Agent{memberAgent}, agentcore.AgentToolConfig{
+	agentTools, err := NewAgentTools(ctx, []runtimeport.Agent{memberAgent}, runtimeport.AgentToolConfig{
 		ToolName: func(string, int) string { return "ask_fkagent_member" },
 	})
 	if err != nil {
@@ -262,17 +264,17 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 	}
 
 	parentModel := testmodel.New().
-		EnqueueStream(agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+		EnqueueStream(domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 			ID:    "parent-member-call",
 			Index: intPtr(0),
 			Type:  "function",
-			Function: agentcore.FunctionCall{
+			Function: domainmessage.FunctionCall{
 				Name:      "ask_fkagent_member",
 				Arguments: `{"request":"ask the user and continue"}`,
 			},
 		}}}).
 		EnqueueStream(testmodel.AssistantMessage("parent done"))
-	parentAgent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	parentAgent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "parent",
 		Description:        "parent",
 		Model:              parentModel,
@@ -284,7 +286,7 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 		t.Fatalf("create parent agent: %v", err)
 	}
 
-	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
+	runner, err := NewRunnerFromConfig(ctx, runtimeport.RunnerConfig{
 		Agent:           parentAgent,
 		EnableStreaming: true,
 		CheckPointStore: checkpointmemory.NewStore(),
@@ -293,18 +295,18 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 		t.Fatalf("create runner: %v", err)
 	}
 
-	var got []agentcore.Event
+	var got []domainevent.Event
 	var seenMemberInterrupt bool
-	_, err = runner.Run(ctx, agentcore.TurnInput{
-		Message: agentcore.Message{Role: agentcore.RoleUser, Content: "start"},
-	}, agentcore.RunOptions{
+	_, err = runner.Run(ctx, domainmessage.TurnInput{
+		Message: domainmessage.Message{Role: domainmessage.RoleUser, Content: "start"},
+	}, runtimeport.RunOptions{
 		RunID:        "member-ask-resume-test",
 		CheckpointID: "member-ask-resume-test",
-		Sink: func(event agentcore.Event) error {
+		Sink: func(event domainevent.Event) error {
 			got = append(got, event)
 			return nil
 		},
-		InterruptHandler: func(_ context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
+		InterruptHandler: func(_ context.Context, interrupts []runtimeport.Interrupt) (map[string]any, error) {
 			result := make(map[string]any, len(interrupts))
 			for _, ic := range interrupts {
 				if ic.MemberCallID == "parent-member-call" && ic.MemberToolName == "ask_fkagent_member" {
@@ -324,14 +326,14 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 		t.Fatalf("member ask interrupt was not marked with parent member call")
 	}
 
-	requireEventIndex(t, got, func(event agentcore.Event) bool {
+	requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-member-call" &&
-			event.Type == agentcore.EventMessageEnd &&
+			event.Type == domainevent.TypeMessageEnd &&
 			event.Content == "member resumed with answer"
 	}, "member resumed output")
-	requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageEnd &&
-			event.Role == agentcore.RoleAssistant &&
+	requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageEnd &&
+			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "parent done"
 	}, "parent final output")
 
@@ -354,17 +356,17 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 	}
 
 	askerModel := testmodel.New().
-		EnqueueStream(agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+		EnqueueStream(domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 			ID:    "asker-ask-call",
 			Index: intPtr(0),
 			Type:  "function",
-			Function: agentcore.FunctionCall{
+			Function: domainmessage.FunctionCall{
 				Name:      "ask_questions",
 				Arguments: `{"question":"Need input?","options":["yes","no"]}`,
 			},
 		}}}).
 		EnqueueStream(testmodel.AssistantMessage("asker done"))
-	askerAgent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	askerAgent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "asker",
 		Description:        "asker",
 		Model:              askerModel,
@@ -377,7 +379,7 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 	}
 
 	workerModel := testmodel.New().EnqueueStream(testmodel.AssistantMessage("worker done"))
-	workerAgent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	workerAgent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "worker",
 		Description:        "worker",
 		Model:              workerModel,
@@ -388,7 +390,7 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 		t.Fatalf("create worker agent: %v", err)
 	}
 
-	agentTools, err := NewAgentTools(ctx, []agentcore.Agent{askerAgent, workerAgent}, agentcore.AgentToolConfig{
+	agentTools, err := NewAgentTools(ctx, []runtimeport.Agent{askerAgent, workerAgent}, runtimeport.AgentToolConfig{
 		ToolName: func(name string, _ int) string { return "ask_fkagent_" + name },
 	})
 	if err != nil {
@@ -396,12 +398,12 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 	}
 
 	parentModel := testmodel.New().
-		EnqueueStream(agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{
+		EnqueueStream(domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{
 			{
 				ID:    "parent-asker-call",
 				Index: intPtr(0),
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "ask_fkagent_asker",
 					Arguments: `{"request":"ask the user"}`,
 				},
@@ -410,14 +412,14 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 				ID:    "parent-worker-call",
 				Index: intPtr(1),
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "ask_fkagent_worker",
 					Arguments: `{"request":"finish independently"}`,
 				},
 			},
 		}}).
 		EnqueueStream(testmodel.AssistantMessage("parent done"))
-	parentAgent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	parentAgent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "parent",
 		Description:        "parent",
 		Model:              parentModel,
@@ -429,7 +431,7 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 		t.Fatalf("create parent agent: %v", err)
 	}
 
-	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
+	runner, err := NewRunnerFromConfig(ctx, runtimeport.RunnerConfig{
 		Agent:           parentAgent,
 		EnableStreaming: true,
 		CheckPointStore: checkpointmemory.NewStore(),
@@ -450,22 +452,22 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 		}
 	})
 
-	eventCh := make(chan agentcore.Event, 64)
+	eventCh := make(chan domainevent.Event, 64)
 	errCh := make(chan error, 1)
 	go func() {
-		_, runErr := runner.Run(ctx, agentcore.TurnInput{
-			Message: agentcore.Message{Role: agentcore.RoleUser, Content: "start"},
-		}, agentcore.RunOptions{
+		_, runErr := runner.Run(ctx, domainmessage.TurnInput{
+			Message: domainmessage.Message{Role: domainmessage.RoleUser, Content: "start"},
+		}, runtimeport.RunOptions{
 			RunID:        "member-runtime-ask-parallel-test",
 			CheckpointID: "member-runtime-ask-parallel-test",
-			Sink: func(event agentcore.Event) error {
+			Sink: func(event domainevent.Event) error {
 				select {
 				case eventCh <- event:
 				case <-ctx.Done():
 				}
 				return nil
 			},
-			InterruptHandler: func(context.Context, []agentcore.Interrupt) (map[string]any, error) {
+			InterruptHandler: func(context.Context, []runtimeport.Interrupt) (map[string]any, error) {
 				return nil, fmt.Errorf("member runtime ask reached parent interrupt handler")
 			},
 		})
@@ -477,22 +479,22 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 		t.Fatalf("ask member call ID = %q, want parent-asker-call", req.Metadata.MemberCallID)
 	}
 
-	waitEvent(t, ctx, eventCh, func(event agentcore.Event) bool {
+	waitEvent(t, ctx, eventCh, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-worker-call" &&
-			event.Type == agentcore.EventMessageEnd &&
+			event.Type == domainevent.TypeMessageEnd &&
 			event.Content == "worker done"
 	}, "worker completion before ask answer")
 
 	askRespCh <- &ask.AskResponse{AskID: req.ID, Selected: []string{"yes"}}
 
-	waitEvent(t, ctx, eventCh, func(event agentcore.Event) bool {
+	waitEvent(t, ctx, eventCh, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-asker-call" &&
-			event.Type == agentcore.EventMessageEnd &&
+			event.Type == domainevent.TypeMessageEnd &&
 			event.Content == "asker done"
 	}, "asker completion after answer")
-	waitEvent(t, ctx, eventCh, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageEnd &&
-			event.Role == agentcore.RoleAssistant &&
+	waitEvent(t, ctx, eventCh, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageEnd &&
+			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "parent done"
 	}, "parent completion")
 
@@ -517,7 +519,7 @@ func waitAskRuntimeRequest(t *testing.T, ctx context.Context, ch <-chan ask.Runt
 	}
 }
 
-func waitEvent(t *testing.T, ctx context.Context, ch <-chan agentcore.Event, match func(agentcore.Event) bool, label string) agentcore.Event {
+func waitEvent(t *testing.T, ctx context.Context, ch <-chan domainevent.Event, match func(domainevent.Event) bool, label string) domainevent.Event {
 	t.Helper()
 	for {
 		select {
@@ -527,7 +529,7 @@ func waitEvent(t *testing.T, ctx context.Context, ch <-chan agentcore.Event, mat
 			}
 		case <-ctx.Done():
 			t.Fatalf("timed out waiting for %s: %v", label, ctx.Err())
-			return agentcore.Event{}
+			return domainevent.Event{}
 		}
 	}
 }
@@ -578,7 +580,7 @@ func singleMessageAgentIter(content string) *adk.AsyncIterator[*adk.AgentEvent] 
 	return iter
 }
 
-func messagesContain(messages []agentcore.Message, text string) bool {
+func messagesContain(messages []domainmessage.Message, text string) bool {
 	for _, message := range messages {
 		if strings.Contains(message.Content, text) {
 			return true

@@ -6,7 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/testmodel"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -38,7 +39,7 @@ func TestAdaptNativeChatModelForRunner(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 generate call, got %d", len(calls))
 	}
-	if calls[0].Input[0].Role != agentcore.RoleUser || calls[0].Input[0].Content != "hello" {
+	if calls[0].Input[0].Role != domainmessage.RoleUser || calls[0].Input[0].Content != "hello" {
 		t.Fatalf("unexpected core input: %#v", calls[0].Input)
 	}
 	if len(calls[0].Tools) != 1 || calls[0].Tools[0].Name != "test_tool" {
@@ -48,9 +49,9 @@ func TestAdaptNativeChatModelForRunner(t *testing.T) {
 
 func TestAdaptToolUsesCoreInvoke(t *testing.T) {
 	coreTool := &invokeOnlyTool{
-		info: agentcore.ToolInfo{Name: "invoke_tool", Desc: "invoke tool"},
+		info: runtimeport.ToolInfo{Name: "invoke_tool", Desc: "invoke tool"},
 	}
-	runnerTools, err := AdaptToolsForRunner(context.Background(), []agentcore.Tool{coreTool})
+	runnerTools, err := AdaptToolsForRunner(context.Background(), []runtimeport.Tool{coreTool})
 	if err != nil {
 		t.Fatalf("adapt tools: %v", err)
 	}
@@ -76,11 +77,11 @@ func TestAdaptToolUsesCoreInvoke(t *testing.T) {
 }
 
 type invokeOnlyTool struct {
-	info    agentcore.ToolInfo
+	info    runtimeport.ToolInfo
 	invoked bool
 }
 
-func (t *invokeOnlyTool) Info(context.Context) (*agentcore.ToolInfo, error) {
+func (t *invokeOnlyTool) Info(context.Context) (*runtimeport.ToolInfo, error) {
 	return &t.info, nil
 }
 
@@ -88,13 +89,13 @@ func (t *invokeOnlyTool) InputType() reflect.Type {
 	return reflect.TypeOf((*invokeOnlyRequest)(nil))
 }
 
-func (t *invokeOnlyTool) Invoke(_ context.Context, invocation agentcore.ToolInvocation) (*agentcore.ToolResult, error) {
+func (t *invokeOnlyTool) Invoke(_ context.Context, invocation runtimeport.ToolInvocation) (*runtimeport.ToolResult, error) {
 	t.invoked = true
 	var req invokeOnlyRequest
 	if err := json.Unmarshal([]byte(invocation.Arguments), &req); err != nil {
 		return nil, err
 	}
-	return &agentcore.ToolResult{Content: "invoked:" + req.Text}, nil
+	return &runtimeport.ToolResult{Content: "invoked:" + req.Text}, nil
 }
 
 type invokeOnlyRequest struct {

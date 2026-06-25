@@ -5,15 +5,15 @@ import (
 	"context"
 	"sync"
 
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools"
 
 	"github.com/cloudwego/eino/compose"
 )
 
 // New 创建工具中间件，破坏性工具通过互斥锁串行执行
-func New() agentcore.ToolMiddleware {
+func New() runtimeport.ToolMiddleware {
 	var mu sync.Mutex
 
 	return einoruntime.WrapToolMiddleware("destructive_guard", compose.ToolMiddleware{

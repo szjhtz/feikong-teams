@@ -2,10 +2,10 @@ package skills
 
 import (
 	"context"
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/runtime/eino/middlewares/fkfs"
 	"fkteams/internal/app/appdata"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,7 +27,7 @@ func ensureDir(path string) error {
 	return err
 }
 
-func New(ctx context.Context) (agentcore.AgentMiddleware, error) {
+func New(ctx context.Context) (runtimeport.AgentMiddleware, error) {
 	skillsDirPath := filepath.Join(appdata.Dir(), "skills")
 
 	if err := ensureDir(skillsDirPath); err != nil {

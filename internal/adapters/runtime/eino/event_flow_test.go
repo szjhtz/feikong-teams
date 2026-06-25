@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
+	domainevent "fkteams/internal/domain/event"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
 	"fkteams/internal/testmodel"
 )
@@ -14,7 +16,7 @@ import (
 func TestRunnerEmitsLifecycleEventsInOrder(t *testing.T) {
 	ctx := context.Background()
 	model := testmodel.New().EnqueueStream(testmodel.AssistantMessage("done"))
-	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	agent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:          "lifecycle",
 		Description:   "lifecycle",
 		Model:         model,
@@ -31,29 +33,29 @@ func TestRunnerEmitsLifecycleEventsInOrder(t *testing.T) {
 	if len(got) < 6 {
 		t.Fatalf("expected lifecycle and message events, got %#v", got)
 	}
-	if got[0].Type != agentcore.EventAgentStart || got[0].RunID != "event-flow-test" {
+	if got[0].Type != domainevent.TypeAgentStart || got[0].RunID != "event-flow-test" {
 		t.Fatalf("first event = %#v, want agent_start", got[0])
 	}
-	if got[1].Type != agentcore.EventTurnStart || got[1].TurnID != "event-flow-test:turn:1" {
+	if got[1].Type != domainevent.TypeTurnStart || got[1].TurnID != "event-flow-test:turn:1" {
 		t.Fatalf("second event = %#v, want turn_start", got[1])
 	}
 
-	userStartIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageStart && event.Role == agentcore.RoleUser
+	userStartIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageStart && event.Role == domainmessage.RoleUser
 	}, "user message start")
-	userEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageEnd && event.Role == agentcore.RoleUser && event.Content == "start"
+	userEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageEnd && event.Role == domainmessage.RoleUser && event.Content == "start"
 	}, "user message end")
-	assistantIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
+	assistantIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "done"
 	}, "assistant output")
-	turnEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventTurnEnd
+	turnEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeTurnEnd
 	}, "turn end")
-	agentEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventAgentEnd
+	agentEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeAgentEnd
 	}, "agent end")
 
 	requireBefore(t, got, userStartIdx, userEndIdx, "user message start", "user message end")
@@ -68,8 +70,8 @@ func TestRunnerEmitsLifecycleEventsInOrder(t *testing.T) {
 func TestRunnerEmitsErrorAndClosesLifecycleOnModelError(t *testing.T) {
 	ctx := context.Background()
 	modelErr := errors.New("model boom")
-	model := testmodel.New().EnqueueGenerate(agentcore.Message{}, modelErr)
-	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	model := testmodel.New().EnqueueGenerate(domainmessage.Message{}, modelErr)
+	agent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:          "lifecycle-error",
 		Description:   "lifecycle error",
 		Model:         model,
@@ -86,17 +88,17 @@ func TestRunnerEmitsErrorAndClosesLifecycleOnModelError(t *testing.T) {
 	if len(got) < 3 {
 		t.Fatalf("expected start and error events, got %#v", got)
 	}
-	if got[0].Type != agentcore.EventAgentStart || got[1].Type != agentcore.EventTurnStart {
+	if got[0].Type != domainevent.TypeAgentStart || got[1].Type != domainevent.TypeTurnStart {
 		t.Fatalf("expected agent_start then turn_start, got %#v", got)
 	}
-	errorIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventError && strings.Contains(event.Error, "model boom")
+	errorIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeError && strings.Contains(event.Error, "model boom")
 	}, "model error")
-	turnEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventTurnEnd
+	turnEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeTurnEnd
 	}, "turn end after error")
-	agentEndIdx := requireEventIndex(t, got, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventAgentEnd
+	agentEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeAgentEnd
 	}, "agent end after error")
 	requireBefore(t, got, errorIdx, turnEndIdx, "model error", "turn end")
 	requireBefore(t, got, turnEndIdx, agentEndIdx, "turn end", "agent end")
@@ -108,7 +110,7 @@ func TestRunnerEmitsErrorAndClosesLifecycleOnModelError(t *testing.T) {
 func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 	ctx := context.Background()
 	toolCallIndex := 0
-	echoTool, err := agentcore.InferTool("flow_echo", "echo text", func(_ context.Context, req *flowEchoRequest) (*flowEchoResponse, error) {
+	echoTool, err := runtimeport.InferTool("flow_echo", "echo text", func(_ context.Context, req *flowEchoRequest) (*flowEchoResponse, error) {
 		return &flowEchoResponse{Text: "echo:" + req.Text}, nil
 	})
 	if err != nil {
@@ -117,31 +119,31 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 
 	model := testmodel.New().
 		EnqueueStream(
-			agentcore.Message{Role: agentcore.RoleAssistant, ReasoningContent: "think "},
-			agentcore.Message{Role: agentcore.RoleAssistant, Content: "draft "},
-			agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+			domainmessage.Message{Role: domainmessage.RoleAssistant, ReasoningContent: "think "},
+			domainmessage.Message{Role: domainmessage.RoleAssistant, Content: "draft "},
+			domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				ID:    "flow-tool-call",
 				Index: &toolCallIndex,
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "flow_echo",
 					Arguments: `{"text":`,
 				},
 			}}},
-			agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+			domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				Index: &toolCallIndex,
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Arguments: `"hello"}`,
 				},
 			}}},
 		).
 		EnqueueStream(testmodel.AssistantMessage("final"))
-	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	agent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "flow",
 		Description:        "flow",
 		Model:              model,
-		Tools:              []agentcore.Tool{echoTool},
+		Tools:              []runtimeport.Tool{echoTool},
 		MaxIterations:      4,
 		EmitInternalEvents: true,
 	})
@@ -150,35 +152,35 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 	}
 
 	events := runAgentForTest(t, ctx, agent, true)
-	reasoningIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
-			event.DeltaKind == agentcore.DeltaReasoning &&
+	reasoningIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
+			event.DeltaKind == domainevent.DeltaReasoning &&
 			event.Content == "think "
 	}, "reasoning delta")
-	outputIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
-			event.DeltaKind == agentcore.DeltaOutput &&
+	outputIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
+			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "draft "
 	}, "output delta")
-	firstArgsIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.DeltaKind == agentcore.DeltaToolArgs &&
+	firstArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolName == "flow_echo" &&
 			event.Content == `{"text":`
 	}, "first tool args delta")
-	secondArgsIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.DeltaKind == agentcore.DeltaToolArgs &&
+	secondArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolName == "flow_echo" &&
 			event.Content == `"hello"}`
 	}, "second tool args delta")
-	messageEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageEnd &&
-			event.Role == agentcore.RoleAssistant &&
+	messageEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageEnd &&
+			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "draft " &&
 			event.ReasoningContent == "think " &&
 			len(event.ToolCalls) == 1 &&
@@ -186,8 +188,8 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 			event.ToolCalls[0].Function.Name == "flow_echo" &&
 			event.ToolCalls[0].Function.Arguments == `{"text":"hello"}`
 	}, "assistant message end with aggregated tool call")
-	toolStartIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolStart &&
+	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolStart &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolCallRef != "" &&
 			event.ToolName == "flow_echo" &&
@@ -196,24 +198,24 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 			*event.ToolCallIndex == 0
 	}, "tool start")
 	toolStart := events[toolStartIdx]
-	toolEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolEnd &&
+	toolEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolEnd &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolCallRef == toolStart.ToolCallRef &&
 			event.ToolName == "flow_echo" &&
 			strings.Contains(event.ToolResult, "echo:hello")
 	}, "tool end")
-	toolMessageIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageEnd &&
-			event.Role == agentcore.RoleTool &&
+	toolMessageIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageEnd &&
+			event.Role == domainmessage.RoleTool &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolName == "flow_echo" &&
 			strings.Contains(event.Content, "echo:hello")
 	}, "tool message end")
-	finalIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
-			event.DeltaKind == agentcore.DeltaOutput &&
+	finalIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
+			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "final"
 	}, "final assistant delta")
 
@@ -246,7 +248,7 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 	ctx := context.Background()
 	toolCallIndex := 0
-	echoTool, err := agentcore.InferTool("generate_echo", "echo text", func(_ context.Context, req *flowEchoRequest) (*flowEchoResponse, error) {
+	echoTool, err := runtimeport.InferTool("generate_echo", "echo text", func(_ context.Context, req *flowEchoRequest) (*flowEchoResponse, error) {
 		return &flowEchoResponse{Text: "echo:" + req.Text}, nil
 	})
 	if err != nil {
@@ -254,15 +256,15 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 	}
 
 	model := testmodel.New(
-		agentcore.Message{
-			Role:             agentcore.RoleAssistant,
+		domainmessage.Message{
+			Role:             domainmessage.RoleAssistant,
 			Content:          "regular-draft",
 			ReasoningContent: "regular-thinking",
-			ToolCalls: []agentcore.ToolCall{{
+			ToolCalls: []domainmessage.ToolCall{{
 				ID:    "generate-tool-call",
 				Index: &toolCallIndex,
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "generate_echo",
 					Arguments: `{"text":"hello"}`,
 				},
@@ -270,11 +272,11 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 		},
 		testmodel.AssistantMessage("regular-final"),
 	)
-	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	agent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "generate-flow",
 		Description:        "generate flow",
 		Model:              model,
-		Tools:              []agentcore.Tool{echoTool},
+		Tools:              []runtimeport.Tool{echoTool},
 		MaxIterations:      4,
 		EmitInternalEvents: true,
 	})
@@ -283,21 +285,21 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 	}
 
 	events := runAgentForTest(t, ctx, agent, false)
-	reasoningIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
-			event.DeltaKind == agentcore.DeltaReasoning &&
+	reasoningIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
+			event.DeltaKind == domainevent.DeltaReasoning &&
 			event.Content == "regular-thinking"
 	}, "regular reasoning delta")
-	outputIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
-			event.DeltaKind == agentcore.DeltaOutput &&
+	outputIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
+			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "regular-draft"
 	}, "regular output delta")
-	messageEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageEnd &&
-			event.Role == agentcore.RoleAssistant &&
+	messageEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageEnd &&
+			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "regular-draft" &&
 			event.ReasoningContent == "regular-thinking" &&
 			len(event.ToolCalls) == 1 &&
@@ -305,25 +307,25 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 			event.ToolCalls[0].Function.Name == "generate_echo" &&
 			event.ToolCalls[0].Function.Arguments == `{"text":"hello"}`
 	}, "regular message end with tool call")
-	toolStartIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolStart &&
+	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolStart &&
 			event.ToolCallID == "generate-tool-call" &&
 			event.ToolName == "generate_echo" &&
 			event.ToolCallRef != "" &&
 			event.ToolArgs == `{"text":"hello"}`
 	}, "regular tool start")
 	toolStart := events[toolStartIdx]
-	toolEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolEnd &&
+	toolEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolEnd &&
 			event.ToolCallID == "generate-tool-call" &&
 			event.ToolCallRef == toolStart.ToolCallRef &&
 			event.ToolName == "generate_echo" &&
 			strings.Contains(event.ToolResult, "echo:hello")
 	}, "regular tool end")
-	finalIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
-			event.DeltaKind == agentcore.DeltaOutput &&
+	finalIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
+			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "regular-final"
 	}, "regular final delta")
 
@@ -342,20 +344,20 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 func TestUnknownToolCallEmitsToolEndWithHandlerResult(t *testing.T) {
 	ctx := context.Background()
 	toolCallIndex := 0
-	dummyTool, err := agentcore.InferTool("known_tool", "known tool", func(context.Context, *flowEchoRequest) (string, error) {
+	dummyTool, err := runtimeport.InferTool("known_tool", "known tool", func(context.Context, *flowEchoRequest) (string, error) {
 		return "known", nil
 	})
 	if err != nil {
 		t.Fatalf("create tool: %v", err)
 	}
 	model := testmodel.New(
-		agentcore.Message{
-			Role: agentcore.RoleAssistant,
-			ToolCalls: []agentcore.ToolCall{{
+		domainmessage.Message{
+			Role: domainmessage.RoleAssistant,
+			ToolCalls: []domainmessage.ToolCall{{
 				ID:    "unknown-tool-call",
 				Index: &toolCallIndex,
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "search",
 					Arguments: `{"query":"anthropic ipo"}`,
 				},
@@ -363,11 +365,11 @@ func TestUnknownToolCallEmitsToolEndWithHandlerResult(t *testing.T) {
 		},
 		testmodel.AssistantMessage("final"),
 	)
-	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	agent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "unknown-tool-flow",
 		Description:        "unknown tool flow",
 		Model:              model,
-		Tools:              []agentcore.Tool{dummyTool},
+		Tools:              []runtimeport.Tool{dummyTool},
 		MaxIterations:      4,
 		EmitInternalEvents: true,
 		UnknownToolHandler: func(context.Context, string, string) (string, error) {
@@ -379,24 +381,24 @@ func TestUnknownToolCallEmitsToolEndWithHandlerResult(t *testing.T) {
 	}
 
 	events := runAgentForTest(t, ctx, agent, false)
-	toolStartIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolStart &&
+	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolStart &&
 			event.ToolCallID == "unknown-tool-call" &&
 			event.ToolName == "search" &&
 			event.ToolCallRef != ""
 	}, "unknown tool start")
 	toolStart := events[toolStartIdx]
-	toolEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolEnd &&
+	toolEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolEnd &&
 			event.ToolCallID == "unknown-tool-call" &&
 			event.ToolCallRef == toolStart.ToolCallRef &&
 			event.ToolName == "search" &&
 			strings.Contains(event.ToolResult, "does not exist")
 	}, "unknown tool end")
-	finalIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.Role == agentcore.RoleAssistant &&
-			event.DeltaKind == agentcore.DeltaOutput &&
+	finalIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.Role == domainmessage.RoleAssistant &&
+			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "final"
 	}, "unknown tool final delta")
 	requireBefore(t, events, toolStartIdx, toolEndIdx, "unknown tool start", "unknown tool end")
@@ -406,7 +408,7 @@ func TestUnknownToolCallEmitsToolEndWithHandlerResult(t *testing.T) {
 func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
 	ctx := context.Background()
 	toolCallIndex := 0
-	echoTool, err := agentcore.InferTool("generated_id_echo", "echo text", func(_ context.Context, req *flowEchoRequest) (*flowEchoResponse, error) {
+	echoTool, err := runtimeport.InferTool("generated_id_echo", "echo text", func(_ context.Context, req *flowEchoRequest) (*flowEchoResponse, error) {
 		return &flowEchoResponse{Text: "echo:" + req.Text}, nil
 	})
 	if err != nil {
@@ -415,28 +417,28 @@ func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
 
 	model := testmodel.New().
 		EnqueueStream(
-			agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+			domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				Index: &toolCallIndex,
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "generated_id_echo",
 					Arguments: `{"text":`,
 				},
 			}}},
-			agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+			domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				Index: &toolCallIndex,
 				Type:  "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Arguments: `"hello"}`,
 				},
 			}}},
 		).
 		EnqueueStream(testmodel.AssistantMessage("final"))
-	agent, err := NewChatModelAgent(ctx, &agentcore.ChatAgentConfig{
+	agent, err := NewChatModelAgent(ctx, &runtimeport.ChatAgentConfig{
 		Name:               "generated-id-flow",
 		Description:        "generated id flow",
 		Model:              model,
-		Tools:              []agentcore.Tool{echoTool},
+		Tools:              []runtimeport.Tool{echoTool},
 		MaxIterations:      4,
 		EmitInternalEvents: true,
 	})
@@ -445,25 +447,25 @@ func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
 	}
 
 	events := runAgentForTest(t, ctx, agent, true)
-	firstArgsIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.DeltaKind == agentcore.DeltaToolArgs &&
+	firstArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolName == "generated_id_echo" &&
 			event.Content == `{"text":`
 	}, "first generated-id tool args")
-	secondArgsIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageDelta &&
-			event.DeltaKind == agentcore.DeltaToolArgs &&
+	secondArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageDelta &&
+			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolName == "generated_id_echo" &&
 			event.Content == `"hello"}`
 	}, "second generated-id tool args")
-	messageEndIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventMessageEnd &&
+	messageEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeMessageEnd &&
 			len(event.ToolCalls) == 1 &&
 			event.ToolCalls[0].Function.Name == "generated_id_echo"
 	}, "generated-id message end")
-	toolStartIdx := requireEventIndex(t, events, func(event agentcore.Event) bool {
-		return event.Type == agentcore.EventToolStart &&
+	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeToolStart &&
 			event.ToolName == "generated_id_echo"
 	}, "generated-id tool start")
 
@@ -491,7 +493,7 @@ func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
 	}
 }
 
-func runAgentForTest(t *testing.T, ctx context.Context, agent agentcore.Agent, streaming bool) []agentcore.Event {
+func runAgentForTest(t *testing.T, ctx context.Context, agent runtimeport.Agent, streaming bool) []domainevent.Event {
 	t.Helper()
 
 	events, err := runAgentForTestResult(t, ctx, agent, streaming)
@@ -501,10 +503,10 @@ func runAgentForTest(t *testing.T, ctx context.Context, agent agentcore.Agent, s
 	return events
 }
 
-func runAgentForTestResult(t *testing.T, ctx context.Context, agent agentcore.Agent, streaming bool) ([]agentcore.Event, error) {
+func runAgentForTestResult(t *testing.T, ctx context.Context, agent runtimeport.Agent, streaming bool) ([]domainevent.Event, error) {
 	t.Helper()
 
-	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
+	runner, err := NewRunnerFromConfig(ctx, runtimeport.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: streaming,
 		CheckPointStore: checkpointmemory.NewStore(),
@@ -513,13 +515,13 @@ func runAgentForTestResult(t *testing.T, ctx context.Context, agent agentcore.Ag
 		t.Fatalf("create runner: %v", err)
 	}
 
-	var events []agentcore.Event
-	_, err = runner.Run(ctx, agentcore.TurnInput{
-		Message: agentcore.Message{Role: agentcore.RoleUser, Content: "start"},
-	}, agentcore.RunOptions{
+	var events []domainevent.Event
+	_, err = runner.Run(ctx, domainmessage.TurnInput{
+		Message: domainmessage.Message{Role: domainmessage.RoleUser, Content: "start"},
+	}, runtimeport.RunOptions{
 		RunID:        "event-flow-test",
 		CheckpointID: "event-flow-test",
-		Sink: func(event agentcore.Event) error {
+		Sink: func(event domainevent.Event) error {
 			events = append(events, event)
 			return nil
 		},
@@ -527,7 +529,7 @@ func runAgentForTestResult(t *testing.T, ctx context.Context, agent agentcore.Ag
 	return events, err
 }
 
-func requireEventIndex(t *testing.T, events []agentcore.Event, match func(agentcore.Event) bool, name string) int {
+func requireEventIndex(t *testing.T, events []domainevent.Event, match func(domainevent.Event) bool, name string) int {
 	t.Helper()
 	for i, event := range events {
 		if match(event) {
@@ -538,7 +540,7 @@ func requireEventIndex(t *testing.T, events []agentcore.Event, match func(agentc
 	return -1
 }
 
-func requireBefore(t *testing.T, events []agentcore.Event, before, after int, beforeName, afterName string) {
+func requireBefore(t *testing.T, events []domainevent.Event, before, after int, beforeName, afterName string) {
 	t.Helper()
 	if before >= after {
 		t.Fatalf("expected %s before %s; before=%d after=%d events=%#v", beforeName, afterName, before, after, events)

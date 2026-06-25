@@ -2,9 +2,9 @@ package summary
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/events"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -14,10 +14,10 @@ import (
 
 type Config struct {
 	MaxTokensBeforeSummary int
-	Model                  agentcore.ChatModel
+	Model                  runtimeport.ChatModel
 }
 
-func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
+func New(ctx context.Context, cfg *Config) (runtimeport.AgentMiddleware, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -25,7 +25,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 		return nil, fmt.Errorf("model is nil")
 	}
 
-	maxBefore := agentcore.DefaultMaxTokensBeforeSummary
+	maxBefore := runtimeport.DefaultMaxTokensBeforeSummary
 	if cfg.MaxTokensBeforeSummary > 0 {
 		maxBefore = cfg.MaxTokensBeforeSummary
 	}
@@ -51,7 +51,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 
 func handleSummaryCallback(ctx context.Context, after adk.ChatModelAgentState) error {
 	summaryText := latestSummaryText(after.Messages)
-	if cb, ok := agentcore.SummaryPersistCallbackFromContext(ctx); ok {
+	if cb, ok := runtimeport.SummaryPersistCallbackFromContext(ctx); ok {
 		cb(summaryText)
 	}
 	_ = events.DispatchEvent(ctx, events.Event{

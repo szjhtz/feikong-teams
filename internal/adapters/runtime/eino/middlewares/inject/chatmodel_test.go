@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/runtime/eino/middlewares/inject"
+	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/runtime/hooks"
 	"fkteams/internal/testmodel"
 
@@ -74,7 +74,7 @@ func TestGenerateInvokesModelHooks(t *testing.T) {
 	afterCalled := false
 	bus.RegisterFunc("rewrite-model-input", []hooks.HookPoint{hooks.HookBeforeModelRequest}, func(ctx hooks.Context, inv hooks.Invocation) (hooks.Result, error) {
 		payload := inv.Payload.(hooks.BeforeModelRequestPayload)
-		payload.Messages = append(payload.Messages, agentcore.Message{Role: agentcore.RoleSystem, Content: "hooked"})
+		payload.Messages = append(payload.Messages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: "hooked"})
 		return hooks.Result{Payload: payload}, nil
 	}, hooks.Options{})
 	bus.RegisterFunc("after-model", []hooks.HookPoint{hooks.HookAfterModelResponse}, func(ctx hooks.Context, inv hooks.Invocation) (hooks.Result, error) {
@@ -120,7 +120,7 @@ func TestGenerateInvokesModelHooks(t *testing.T) {
 	}
 }
 
-func assertInjectedContext(t *testing.T, input []agentcore.Message) {
+func assertInjectedContext(t *testing.T, input []domainmessage.Message) {
 	t.Helper()
 
 	if len(input) != 2 {
@@ -130,7 +130,7 @@ func assertInjectedContext(t *testing.T, input []agentcore.Message) {
 		t.Fatalf("expected original message to stay first, got %#v", input[0])
 	}
 	injected := input[1]
-	if injected.Role != agentcore.RoleUser {
+	if injected.Role != domainmessage.RoleUser {
 		t.Fatalf("expected injected context to be user message, got %s", injected.Role)
 	}
 	for _, want := range []string{"<system-reminder>", "当前时间", "工作目录"} {

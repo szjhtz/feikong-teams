@@ -2,7 +2,8 @@ package steering
 
 import (
 	"context"
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"testing"
 
 	"github.com/cloudwego/eino/adk"
@@ -11,8 +12,8 @@ import (
 
 func TestBeforeModelRewriteStateAppendsSteeringMessages(t *testing.T) {
 	h := &handler{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}}
-	ctx := agentcore.WithSteeringSource(context.Background(), func(context.Context) ([]agentcore.Message, error) {
-		return []agentcore.Message{{Role: agentcore.RoleUser, Content: "stop and do this"}}, nil
+	ctx := runtimeport.WithSteeringSource(context.Background(), func(context.Context) ([]domainmessage.Message, error) {
+		return []domainmessage.Message{{Role: domainmessage.RoleUser, Content: "stop and do this"}}, nil
 	})
 	state := &adk.ChatModelAgentState{
 		Messages: []*schema.Message{{Role: schema.User, Content: "start"}},

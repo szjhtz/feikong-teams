@@ -4,10 +4,11 @@ package inject
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/common/typeutil"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	appdata "fkteams/internal/app/appdata"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
 	"fmt"
 	"reflect"
@@ -35,7 +36,7 @@ func New(inner model.ToolCallingChatModel) model.ToolCallingChatModel {
 	return &injectChatModel{inner: inner, innerHandlesCallbacks: innerHandlesCallbacks}
 }
 
-func NewForModel(inner agentcore.ChatModel) (agentcore.ChatModel, error) {
+func NewForModel(inner runtimeport.ChatModel) (runtimeport.ChatModel, error) {
 	runnerModel, err := einoruntime.AdaptChatModelForRunner(inner)
 	if err != nil {
 		return nil, err
@@ -186,7 +187,7 @@ func invokeBeforeModelRequest(ctx context.Context, input []*schema.Message) ([]*
 }
 
 func invokeAfterModelResponse(ctx context.Context, output *schema.Message, modelErr error) error {
-	var message agentcore.Message
+	var message domainmessage.Message
 	if output != nil {
 		message = einoruntime.AdaptMessageFromRunner(output)
 	}

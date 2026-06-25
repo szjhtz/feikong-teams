@@ -2,15 +2,16 @@ package steering
 
 import (
 	"context"
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 )
 
-func New() agentcore.AgentMiddleware {
+func New() runtimeport.AgentMiddleware {
 	return einoruntime.WrapAgentMiddleware("steering", &handler{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 	})
@@ -21,7 +22,7 @@ type handler struct {
 }
 
 func (h *handler) BeforeModelRewriteState(ctx context.Context, state *adk.ChatModelAgentState, _ *adk.ModelContext) (context.Context, *adk.ChatModelAgentState, error) {
-	source, ok := agentcore.SteeringSourceFromContext(ctx)
+	source, ok := runtimeport.SteeringSourceFromContext(ctx)
 	if !ok {
 		return ctx, state, nil
 	}
@@ -38,7 +39,7 @@ func (h *handler) BeforeModelRewriteState(ctx context.Context, state *adk.ChatMo
 	return ctx, &next, nil
 }
 
-func adaptMessages(messages []agentcore.Message) []*schema.Message {
+func adaptMessages(messages []domainmessage.Message) []*schema.Message {
 	result := make([]*schema.Message, 0, len(messages))
 	for _, msg := range messages {
 		if msg.IsEmpty() {
@@ -60,27 +61,27 @@ func adaptMessages(messages []agentcore.Message) []*schema.Message {
 	return result
 }
 
-func adaptRole(role agentcore.MessageRole) schema.RoleType {
+func adaptRole(role domainmessage.Role) schema.RoleType {
 	switch role {
-	case agentcore.RoleSystem:
+	case domainmessage.RoleSystem:
 		return schema.System
-	case agentcore.RoleAssistant:
+	case domainmessage.RoleAssistant:
 		return schema.Assistant
-	case agentcore.RoleTool:
+	case domainmessage.RoleTool:
 		return schema.Tool
 	default:
 		return schema.User
 	}
 }
 
-func adaptParts(parts []agentcore.ContentPart) []schema.MessageInputPart {
+func adaptParts(parts []domainmessage.ContentPart) []schema.MessageInputPart {
 	result := make([]schema.MessageInputPart, 0, len(parts))
 	for _, part := range parts {
 		p := schema.MessageInputPart{Text: part.Text}
 		switch part.Type {
-		case agentcore.ContentPartText:
+		case domainmessage.ContentPartText:
 			p.Type = schema.ChatMessagePartTypeText
-		case agentcore.ContentPartImageURL:
+		case domainmessage.ContentPartImageURL:
 			p.Type = schema.ChatMessagePartTypeImageURL
 			p.Image = &schema.MessageInputImage{
 				MessagePartCommon: schema.MessagePartCommon{
@@ -90,13 +91,13 @@ func adaptParts(parts []agentcore.ContentPart) []schema.MessageInputPart {
 				},
 				Detail: schema.ImageURLDetail(part.Detail),
 			}
-		case agentcore.ContentPartAudioURL:
+		case domainmessage.ContentPartAudioURL:
 			p.Type = schema.ChatMessagePartTypeAudioURL
 			p.Audio = &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
-		case agentcore.ContentPartVideoURL:
+		case domainmessage.ContentPartVideoURL:
 			p.Type = schema.ChatMessagePartTypeVideoURL
 			p.Video = &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
-		case agentcore.ContentPartFileURL:
+		case domainmessage.ContentPartFileURL:
 			p.Type = schema.ChatMessagePartTypeFileURL
 			p.File = &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
 		default:

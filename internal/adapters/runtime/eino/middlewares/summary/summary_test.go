@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
 	"fkteams/events"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/testmodel"
 
 	"github.com/cloudwego/eino/adk"
@@ -67,7 +67,7 @@ func TestLatestSummaryTextReturnsEmptyWhenNoContent(t *testing.T) {
 func TestHandleSummaryCallbackPersistsAndDispatchesEvent(t *testing.T) {
 	var persisted string
 	var dispatched events.Event
-	ctx := agentcore.WithSummaryPersistCallback(context.Background(), func(summaryText string) {
+	ctx := runtimeport.WithSummaryPersistCallback(context.Background(), func(summaryText string) {
 		persisted = summaryText
 	})
 	ctx = events.WithCallback(ctx, func(event events.Event) error {

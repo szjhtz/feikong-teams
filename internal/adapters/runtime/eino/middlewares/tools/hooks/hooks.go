@@ -4,15 +4,15 @@ package hooks
 import (
 	"context"
 
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	runtimeport "fkteams/internal/ports/runtime"
 	projecthooks "fkteams/internal/runtime/hooks"
 
 	"github.com/cloudwego/eino/compose"
 )
 
 // New 创建工具 hook 中间件。
-func New() agentcore.ToolMiddleware {
+func New() runtimeport.ToolMiddleware {
 	return einoruntime.WrapToolMiddleware("hooks", compose.ToolMiddleware{
 		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {

@@ -4,15 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
+	domainevent "fkteams/internal/domain/event"
+	domainmessage "fkteams/internal/domain/message"
 )
 
 func TestToolIdentityAttachMapsUnknownResultIDToPendingCall(t *testing.T) {
 	tracker := newToolIdentityTracker()
 	index := 0
-	call := agentcore.ToolCall{
+	call := domainmessage.ToolCall{
 		Index: &index,
-		Function: agentcore.FunctionCall{
+		Function: domainmessage.FunctionCall{
 			Name:      "echo",
 			Arguments: `{"text":"hello"}`,
 		},
@@ -20,8 +21,8 @@ func TestToolIdentityAttachMapsUnknownResultIDToPendingCall(t *testing.T) {
 	ref := tracker.ensure("message-1", 0, MemberScope{}, &call)
 	tracker.rememberResult(call.Function.Name, call.ID)
 
-	event := &agentcore.Event{
-		Type:       agentcore.EventToolEnd,
+	event := &domainevent.Event{
+		Type:       domainevent.TypeToolEnd,
 		ToolCallID: "provider-real-id",
 		ToolName:   "echo",
 	}

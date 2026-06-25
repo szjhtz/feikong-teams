@@ -8,9 +8,9 @@ package trimresult
 
 import (
 	"context"
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/storage/file/history"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"strings"
 
@@ -42,7 +42,7 @@ type Config struct {
 // 判断标准：某个工具结果之后存在 Assistant 文字响应（Content != ""），
 // 说明 LLM 已将该结果处理到其文字输出中，不再需要在上下文中保留完整内容。
 // 活跃工具调用链（尚无文字响应跟随）的结果始终保留。
-func New(cfg *Config) agentcore.AgentMiddleware {
+func New(cfg *Config) runtimeport.AgentMiddleware {
 	prefixes := eventlog.NoisyToolPrefixes
 	placeholder := defaultPlaceholder
 

@@ -809,16 +809,13 @@ func TestServerHandlersUseDomainAndRuntimePorts(t *testing.T) {
 	}
 }
 
-func TestEinoCoreAdapterUsesDomainAndRuntimePorts(t *testing.T) {
+func TestEinoAdapterUsesDomainAndRuntimePorts(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	err := filepath.WalkDir(filepath.Join(root, "internal", "adapters", "runtime", "eino"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if filepath.Base(path) == "middlewares" {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -835,7 +832,7 @@ func TestEinoCoreAdapterUsesDomainAndRuntimePorts(t *testing.T) {
 		}
 		for _, spec := range file.Imports {
 			if strings.Trim(spec.Path.Value, `"`) == "fkteams/agentcore" {
-				t.Errorf("%s imports agentcore; Eino core adapter must use internal/ports/runtime and domain types directly", rel)
+				t.Errorf("%s imports agentcore; Eino adapter must use internal/ports/runtime and domain types directly", rel)
 			}
 		}
 		return nil
