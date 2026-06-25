@@ -71,6 +71,8 @@ internal/adapters/runtime/
 internal/adapters/storage/
   file/history/             #   HistoryRecorder、会话 metadata、历史文件读写
                             #   agentcore 旧门面已删除，禁止恢复；直接使用 internal/domain 与 internal/ports/runtime
+internal/bootstrap/environment/ # init 命令运行环境初始化器（uv / bun）
+internal/bootstrap/runtimes/ #  默认 runtime engine 和 provider 注册
 internal/bootstrap/services/ #  组合层后台服务实现（memory / scheduler）
 agents/                     # 智能体系统
   registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
@@ -113,7 +115,6 @@ tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环
                             #   CLI runtime 使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面
 mdiff/                      # 文件差异/补丁
-bootstrap/                  # 应用目录初始化
 ```
 
 ### 数据目录

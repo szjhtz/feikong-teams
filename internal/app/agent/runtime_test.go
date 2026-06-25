@@ -1,3 +1,3 @@
 package agent
 
-import _ "fkteams/bootstrap/runtimes"
+import _ "fkteams/internal/bootstrap/runtimes"

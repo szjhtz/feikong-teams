@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	agentscommon "fkteams/agents/common"
-	_ "fkteams/bootstrap/runtimes"
+	_ "fkteams/internal/bootstrap/runtimes"
 	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"

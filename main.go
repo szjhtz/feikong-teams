@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	_ "fkteams/bootstrap/runtimes"
+	_ "fkteams/internal/bootstrap/runtimes"
 
 	"github.com/pterm/pterm"
 )

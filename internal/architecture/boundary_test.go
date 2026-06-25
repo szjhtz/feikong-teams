@@ -74,6 +74,15 @@ func TestRootAppStatePackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootBootstrapPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "bootstrap")); err == nil {
+		t.Fatal("root bootstrap package exists; use internal/bootstrap/*")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -118,6 +127,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/appstate" {
 		t.Errorf("%s imports removed root appstate package; use internal/app/appstate", rel)
+	}
+	if importPath == "fkteams/bootstrap" || strings.HasPrefix(importPath, "fkteams/bootstrap/") {
+		t.Errorf("%s imports removed root bootstrap package; use internal/bootstrap/*", rel)
 	}
 }
 
