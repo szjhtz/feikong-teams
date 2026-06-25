@@ -5,24 +5,28 @@ import (
 	"strings"
 	"testing"
 
-	eventlog "fkteams/internal/adapters/storage/file/history"
+	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/domain/session"
 )
 
+type fakeSessionMessageReader struct {
+	messages []domainhistory.AgentMessage
+}
+
+func (r fakeSessionMessageReader) LoadSessionMessages(context.Context, string) ([]domainhistory.AgentMessage, error) {
+	return r.messages, nil
+}
+
+func installFakeReader(t *testing.T, messages []domainhistory.AgentMessage) {
+	t.Helper()
+	SetSessionMessageReader(fakeSessionMessageReader{messages: messages})
+	t.Cleanup(func() { SetSessionMessageReader(nil) })
+}
+
 func TestListAndReadSessionAttachments(t *testing.T) {
 	sessionID := "attachment-test-session"
-	eventlog.GlobalSessionManager.Remove(sessionID)
-	t.Cleanup(func() { eventlog.GlobalSessionManager.Remove(sessionID) })
-
-	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, t.TempDir())
-	recorder.RecordUserMessage(domainmessage.Message{
-		Role: domainmessage.RoleUser,
-		ContentParts: []domainmessage.ContentPart{
-			{Type: domainmessage.ContentPartText, Text: "look"},
-			{Type: domainmessage.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
-		},
-	})
+	installFakeReader(t, []domainhistory.AgentMessage{messageWithImageAttachment()})
 	ctx := session.WithID(context.Background(), sessionID)
 
 	list, err := List(ctx, &ListRequest{})
@@ -50,17 +54,7 @@ func TestListAndReadSessionAttachments(t *testing.T) {
 
 func TestReadSessionAttachmentDefaultsToMetadataOnly(t *testing.T) {
 	sessionID := "attachment-test-metadata-only"
-	eventlog.GlobalSessionManager.Remove(sessionID)
-	t.Cleanup(func() { eventlog.GlobalSessionManager.Remove(sessionID) })
-
-	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, t.TempDir())
-	recorder.RecordUserMessage(domainmessage.Message{
-		Role: domainmessage.RoleUser,
-		ContentParts: []domainmessage.ContentPart{
-			{Type: domainmessage.ContentPartText, Text: "look"},
-			{Type: domainmessage.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
-		},
-	})
+	installFakeReader(t, []domainhistory.AgentMessage{messageWithImageAttachment()})
 	ctx := session.WithID(context.Background(), sessionID)
 
 	read, err := Read(ctx, &ReadRequest{AttachmentID: "history:000000:00:01"})
@@ -75,5 +69,20 @@ func TestReadSessionAttachmentDefaultsToMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(read.Attachment.MessageText, "look") {
 		t.Fatalf("message_text = %q, want source text", read.Attachment.MessageText)
+	}
+}
+
+func messageWithImageAttachment() domainhistory.AgentMessage {
+	return domainhistory.AgentMessage{
+		Events: []domainhistory.MessageEvent{
+			{
+				Type:    domainhistory.MsgTypeText,
+				Content: "look",
+				ContentParts: []domainmessage.ContentPart{
+					{Type: domainmessage.ContentPartText, Text: "look"},
+					{Type: domainmessage.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
+				},
+			},
+		},
 	}
 }

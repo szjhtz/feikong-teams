@@ -21,10 +21,11 @@ func (registryTestTool) Invoke(context.Context, runtimeport.ToolInvocation) (*ru
 
 func TestBuiltinToolRegistryMatchesCatalog(t *testing.T) {
 	registered := BuiltinToolNames()
-	if len(registered) != len(builtinToolCatalog) {
-		t.Fatalf("registered tool groups = %d, catalog = %d", len(registered), len(builtinToolCatalog))
+	catalog := BuiltinToolInfos()
+	if len(registered) != len(catalog) {
+		t.Fatalf("registered tool groups = %d, catalog = %d", len(registered), len(catalog))
 	}
-	for _, info := range builtinToolCatalog {
+	for _, info := range catalog {
 		if !slices.Contains(registered, info.Name) {
 			t.Fatalf("builtin registry missing catalog group %s", info.Name)
 		}
@@ -34,7 +35,13 @@ func TestBuiltinToolRegistryMatchesCatalog(t *testing.T) {
 func TestToolGroupRegistryRejectsDuplicateAndResolves(t *testing.T) {
 	registry := NewToolGroupRegistry()
 	reg := ToolGroupRegistration{
-		Name: "demo",
+		Info: ToolGroupInfo{
+			Name:        "demo",
+			DisplayName: "Demo",
+			Description: "Demo tools",
+			Category:    "Test",
+			Builtin:     true,
+		},
 		Factory: func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 			return []runtimeport.Tool{registryTestTool{}}, nil
 		},

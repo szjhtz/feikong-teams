@@ -35,7 +35,7 @@ internal/app/               # 应用用例层，入口只调用这里
     taskstream/             #   运行中任务事件流、队列、interrupt 状态管理
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
     catalog/                #   内置智能体定义、注册表、AgentBuilder 和成员工具元信息
-  tools/                    #   工具注册、解析、策略标记和内置工具实现
+  tools/                    #   工具注册、解析、策略标记和运行时无关内置工具实现
   memory/                   #   长期记忆检索、注入、提取、BM25 和 Markdown 持久化
   schedule/                 #   定时任务用例入口、后台任务结果收集，工具/HTTP/CLI 只调用这里
   skill/                    #   技能 provider、安装、移除、搜索结果和本地文件管理
@@ -66,6 +66,7 @@ internal/ports/             # 运行时无关端口契约
   memory/                   #   LLMClient 等长期记忆外部能力端口
   runtime/                  #   Runtime / Engine / Runner / Model / Tool 等端口
   scheduler/                #   Scheduler / TaskExecutor 调度端口
+  storage/                  #   SessionMessageReader 等存储读取端口
 internal/adapters/scheduler/
   filecron/                 #   文件存储 + cron 轮询调度器
 internal/adapters/tools/
@@ -97,6 +98,7 @@ internal/adapters/storage/
                             #   agentcore 旧门面已删除，禁止恢复；直接使用 internal/domain 与 internal/ports/runtime
 internal/bootstrap/environment/ # init 命令运行环境初始化器（uv / bun）
 internal/bootstrap/runtimes/ #  默认 runtime engine 和 provider 注册
+internal/bootstrap/tools/    #  adapter 工具组与 app 工具注册表连接
 internal/bootstrap/services/ #  组合层后台服务实现（memory / scheduler）
 web/                        # 内嵌前端（//go:embed）
 ```
@@ -137,6 +139,7 @@ web/                        # 内嵌前端（//go:embed）
 ### 工具
 
 - 新工具组必须通过 `internal/app/tools.ToolGroupRegistry` 注册，禁止在 `internal/app/tools/tools.go` 中增加 switch 分支
+- 依赖具体存储、调度器或第三方 SDK 的工具实现属于 `internal/adapters/tools`，通过 `internal/bootstrap/tools` 连接到应用工具注册表；`internal/app/tools` 禁止反向 import adapter
 - 工具必须通过 `internal/app/tools/metadata.go` 的 `ClassifyTools()` 标记元数据（只读/破坏性）
 
 ### 配置

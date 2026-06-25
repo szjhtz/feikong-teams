@@ -7,6 +7,7 @@ import (
 	"os"
 
 	_ "fkteams/internal/bootstrap/runtimes"
+	_ "fkteams/internal/bootstrap/tools"
 
 	"github.com/pterm/pterm"
 )

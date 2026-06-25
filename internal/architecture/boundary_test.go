@@ -277,6 +277,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	case strings.HasPrefix(rel, "internal/app/tools/"):
 		forbidden := []string{
 			"fkteams/agentcore",
+			"fkteams/internal/adapters",
 			"fkteams/internal/adapters/runtime/eino",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",

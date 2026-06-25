@@ -3,13 +3,13 @@ package attachment
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
+	"sync"
 
-	eventlog "fkteams/internal/adapters/storage/file/history"
-	"fkteams/internal/app/appdata"
+	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/domain/session"
+	storageport "fkteams/internal/ports/storage"
 )
 
 const maxDataURLBase64Len = 256 * 1024
@@ -56,12 +56,23 @@ type AttachmentDetail struct {
 	DataURLTruncate bool   `json:"data_url_truncated,omitempty"`
 }
 
+var (
+	readerMu             sync.RWMutex
+	sessionMessageReader storageport.SessionMessageReader
+)
+
+func SetSessionMessageReader(reader storageport.SessionMessageReader) {
+	readerMu.Lock()
+	defer readerMu.Unlock()
+	sessionMessageReader = reader
+}
+
 func List(ctx context.Context, _ *ListRequest) (*ListResponse, error) {
 	messages, err := loadCurrentSessionMessages(ctx)
 	if err != nil {
 		return &ListResponse{ErrorMessage: err.Error()}, nil
 	}
-	refs := eventlog.ListAttachments(messages)
+	refs := domainhistory.ListAttachments(messages)
 	attachments := make([]AttachmentSummary, 0, len(refs))
 	for _, ref := range refs {
 		attachments = append(attachments, summarize(ref))
@@ -77,7 +88,7 @@ func Read(ctx context.Context, req *ReadRequest) (*ReadResponse, error) {
 	if err != nil {
 		return &ReadResponse{ErrorMessage: err.Error()}, nil
 	}
-	ref, ok := eventlog.FindAttachment(messages, strings.TrimSpace(req.AttachmentID))
+	ref, ok := domainhistory.FindAttachment(messages, strings.TrimSpace(req.AttachmentID))
 	if !ok {
 		return &ReadResponse{ErrorMessage: "attachment not found"}, nil
 	}
@@ -94,23 +105,21 @@ func Read(ctx context.Context, req *ReadRequest) (*ReadResponse, error) {
 	return &ReadResponse{Attachment: &detail}, nil
 }
 
-func loadCurrentSessionMessages(ctx context.Context) ([]eventlog.AgentMessage, error) {
+func loadCurrentSessionMessages(ctx context.Context) ([]domainhistory.AgentMessage, error) {
 	sessionID, ok := session.IDFromContext(ctx)
 	if !ok || strings.TrimSpace(sessionID) == "" {
 		return nil, fmt.Errorf("session_id is not available in context")
 	}
-	if recorder := eventlog.GlobalSessionManager.Get(sessionID); recorder != nil {
-		return recorder.GetMessages(), nil
+	readerMu.RLock()
+	reader := sessionMessageReader
+	readerMu.RUnlock()
+	if reader == nil {
+		return nil, fmt.Errorf("session message reader is not initialized")
 	}
-	recorder := eventlog.NewHistoryRecorder()
-	historyFile := filepath.Join(appdata.SessionsDir(), filepath.Base(sessionID), eventlog.HistoryFileName)
-	if err := recorder.LoadFromFile(historyFile); err != nil {
-		return nil, fmt.Errorf("read session history: %w", err)
-	}
-	return recorder.GetMessages(), nil
+	return reader.LoadSessionMessages(ctx, strings.TrimSpace(sessionID))
 }
 
-func summarize(ref eventlog.AttachmentRef) AttachmentSummary {
+func summarize(ref domainhistory.AttachmentRef) AttachmentSummary {
 	part := ref.Part
 	s := AttachmentSummary{
 		ID:           ref.ID,
