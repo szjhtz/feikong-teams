@@ -3,8 +3,8 @@ package runtime
 import (
 	"fkteams/internal/app/agent/catalog/toolmeta"
 
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/runtime/events"
 
 	"fkteams/internal/adapters/transport/cli/tui"
 

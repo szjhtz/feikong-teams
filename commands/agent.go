@@ -6,9 +6,9 @@ import (
 	"log"
 	"syscall"
 
-	"fkteams/cli"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	"fkteams/internal/adapters/transport/cli/eventview"
+	cliruntime "fkteams/internal/adapters/transport/cli/runtime"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/config"
@@ -93,7 +93,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	if query == "" {
 		query = cmd.Root().String("query")
 	}
-	if pipeInput, isPipe := cli.ReadPipeInput(); isPipe {
+	if pipeInput, isPipe := cliruntime.ReadPipeInput(); isPipe {
 		if pipeInput != "" {
 			if query != "" {
 				query = query + "\n" + pipeInput
@@ -149,14 +149,14 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		return err
 	})
 
-	var session *cli.Session
+	var session *cliruntime.Session
 	app.OnReady(func(ctx context.Context) error {
-		session = cli.NewSession(cli.ModeTeam, inputHistory, nil)
+		session = cliruntime.NewSession(cliruntime.ModeTeam, inputHistory, nil)
 		session.SetMemoryManager(state.Memory())
 		session.SetCurrentAgent(agentName)
-		cli.SetTemporarySession(temporarySession)
+		cliruntime.SetTemporarySession(temporarySession)
 		if resumeSession != "" {
-			cli.SetResumeSessionID(resumeSession)
+			cliruntime.SetResumeSessionID(resumeSession)
 		}
 
 		approve := cmd.String("approve")
@@ -181,9 +181,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 
 	app.OnPreStop(func(ctx context.Context) error {
 		if !temporarySession {
-			if cli.SaveCLISessionHistory() {
+			if cliruntime.SaveCLISessionHistory() {
 				if query == "" {
-					cli.PrintResumeHint()
+					cliruntime.PrintResumeHint()
 				}
 			}
 		}

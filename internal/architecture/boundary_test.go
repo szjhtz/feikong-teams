@@ -209,6 +209,15 @@ func TestRootEventsViewPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootCLIPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "cli")); err == nil {
+		t.Fatal("root cli package exists; use internal/adapters/transport/cli/runtime")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -306,6 +315,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/tui" || strings.HasPrefix(importPath, "fkteams/tui/") {
 		t.Errorf("%s imports removed root tui package; use internal/adapters/transport/cli/tui", rel)
+	}
+	if importPath == "fkteams/cli" || strings.HasPrefix(importPath, "fkteams/cli/") {
+		t.Errorf("%s imports removed root cli package; use internal/adapters/transport/cli/runtime", rel)
 	}
 }
 
@@ -969,8 +981,8 @@ func TestChannelsUseDomainAndRuntimePorts(t *testing.T) {
 func TestCLIEntrypointsUseDomainAndRuntimePorts(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, dir := range []string{
-		"cli",
 		"commands",
+		"internal/adapters/transport/cli/runtime",
 	} {
 		err := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(dir)), func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {

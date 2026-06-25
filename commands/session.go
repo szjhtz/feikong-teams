@@ -2,7 +2,7 @@ package commands
 
 import (
 	"context"
-	"fkteams/cli"
+	cliruntime "fkteams/internal/adapters/transport/cli/runtime"
 
 	ucli "github.com/urfave/cli/v3"
 )
@@ -17,7 +17,7 @@ func sessionCommand() *ucli.Command {
 				Name:  "list",
 				Usage: "列出所有可用的聊天历史会话",
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
-					cli.ListSessions()
+					cliruntime.ListSessions()
 					return nil
 				},
 			},

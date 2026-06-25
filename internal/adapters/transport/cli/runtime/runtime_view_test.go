@@ -1,7 +1,7 @@
 package runtime
 
 import (
-	"fkteams/events"
+	"fkteams/internal/runtime/events"
 	"testing"
 )
 

@@ -1,9 +1,27 @@
 package runtime
 
 import (
+	"io"
+	"os"
 	"regexp"
 	"strings"
 )
+
+// ReadPipeInput 检测 stdin 是否为管道并读取内容。
+func ReadPipeInput() (content string, isPipe bool) {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return "", false
+	}
+	if (stat.Mode() & os.ModeCharDevice) != 0 {
+		return "", false
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", true
+	}
+	return strings.TrimSpace(string(data)), true
+}
 
 // ExtractAgentMention 提取输入中的智能体 @ 提及。
 func ExtractAgentMention(input string) (agentName string, query string) {

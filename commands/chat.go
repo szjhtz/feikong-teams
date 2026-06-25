@@ -3,8 +3,8 @@ package commands
 
 import (
 	"context"
-	"fkteams/cli"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
+	cliruntime "fkteams/internal/adapters/transport/cli/runtime"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
@@ -25,9 +25,9 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	}
 
 	workMode := cmd.String("mode")
-	currentMode := cli.ParseWorkMode(workMode)
+	currentMode := cliruntime.ParseWorkMode(workMode)
 	query := cmd.String("query")
-	if pipeInput, isPipe := cli.ReadPipeInput(); isPipe {
+	if pipeInput, isPipe := cliruntime.ReadPipeInput(); isPipe {
 		if pipeInput != "" {
 			if query != "" {
 				query = query + "\n" + pipeInput
@@ -82,14 +82,14 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		app.RegisterService(bootstrapservices.NewSchedulerService(cfg.SchedulerDir))
 	}
 
-	var session *cli.Session
+	var session *cliruntime.Session
 	app.OnReady(func(ctx context.Context) error {
-		session = cli.NewSession(currentMode, inputHistory, createModeRunner)
+		session = cliruntime.NewSession(currentMode, inputHistory, createModeRunner)
 		session.SetMemoryManager(state.Memory())
 		session.ApproveStores = approve
-		cli.SetTemporarySession(temporarySession)
+		cliruntime.SetTemporarySession(temporarySession)
 		if resumeSession != "" {
-			cli.SetResumeSessionID(resumeSession)
+			cliruntime.SetResumeSessionID(resumeSession)
 		}
 
 		if query != "" {
@@ -103,17 +103,17 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 
 	app.OnPreStop(func(ctx context.Context) error {
 		if !temporarySession {
-			if cli.SaveCLISessionHistory() {
+			if cliruntime.SaveCLISessionHistory() {
 				if query == "" {
-					cli.PrintResumeHint()
+					cliruntime.PrintResumeHint()
 				}
 			}
 		}
 		if cfg.MemoryEnabled && query != "" {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
-			cli.FlushSessionMemoryWithManager(state.Memory())
+			cliruntime.FlushSessionMemoryWithManager(state.Memory())
 		} else if cfg.MemoryEnabled {
-			cli.FlushSessionMemoryWithManager(state.Memory())
+			cliruntime.FlushSessionMemoryWithManager(state.Memory())
 		}
 		return nil
 	})
@@ -135,15 +135,15 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 }
 
 // createModeRunner 根据工作模式创建对应的 Runner
-func createModeRunner(ctx context.Context, mode cli.WorkMode) (runtimeport.Runner, error) {
+func createModeRunner(ctx context.Context, mode cliruntime.WorkMode) (runtimeport.Runner, error) {
 	switch mode {
-	case cli.ModeTeam:
+	case cliruntime.ModeTeam:
 		return appagent.CreateTeamRunner(ctx)
-	case cli.ModeDeep:
+	case cliruntime.ModeDeep:
 		return appagent.CreateDeepAgentsRunner(ctx)
-	case cli.ModeGroup:
+	case cliruntime.ModeGroup:
 		return appagent.CreateLoopAgentRunner(ctx)
-	case cli.ModeCustom:
+	case cliruntime.ModeCustom:
 		return appagent.CreateCustomRunner(ctx)
 	default:
 		return nil, nil

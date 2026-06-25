@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	clireport "fkteams/internal/adapters/transport/cli/report"
 	"fkteams/internal/adapters/transport/cli/tui"
@@ -23,6 +22,7 @@ import (
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/turn"
 
 	"github.com/pterm/pterm"

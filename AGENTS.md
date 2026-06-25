@@ -76,6 +76,7 @@ internal/adapters/scheduler/
 internal/adapters/tools/
   builtin/scheduler/        #   schedule_* 工具适配器，只委托 app/schedule
 internal/adapters/transport/
+  cli/runtime/              #   CLI 会话、输入、查询执行和交互运行时编排
   cli/eventview/            #   CLI 事件渲染和 JSON 输出回调
   cli/tui/                  #   CLI 终端 UI 组件、Markdown 渲染和交互控件
   cli/report/               #   CLI Markdown 报告导出 HTML 适配器
@@ -113,8 +114,6 @@ events/                     # 事件协议与展示/历史
   facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
                             #   内部包必须使用 internal/runtime/events，根 events 只保留外层门面
 web/                        # 内嵌前端（//go:embed）
-cli/                        # CLI 交互循环
-                            #   CLI runtime 使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面
 ```
 
 ### 数据目录
@@ -171,6 +170,7 @@ cli/                        # CLI 交互循环
 - 新增事件类型/动作类型/通知类型必须先在 `internal/domain/event` 中定义常量，并由 `events/types.go` 导出别名
 - `internal/**` 发事件必须使用 `internal/runtime/events`；根 `events` 只作为外层入口兼容门面
 - 运行时适配器发事件优先使用 `internal/runtime/events.Emitter` 和 `AgentStart` / `MessageDelta` / `ToolStart` 等构造函数
+- CLI 会话、查询执行和交互运行时位于 `internal/adapters/transport/cli/runtime`，禁止恢复根 `cli` 包
 - 流式事件的规范增量载荷使用 `Content`；不要在核心事件或历史存储中重复维护 `Delta`
 - 工具调用事件必须通过 `tool_call_ref` 保持 `message_delta(tool_args)`、`message_end.tool_calls[]`、`tool_start/update/end` 的稳定关联
 - WebSocket `steer`、`/stream/steer` 和终端运行中 Enter 必须进入 steering 通道，由 `SteeringSource` 在下一次模型调用前消费；运行中的普通 `chat`/`follow_up` 只作为后续任务排队

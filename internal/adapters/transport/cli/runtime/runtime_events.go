@@ -7,7 +7,7 @@ import (
 
 	"fkteams/internal/app/agent/catalog/toolmeta"
 
-	"fkteams/events"
+	"fkteams/internal/runtime/events"
 
 	"fkteams/internal/adapters/transport/cli/tui"
 
