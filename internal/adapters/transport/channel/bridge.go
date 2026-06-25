@@ -261,9 +261,9 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	},
 		appchat.NonInteractive(),
 		appchat.OnEvent(func(event events.Event) error {
-			recorder.RecordEvent(event)
 			return rc.handleEvent(event)
 		}),
+		appchat.WithEventRecorder(recorder),
 		appchat.WithHistory(recorder),
 		appchat.WithApprovalRegistry(approval.NewAutoApproveRegistry()),
 		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {

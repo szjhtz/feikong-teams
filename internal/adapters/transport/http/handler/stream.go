@@ -356,11 +356,16 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 					return nil
 				}
-				recorder.RecordEvent(event)
 				data := convertEventToMap(event)
 				data["session_id"] = sessionID
 				stream.Publish(data)
 				return nil
+			}),
+			appchat.WithEventRecorderFunc(func(event events.Event) {
+				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
+					return
+				}
+				recorder.RecordEvent(event)
 			}),
 			appchat.WithHistory(recorder),
 			appchat.OnInterrupt(runtimeport.InterruptHandler(interruptHandler)),

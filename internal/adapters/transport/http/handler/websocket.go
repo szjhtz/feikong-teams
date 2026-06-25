@@ -272,13 +272,12 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 
 // --- WebSocket 事件回调 ---
 
-// wsEventCallbackBuffered 构建支持断线缓冲的事件回调
-func wsEventCallbackBuffered(recorder *eventlog.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(events.Event) error {
+// wsEventCallbackBuffered 构建支持断线缓冲的事件发布回调。
+func wsEventCallbackBuffered(sessionID string, stream *taskstream.Stream) func(events.Event) error {
 	return func(event events.Event) error {
 		if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 			return nil
 		}
-		recorder.RecordEvent(event)
 		data := convertEventToMap(event)
 		data["session_id"] = sessionID
 		stream.Publish(data)
@@ -370,7 +369,13 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			Input:     currentInput,
 		},
 			appchat.WithRunID(currentRunID),
-			appchat.OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)),
+			appchat.OnEvent(wsEventCallbackBuffered(sessionID, stream)),
+			appchat.WithEventRecorderFunc(func(event events.Event) {
+				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
+					return
+				}
+				recorder.RecordEvent(event)
+			}),
 			appchat.WithHistory(recorder),
 			appchat.OnInterrupt(runtimeport.InterruptHandler(interruptHandler)),
 			appchat.NonInteractive(),

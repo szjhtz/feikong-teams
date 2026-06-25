@@ -96,12 +96,12 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner,
 		Input:     turnInput,
 	},
 		appchat.OnEvent(func(event events.Event) error {
-			recorder.RecordEvent(event)
 			data, _ := json.Marshal(convertEventToMap(event))
 			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 			return err
 		}),
+		appchat.WithEventRecorder(recorder),
 		appchat.WithHistory(recorder),
 		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {
@@ -141,10 +141,10 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, r
 		Input:     turnInput,
 	},
 		appchat.OnEvent(func(event events.Event) error {
-			recorder.RecordEvent(event)
 			collectedEvents = append(collectedEvents, event)
 			return nil
 		}),
+		appchat.WithEventRecorder(recorder),
 		appchat.WithHistory(recorder),
 		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {

@@ -15,6 +15,19 @@ import (
 // EventHandler 处理一次对话运行期间产生的领域事件。
 type EventHandler func(event.Event) error
 
+// EventRecorder 描述运行事件的最小记录能力。
+type EventRecorder interface {
+	RecordEvent(event.Event)
+}
+
+type EventRecorderFunc func(event.Event)
+
+func (fn EventRecorderFunc) RecordEvent(event event.Event) {
+	if fn != nil {
+		fn(event)
+	}
+}
+
 // ContextHook 在运行前补充上下文能力，例如转向输入和请求级元数据。
 type ContextHook func(context.Context) context.Context
 
@@ -35,6 +48,7 @@ type TurnRequest struct {
 type turnOptions struct {
 	runID            string
 	eventHandler     EventHandler
+	eventRecorder    EventRecorder
 	history          HistorySink
 	interruptHandler runtimeport.InterruptHandler
 	nonInteractive   bool
@@ -58,6 +72,16 @@ func OnEvent(handler EventHandler) TurnOption {
 	return func(opts *turnOptions) {
 		opts.eventHandler = handler
 	}
+}
+
+func WithEventRecorder(recorder EventRecorder) TurnOption {
+	return func(opts *turnOptions) {
+		opts.eventRecorder = recorder
+	}
+}
+
+func WithEventRecorderFunc(fn func(event.Event)) TurnOption {
+	return WithEventRecorder(EventRecorderFunc(fn))
 }
 
 func WithHistory(history HistorySink) TurnOption {
@@ -139,8 +163,16 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, options ...TurnO
 	if opts.runID != "" {
 		session.WithRunID(opts.runID)
 	}
-	if opts.eventHandler != nil {
-		session.OnEvent(turn.EventHandler(opts.eventHandler))
+	if opts.eventRecorder != nil || opts.eventHandler != nil {
+		session.OnEvent(func(event event.Event) error {
+			if opts.eventRecorder != nil {
+				opts.eventRecorder.RecordEvent(event)
+			}
+			if opts.eventHandler != nil {
+				return opts.eventHandler(event)
+			}
+			return nil
+		})
 	}
 	if opts.history != nil {
 		session.WithHistory(opts.history)

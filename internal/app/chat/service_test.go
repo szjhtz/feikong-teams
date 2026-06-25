@@ -56,6 +56,32 @@ func TestRunTurnRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
+func TestRunTurnRecordsEventsBeforePublishing(t *testing.T) {
+	runner := &fakeRunner{}
+	var calls []string
+	recorder := EventRecorderFunc(func(event.Event) {
+		calls = append(calls, "record")
+	})
+
+	_, err := NewService().RunTurn(context.Background(), TurnRequest{
+		SessionID: "session-1",
+		Runner:    runner,
+		Input:     message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
+	},
+		WithEventRecorder(recorder),
+		OnEvent(func(event.Event) error {
+			calls = append(calls, "publish")
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("run turn: %v", err)
+	}
+	if len(calls) != 2 || calls[0] != "record" || calls[1] != "publish" {
+		t.Fatalf("event calls = %#v, want record then publish", calls)
+	}
+}
+
 func TestRunTurnInjectsTypedRuntimeCapabilities(t *testing.T) {
 	runner := &contextProbeRunner{}
 	steeringSource := func(context.Context) ([]message.Message, error) {
