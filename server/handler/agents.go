@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fkteams/agents"
+	"fkteams/internal/app/agent/catalog"
 
 	"github.com/gin-gonic/gin"
 )

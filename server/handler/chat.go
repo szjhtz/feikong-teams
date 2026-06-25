@@ -2,10 +2,10 @@ package handler
 
 import (
 	"context"
-	"fkteams/agents/toolmeta"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"

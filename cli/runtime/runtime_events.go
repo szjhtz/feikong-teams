@@ -5,7 +5,7 @@ import (
 
 	domainmessage "fkteams/internal/domain/message"
 
-	"fkteams/agents/toolmeta"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 
 	"fkteams/events"
 

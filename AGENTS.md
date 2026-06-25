@@ -39,6 +39,7 @@ internal/app/               # 应用用例层，入口只调用这里
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配
     taskstream/             #   运行中任务事件流、队列、interrupt 状态管理
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
+    catalog/                #   内置智能体定义、注册表、AgentBuilder 和成员工具元信息
   memory/                   #   长期记忆检索、注入、提取、BM25 和 Markdown 持久化
   schedule/                 #   定时任务用例入口，工具/HTTP/CLI 只调用这里
   lifecycle/                #   Application 生命周期编排内核
@@ -51,6 +52,7 @@ internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
   events/                   #   事件分发、Emitter、协议校验、友好错误归一化
   registry/                 #   runtime engine 注册表和默认 runtime 选择
+  model/                    #   运行时无关 ChatModel 工厂注册表
   env/                      #   FEIKONG_* 环境变量读取
   log/                      #   日志 facade 和文件轮转
   atomicfile/               #   原子文件写入
@@ -89,12 +91,6 @@ internal/adapters/storage/
 internal/bootstrap/environment/ # init 命令运行环境初始化器（uv / bun）
 internal/bootstrap/runtimes/ #  默认 runtime engine 和 provider 注册
 internal/bootstrap/services/ #  组合层后台服务实现（memory / scheduler）
-agents/                     # 智能体系统
-  registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
-  common/builder.go         #   AgentBuilder 构建器（WithTools / WithToolNames / WithSummary / WithSkills / Build）
-  common/common.go          #   NewChatModel / MaxIterations
-  toolmeta/                 #   成员智能体工具前缀、显示名和分类注册
-                            #   智能体层使用 internal/ports/runtime，禁止再依赖 agentcore 旧门面
 tools/                      # 工具系统
   registry.go               #   ToolGroupRegistry，注册和解析工具组
   tools.go                  #   GetToolsByName() — 委托注册表和 MCP fallback
@@ -151,8 +147,8 @@ mdiff/                      # 文件差异/补丁
 
 ### 智能体
 
-- 新智能体必须使用 `agents/common/builder.go` 的 `AgentBuilder` 创建
-- 新智能体必须在 `agents/registry.go` 的 `buildRegistry()` 中注册
+- 新智能体必须使用 `internal/app/agent/catalog/common/builder.go` 的 `AgentBuilder` 创建
+- 新智能体必须在 `internal/app/agent/catalog/registry.go` 的 `buildRegistry()` 中注册
 - 每个智能体目录包含 `agent.go`（`NewAgent()` 工厂）和 `prompt.go`（系统提示词模板）
 
 ### 工具

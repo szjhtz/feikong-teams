@@ -3,9 +3,9 @@ package common
 
 import (
 	"context"
-	"fkteams/internal/adapters/model/providers"
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
 	retry "fkteams/internal/runtime/retry"
 	"fmt"
 )
@@ -37,8 +37,8 @@ func NewChatModel() (runtimeport.ChatModel, error) {
 
 // NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
 func NewChatModelWithModelConfig(mc *config.ModelConfig) (runtimeport.ChatModel, error) {
-	return providers.NewChatModel(context.Background(), &providers.Config{
-		Provider:     providers.Type(mc.Provider),
+	return NewChatModelWithConfig(&modelregistry.Config{
+		Provider:     modelregistry.Type(mc.Provider),
 		APIKey:       mc.APIKey,
 		BaseURL:      mc.BaseURL,
 		Model:        mc.Model,
@@ -47,8 +47,8 @@ func NewChatModelWithModelConfig(mc *config.ModelConfig) (runtimeport.ChatModel,
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型
-func NewChatModelWithConfig(cfg *providers.Config) (runtimeport.ChatModel, error) {
-	return providers.NewChatModel(context.Background(), cfg)
+func NewChatModelWithConfig(cfg *modelregistry.Config) (runtimeport.ChatModel, error) {
+	return modelregistry.NewChatModel(context.Background(), cfg)
 }
 
 // IsRetryAble 判断错误是否可重试（转发到 common 包）

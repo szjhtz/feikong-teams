@@ -3,8 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
-	"fkteams/agents/custom"
-	"fkteams/agents/toolmeta"
+	"fkteams/internal/app/agent/catalog/custom"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/config"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"

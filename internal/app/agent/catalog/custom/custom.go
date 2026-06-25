@@ -2,9 +2,9 @@ package custom
 
 import (
 	"context"
-	"fkteams/agents/common"
-	"fkteams/internal/adapters/model/providers"
+	"fkteams/internal/app/agent/catalog/common"
 	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
 )
 
@@ -33,8 +33,8 @@ func NewAgent(ctx context.Context, cfg Config) (runtimeport.Agent, error) {
 		WithSkills()
 
 	if cfg.Model.Name != "" || cfg.Model.BaseURL != "" {
-		chatModel, err := common.NewChatModelWithConfig(&providers.Config{
-			Provider: providers.Type(cfg.Model.Provider),
+		chatModel, err := common.NewChatModelWithConfig(&modelregistry.Config{
+			Provider: modelregistry.Type(cfg.Model.Provider),
 			APIKey:   cfg.Model.APIKey,
 			BaseURL:  cfg.Model.BaseURL,
 			Model:    cfg.Model.Name,

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"fkteams/agents"
+	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appstate"
 
 	"fkteams/internal/adapters/storage/file/history"

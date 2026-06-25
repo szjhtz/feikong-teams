@@ -1,7 +1,7 @@
 package eventlog
 
 import (
-	"fkteams/agents/toolmeta"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	domainhistory "fkteams/internal/domain/history"
 
 	"fkteams/internal/runtime/events"

@@ -1,7 +1,7 @@
 package runtime
 
 import (
-	"fkteams/agents/toolmeta"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"

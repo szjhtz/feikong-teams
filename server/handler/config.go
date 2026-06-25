@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"fkteams/agents"
-	agentcommon "fkteams/agents/common"
 	"fkteams/channels"
 	memorymodel "fkteams/internal/adapters/model/memory"
+	"fkteams/internal/app/agent/catalog"
+	agentcommon "fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/runtime/log"

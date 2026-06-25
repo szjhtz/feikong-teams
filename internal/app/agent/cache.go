@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	"fkteams/agents"
+	"fkteams/internal/app/agent/catalog"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"sync"

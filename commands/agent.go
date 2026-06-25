@@ -6,11 +6,11 @@ import (
 	"log"
 	"syscall"
 
-	"fkteams/agents"
 	"fkteams/cli"
 	"fkteams/events/view"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
 	runtimeport "fkteams/internal/ports/runtime"

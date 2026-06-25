@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/agents/toolmeta"
 	"fkteams/events"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"

@@ -2,12 +2,12 @@ package agents
 
 import (
 	"context"
-	"fkteams/agents/analyst"
-	assistantagent "fkteams/agents/assistant"
-	"fkteams/agents/coder"
-	"fkteams/agents/custom"
-	"fkteams/agents/researcher"
-	"fkteams/agents/visitor"
+	"fkteams/internal/app/agent/catalog/analyst"
+	assistantagent "fkteams/internal/app/agent/catalog/assistant"
+	"fkteams/internal/app/agent/catalog/coder"
+	"fkteams/internal/app/agent/catalog/custom"
+	"fkteams/internal/app/agent/catalog/researcher"
+	"fkteams/internal/app/agent/catalog/visitor"
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 	"sync"

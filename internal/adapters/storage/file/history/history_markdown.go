@@ -1,7 +1,7 @@
 package eventlog
 
 import (
-	"fkteams/agents/toolmeta"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/runtime/atomicfile"
 

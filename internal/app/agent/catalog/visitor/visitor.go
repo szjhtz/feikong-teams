@@ -2,7 +2,7 @@ package visitor
 
 import (
 	"context"
-	"fkteams/agents/common"
+	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/config"
 	"fmt"
 

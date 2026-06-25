@@ -128,6 +128,15 @@ func TestRootConfigPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootAgentsPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "agents")); err == nil {
+		t.Fatal("root agents package exists; use internal/app/agent/catalog")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -193,6 +202,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/config" {
 		t.Errorf("%s imports removed root config package; use internal/app/config", rel)
+	}
+	if importPath == "fkteams/agents" || strings.HasPrefix(importPath, "fkteams/agents/") {
+		t.Errorf("%s imports removed root agents package; use internal/app/agent/catalog", rel)
 	}
 }
 
@@ -712,7 +724,7 @@ func TestToolsUseRuntimePortsDirectly(t *testing.T) {
 
 func TestAgentsUseRuntimePortsDirectly(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	err := filepath.WalkDir(filepath.Join(root, "agents"), func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(filepath.Join(root, "internal", "app", "agent", "catalog"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

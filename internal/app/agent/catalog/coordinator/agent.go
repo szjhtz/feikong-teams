@@ -2,7 +2,7 @@ package coordinator
 
 import (
 	"context"
-	"fkteams/agents/common"
+	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appdata"
 	runtimeport "fkteams/internal/ports/runtime"
 )

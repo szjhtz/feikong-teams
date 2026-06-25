@@ -2,7 +2,7 @@ package tasker
 
 import (
 	"context"
-	"fkteams/agents/common"
+	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appdata"
 	"fkteams/tools/command"
 	"fmt"

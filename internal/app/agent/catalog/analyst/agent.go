@@ -2,7 +2,7 @@ package analyst
 
 import (
 	"context"
-	"fkteams/agents/common"
+	"fkteams/internal/app/agent/catalog/common"
 
 	runtimeport "fkteams/internal/ports/runtime"
 )

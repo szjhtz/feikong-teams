@@ -2,7 +2,7 @@ package deep
 
 import (
 	"context"
-	"fkteams/agents/common"
+	"fkteams/internal/app/agent/catalog/common"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/env"
 	runtimeregistry "fkteams/internal/runtime/registry"

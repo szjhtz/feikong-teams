@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-	"fkteams/agents/common"
 	memorymodel "fkteams/internal/adapters/model/memory"
+	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/memory"
 	"fkteams/internal/runtime/log"

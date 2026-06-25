@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	agentscommon "fkteams/agents/common"
+	agentscommon "fkteams/internal/app/agent/catalog/common"
 	_ "fkteams/internal/bootstrap/runtimes"
 	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"

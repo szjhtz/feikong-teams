@@ -2,9 +2,9 @@ package eventview
 
 import (
 	"encoding/json"
-	"fkteams/agents/toolmeta"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	domainmessage "fkteams/internal/domain/message"
 	fktui "fkteams/tui"
 	"fmt"
