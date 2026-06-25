@@ -5,9 +5,9 @@ import (
 
 	openaiModel "github.com/cloudwego/eino-ext/components/model/openai"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers/providerkit"
 )
 
 // New 创建 OpenAI 及兼容 API 的聊天模型

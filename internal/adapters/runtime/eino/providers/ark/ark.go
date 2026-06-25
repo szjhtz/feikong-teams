@@ -5,9 +5,9 @@ import (
 
 	arkModel "github.com/cloudwego/eino-ext/components/model/ark"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers/providerkit"
 )
 
 // New 创建火山引擎方舟的聊天模型

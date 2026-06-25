@@ -5,9 +5,9 @@ import (
 
 	ollamaModel "github.com/cloudwego/eino-ext/components/model/ollama"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers/providerkit"
 )
 
 // New 创建 Ollama 本地模型的聊天模型

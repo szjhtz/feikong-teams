@@ -1,6 +1,7 @@
 package register
 
 import (
+	modelproviders "fkteams/internal/adapters/model/providers"
 	"fkteams/internal/adapters/runtime/eino/providers/ark"
 	"fkteams/internal/adapters/runtime/eino/providers/claude"
 	"fkteams/internal/adapters/runtime/eino/providers/copilot"
@@ -10,17 +11,16 @@ import (
 	"fkteams/internal/adapters/runtime/eino/providers/openai"
 	"fkteams/internal/adapters/runtime/eino/providers/openrouter"
 	"fkteams/internal/adapters/runtime/eino/providers/qwen"
-	rootproviders "fkteams/providers"
 )
 
 func init() {
-	rootproviders.Register(rootproviders.OpenAI, openai.New)
-	rootproviders.Register(rootproviders.DeepSeek, deepseek.New)
-	rootproviders.Register(rootproviders.Claude, claude.New)
-	rootproviders.Register(rootproviders.Ollama, ollama.New)
-	rootproviders.Register(rootproviders.Ark, ark.New)
-	rootproviders.Register(rootproviders.Gemini, gemini.New)
-	rootproviders.Register(rootproviders.Qwen, qwen.New)
-	rootproviders.Register(rootproviders.OpenRouter, openrouter.New)
-	rootproviders.Register(rootproviders.Copilot, copilot.New)
+	modelproviders.Register(modelproviders.OpenAI, openai.New)
+	modelproviders.Register(modelproviders.DeepSeek, deepseek.New)
+	modelproviders.Register(modelproviders.Claude, claude.New)
+	modelproviders.Register(modelproviders.Ollama, ollama.New)
+	modelproviders.Register(modelproviders.Ark, ark.New)
+	modelproviders.Register(modelproviders.Gemini, gemini.New)
+	modelproviders.Register(modelproviders.Qwen, qwen.New)
+	modelproviders.Register(modelproviders.OpenRouter, openrouter.New)
+	modelproviders.Register(modelproviders.Copilot, copilot.New)
 }

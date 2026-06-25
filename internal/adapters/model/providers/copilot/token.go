@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	"fkteams/internal/app/appdata"
-	"fkteams/providers/providerkit"
 
 	"github.com/google/uuid"
 )

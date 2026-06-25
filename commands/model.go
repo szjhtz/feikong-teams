@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"fkteams/config"
-	"fkteams/providers"
+	"fkteams/internal/adapters/model/providers"
 	"fkteams/tui"
 
 	"github.com/pterm/pterm"

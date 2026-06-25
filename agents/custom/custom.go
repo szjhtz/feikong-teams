@@ -3,8 +3,8 @@ package custom
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/internal/adapters/model/providers"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers"
 	"fmt"
 )
 

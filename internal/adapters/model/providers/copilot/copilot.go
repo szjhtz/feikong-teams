@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"fkteams/providers/providerkit"
+	"fkteams/internal/adapters/model/providers/providerkit"
 )
 
 type contextKey int

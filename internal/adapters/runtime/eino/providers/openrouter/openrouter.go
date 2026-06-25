@@ -5,9 +5,9 @@ import (
 
 	openrouterModel "github.com/cloudwego/eino-ext/components/model/openrouter"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers/providerkit"
 )
 
 // New 创建 OpenRouter 的聊天模型

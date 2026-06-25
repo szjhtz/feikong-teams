@@ -5,9 +5,9 @@ import (
 
 	deepseekModel "github.com/cloudwego/eino-ext/components/model/deepseek"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers/providerkit"
 )
 
 // New 创建 DeepSeek 原生 API 的聊天模型

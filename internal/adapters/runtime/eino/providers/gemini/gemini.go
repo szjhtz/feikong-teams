@@ -6,9 +6,9 @@ import (
 	geminiModel "github.com/cloudwego/eino-ext/components/model/gemini"
 	"google.golang.org/genai"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers/providerkit"
 )
 
 // New 创建 Google Gemini 的聊天模型

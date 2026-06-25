@@ -3,7 +3,7 @@ package copilot
 import (
 	"context"
 	"encoding/json"
-	"fkteams/providers/providerkit"
+	"fkteams/internal/adapters/model/providers/providerkit"
 	"fmt"
 	"net/http"
 	"net/url"

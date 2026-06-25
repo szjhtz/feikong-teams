@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"fkteams/config"
-	"fkteams/providers"
+	"fkteams/internal/adapters/model/providers"
 
 	"github.com/gin-gonic/gin"
 )

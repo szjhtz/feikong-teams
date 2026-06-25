@@ -4,9 +4,9 @@ package common
 import (
 	"context"
 	"fkteams/config"
+	"fkteams/internal/adapters/model/providers"
 	runtimeport "fkteams/internal/ports/runtime"
 	retry "fkteams/internal/runtime/retry"
-	"fkteams/providers"
 	"fmt"
 )
 

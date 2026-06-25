@@ -2,17 +2,17 @@ package copilot
 
 import (
 	"context"
+	modelcopilot "fkteams/internal/adapters/model/providers/copilot"
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	rootcopilot "fkteams/providers/copilot"
-	"fkteams/providers/providerkit"
 
 	openaiModel "github.com/cloudwego/eino-ext/components/model/openai"
 )
 
 // New 创建 Copilot 聊天模型（OpenAI 兼容）
 func New(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
-	tm := rootcopilot.GetTokenManager()
+	tm := modelcopilot.GetTokenManager()
 
 	// 确保有有效 token
 	if _, err := tm.GetToken(ctx); err != nil {
@@ -20,9 +20,9 @@ func New(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, e
 	}
 
 	modelCfg := &openaiModel.ChatModelConfig{
-		BaseURL:    rootcopilot.BaseURL(),
+		BaseURL:    modelcopilot.BaseURL(),
 		Model:      cfg.Model,
-		HTTPClient: rootcopilot.NewHTTPClient(),
+		HTTPClient: modelcopilot.NewHTTPClient(),
 	}
 	chatModel, err := openaiModel.NewChatModel(ctx, modelCfg)
 	if err != nil {

@@ -5,7 +5,7 @@ import (
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 
-	"fkteams/providers/copilot"
+	"fkteams/internal/adapters/model/providers/copilot"
 )
 
 type chatModelLLMAdapter struct {

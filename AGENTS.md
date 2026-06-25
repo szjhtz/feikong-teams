@@ -68,6 +68,10 @@ internal/adapters/runtime/
     middlewares/            #   autocontinue / summary / skills / dispatch / inject / fkfs
     middlewares/tools/      #   warperror / trimresult / patch / destructiveguard
     providers/              #   OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot
+internal/adapters/model/
+  providers/                #   模型 provider 注册、检测、模型列表和 Copilot 支撑
+    providerkit/            #   provider 共用 HTTP/config 辅助
+    copilot/                #   GitHub Copilot OAuth/token/HTTP 支撑
 internal/adapters/storage/
   file/history/             #   HistoryRecorder、会话 metadata、历史文件读写
                             #   agentcore 旧门面已删除，禁止恢复；直接使用 internal/domain 与 internal/ports/runtime
@@ -103,8 +107,6 @@ events/                     # 事件协议与展示/历史
   view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
                             #   展示层使用 domain/event 和 domain/message，禁止依赖 agentcore 旧门面
 config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
-providers/                  # runtime port 模型提供者注册、检测和模型列表获取
-                            #   provider 工厂禁止再依赖 agentcore 旧门面
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
                             #   记忆模型适配使用 internal/ports/runtime 和 domain/message
 web/                        # 内嵌前端（//go:embed）
@@ -182,7 +184,7 @@ mdiff/                      # 文件差异/补丁
 
 ### 模型提供者
 
-- 新模型提供者通过 `providers/providers.go` 的工厂模式注册
+- 新模型提供者通过 `internal/adapters/model/providers/providers.go` 的工厂模式注册
 - 提供商需实现模型创建和列表获取
 
 ### 其他

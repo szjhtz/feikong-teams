@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"fkteams/providers/copilot"
-	"fkteams/providers/providerkit"
+	"fkteams/internal/adapters/model/providers/copilot"
+	"fkteams/internal/adapters/model/providers/providerkit"
 )
 
 // Type 模型提供者类型

@@ -5,9 +5,9 @@ import (
 
 	qwenModel "github.com/cloudwego/eino-ext/components/model/qwen"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/providers/providerkit"
 )
 
 // New 创建阿里通义千问的聊天模型

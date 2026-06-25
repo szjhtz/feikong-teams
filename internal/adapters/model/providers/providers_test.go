@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"fkteams/internal/adapters/model/providers/providerkit"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/testmodel"
-	"fkteams/providers/providerkit"
 )
 
 func TestDetectProviderFromBaseURLOrModel(t *testing.T) {

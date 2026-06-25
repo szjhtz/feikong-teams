@@ -5,23 +5,23 @@ import (
 	"strings"
 	"testing"
 
-	rootproviders "fkteams/providers"
+	modelproviders "fkteams/internal/adapters/model/providers"
 )
 
 func TestInitRegistersAllProviderFactories(t *testing.T) {
-	for _, provider := range []rootproviders.Type{
-		rootproviders.OpenAI,
-		rootproviders.DeepSeek,
-		rootproviders.Claude,
-		rootproviders.Ollama,
-		rootproviders.Ark,
-		rootproviders.Gemini,
-		rootproviders.Qwen,
-		rootproviders.OpenRouter,
-		rootproviders.Copilot,
+	for _, provider := range []modelproviders.Type{
+		modelproviders.OpenAI,
+		modelproviders.DeepSeek,
+		modelproviders.Claude,
+		modelproviders.Ollama,
+		modelproviders.Ark,
+		modelproviders.Gemini,
+		modelproviders.Qwen,
+		modelproviders.OpenRouter,
+		modelproviders.Copilot,
 	} {
 		t.Run(string(provider), func(t *testing.T) {
-			_, err := rootproviders.NewChatModel(context.Background(), &rootproviders.Config{
+			_, err := modelproviders.NewChatModel(context.Background(), &modelproviders.Config{
 				Provider: provider,
 				BaseURL:  "http://127.0.0.1",
 				Model:    "test-model",

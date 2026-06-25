@@ -83,6 +83,15 @@ func TestRootBootstrapPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootProvidersPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "providers")); err == nil {
+		t.Fatal("root providers package exists; use internal/adapters/model/providers")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -130,6 +139,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/bootstrap" || strings.HasPrefix(importPath, "fkteams/bootstrap/") {
 		t.Errorf("%s imports removed root bootstrap package; use internal/bootstrap/*", rel)
+	}
+	if importPath == "fkteams/providers" || strings.HasPrefix(importPath, "fkteams/providers/") {
+		t.Errorf("%s imports removed root providers package; use internal/adapters/model/providers", rel)
 	}
 }
 
@@ -677,7 +689,7 @@ func TestAgentsUseRuntimePortsDirectly(t *testing.T) {
 func TestModelProvidersUseRuntimePortsDirectly(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, dir := range []string{
-		"providers",
+		"internal/adapters/model/providers",
 		"internal/adapters/runtime/eino/providers",
 	} {
 		err := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(dir)), func(path string, entry fs.DirEntry, walkErr error) error {
