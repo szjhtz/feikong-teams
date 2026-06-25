@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"fkteams/internal/app/tools"
-	"fkteams/internal/app/tools/mcp"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
@@ -51,7 +50,7 @@ func listTools() error {
 	}
 
 	// MCP 工具
-	mcpTools, err := mcp.GetAllToolGroups()
+	mcpTools, err := tools.GetAllMCPToolGroups()
 	if err == nil && len(mcpTools) > 0 {
 		fmt.Println()
 		pterm.DefaultSection.Println("MCP 工具")

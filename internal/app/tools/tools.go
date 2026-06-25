@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"fkteams/internal/app/appdata"
-	"fkteams/internal/app/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
 )
@@ -31,7 +30,7 @@ func GetToolsByNameWithCleaner(name string, cleaner *resources.Cleaner) ([]runti
 		return resolved, err
 	}
 	if name, ok := strings.CutPrefix(name, "mcp-"); ok {
-		return mcp.GetToolsByName(name)
+		return GetMCPToolsByName(name)
 	}
 	return nil, fmt.Errorf("tool %s not found", name)
 }
@@ -45,7 +44,7 @@ func BuiltinToolNames() []string {
 func GetAllToolNames() []string {
 	names := make([]string, 0, len(BuiltinToolNames()))
 	names = append(names, BuiltinToolNames()...)
-	mcpGroups, err := mcp.GetAllToolGroups()
+	mcpGroups, err := GetAllMCPToolGroups()
 	if err == nil {
 		for name := range mcpGroups {
 			names = append(names, "mcp-"+name)

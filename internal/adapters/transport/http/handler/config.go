@@ -8,7 +8,6 @@ import (
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/tools"
-	"fkteams/internal/app/tools/mcp"
 	"fkteams/internal/runtime/log"
 	"net/http"
 	"runtime"
@@ -154,7 +153,7 @@ func UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		// 重载智能体注册表、清除 Runner 缓存和 MCP 工具缓存
 		agents.ReloadRegistry()
 		ClearRunnerCache()
-		mcp.ClearCache()
+		tools.ClearMCPToolCache()
 		channel.ResetAllBridges()
 		resetMemoryLLM(state)
 

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"fkteams/internal/app/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
 )
 
@@ -24,7 +23,7 @@ func BuiltinToolInfos() []ToolGroupInfo {
 // GetAllToolInfos 返回所有可配置工具组信息（内置 + MCP）。
 func GetAllToolInfos() []ToolGroupInfo {
 	infos := BuiltinToolInfos()
-	mcpGroups, err := mcp.GetAllToolGroups()
+	mcpGroups, err := GetAllMCPToolGroups()
 	if err != nil {
 		return infos
 	}

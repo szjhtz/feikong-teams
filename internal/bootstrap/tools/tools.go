@@ -5,6 +5,7 @@ import (
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	schedulertool "fkteams/internal/adapters/tools/builtin/scheduler"
+	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	"fkteams/internal/app/appdata"
 	apptools "fkteams/internal/app/tools"
 	"fkteams/internal/app/tools/attachment"
@@ -27,6 +28,7 @@ func init() {
 func RegisterDefaults() error {
 	registerOnce.Do(func() {
 		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.GlobalSessionManager))
+		apptools.RegisterMCPProvider(mcpadapter.DefaultProvider())
 		registerErr = apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "scheduler",
