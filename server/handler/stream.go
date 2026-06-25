@@ -3,19 +3,22 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fkteams/agentcore"
-	"fkteams/appstate"
-	"fkteams/engine"
-	"fkteams/events"
-	"fkteams/events/log"
-	"fkteams/server/handler/taskstream"
-	"fkteams/tools/approval"
-	"fkteams/tools/ask"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
+
+	"fkteams/agentcore"
+	"fkteams/appstate"
+	"fkteams/engine"
+	"fkteams/events"
+	"fkteams/events/log"
+	appchat "fkteams/internal/app/chat"
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/server/handler/taskstream"
+	"fkteams/tools/approval"
+	"fkteams/tools/ask"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -340,11 +343,15 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID })
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
+	chatService := appchat.NewService()
 	for {
-		_, runErr := engine.NewSession(r, sessionID).
-			WithRunID(currentRunID).
-			WithInput(currentInput).
-			OnEvent(func(event events.Event) error {
+		_, runErr := chatService.RunTurn(ctx, appchat.TurnRequest{
+			SessionID:      sessionID,
+			RunID:          currentRunID,
+			Runner:         r,
+			Input:          currentInput,
+			NonInteractive: true,
+			EventHandler: func(event events.Event) error {
 				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 					return nil
 				}
@@ -353,18 +360,19 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				data["session_id"] = sessionID
 				stream.Publish(data)
 				return nil
-			}).
-			WithHistory(recorder).
-			OnInterrupt(interruptHandler).
-			NonInteractive().
-			WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
-			WithContext(func(ctx context.Context) context.Context {
-				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
-			}).
-			WithContext(func(ctx context.Context) context.Context {
-				return agentcore.WithSteeringSource(ctx, steeringSource)
-			}).
-			Run(ctx)
+			},
+			History:          recorder,
+			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
+			ContextHooks: []appchat.ContextHook{
+				approval.RegistryContext(approval.NewDefaultRegistry()),
+				func(ctx context.Context) context.Context {
+					return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
+				},
+				func(ctx context.Context) context.Context {
+					return agentcore.WithSteeringSource(ctx, steeringSource)
+				},
+			},
+		})
 		if runErr != nil {
 			if isConnectionClosed(ctx, runErr) {
 				log.Printf("stream task cancelled: session=%s", sessionID)

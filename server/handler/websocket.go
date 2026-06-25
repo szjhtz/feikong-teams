@@ -3,18 +3,21 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"sync"
+	"time"
+
 	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
+	appchat "fkteams/internal/app/chat"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/server/handler/taskstream"
 	"fkteams/server/origin"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
-	"log"
-	"sync"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -360,22 +363,27 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		"message":    "开始处理您的请求...",
 	}, currentRunID))
 
+	chatService := appchat.NewService()
 	for {
-		_, runErr := engine.NewSession(r, sessionID).
-			WithRunID(currentRunID).
-			WithInput(currentInput).
-			OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)).
-			WithHistory(recorder).
-			OnInterrupt(interruptHandler).
-			NonInteractive().
-			WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
-			WithContext(func(ctx context.Context) context.Context {
-				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
-			}).
-			WithContext(func(ctx context.Context) context.Context {
-				return agentcore.WithSteeringSource(ctx, steeringSource)
-			}).
-			Run(taskCtx)
+		_, runErr := chatService.RunTurn(taskCtx, appchat.TurnRequest{
+			SessionID:        sessionID,
+			RunID:            currentRunID,
+			Runner:           r,
+			Input:            currentInput,
+			EventHandler:     wsEventCallbackBuffered(recorder, sessionID, stream),
+			History:          recorder,
+			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
+			NonInteractive:   true,
+			ContextHooks: []appchat.ContextHook{
+				approval.RegistryContext(approval.NewDefaultRegistry()),
+				func(ctx context.Context) context.Context {
+					return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
+				},
+				func(ctx context.Context) context.Context {
+					return agentcore.WithSteeringSource(ctx, steeringSource)
+				},
+			},
+		})
 		if runErr != nil {
 			if isConnectionClosed(taskCtx, runErr) {
 				log.Printf("task cancelled: session=%s", sessionID)

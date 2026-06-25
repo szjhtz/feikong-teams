@@ -3,17 +3,6 @@ package runtime
 
 import (
 	"context"
-	"fkteams/agentcore"
-	"fkteams/appstate"
-	"fkteams/common"
-	"fkteams/engine"
-	"fkteams/events"
-	"fkteams/events/chat"
-	"fkteams/events/log"
-	"fkteams/report"
-	"fkteams/tools/approval"
-	"fkteams/tools/ask"
-	"fkteams/tui"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -21,6 +10,20 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"fkteams/agentcore"
+	"fkteams/appstate"
+	"fkteams/common"
+	"fkteams/engine"
+	"fkteams/events"
+	"fkteams/events/chat"
+	"fkteams/events/log"
+	appchat "fkteams/internal/app/chat"
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/report"
+	"fkteams/tools/approval"
+	"fkteams/tools/ask"
+	"fkteams/tui"
 
 	"github.com/pterm/pterm"
 )
@@ -333,21 +336,25 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		return []agentcore.Message{message}, nil
 	}
 	for {
-		_, err := engine.NewSession(e.runner, activeSessionID).
-			WithInput(currentInput).
-			OnEvent(func(event events.Event) error {
+		_, err := appchat.NewService().RunTurn(queryCtx, appchat.TurnRequest{
+			SessionID: activeSessionID,
+			Runner:    e.runner,
+			Input:     currentInput,
+			EventHandler: func(event events.Event) error {
 				return innerCallback(event)
-			}).
-			WithHistory(recorder).
-			OnInterrupt(handler).
-			WithContext(approval.RegistryContext(approvalReg)).
-			WithContext(func(ctx context.Context) context.Context {
-				return agentcore.WithSteeringSource(ctx, steeringSource)
-			}).
-			WithContext(func(ctx context.Context) context.Context {
-				return ask.WithRuntimeHandler(ctx, e.askRuntime)
-			}).
-			Run(queryCtx)
+			},
+			History:          recorder,
+			InterruptHandler: runtimeport.InterruptHandler(handler),
+			ContextHooks: []appchat.ContextHook{
+				approval.RegistryContext(approvalReg),
+				func(ctx context.Context) context.Context {
+					return agentcore.WithSteeringSource(ctx, steeringSource)
+				},
+				func(ctx context.Context) context.Context {
+					return ask.WithRuntimeHandler(ctx, e.askRuntime)
+				},
+			},
+		})
 
 		recorder.FinalizeCurrent()
 		if err != nil {

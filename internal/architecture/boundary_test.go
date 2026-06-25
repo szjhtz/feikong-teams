@@ -4,6 +4,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,6 +74,47 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"github.com/gin-gonic/gin",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
+	}
+}
+
+func TestEngineSessionCreationStaysInsideChatUseCase(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	allowed := map[string]bool{
+		"internal/app/chat/service.go": true,
+	}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "release", "node_modules", "web", "engine":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if allowed[rel] {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(content), "engine.NewSession") {
+			t.Errorf("%s creates engine session directly; use internal/app/chat.Service", rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

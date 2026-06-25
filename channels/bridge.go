@@ -2,17 +2,18 @@ package channels
 
 import (
 	"context"
+	"fmt"
+
 	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/common"
-	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/chat"
 	"fkteams/events/log"
+	appchat "fkteams/internal/app/chat"
 	"fkteams/log"
 	"fkteams/runner"
 	"fkteams/tools/approval"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -254,16 +255,18 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
-	_, runErr := engine.NewSession(r, sessionID).
-		WithInput(turnInput).
-		OnEvent(func(event events.Event) error {
+	_, runErr := appchat.NewService().RunTurn(ctx, appchat.TurnRequest{
+		SessionID:      sessionID,
+		Runner:         r,
+		Input:          turnInput,
+		NonInteractive: true,
+		EventHandler: func(event events.Event) error {
 			recorder.RecordEvent(event)
 			return rc.handleEvent(event)
-		}).
-		WithHistory(recorder).
-		NonInteractive().
-		WithContext(approval.RegistryContext(approval.NewAutoApproveRegistry())).
-		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		},
+		History:      recorder,
+		ContextHooks: []appchat.ContextHook{approval.RegistryContext(approval.NewAutoApproveRegistry())},
+		OnFinish: func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
 				recorder.RecordEvent(events.Event{
@@ -289,8 +292,8 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")
 			}
-		}).
-		Run(ctx)
+		},
+	})
 	if runErr != nil {
 		log.Printf("[bridge] task failed: session=%s, err=%v", sessionID, runErr)
 	}

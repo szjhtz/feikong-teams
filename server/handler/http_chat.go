@@ -3,15 +3,17 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"strings"
+
 	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
-	"fmt"
-	"log"
-	"net/http"
-	"strings"
+	appchat "fkteams/internal/app/chat"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -88,17 +90,19 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
-	_, runErr := engine.NewSession(r, sessionID).
-		WithInput(turnInput).
-		OnEvent(func(event events.Event) error {
+	_, runErr := appchat.NewService().RunTurn(taskCtx, appchat.TurnRequest{
+		SessionID: sessionID,
+		Runner:    r,
+		Input:     turnInput,
+		EventHandler: func(event events.Event) error {
 			recorder.RecordEvent(event)
 			data, _ := json.Marshal(convertEventToMap(event))
 			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 			return err
-		}).
-		WithHistory(recorder).
-		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		},
+		History: recorder,
+		OnFinish: func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("connection closed, stopping: session=%s", sessionID)
@@ -116,8 +120,8 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 			data, _ := json.Marshal(map[string]string{"type": string(events.NotifyProcessingEnd), "message": "处理完成"})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
-		}).
-		Run(taskCtx)
+		},
+	})
 	if runErr != nil && !isConnectionClosed(taskCtx, runErr) {
 		log.Printf("stream chat failed: session=%s, err=%v", sessionID, runErr)
 	}
@@ -130,23 +134,25 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 
 	var collectedEvents []events.Event
 
-	_, runErr := engine.NewSession(r, sessionID).
-		WithInput(turnInput).
-		OnEvent(func(event events.Event) error {
+	_, runErr := appchat.NewService().RunTurn(taskCtx, appchat.TurnRequest{
+		SessionID: sessionID,
+		Runner:    r,
+		Input:     turnInput,
+		EventHandler: func(event events.Event) error {
 			recorder.RecordEvent(event)
 			collectedEvents = append(collectedEvents, event)
 			return nil
-		}).
-		WithHistory(recorder).
-		OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		},
+		History: recorder,
+		OnFinish: func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
 				finishErrorChat(recorder, sessionID, userDisplayText, err)
 				return
 			}
 			finishChat(recorder, sessionID, userDisplayText, manager)
-		}).
-		Run(taskCtx)
+		},
+	})
 	if runErr != nil {
 		Fail(c, http.StatusInternalServerError, runErr.Error())
 		return
