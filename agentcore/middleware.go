@@ -1,9 +1,6 @@
 package agentcore
 
-type AgentMiddleware interface {
-	Name() string
-}
+import runtimeport "fkteams/internal/ports/runtime"
 
-type ToolMiddleware interface {
-	Name() string
-}
+type AgentMiddleware = runtimeport.AgentMiddleware
+type ToolMiddleware = runtimeport.ToolMiddleware

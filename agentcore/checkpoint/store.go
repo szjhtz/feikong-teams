@@ -1,9 +1,5 @@
 package checkpoint
 
-import "context"
+import checkpointstore "fkteams/internal/runtime/checkpoint"
 
-// Store 定义运行时 checkpoint 的最小持久化接口。
-type Store interface {
-	Set(ctx context.Context, key string, value []byte) error
-	Get(ctx context.Context, key string) ([]byte, bool, error)
-}
+type Store = checkpointstore.Store

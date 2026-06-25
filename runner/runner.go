@@ -4,7 +4,6 @@ package runner
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/agentcore/checkpoint"
 	agentruntime "fkteams/agentcore/runtime"
 	"fkteams/agents"
 	"fkteams/agents/coordinator"
@@ -15,6 +14,7 @@ import (
 	"fkteams/agents/tasker"
 	"fkteams/agents/toolmeta"
 	"fkteams/config"
+	"fkteams/internal/runtime/checkpoint"
 	"fmt"
 	"regexp"
 	"strings"

@@ -7,9 +7,8 @@ import (
 )
 
 func TestInterruptRuntimeDelegation(t *testing.T) {
-	oldRuntime := interruptRuntime
 	t.Cleanup(func() {
-		interruptRuntime = oldRuntime
+		RegisterInterruptRuntime(nil)
 	})
 
 	RegisterInterruptRuntime(nil)

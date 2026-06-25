@@ -1,44 +1,14 @@
 package agentcore
 
 import (
-	"context"
-	"io"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
-type ChatModel interface {
-	Generate(ctx context.Context, input []Message) (Message, error)
-	Stream(ctx context.Context, input []Message) (MessageStream, error)
-	WithTools(tools []ToolInfo) (ChatModel, error)
-}
-
-type ModelCall struct {
-	Input []Message
-	Tools []ToolInfo
-}
-
-type MessageStream interface {
-	Recv() (Message, error)
-	Close()
-}
-
-type sliceMessageStream struct {
-	messages []Message
-	index    int
-}
+type ChatModel = runtimeport.ChatModel
+type ModelCall = runtimeport.ModelCall
+type MessageStream = runtimeport.MessageStream
 
 func NewMessageStream(messages []Message) MessageStream {
-	copied := make([]Message, len(messages))
-	copy(copied, messages)
-	return &sliceMessageStream{messages: copied}
+	return runtimeport.NewMessageStream([]domainmessage.Message(messages))
 }
-
-func (s *sliceMessageStream) Recv() (Message, error) {
-	if s.index >= len(s.messages) {
-		return Message{}, io.EOF
-	}
-	msg := s.messages[s.index]
-	s.index++
-	return msg, nil
-}
-
-func (s *sliceMessageStream) Close() {}

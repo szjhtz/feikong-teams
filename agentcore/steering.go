@@ -1,19 +1,8 @@
 package agentcore
 
-import "context"
+import runtimeport "fkteams/internal/ports/runtime"
 
-type SteeringSource func(context.Context) ([]Message, error)
+type SteeringSource = runtimeport.SteeringSource
 
-type steeringSourceKey struct{}
-
-func WithSteeringSource(ctx context.Context, source SteeringSource) context.Context {
-	if source == nil {
-		return ctx
-	}
-	return context.WithValue(ctx, steeringSourceKey{}, source)
-}
-
-func SteeringSourceFromContext(ctx context.Context) (SteeringSource, bool) {
-	source, ok := ctx.Value(steeringSourceKey{}).(SteeringSource)
-	return source, ok
-}
+var WithSteeringSource = runtimeport.WithSteeringSource
+var SteeringSourceFromContext = runtimeport.SteeringSourceFromContext

@@ -2,7 +2,7 @@ package common
 
 import (
 	"fkteams/agentcore"
-	"fkteams/agentcore/checkpoint"
+	"fkteams/internal/runtime/checkpoint"
 )
 
 // NewInMemoryStore 创建基于内存的 CheckPoint 存储
