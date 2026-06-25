@@ -1,41 +1,253 @@
 # 架构设计
 
-本文档记录项目的稳定边界和扩展契约。目标是让入口、核心协议、运行时适配器、工具、存储和 hooks 保持高内聚低耦合。
+本文档定义当前主线目标架构。项目版本仍处于 `0.x` 阶段，不承诺内部包、接口和目录结构的向后兼容；重构优先级是长期清晰、稳定、可扩展，而不是保留历史调用方式。
 
-## 分层边界
+## 设计原则
 
-| 层级 | 目录 | 职责 |
+- 内核优先：所有入口只调用应用用例层，不直接拼装 runner、history、memory、approval、hooks 或 runtime。
+- 端口驱动：领域和用例只依赖接口，Eino、HTTP、CLI、文件系统、MCP、定时器等全部是 adapter。
+- 单向依赖：`domain -> ports -> app -> adapters/bootstrap` 方向不可反转。
+- 运行时可替换：Eino 只是默认 runtime adapter，不是核心设计的一部分。
+- 状态集中治理：session、history、checkpoint、memory、task queue、schedule result 都通过明确 store/repository 接口管理。
+- 事件协议稳定：运行时事件、用户通知、历史记录和传输事件分层转换，不在入口层重复拼事件。
+- 可破坏性调整：旧包可以删除、重命名、移动；只需要保证功能等价、数据可迁移和验证完整。
+
+## 目标目录
+
+```text
+cmd/fkteams/
+  main.go
+
+internal/domain/
+  message/          # Message、ContentPart、ToolCall 等模型调用协议
+  event/            # RunEvent、Notification、Usage、ToolSpan 等事件领域模型
+  agent/            # AgentSpec、TeamSpec、PromptSpec、MemberSpec
+  tool/             # ToolSpec、ToolCall、ToolPolicy、ToolCategory
+  session/          # SessionID、TurnID、TurnInput、HistorySnapshot
+  memory/           # MemoryEntry、MemoryQuery、MemoryInjection
+  schedule/         # ScheduledTask、ScheduleResult、CronPolicy
+  approval/         # ApprovalRequest、Decision、Policy
+
+internal/ports/
+  runtime/          # Runtime、Runner、Model、Middleware、CheckpointStore
+  storage/          # SessionStore、HistoryStore、MemoryStore、TaskStore
+  tools/            # ToolRegistry、ToolFactory、MCPProvider
+  hooks/            # HookBus、HookPoint、HookHandler
+  scheduler/        # Scheduler、TaskExecutor、Clock
+  transport/        # EventPublisher、StreamHub、ChannelGateway
+
+internal/app/
+  chat/             # StartTurn、RunTurn、QueueFollowUp、Steer、Stop
+  session/          # Create、Resume、Persist、Summarize
+  agent/            # ResolveAgent、BuildTeam、BuildRunner
+  memory/           # Search、Inject、Extract
+  schedule/         # AddTask、RunDueTask、CancelTask、TaskHistory
+  tools/            # ResolveToolGroups、ClassifyPolicy、CreateToolRuntime
+  lifecycle/        # App lifecycle and service orchestration
+
+internal/runtime/
+  engine/           # runtime-independent turn executor
+  middleware/       # runtime-neutral middleware contracts
+  checkpoint/       # checkpoint implementations used by runtime ports
+  queue/            # steering/follow-up queue primitives
+
+internal/adapters/
+  runtime/eino/     # all CloudWeGo Eino dependencies
+  model/openai/
+  model/claude/
+  model/deepseek/
+  model/gemini/
+  storage/file/
+  storage/memory/
+  transport/http/
+  transport/cli/
+  transport/channel/
+  tools/builtin/
+  tools/mcp/
+  scheduler/filecron/
+
+internal/bootstrap/
+  app.go            # composition root
+  config.go
+  runtimes.go
+  models.go
+  tools.go
+  storage.go
+  services.go
+
+web/
+docs/
+```
+
+## 层级职责
+
+| 层级 | 职责 | 禁止 |
 | ---- | ---- | ---- |
-| 入口层 | `commands/`、`server/`、`channels/`、`cli/` | 处理 CLI、HTTP、WebSocket 和消息通道输入，只编排会话，不直接依赖具体运行时框架 |
-| 会话执行层 | `engine/` | 装配 context、历史、HITL、事件分发和运行级 hooks，并把本轮输入交给 `agentcore.Runner` |
-| 核心协议层 | `agentcore/` | 定义 Agent、Runner、Engine、Model、Tool、Event、Checkpoint、Runtime capability 等稳定接口 |
-| 核心存储层 | `agentcore/checkpoint/` | 提供运行时 checkpoint store 接口、内存实现和命名空间封装 |
-| 运行时注册层 | `agentcore/runtime/` | 管理运行时注册表、默认运行时选择和 MCP 工具提供者桥接，不 import 任何具体运行时适配器 |
-| 应用装配层 | `bootstrap/runtimes/` | 安装默认运行时实现，是应用二进制的 composition root |
-| 运行时适配层 | `agentcore/eino/` | 把 CloudWeGo Eino ADK 的 Agent、Runner、Tool、Model、Middleware 和事件转换为 `agentcore` 协议 |
-| 扩展层 | `hooks/`、`tools/`、`agents/`、`memory/` | 通过核心接口接入，不越过 `agentcore` 直接依赖运行时实现 |
+| `domain` | 纯业务模型和值对象 | 禁止 import adapters、app、config、Eino、Gin、TUI、文件系统实现 |
+| `ports` | 外部能力接口和契约 | 禁止 import adapters、app、具体第三方 SDK |
+| `app` | 用例编排、事务边界、状态流转 | 禁止 import 具体 adapter；只能依赖 `domain` 和 `ports` |
+| `runtime` | 与具体框架无关的执行内核组件 | 禁止 import Eino、HTTP、CLI、server handler |
+| `adapters` | 技术实现和协议转换 | 可以依赖 `domain`、`ports`、第三方 SDK；不得被 domain/app 反向依赖 |
+| `bootstrap` | 组装配置、adapter、service | 是唯一允许主动连接所有层的 composition root |
 
-## 运行时隔离规则
+## 核心用例中轴
 
-- `agentcore/runtime` 只保存 `agentcore.Engine`，不得 import `agentcore/eino` 或任何 `github.com/cloudwego/eino*` 包。
-- 默认运行时由 `bootstrap/runtimes` 注册。应用入口通过空导入安装默认实现，测试可以选择显式安装 bootstrap 或注册 mock engine。
-- 运行时适配器必须实现 `agentcore.Engine`。如需暴露能力信息和健康状态，应额外实现 `agentcore.RuntimeInspector`。
-- MCP、middlewares、model decorator 等框架特定能力必须通过 `agentcore` 中的 capability interface 暴露，调用方只做接口断言。
-- `agentcore/eino/boundary_test.go` 负责阻止 Eino import 泄漏到适配器和 bootstrap 之外。
+所有入口统一调用 `internal/app/chat.Service`。Web、CLI、消息通道、定时任务都不再直接调用 runner 或 engine。
 
-## 新运行时接入流程
+```go
+type Service interface {
+    StartTurn(ctx context.Context, req StartTurnRequest) (*TurnHandle, error)
+    SubmitFollowUp(ctx context.Context, req SubmitMessageRequest) (*QueueItem, error)
+    SubmitSteering(ctx context.Context, req SubmitMessageRequest) (*QueueItem, error)
+    StopTurn(ctx context.Context, sessionID string) error
+}
+```
 
-1. 新建运行时适配目录，实现 `agentcore.Engine`。
-2. 在适配器内部完成底层框架对象和 `agentcore` 协议对象的双向转换。
-3. 按需实现 `ModelDecorator`、`AgentPipelineProvider`、`ToolPipelineProvider`、`MCPToolProvider` 和 `RuntimeInspector`。
-4. 在独立 bootstrap 包中调用 `agentcore/runtime.Register(name, engine)`。
-5. 增加边界测试，确保底层框架依赖只出现在适配器和 bootstrap 中。
+`chat.Service` 统一负责：
 
-## 稳定性约束
+- 加载和保存 session/history。
+- 注入长期记忆。
+- 创建或复用 runner。
+- 装配 approval、ask、steering、hooks。
+- 分发事件到 history、stream、CLI view、channel reply。
+- 处理 follow-up 队列和 steering 队列。
+- 运行结束后提取记忆、更新 session metadata。
 
-- 会话运行必须经过 `engine.Session`，由 `runConfig` 统一装配 context、历史记录、HITL 处理器和 hooks。
-- `Session.OnInterrupt` 未设置时使用固定拒绝决策，避免无处理器时卡住。
-- hooks 默认带超时、panic recover 和错误策略；前置 hooks 默认失败即停止，后置和事件 hooks 默认告警后继续。
-- 业务代码优先使用 `hooks.Bus` 的类型化方法触发扩展点，例如 `InvokeBeforeRun`、`InvokeEvent`、`InvokeBeforeToolCall` 和 `InvokeBeforeModelRequest`；只有新增扩展点时才直接构造底层 `Invocation`。
-- 所有运行时事件必须转换为 `agentcore.Event`，事件类型使用 `agentcore/types.go` 和 `events/types.go` 中的常量。
-- checkpoint 通过 `agentcore/checkpoint.Store` 传入运行时；history、memory 等状态能力也通过接口传入，不允许运行时适配层直接耦合入口层存储实现。
+入口层只负责 DTO 转换和用户交互：
+
+- HTTP handler：JSON/SSE/WebSocket 转换。
+- CLI：终端输入、展示、快捷键。
+- Channel：平台消息转换、回复发送。
+- Scheduler：时间触发和结果存档。
+
+## Runtime 端口
+
+运行时接口必须足够小，不能暴露 Eino 概念。
+
+```go
+type Runtime interface {
+    BuildAgent(ctx context.Context, spec AgentSpec) (Agent, error)
+    BuildRunner(ctx context.Context, spec RunnerSpec) (Runner, error)
+    Capabilities() RuntimeCapabilities
+}
+
+type Runner interface {
+    Run(ctx context.Context, input TurnInput, opts RunOptions) (*RunResult, error)
+}
+```
+
+Runtime adapter 负责把目标协议转换到底层框架：
+
+- Eino adapter 内部使用 ADK Agent、Runner、Middleware。
+- 其他 runtime 只要实现 ports/runtime 即可接入。
+- `internal/adapters/runtime/eino` 是唯一允许 import `github.com/cloudwego/eino*` 的目录。
+
+## Agent 与 Tool 设计
+
+智能体目录不再创建实际 runtime agent，只声明规格：
+
+```go
+type AgentSpec struct {
+    Name        string
+    Description string
+    Prompt      PromptSpec
+    Model       ModelRef
+    Tools       []ToolGroupRef
+    Policies    []PolicyRef
+    Features    AgentFeatures
+}
+```
+
+工具系统改为注册表：
+
+```go
+type ToolRegistry interface {
+    Register(group ToolGroupSpec, factory ToolFactory) error
+    Resolve(ctx context.Context, refs []ToolGroupRef) ([]Tool, []ToolPolicy, error)
+    Catalog(ctx context.Context) ([]ToolGroupInfo, error)
+}
+```
+
+工具不得反向调用应用执行层。定时任务工具只提交 schedule use case；真正执行任务由 `app/schedule` 调用 `app/chat`。
+
+## 状态与存储
+
+状态能力按用途拆分：
+
+- `SessionStore`：session metadata、title、status、timestamps。
+- `HistoryStore`：结构化消息、事件、摘要。
+- `CheckpointStore`：runtime checkpoint。
+- `MemoryStore`：长期记忆。
+- `TaskStore`：schedule task、result、history。
+- `StreamStore` 或 `StreamHub`：运行中事件流和队列快照。
+
+文件系统只是 adapter；核心不直接拼路径。
+
+## Hooks
+
+Hooks 属于用例和运行时之间的稳定扩展边界：
+
+- before/after turn
+- before/after model request
+- before/after tool call
+- on event
+- before/after memory injection
+- before/after schedule execution
+
+hook payload 使用明确结构体，不在业务代码里散落 `any` 和字符串 hook point。
+
+## 事件分层
+
+事件分三层：
+
+1. `domain/event`：运行时和用例的事实事件。
+2. `app` event pipeline：补齐 session、turn、sequence、history metadata。
+3. `transport` event DTO：SSE、WebSocket、CLI、channel 展示格式。
+
+历史记录只保存 domain/app 事件，不保存入口层展示 DTO。
+
+## 当前历史包袱处理
+
+以下旧包不作为长期结构保留：
+
+- `agentcore`：拆到 `internal/domain/*` 和 `internal/ports/runtime`。
+- `engine`：重建为 `internal/runtime/engine`，只保留运行时无关执行内核。
+- `runner`：并入 `internal/app/agent`，不再作为全局工厂包。
+- `events/chat`：并入 `internal/app/chat` 的 turn input builder。
+- `events/log`：迁移为 `internal/adapters/storage/file/history` 和 domain history model。
+- `tools/tools.go`：替换为 tool registry。
+- `tools/scheduler`：拆成 schedule domain、app use case、scheduler adapter、tool adapter。
+- `common`：拆到明确包，禁止继续作为杂物层增长。
+- `server/handler/taskstream`：上移为 `internal/app/chat` 的运行队列和 stream hub。
+
+## 迁移顺序
+
+1. 建立 `internal/domain` 和 `internal/ports`，移动纯类型和接口。
+2. 建立 `internal/app/chat`，把 Web/CLI/channel/scheduler 重复执行循环合并。
+3. 建立 `internal/app/agent`，接管 agent spec、team spec、runner resolution。
+4. 建立 `internal/adapters/runtime/eino`，移动所有 Eino 依赖。
+5. 建立 storage adapters，替换 history/session/checkpoint/memory 的直接文件访问。
+6. 建立 tool registry，替换 `tools/tools.go` switch。
+7. 重构 scheduler：工具只创建计划，执行由 schedule use case 触发 chat service。
+8. 收缩入口层：HTTP、CLI、channel 只保留协议转换。
+9. 删除旧 facade、旧全局变量和旧目录。
+
+## 验证门禁
+
+每完成一个大模块必须执行：
+
+```bash
+make check
+make native
+```
+
+同时补充架构边界测试：
+
+- `internal/domain` 不得 import `internal/app`、`internal/adapters`、第三方 runtime SDK。
+- `internal/ports` 不得 import `internal/app`、`internal/adapters`。
+- `internal/app` 不得 import `internal/adapters`。
+- 只有 `internal/adapters/runtime/eino` 可以 import `github.com/cloudwego/eino*`。
+- `server`、`cli`、`channels` 不得 import runtime adapter。
+- `tools` 不得 import `engine` 或 `app/chat`；工具只能通过端口提交用例请求。
+
+提交粒度按大模块切分，提交信息使用 Conventional Commits 中文说明。
