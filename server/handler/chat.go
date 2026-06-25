@@ -7,8 +7,8 @@ import (
 	"fkteams/appstate"
 	"fkteams/engine"
 	"fkteams/events"
-	"fkteams/events/chat"
 	"fkteams/events/log"
+	appchat "fkteams/internal/app/chat"
 	"fkteams/runner"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/ask"
@@ -84,14 +84,14 @@ func messageContentParts(message agentcore.Message) []agentcore.ContentPart {
 func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart, manager appstate.MemoryManager) (input engine.TurnInput, displayText string) {
 	if len(contents) > 0 {
 		parts := convertContentParts(contents)
-		displayText = chat.ExtractTextFromParts(parts)
+		displayText = appchat.ExtractTextFromParts(parts)
 		if displayText == "" {
 			displayText = message
 		}
-		input = chat.BuildMultimodalTurnInputWithMemory(recorder, displayText, parts, manager)
+		input = appchat.BuildMultimodalTurnInputWithMemory(recorder, displayText, parts, manager)
 	} else {
 		displayText = message
-		input = chat.BuildTurnInputWithMemory(recorder, message, manager)
+		input = appchat.BuildTurnInputWithMemory(recorder, message, manager)
 	}
 	return
 }
@@ -103,7 +103,7 @@ func queuedChatMessage(kind taskstream.QueueKind, message string, contents []Con
 	}
 	if len(contents) > 0 {
 		queued.Parts = convertContentParts(contents)
-		queued.DisplayText = chat.ExtractTextFromParts(queued.Parts)
+		queued.DisplayText = appchat.ExtractTextFromParts(queued.Parts)
 		if queued.DisplayText == "" {
 			queued.DisplayText = message
 		}
@@ -115,16 +115,16 @@ func queuedChatMessage(kind taskstream.QueueKind, message string, contents []Con
 
 func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.QueuedMessage, manager appstate.MemoryManager) engine.TurnInput {
 	if len(msg.Parts) > 0 {
-		displayText := chat.ExtractTextFromParts(msg.Parts)
+		displayText := appchat.ExtractTextFromParts(msg.Parts)
 		if displayText == "" {
 			displayText = msg.DisplayText
 		}
 		if displayText == "" {
 			displayText = msg.Text
 		}
-		return chat.BuildMultimodalTurnInputWithMemory(recorder, displayText, msg.Parts, manager)
+		return appchat.BuildMultimodalTurnInputWithMemory(recorder, displayText, msg.Parts, manager)
 	}
-	return chat.BuildTurnInputWithMemory(recorder, msg.Text, manager)
+	return appchat.BuildTurnInputWithMemory(recorder, msg.Text, manager)
 }
 
 func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
@@ -724,7 +724,7 @@ func convertContentParts(parts []ContentPart) []agentcore.ContentPart {
 	for _, p := range parts {
 		switch p.Type {
 		case "text":
-			result = append(result, chat.TextPart(p.Text))
+			result = append(result, appchat.TextPart(p.Text))
 		case "image_url":
 			detail := "auto"
 			switch p.Detail {
@@ -733,19 +733,19 @@ func convertContentParts(parts []ContentPart) []agentcore.ContentPart {
 			case "low":
 				detail = "low"
 			}
-			result = append(result, chat.ImageURLPart(p.URL, detail))
+			result = append(result, appchat.ImageURLPart(p.URL, detail))
 		case "image_base64":
 			mimeType := p.MIMEType
 			if mimeType == "" {
 				mimeType = "image/png"
 			}
-			result = append(result, chat.ImageBase64Part(p.Base64Data, mimeType))
+			result = append(result, appchat.ImageBase64Part(p.Base64Data, mimeType))
 		case "audio_url":
-			result = append(result, chat.AudioURLPart(p.URL))
+			result = append(result, appchat.AudioURLPart(p.URL))
 		case "video_url":
-			result = append(result, chat.VideoURLPart(p.URL))
+			result = append(result, appchat.VideoURLPart(p.URL))
 		case "file_url":
-			result = append(result, chat.FileURLPart(p.URL))
+			result = append(result, appchat.FileURLPart(p.URL))
 		}
 	}
 	return result

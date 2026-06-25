@@ -16,7 +16,6 @@ import (
 	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/events"
-	"fkteams/events/chat"
 	"fkteams/events/log"
 	appchat "fkteams/internal/app/chat"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -272,13 +271,13 @@ func getCliRecorder() *eventlog.HistoryRecorder {
 // BuildTurnInput 构建一轮输入（包含历史对话，支持上下文压缩摘要）
 func BuildTurnInput(input string) engine.TurnInput {
 	recorder := getCliRecorder()
-	return chat.BuildTurnInput(recorder, input)
+	return appchat.BuildTurnInput(recorder, input)
 }
 
 // BuildTurnInputWithMemory 构建包含显式长期记忆依赖的一轮输入。
 func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) engine.TurnInput {
 	recorder := getCliRecorder()
-	return chat.BuildTurnInputWithMemory(recorder, input, manager)
+	return appchat.BuildTurnInputWithMemory(recorder, input, manager)
 }
 
 // Execute 执行查询
@@ -367,7 +366,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		}
 
 		if next, ok := e.drainSteeringMessage(); ok && queryCtx.Err() == nil {
-			currentInput = chat.BuildTurnInputWithMemory(recorder, next.DisplayText(), e.memory)
+			currentInput = appchat.BuildTurnInputWithMemory(recorder, next.DisplayText(), e.memory)
 			continue
 		}
 		break

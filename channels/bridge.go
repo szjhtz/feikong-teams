@@ -8,7 +8,6 @@ import (
 	"fkteams/appstate"
 	"fkteams/common"
 	"fkteams/events"
-	"fkteams/events/chat"
 	"fkteams/events/log"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/log"
@@ -251,7 +250,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	}
 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
-	turnInput := chat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
+	turnInput := appchat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
