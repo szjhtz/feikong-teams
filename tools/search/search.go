@@ -2,7 +2,7 @@ package search
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"net/http"
 	"time"
@@ -27,7 +27,7 @@ type Config struct {
 	Region Region `json:"region"`
 }
 
-func NewTextSearchTool(ctx context.Context, config *Config) (agentcore.Tool, error) {
+func NewTextSearchTool(ctx context.Context, config *Config) (runtimeport.Tool, error) {
 	if config == nil {
 		config = &Config{}
 	}
@@ -46,7 +46,7 @@ func NewTextSearchTool(ctx context.Context, config *Config) (agentcore.Tool, err
 		return nil, fmt.Errorf("failed to create duckduckgo client: %w", err)
 	}
 
-	return agentcore.NewTool(agentcore.ToolInfo{Name: name, Desc: desc}, cli.TextSearch)
+	return runtimeport.NewTool(runtimeport.ToolInfo{Name: name, Desc: desc}, cli.TextSearch)
 }
 
 func NewSearch(ctx context.Context, config *Config) (Search, error) {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/domain/session"
 )
 
@@ -16,11 +16,11 @@ func TestListAndReadSessionAttachments(t *testing.T) {
 	t.Cleanup(func() { eventlog.GlobalSessionManager.Remove(sessionID) })
 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, t.TempDir())
-	recorder.RecordUserMessage(agentcore.Message{
-		Role: agentcore.RoleUser,
-		ContentParts: []agentcore.ContentPart{
-			{Type: agentcore.ContentPartText, Text: "look"},
-			{Type: agentcore.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
+	recorder.RecordUserMessage(domainmessage.Message{
+		Role: domainmessage.RoleUser,
+		ContentParts: []domainmessage.ContentPart{
+			{Type: domainmessage.ContentPartText, Text: "look"},
+			{Type: domainmessage.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
 		},
 	})
 	ctx := session.WithID(context.Background(), sessionID)
@@ -54,11 +54,11 @@ func TestReadSessionAttachmentDefaultsToMetadataOnly(t *testing.T) {
 	t.Cleanup(func() { eventlog.GlobalSessionManager.Remove(sessionID) })
 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, t.TempDir())
-	recorder.RecordUserMessage(agentcore.Message{
-		Role: agentcore.RoleUser,
-		ContentParts: []agentcore.ContentPart{
-			{Type: agentcore.ContentPartText, Text: "look"},
-			{Type: agentcore.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
+	recorder.RecordUserMessage(domainmessage.Message{
+		Role: domainmessage.RoleUser,
+		ContentParts: []domainmessage.ContentPart{
+			{Type: domainmessage.ContentPartText, Text: "look"},
+			{Type: domainmessage.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
 		},
 	})
 	ctx := session.WithID(context.Background(), sessionID)

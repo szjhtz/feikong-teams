@@ -5,20 +5,20 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
 	"fkteams/config"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 type fakeTool struct {
 	name string
 }
 
-func (f fakeTool) Info(ctx context.Context) (*agentcore.ToolInfo, error) {
-	return &agentcore.ToolInfo{Name: f.name}, nil
+func (f fakeTool) Info(ctx context.Context) (*runtimeport.ToolInfo, error) {
+	return &runtimeport.ToolInfo{Name: f.name}, nil
 }
 
-func (f fakeTool) Invoke(ctx context.Context, invocation agentcore.ToolInvocation) (*agentcore.ToolResult, error) {
-	return &agentcore.ToolResult{Content: f.name}, nil
+func (f fakeTool) Invoke(ctx context.Context, invocation runtimeport.ToolInvocation) (*runtimeport.ToolResult, error) {
+	return &runtimeport.ToolResult{Content: f.name}, nil
 }
 
 func TestGetToolsByNameUsesCache(t *testing.T) {
@@ -27,7 +27,7 @@ func TestGetToolsByNameUsesCache(t *testing.T) {
 		"demo": {
 			Name:  "demo",
 			Desc:  "Demo tools",
-			Tools: []agentcore.Tool{fakeTool{name: "demo_tool"}},
+			Tools: []runtimeport.Tool{fakeTool{name: "demo_tool"}},
 		},
 	}
 
@@ -117,8 +117,8 @@ func TestSetupMCPClientsRejectsUnsupportedTransport(t *testing.T) {
 
 func TestRegisterToolProviderAndClearCache(t *testing.T) {
 	resetMCPGlobals(t)
-	provider := func(ctx context.Context, rawClient any) ([]agentcore.Tool, error) {
-		return []agentcore.Tool{fakeTool{name: "provided"}}, nil
+	provider := func(ctx context.Context, rawClient any) ([]runtimeport.Tool, error) {
+		return []runtimeport.Tool{fakeTool{name: "provided"}}, nil
 	}
 	RegisterToolProvider(provider)
 	if toolProvider == nil {

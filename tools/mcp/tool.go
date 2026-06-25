@@ -2,11 +2,11 @@ package mcp
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 )
 
-type ToolProvider func(context.Context, any) ([]agentcore.Tool, error)
+type ToolProvider func(context.Context, any) ([]runtimeport.Tool, error)
 
 var toolProvider ToolProvider
 
@@ -43,7 +43,7 @@ func getAllMCPTools() (dtg DictToolGroup, err error) {
 
 var cachedTools DictToolGroup
 
-func GetToolsByName(toolName string) ([]agentcore.Tool, error) {
+func GetToolsByName(toolName string) ([]runtimeport.Tool, error) {
 	if cachedTools == nil {
 		var err error
 		cachedTools, err = getAllMCPTools()

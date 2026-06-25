@@ -3,7 +3,7 @@ package approval
 import (
 	"context"
 	"errors"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -169,11 +169,11 @@ func Require(ctx context.Context, storeName, key, info string) error {
 		return nil
 	}
 
-	wasInterrupted, _, _ := agentcore.GetInterruptState(ctx)
+	wasInterrupted, _, _ := runtimeport.GetInterruptState(ctx)
 	if wasInterrupted {
-		isTarget, hasData, decision := agentcore.GetResumeContext[int](ctx)
+		isTarget, hasData, decision := runtimeport.GetResumeContext[int](ctx)
 		if !isTarget {
-			return agentcore.RequestInterrupt(ctx, nil)
+			return runtimeport.RequestInterrupt(ctx, nil)
 		}
 		if hasData {
 			switch decision {
@@ -194,7 +194,7 @@ func Require(ctx context.Context, storeName, key, info string) error {
 		return ErrRejected
 	}
 
-	return agentcore.RequestInterrupt(ctx, info)
+	return runtimeport.RequestInterrupt(ctx, info)
 }
 
 // RequireOperation 使用统一格式发起一次人工审批。

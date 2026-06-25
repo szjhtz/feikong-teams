@@ -1,12 +1,12 @@
 package command
 
 import (
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 // GetTools 返回命令行工具列表
-func (t *CommandTools) GetTools() ([]agentcore.Tool, error) {
-	exec, err := agentcore.InferTool(
+func (t *CommandTools) GetTools() ([]runtimeport.Tool, error) {
+	exec, err := runtimeport.InferTool(
 		"execute",
 		"命令执行工具，带安全审批功能。可执行任意 shell 命令并自动评估安全风险。安全命令直接执行，危险命令暂停并请求用户审批。超时控制默认60秒，最大600秒。使用时必须提供执行原因。"+
 			"耗时超过15秒的命令会自动转入后台执行并返回 task_id。"+
@@ -19,5 +19,5 @@ func (t *CommandTools) GetTools() ([]agentcore.Tool, error) {
 		return nil, err
 	}
 
-	return []agentcore.Tool{exec}, nil
+	return []runtimeport.Tool{exec}, nil
 }

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"fkteams/agentcore"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appdata"
+	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/domain/session"
 )
 
@@ -132,7 +132,7 @@ func summarize(ref eventlog.AttachmentRef) AttachmentSummary {
 	return s
 }
 
-func dataURLForPart(part agentcore.ContentPart) (string, bool) {
+func dataURLForPart(part domainmessage.ContentPart) (string, bool) {
 	if part.Base64Data == "" {
 		return "", false
 	}
@@ -146,13 +146,13 @@ func dataURLForPart(part agentcore.ContentPart) (string, bool) {
 	return "data:" + mimeType + ";base64," + part.Base64Data, false
 }
 
-func defaultMIMEType(partType agentcore.ContentPartType) string {
+func defaultMIMEType(partType domainmessage.ContentPartType) string {
 	switch partType {
-	case agentcore.ContentPartImageURL:
+	case domainmessage.ContentPartImageURL:
 		return "image/png"
-	case agentcore.ContentPartAudioURL:
+	case domainmessage.ContentPartAudioURL:
 		return "audio/mpeg"
-	case agentcore.ContentPartVideoURL:
+	case domainmessage.ContentPartVideoURL:
 		return "video/mp4"
 	default:
 		return "application/octet-stream"

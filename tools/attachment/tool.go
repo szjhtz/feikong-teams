@@ -1,7 +1,7 @@
 package attachment
 
 import (
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 const listDesc = `列出当前会话历史中的多模态附件。
@@ -16,14 +16,14 @@ const readDesc = `读取当前会话历史中的指定附件。
 - include_data_url=true 时，仅在附件数据较小时返回 data URL
 - 对图片，纯文本模型不能直接理解像素；如果需要视觉理解，应说明需要支持视觉的模型或图像描述能力`
 
-func GetTools() ([]agentcore.Tool, error) {
-	listTool, err := agentcore.InferTool("session_attachment_list", listDesc, List)
+func GetTools() ([]runtimeport.Tool, error) {
+	listTool, err := runtimeport.InferTool("session_attachment_list", listDesc, List)
 	if err != nil {
 		return nil, err
 	}
-	readTool, err := agentcore.InferTool("session_attachment_read", readDesc, Read)
+	readTool, err := runtimeport.InferTool("session_attachment_read", readDesc, Read)
 	if err != nil {
 		return nil, err
 	}
-	return []agentcore.Tool{listTool, readTool}, nil
+	return []runtimeport.Tool{listTool, readTool}, nil
 }

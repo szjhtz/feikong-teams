@@ -2,10 +2,10 @@ package search
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
-func GetTools() (tools []agentcore.Tool, err error) {
+func GetTools() (tools []runtimeport.Tool, err error) {
 	duckduckgoTool, err := NewDuckDuckGoTool(context.Background())
 	if err != nil {
 		return nil, err

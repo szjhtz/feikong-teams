@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 type askTestContextKey struct{}
@@ -59,8 +59,8 @@ func TestAskQuestionsRequiresQuestion(t *testing.T) {
 func TestAskQuestionsRequestsInterruptOnFirstCall(t *testing.T) {
 	runtimeErr := errors.New("interrupt requested")
 	runtime := &askRuntime{interruptErr: runtimeErr}
-	agentcore.RegisterInterruptRuntime(runtime)
-	t.Cleanup(func() { agentcore.RegisterInterruptRuntime(nil) })
+	runtimeport.RegisterInterruptRuntime(runtime)
+	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
 
 	result, err := AskQuestions(context.Background(), &AskRequest{
 		Question:    "继续吗？",
@@ -83,8 +83,8 @@ func TestAskQuestionsRequestsInterruptOnFirstCall(t *testing.T) {
 }
 
 func TestAskQuestionsReturnsResumeResponse(t *testing.T) {
-	agentcore.RegisterInterruptRuntime(&askRuntime{})
-	t.Cleanup(func() { agentcore.RegisterInterruptRuntime(nil) })
+	runtimeport.RegisterInterruptRuntime(&askRuntime{})
+	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
 	ctx := context.WithValue(context.Background(), askTestContextKey{}, askRuntimeState{
 		wasInterrupted: true,
 		resumeTarget:   true,
@@ -119,11 +119,11 @@ func TestAskQuestionsUsesRuntimeHandlerForMemberAsk(t *testing.T) {
 		}
 		return &AskResponse{AskID: req.ID, Selected: []string{"A"}}, nil
 	})
-	ctx = agentcore.WithToolRuntimeMetadata(ctx, agentcore.ToolRuntimeMetadata{
+	ctx = runtimeport.WithToolRuntimeMetadata(ctx, runtimeport.ToolRuntimeMetadata{
 		CallID: "ask-tool-call",
 		Name:   "ask_questions",
 	})
-	ctx = agentcore.WithInterruptMetadata(ctx, agentcore.InterruptMetadata{
+	ctx = runtimeport.WithInterruptMetadata(ctx, runtimeport.InterruptMetadata{
 		MemberCallID:   "member-call",
 		MemberToolName: "ask_fkagent_member",
 		MemberName:     "member",
@@ -144,8 +144,8 @@ func TestAskQuestionsUsesRuntimeHandlerForMemberAsk(t *testing.T) {
 func TestAskQuestionsReraisesInterruptForNonTargetResume(t *testing.T) {
 	runtimeErr := errors.New("rerun interrupt")
 	runtime := &askRuntime{interruptErr: runtimeErr}
-	agentcore.RegisterInterruptRuntime(runtime)
-	t.Cleanup(func() { agentcore.RegisterInterruptRuntime(nil) })
+	runtimeport.RegisterInterruptRuntime(runtime)
+	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
 	ctx := context.WithValue(context.Background(), askTestContextKey{}, askRuntimeState{
 		wasInterrupted: true,
 		resumeTarget:   false,
@@ -164,8 +164,8 @@ func TestAskQuestionsReraisesInterruptForNonTargetResume(t *testing.T) {
 }
 
 func TestAskQuestionsReportsMissingResumeData(t *testing.T) {
-	agentcore.RegisterInterruptRuntime(&askRuntime{})
-	t.Cleanup(func() { agentcore.RegisterInterruptRuntime(nil) })
+	runtimeport.RegisterInterruptRuntime(&askRuntime{})
+	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
 	ctx := context.WithValue(context.Background(), askTestContextKey{}, askRuntimeState{
 		wasInterrupted: true,
 		resumeTarget:   true,

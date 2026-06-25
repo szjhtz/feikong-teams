@@ -4,7 +4,7 @@ package ask
 import (
 	"context"
 	"encoding/gob"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -38,7 +38,7 @@ type AskResponse struct {
 type RuntimeRequest struct {
 	ID         string
 	Info       *AskInfo
-	Metadata   agentcore.InterruptMetadata
+	Metadata   runtimeport.InterruptMetadata
 	ToolCallID string
 	ToolName   string
 }
@@ -83,8 +83,8 @@ func AskQuestions(ctx context.Context, req *AskRequest) (*AskResult, error) {
 	}
 
 	if handler, ok := runtimeHandlerFromContext(ctx); ok {
-		if metadata, hasMetadata := agentcore.InterruptMetadataFromContext(ctx); hasMetadata && metadata.MemberCallID != "" {
-			toolMetadata, _ := agentcore.ToolRuntimeMetadataFromContext(ctx)
+		if metadata, hasMetadata := runtimeport.InterruptMetadataFromContext(ctx); hasMetadata && metadata.MemberCallID != "" {
+			toolMetadata, _ := runtimeport.ToolRuntimeMetadataFromContext(ctx)
 			resp, err := handler(ctx, RuntimeRequest{
 				ID:         uuid.NewString(),
 				Info:       info,
@@ -106,11 +106,11 @@ func AskQuestions(ctx context.Context, req *AskRequest) (*AskResult, error) {
 	}
 
 	// 检查是否从中断恢复
-	wasInterrupted, _, _ := agentcore.GetInterruptState(ctx)
+	wasInterrupted, _, _ := runtimeport.GetInterruptState(ctx)
 	if wasInterrupted {
-		isTarget, hasData, resp := agentcore.GetResumeContext[*AskResponse](ctx)
+		isTarget, hasData, resp := runtimeport.GetResumeContext[*AskResponse](ctx)
 		if !isTarget {
-			return nil, agentcore.RequestInterrupt(ctx, nil)
+			return nil, runtimeport.RequestInterrupt(ctx, nil)
 		}
 		if hasData && resp != nil {
 			return &AskResult{
@@ -122,12 +122,12 @@ func AskQuestions(ctx context.Context, req *AskRequest) (*AskResult, error) {
 	}
 
 	// 首次调用，触发中断
-	return nil, agentcore.RequestInterrupt(ctx, info)
+	return nil, runtimeport.RequestInterrupt(ctx, info)
 }
 
 // GetTools 返回 askQuestions 工具
-func GetTools() ([]agentcore.Tool, error) {
-	askTool, err := agentcore.InferTool(
+func GetTools() ([]runtimeport.Tool, error) {
+	askTool, err := runtimeport.InferTool(
 		"ask_questions",
 		`向用户提出问题，收集用户输入、观点或让用户做出选择。
 
@@ -149,5 +149,5 @@ func GetTools() ([]agentcore.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []agentcore.Tool{askTool}, nil
+	return []runtimeport.Tool{askTool}, nil
 }

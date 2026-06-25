@@ -1,11 +1,11 @@
 package mcp
 
-import "fkteams/agentcore"
+import runtimeport "fkteams/internal/ports/runtime"
 
 type ToolGroup struct {
 	Name  string
 	Desc  string
-	Tools []agentcore.Tool
+	Tools []runtimeport.Tool
 }
 
 type DictToolGroup map[string]ToolGroup

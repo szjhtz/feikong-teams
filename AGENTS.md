@@ -81,6 +81,7 @@ tools/                      # 工具系统
   tools.go                  #   GetToolsByName() — 委托注册表和 MCP fallback
   metadata.go               #   ClassifyTools() — 标记只读/破坏性工具
                             #   定时任务工具适配器位于 internal/adapters/tools/builtin/scheduler
+                            #   工具层使用 internal/ports/runtime，禁止再依赖 agentcore 旧门面
 lifecycle/                  # 应用生命周期管理
   lifecycle.go              #   Application — Init → Setup → Start → Ready → [wait] → Stop → Cleanup
                             #   Service 接口，服务按序启动、逆序停止（LIFO）

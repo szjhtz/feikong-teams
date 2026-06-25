@@ -2,15 +2,15 @@ package search
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/fkenv"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 )
 
-func NewDuckDuckGoTool(ctx context.Context) (agentcore.Tool, error) {
+func NewDuckDuckGoTool(ctx context.Context) (runtimeport.Tool, error) {
 	// 1. 获取代理配置
 	proxyStr := fkenv.Get(fkenv.ProxyURL)
 
