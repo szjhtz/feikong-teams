@@ -236,6 +236,15 @@ func TestRootServerPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootCommandsPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "commands")); err == nil {
+		t.Fatal("root commands package exists; use internal/adapters/transport/cli/commands")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -343,8 +352,8 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	if importPath == "fkteams/server" || strings.HasPrefix(importPath, "fkteams/server/") {
 		t.Errorf("%s imports removed root server package; use internal/adapters/transport/http", rel)
 	}
-	if strings.HasPrefix(rel, "internal/") && (importPath == "fkteams/commands" || strings.HasPrefix(importPath, "fkteams/commands/")) {
-		t.Errorf("%s imports root commands package; move reusable behavior into internal/app or internal/adapters", rel)
+	if importPath == "fkteams/commands" || strings.HasPrefix(importPath, "fkteams/commands/") {
+		t.Errorf("%s imports removed root commands package; use internal/adapters/transport/cli/commands or move reusable behavior into internal/app", rel)
 	}
 }
 
@@ -1008,7 +1017,7 @@ func TestChannelsUseDomainAndRuntimePorts(t *testing.T) {
 func TestCLIEntrypointsUseDomainAndRuntimePorts(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, dir := range []string{
-		"commands",
+		"internal/adapters/transport/cli/commands",
 		"internal/adapters/transport/cli/runtime",
 	} {
 		err := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(dir)), func(path string, entry fs.DirEntry, walkErr error) error {

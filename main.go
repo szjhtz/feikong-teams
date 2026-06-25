@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fkteams/commands"
+	clicommands "fkteams/internal/adapters/transport/cli/commands"
 	"log"
 	"os"
 
@@ -16,7 +16,7 @@ func init() {
 }
 
 func main() {
-	if err := commands.Root().Run(context.Background(), os.Args); err != nil {
+	if err := clicommands.Root().Run(context.Background(), os.Args); err != nil {
 		pterm.Error.Println(err)
 	}
 }

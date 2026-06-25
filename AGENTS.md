@@ -25,13 +25,7 @@ go run . generate config
 ## 项目架构
 
 ```
-main.go                     # 入口，调用 commands.Root().Run()
-commands/                   # CLI 命令定义（urfave/cli/v3）
-  root.go                   #   根命令，注册子命令和全局 flag
-  chat.go, web.go, serve.go #   聊天 / Web 服务 / API 服务
-  session.go, agent.go      #   会话和智能体管理
-  skill/                    #   技能 CLI 参数解析和终端展示，核心能力委托 internal/app/skill
-                            #   CLI 命令层使用 internal/ports/runtime 和 domain/message
+main.go                     # 入口，调用 internal/adapters/transport/cli/commands.Root().Run()
 internal/app/               # 应用用例层，入口只调用这里
   config/                   #   TOML 配置加载、保存、热重载和示例生成
   version/                  #   应用版本和构建时间元数据
@@ -77,6 +71,7 @@ internal/adapters/scheduler/
 internal/adapters/tools/
   builtin/scheduler/        #   schedule_* 工具适配器，只委托 app/schedule
 internal/adapters/transport/
+  cli/commands/             #   CLI 命令定义（urfave/cli/v3），参数解析和生命周期连接
   http/                     #   Gin HTTP 服务、Router、Handler、Middleware 和 origin 策略
   cli/runtime/              #   CLI 会话、输入、查询执行和交互运行时编排
   cli/eventview/            #   CLI 事件渲染和 JSON 输出回调
