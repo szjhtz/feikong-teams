@@ -3,7 +3,7 @@ package runtimes
 import (
 	einoengine "fkteams/internal/adapters/runtime/eino/engine"
 	toolmcp "fkteams/internal/adapters/tools/mcp"
-	runtimeport "fkteams/internal/ports/runtime"
+	toolport "fkteams/internal/ports/tools"
 	runtimeregistry "fkteams/internal/runtime/registry"
 
 	_ "fkteams/internal/adapters/runtime/eino/providers/register"
@@ -12,7 +12,7 @@ import (
 func init() {
 	engine := einoengine.NewEngine()
 	runtimeregistry.Register(runtimeregistry.DefaultRuntimeName, engine)
-	if provider, ok := any(engine).(runtimeport.MCPToolProvider); ok {
+	if provider, ok := any(engine).(toolport.MCPClientToolProvider); ok {
 		toolmcp.RegisterToolProvider(provider.MCPTools)
 	}
 }

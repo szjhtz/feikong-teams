@@ -732,6 +732,17 @@ func TestMCPToolsLiveInAdapter(t *testing.T) {
 	}
 }
 
+func TestRuntimePortsDoNotExposeMCPBridge(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	content, err := os.ReadFile(filepath.Join(root, "internal", "ports", "runtime", "runtime.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "MCP") {
+		t.Fatal("internal/ports/runtime exposes MCP bridge concepts; use internal/ports/tools for tool-provider bridges")
+	}
+}
+
 func TestGitToolsLiveInAdapter(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	legacyDir := filepath.Join(root, "internal", "app", "tools", "git")

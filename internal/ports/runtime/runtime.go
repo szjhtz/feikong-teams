@@ -147,10 +147,6 @@ type ToolPipelineProvider interface {
 	DefaultToolMiddlewares() []ToolMiddleware
 }
 
-type MCPToolProvider interface {
-	MCPTools(ctx context.Context, rawClient any) ([]Tool, error)
-}
-
 type Interrupt struct {
 	ID             string
 	IsRootCause    bool

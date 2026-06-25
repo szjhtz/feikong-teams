@@ -173,6 +173,7 @@ type ToolRegistry interface {
 当前已经明确隔离的工具实现：
 
 - `tools/mcp`：MCP client、缓存和 runtime tool provider 桥接位于 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`。
+- MCP client 转 runtime tool 的桥接接口归属 `internal/ports/tools`，不得放入 `internal/ports/runtime`。
 - `tools/scheduler`：`schedule_*` 工具位于 `internal/adapters/tools/builtin/scheduler`，只委托 `internal/app/schedule`；调度器实现位于 `internal/adapters/scheduler/filecron`。
 - `tools/git`：go-git 实现位于 `internal/adapters/tools/builtin/git`，由 `internal/bootstrap/tools` 注册。
 - `tools/ssh`：SSH/SFTP 实现位于 `internal/adapters/tools/builtin/ssh`，配置读取、连接创建和资源清理由 `internal/bootstrap/tools` 组合。

@@ -19,3 +19,7 @@ type MCPProvider interface {
 	GetAllToolGroups(ctx context.Context) (MCPToolGroups, error)
 	ClearCache()
 }
+
+type MCPClientToolProvider interface {
+	MCPTools(ctx context.Context, rawClient any) ([]runtimeport.Tool, error)
+}
