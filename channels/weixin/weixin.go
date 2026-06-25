@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/channels"
 	wechatbot "fkteams/channels/weixin/sdk"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fmt"
 	"os"
 	"strings"

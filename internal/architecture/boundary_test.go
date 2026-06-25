@@ -101,6 +101,15 @@ func TestRootEnvPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootLogPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "log")); err == nil {
+		t.Fatal("root log package exists; use internal/runtime/log")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -154,6 +163,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/fkenv" {
 		t.Errorf("%s imports removed root fkenv package; use internal/runtime/env", rel)
+	}
+	if importPath == "fkteams/log" {
+		t.Errorf("%s imports removed root log package; use internal/runtime/log", rel)
 	}
 }
 

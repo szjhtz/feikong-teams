@@ -12,7 +12,7 @@ import (
 
 	domainschedule "fkteams/internal/domain/schedule"
 	schedulerport "fkteams/internal/ports/scheduler"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"

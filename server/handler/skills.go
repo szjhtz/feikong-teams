@@ -2,7 +2,7 @@ package handler
 
 import (
 	"fkteams/commands/skill"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"net/http"
 	"strconv"
 

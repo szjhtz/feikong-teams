@@ -6,7 +6,7 @@ import (
 	"fkteams/channels"
 	"fkteams/config"
 	"fkteams/internal/app/appstate"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fkteams/memory"
 	"fkteams/tools"
 	"fkteams/tools/mcp"

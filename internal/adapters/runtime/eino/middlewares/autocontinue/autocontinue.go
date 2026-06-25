@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"

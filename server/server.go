@@ -11,7 +11,7 @@ import (
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/lifecycle"
 	bootstrapservices "fkteams/internal/bootstrap/services"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fkteams/server/handler"
 	"fkteams/server/router"
 	"fkteams/version"

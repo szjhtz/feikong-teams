@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/internal/app/appstate"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fkteams/memory"
 )
 

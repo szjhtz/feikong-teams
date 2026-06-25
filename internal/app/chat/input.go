@@ -8,7 +8,7 @@ import (
 	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/runtime/env"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fkteams/memory"
 )
 

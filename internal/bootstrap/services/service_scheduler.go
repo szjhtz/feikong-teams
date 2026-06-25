@@ -8,7 +8,7 @@ import (
 	"fkteams/internal/adapters/scheduler/filecron"
 	appagent "fkteams/internal/app/agent"
 	appschedule "fkteams/internal/app/schedule"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 )
 
 // SchedulerService 定时任务调度服务

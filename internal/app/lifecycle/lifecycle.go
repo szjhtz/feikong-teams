@@ -5,7 +5,7 @@ package lifecycle
 import (
 	"context"
 	"fkteams/internal/app/appstate"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fmt"
 	"os"
 	"os/signal"

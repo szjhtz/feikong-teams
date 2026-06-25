@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/channels"
 	"fkteams/internal/runtime/env"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"net/http"
 	"net/url"
 	"strings"

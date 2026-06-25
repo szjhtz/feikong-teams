@@ -1,12 +1,13 @@
-// Package log 提供基于 zap 的日志封装，支持文件轮转
+// Package log 提供基于 zap 的日志封装，支持文件轮转。
 package log
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
-	"fkteams/internal/app/appdata"
+	"fkteams/internal/runtime/env"
 
 	"github.com/natefinch/lumberjack"
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ func logger() *zap.SugaredLogger {
 	once.Do(func() {
 		level := readLevel()
 		hook := &lumberjack.Logger{
-			Filename:   filepath.Join(appdata.Dir(), "log", "fkteams.log"),
+			Filename:   filepath.Join(appDir(), "log", "fkteams.log"),
 			MaxSize:    10,
 			MaxBackups: 30,
 			MaxAge:     7,
@@ -48,6 +49,16 @@ func logger() *zap.SugaredLogger {
 		sugar = zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)).Sugar()
 	})
 	return sugar
+}
+
+func appDir() string {
+	if d := env.Get(env.AppDir); d != "" {
+		return d
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".fkteams")
+	}
+	return ".fkteams"
 }
 
 func readLevel() zapcore.Level {

@@ -11,7 +11,7 @@ import (
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fkteams/memory"
 	"fkteams/tools/approval"
 	"path/filepath"

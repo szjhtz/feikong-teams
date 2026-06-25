@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/config"
 	"fkteams/internal/app/appstate"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"fmt"
 	"sync"
 )

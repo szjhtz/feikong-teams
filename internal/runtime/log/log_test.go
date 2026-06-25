@@ -1,6 +1,7 @@
 package log
 
 import (
+	"fkteams/internal/runtime/env"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,10 +23,25 @@ func TestReadLevelDefaultsToDebug(t *testing.T) {
 	}
 }
 
+func TestAppDirUsesEnvThenHomeFallback(t *testing.T) {
+	t.Setenv(env.AppDir, "/tmp/fkteams-log")
+	if got := appDir(); got != "/tmp/fkteams-log" {
+		t.Fatalf("appDir() = %q, want env value", got)
+	}
+
+	t.Setenv(env.AppDir, "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if got := appDir(); got != filepath.Join(home, ".fkteams") {
+		t.Fatalf("appDir() = %q, want home fallback", got)
+	}
+}
+
 func TestLoggerWritesToAppLogFile(t *testing.T) {
 	resetLogger(t)
 	appDir := t.TempDir()
-	t.Setenv("FEIKONG_APP_DIR", appDir)
+	t.Setenv(env.AppDir, appDir)
 
 	Info("hello log")
 	Printf("formatted %s", "message")
@@ -56,7 +72,7 @@ func TestLoggerWritesToAppLogFile(t *testing.T) {
 
 func TestLoggerIsSingleton(t *testing.T) {
 	resetLogger(t)
-	t.Setenv("FEIKONG_APP_DIR", t.TempDir())
+	t.Setenv(env.AppDir, t.TempDir())
 
 	first := logger()
 	second := logger()

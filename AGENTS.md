@@ -48,6 +48,7 @@ internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
   registry/                 #   runtime engine 注册表和默认 runtime 选择
   env/                      #   FEIKONG_* 环境变量读取
+  log/                      #   日志 facade 和文件轮转
   hooks/                    #   HookBus 实现、context 绑定和 hook 调用
   checkpoint/               #   checkpoint 存储实现
   resources/                #   运行期资源清理器
@@ -112,7 +113,6 @@ memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入
                             #   记忆模型适配使用 internal/ports/runtime 和 domain/message
 web/                        # 内嵌前端（//go:embed）
 common/                     # 明确基础包（atomicfile / pathguard / typeutil），禁止恢复 root common 杂物层
-log/                        # 日志配置（lumberjack 轮转）
 tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环
                             #   CLI runtime 使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面

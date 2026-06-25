@@ -2,7 +2,7 @@ package lifecycle
 
 import (
 	"fkteams/internal/runtime/env"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"os"
 	"os/exec"
 	"sync"

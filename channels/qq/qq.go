@@ -3,7 +3,7 @@ package qq
 import (
 	"context"
 	"fkteams/channels"
-	"fkteams/log"
+	"fkteams/internal/runtime/log"
 	"strings"
 	"sync"
 	"sync/atomic"
