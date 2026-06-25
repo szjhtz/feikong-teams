@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/runtime/mdiff"
 	"fkteams/internal/runtime/pathguard"
-	"fkteams/mdiff"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/spf13/afero"

@@ -146,6 +146,15 @@ func TestRootToolsPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootMDiffPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "mdiff")); err == nil {
+		t.Fatal("root mdiff package exists; use internal/runtime/mdiff")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -225,6 +234,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/tools" || strings.HasPrefix(importPath, "fkteams/tools/") {
 		t.Errorf("%s imports removed root tools package; use internal/app/tools", rel)
+	}
+	if importPath == "fkteams/mdiff" {
+		t.Errorf("%s imports removed root mdiff package; use internal/runtime/mdiff", rel)
 	}
 }
 

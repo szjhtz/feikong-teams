@@ -61,6 +61,7 @@ internal/runtime/           # 运行时无关内核
   typeutil/                 #   运行时类型名辅助
   hooks/                    #   HookBus 实现、context 绑定和 hook 调用
   checkpoint/               #   checkpoint 存储实现
+  mdiff/                    #   文件差异和补丁基础能力
   resources/                #   运行期资源清理器
   retry/                    #   模型重试和迭代限制策略
                             #   运行时内核禁止依赖 agentcore 旧门面
@@ -110,7 +111,6 @@ web/                        # 内嵌前端（//go:embed）
 tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环
                             #   CLI runtime 使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面
-mdiff/                      # 文件差异/补丁
 ```
 
 ### 数据目录
