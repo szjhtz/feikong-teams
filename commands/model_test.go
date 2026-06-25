@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/config"
+	"fkteams/internal/app/config"
 )
 
 func TestFindModelConfig(t *testing.T) {

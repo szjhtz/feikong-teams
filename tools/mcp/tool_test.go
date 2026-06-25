@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 )
 

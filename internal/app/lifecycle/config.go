@@ -1,8 +1,8 @@
 package lifecycle
 
 import (
-	"fkteams/config"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/app/config"
 	"os"
 	"path/filepath"
 	"syscall"

@@ -2,7 +2,7 @@ package commands
 
 import (
 	"context"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	"fmt"
 
 	"fkteams/tools"

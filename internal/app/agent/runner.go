@@ -11,7 +11,7 @@ import (
 	"fkteams/agents/moderator"
 	"fkteams/agents/tasker"
 	"fkteams/agents/toolmeta"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/checkpoint"
 	runtimeregistry "fkteams/internal/runtime/registry"

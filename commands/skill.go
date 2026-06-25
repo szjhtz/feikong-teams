@@ -2,7 +2,7 @@ package commands
 
 import (
 	"fkteams/commands/skill"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 
 	ucli "github.com/urfave/cli/v3"
 )

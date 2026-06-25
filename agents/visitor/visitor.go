@@ -3,7 +3,7 @@ package visitor
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	"fmt"
 
 	runtimeport "fkteams/internal/ports/runtime"

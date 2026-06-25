@@ -33,6 +33,7 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
   skill/                    #   技能安装、移除、搜索
                             #   CLI 命令层使用 internal/ports/runtime 和 domain/message
 internal/app/               # 应用用例层，入口只调用这里
+  config/                   #   TOML 配置加载、保存、热重载和示例生成
   appdata/                  #   应用数据目录、workspace/session/share/runtime 路径
   appstate/                 #   应用实例运行时状态（记忆服务 / 资源清理器）
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配
@@ -114,7 +115,6 @@ events/                     # 事件协议与展示/历史
   facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
   view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
                             #   内部包必须使用 internal/runtime/events，展示层禁止依赖 agentcore 旧门面
-config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
 web/                        # 内嵌前端（//go:embed）
 tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环
@@ -162,7 +162,7 @@ mdiff/                      # 文件差异/补丁
 
 ### 配置
 
-- 新配置项必须添加到 `config/config.go` 的 `GenerateExample()` 中生成示例
+- 新配置项必须添加到 `internal/app/config/config.go` 的 `GenerateExample()` 中生成示例
 - 配置通过 `config.Get()` 获取，使用 `atomic.Pointer` 实现热重载
 
 ### 生命周期

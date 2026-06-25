@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"fkteams/config"
 	"fkteams/internal/app/appstate"
+	"fkteams/internal/app/config"
 	"fkteams/internal/app/memory"
 
 	"github.com/gin-gonic/gin"

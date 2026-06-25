@@ -4,7 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	"fmt"
 	"log"
 	"net/http"

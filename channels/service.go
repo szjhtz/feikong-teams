@@ -2,8 +2,8 @@ package channels
 
 import (
 	"context"
-	"fkteams/config"
 	"fkteams/internal/app/appstate"
+	"fkteams/internal/app/config"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"sync"

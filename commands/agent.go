@@ -8,10 +8,10 @@ import (
 
 	"fkteams/agents"
 	"fkteams/cli"
-	"fkteams/config"
 	"fkteams/events/view"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
 	runtimeport "fkteams/internal/ports/runtime"
 

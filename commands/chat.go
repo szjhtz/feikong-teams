@@ -4,9 +4,9 @@ package commands
 import (
 	"context"
 	"fkteams/cli"
-	"fkteams/config"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"

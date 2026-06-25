@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"fkteams/config"
+	"fkteams/internal/app/config"
 )
 
 func TestMaskString(t *testing.T) {

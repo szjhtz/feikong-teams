@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"fkteams/config"
 	"fkteams/internal/adapters/model/providers"
+	"fkteams/internal/app/config"
 	"fkteams/tui"
 
 	"github.com/pterm/pterm"

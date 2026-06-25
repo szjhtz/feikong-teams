@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fkteams/config"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/app/config"
 	"fmt"
 
 	ucli "github.com/urfave/cli/v3"

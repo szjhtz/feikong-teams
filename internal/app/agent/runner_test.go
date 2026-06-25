@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fkteams/agents/custom"
 	"fkteams/agents/toolmeta"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	runtimeregistry "fkteams/internal/runtime/registry"

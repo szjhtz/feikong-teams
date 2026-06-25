@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	"fkteams/internal/runtime/env"
 
 	"github.com/gin-gonic/gin"

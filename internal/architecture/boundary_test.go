@@ -119,6 +119,15 @@ func TestRootMemoryPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootConfigPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "config")); err == nil {
+		t.Fatal("root config package exists; use internal/app/config")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -181,6 +190,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/memory" {
 		t.Errorf("%s imports removed root memory package; use internal/domain/memory or internal/app/memory", rel)
+	}
+	if importPath == "fkteams/config" {
+		t.Errorf("%s imports removed root config package; use internal/app/config", rel)
 	}
 }
 

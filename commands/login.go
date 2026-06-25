@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"fkteams/config"
 	"fkteams/internal/adapters/model/providers"
 	"fkteams/internal/adapters/model/providers/copilot"
+	"fkteams/internal/app/config"
 	"fkteams/tui"
 
 	ucli "github.com/urfave/cli/v3"

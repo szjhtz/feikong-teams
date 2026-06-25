@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sync"
 
-	"fkteams/config"
 	schedulertool "fkteams/internal/adapters/tools/builtin/scheduler"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
 	"fkteams/tools/ask"

@@ -4,7 +4,7 @@ import (
 	"fkteams/agents"
 	"fkteams/internal/app/appstate"
 
-	"fkteams/config"
+	"fkteams/internal/app/config"
 
 	"fkteams/tui"
 	"fkteams/version"

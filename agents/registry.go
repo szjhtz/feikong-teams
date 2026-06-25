@@ -8,7 +8,7 @@ import (
 	"fkteams/agents/custom"
 	"fkteams/agents/researcher"
 	"fkteams/agents/visitor"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 	"sync"
 

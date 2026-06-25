@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"fkteams/config"
 	"fkteams/internal/adapters/model/providers"
+	"fkteams/internal/app/config"
 
 	"github.com/gin-gonic/gin"
 )

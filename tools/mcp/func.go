@@ -2,7 +2,7 @@ package mcp
 
 import (
 	"context"
-	"fkteams/config"
+	"fkteams/internal/app/config"
 	"fmt"
 	"log"
 	"time"

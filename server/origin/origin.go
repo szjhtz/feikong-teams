@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"fkteams/config"
+	"fkteams/internal/app/config"
 )
 
 // IsAllowed 判断请求 Origin 是否允许访问当前服务。

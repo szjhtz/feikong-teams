@@ -3,8 +3,8 @@ package common
 
 import (
 	"context"
-	"fkteams/config"
 	"fkteams/internal/adapters/model/providers"
+	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 	retry "fkteams/internal/runtime/retry"
 	"fmt"

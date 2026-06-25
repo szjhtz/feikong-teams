@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"fkteams/config"
+	"fkteams/internal/app/config"
 )
 
 func captureStdout(t *testing.T, fn func()) string {

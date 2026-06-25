@@ -3,9 +3,9 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
-	"fkteams/config"
 	"fkteams/internal/adapters/model/providers"
 	"fkteams/internal/adapters/model/providers/copilot"
+	"fkteams/internal/app/config"
 	"fkteams/internal/runtime/env"
 	"fmt"
 	"io"
