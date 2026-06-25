@@ -103,6 +103,7 @@ config/                     # TOML 配置（atomic.Pointer 全局单例，支持
 providers/                  # runtime port 模型提供者注册、检测和模型列表获取
                             #   provider 工厂禁止再依赖 agentcore 旧门面
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
+                            #   记忆模型适配使用 internal/ports/runtime 和 domain/message
 web/                        # 内嵌前端（//go:embed）
 appstate/                   # 应用实例运行时状态（记忆管理器 / 资源清理器）
 common/                     # 明确基础包（atomicfile / pathguard / typeutil），禁止恢复 root common 杂物层

@@ -2,8 +2,8 @@ package memory
 
 import (
 	"context"
-	"fkteams/agentcore"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	domainmessage "fkteams/internal/domain/message"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,7 +132,7 @@ func TestManagerDuplicateDetection(t *testing.T) {
 
 func TestConvertRecorderMessages(t *testing.T) {
 	recorder := eventlog.NewHistoryRecorder()
-	recorder.RecordUserMessage(agentcore.Message{Role: agentcore.RoleUser, Content: "用户消息"})
+	recorder.RecordUserMessage(domainmessage.Message{Role: domainmessage.RoleUser, Content: "用户消息"})
 	recorder.RecordEvent(eventlog.Event{Type: eventlog.EventMessageDelta, AgentName: "assistant", Content: "助手回复"})
 	recorder.FinalizeCurrent()
 
