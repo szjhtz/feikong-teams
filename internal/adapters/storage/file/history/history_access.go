@@ -1,7 +1,7 @@
 package eventlog
 
 import (
-	"fkteams/agentcore"
+	"fkteams/internal/domain/message"
 
 	"fmt"
 
@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-func (h *HistoryRecorder) RecordUserMessage(message agentcore.Message) {
-	if message.Role == "" {
-		message.Role = agentcore.RoleUser
+func (h *HistoryRecorder) RecordUserMessage(msg message.Message) {
+	if msg.Role == "" {
+		msg.Role = message.RoleUser
 	}
-	if message.Role != agentcore.RoleUser || message.IsEmpty() {
+	if msg.Role != message.RoleUser || msg.IsEmpty() {
 		return
 	}
 
@@ -23,8 +23,8 @@ func (h *HistoryRecorder) RecordUserMessage(message agentcore.Message) {
 
 	h.finalizeAllActiveMessages()
 
-	content := message.DisplayText()
-	parts := append([]agentcore.ContentPart(nil), message.ContentParts...)
+	content := msg.DisplayText()
+	parts := append([]message.ContentPart(nil), msg.ContentParts...)
 
 	h.messages = append(h.messages, AgentMessage{
 		AgentName: "用户",

@@ -3,7 +3,7 @@ package memory
 import (
 	"context"
 	"fkteams/agentcore"
-	eventlog "fkteams/events/log"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"os"
 	"path/filepath"
 	"strings"

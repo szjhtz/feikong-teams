@@ -6,7 +6,7 @@ import (
 	"fkteams/agents/toolmeta"
 	"fkteams/appstate"
 	"fkteams/events"
-	"fkteams/events/log"
+	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"

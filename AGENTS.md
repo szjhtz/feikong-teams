@@ -52,6 +52,8 @@ internal/adapters/runtime/
     middlewares/            #   autocontinue / summary / skills / dispatch / inject / fkfs
     middlewares/tools/      #   warperror / trimresult / patch / destructiveguard
     providers/              #   OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot
+internal/adapters/storage/
+  file/history/             #   HistoryRecorder、会话 metadata、历史文件读写
 agentcore/                  # 过渡期核心类型导出层，最终收缩到 internal/domain 与 internal/ports
   types.go                  #   Message / ToolCall / Event / RunOptions / Runner 等协议类型别名
   agent.go                  #   Agent / Engine 抽象和 ChatAgentConfig / RunnerConfig 别名
@@ -81,9 +83,7 @@ events/                     # 事件协议与展示/历史
   event.go                  #   context 事件回调、NormalizeEvent、DispatchEvent
   emitter.go                #   Emitter + Agent/Turn/Message/Tool 事件构造函数
   protocol.go               #   工具调用身份协议校验与兼容辅助
-  log/                      #   HistoryRecorder、会话 metadata、全局历史记录器管理
   view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
-  chat/                     #   历史消息构建器
 config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
 providers/                  # agentcore 外层模型提供者注册、检测和模型列表获取
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）

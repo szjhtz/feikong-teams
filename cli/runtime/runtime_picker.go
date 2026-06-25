@@ -4,7 +4,7 @@ import (
 	"fkteams/agents"
 	"fkteams/appstate"
 
-	"fkteams/events/log"
+	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/memory"
 
 	"fkteams/tools/scheduler"

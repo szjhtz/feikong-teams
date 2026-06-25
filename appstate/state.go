@@ -3,7 +3,7 @@ package appstate
 import (
 	"context"
 	"fkteams/common"
-	eventlog "fkteams/events/log"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/log"
 	"fkteams/memory"
 	"sync"

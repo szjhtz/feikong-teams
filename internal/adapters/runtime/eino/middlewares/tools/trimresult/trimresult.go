@@ -9,8 +9,8 @@ package trimresult
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/events/log"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	"fkteams/internal/adapters/storage/file/history"
 	"fmt"
 	"strings"
 

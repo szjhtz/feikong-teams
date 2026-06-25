@@ -1,15 +1,29 @@
 package chat
 
 import (
-	"fkteams/events/log"
+	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/memory"
 	"strings"
 	"testing"
 )
 
+type testHistory struct {
+	messages        []domainhistory.AgentMessage
+	summary         string
+	summarizedCount int
+}
+
+func (h *testHistory) GetMessages() []domainhistory.AgentMessage {
+	return h.messages
+}
+
+func (h *testHistory) GetSummary() (string, int) {
+	return h.summary, h.summarizedCount
+}
+
 func TestBuildTurnInputReturnsTurnInput(t *testing.T) {
-	recorder := eventlog.NewHistoryRecorder()
+	recorder := &testHistory{}
 
 	input := BuildTurnInput(recorder, "hello")
 
@@ -23,7 +37,7 @@ func TestBuildTurnInputReturnsTurnInput(t *testing.T) {
 }
 
 func TestBuildTurnInputWithMemoryInjectsMemoryContext(t *testing.T) {
-	recorder := eventlog.NewHistoryRecorder()
+	recorder := &testHistory{}
 	manager := &testMemoryManager{
 		entries: []memory.MemoryEntry{{
 			Type:    memory.Preference,
@@ -46,7 +60,7 @@ func TestBuildTurnInputWithMemoryInjectsMemoryContext(t *testing.T) {
 }
 
 func TestBuildMultimodalTurnInputReturnsDisplayText(t *testing.T) {
-	recorder := eventlog.NewHistoryRecorder()
+	recorder := &testHistory{}
 	parts := []domainmessage.ContentPart{TextPart("describe this")}
 
 	input := BuildMultimodalTurnInput(recorder, "describe this", parts)
@@ -71,25 +85,22 @@ func (m *testMemoryManager) Search(query string, topK int) []memory.MemoryEntry 
 	m.topK = topK
 	return m.entries
 }
-func (m *testMemoryManager) ExtractFromRecorder(*eventlog.HistoryRecorder, string) {}
-func (m *testMemoryManager) FlushFromRecorder(*eventlog.HistoryRecorder, string)   {}
-func (m *testMemoryManager) List() []memory.MemoryEntry                            { return m.entries }
-func (m *testMemoryManager) Delete(string) int                                     { return 0 }
-func (m *testMemoryManager) Count() int                                            { return len(m.entries) }
-func (m *testMemoryManager) Clear()                                                { m.entries = nil }
-func (m *testMemoryManager) ResetLLM(memory.LLMClient)                             {}
-func (m *testMemoryManager) Wait()                                                 {}
 
 func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
-	recorder := eventlog.NewHistoryRecorder()
 	parts := []domainmessage.ContentPart{
 		TextPart("describe this"),
 		ImageURLPart("https://example.com/a.png", "high"),
 	}
-	recorder.RecordUserMessage(domainmessage.Message{
-		Role:         domainmessage.RoleUser,
-		ContentParts: parts,
-	})
+	recorder := &testHistory{
+		messages: []domainhistory.AgentMessage{{
+			AgentName: "用户",
+			Events: []domainhistory.MessageEvent{{
+				Type:         domainhistory.MsgTypeText,
+				Content:      "describe this",
+				ContentParts: parts,
+			}},
+		}},
+	}
 
 	input := BuildTurnInput(recorder, "continue")
 	if len(input.Context) == 0 {
@@ -117,10 +128,10 @@ func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
 }
 
 func TestAgentMessageToSchemaMessagesIncludesCancellationNotice(t *testing.T) {
-	msg := eventlog.AgentMessage{
+	msg := domainhistory.AgentMessage{
 		AgentName: "系统",
-		Events: []eventlog.MessageEvent{
-			{Type: eventlog.MsgTypeCancelled, Content: "任务已取消"},
+		Events: []domainhistory.MessageEvent{
+			{Type: domainhistory.MsgTypeCancelled, Content: "任务已取消"},
 		},
 	}
 
@@ -137,11 +148,11 @@ func TestAgentMessageToSchemaMessagesIncludesCancellationNotice(t *testing.T) {
 }
 
 func TestAgentMessageToSchemaMessagesMarksCancelledAssistantOutput(t *testing.T) {
-	msg := eventlog.AgentMessage{
+	msg := domainhistory.AgentMessage{
 		AgentName: "assistant",
-		Events: []eventlog.MessageEvent{
-			{Type: eventlog.MsgTypeText, Content: "处理中"},
-			{Type: eventlog.MsgTypeCancelled, Content: "任务已取消"},
+		Events: []domainhistory.MessageEvent{
+			{Type: domainhistory.MsgTypeText, Content: "处理中"},
+			{Type: domainhistory.MsgTypeCancelled, Content: "任务已取消"},
 		},
 	}
 

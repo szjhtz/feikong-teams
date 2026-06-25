@@ -2,7 +2,7 @@ package appstate
 
 import (
 	"errors"
-	eventlog "fkteams/events/log"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/memory"
 	"testing"
 )

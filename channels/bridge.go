@@ -8,7 +8,7 @@ import (
 	"fkteams/appstate"
 	"fkteams/common"
 	"fkteams/events"
-	"fkteams/events/log"
+	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/log"

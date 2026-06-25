@@ -305,6 +305,43 @@ func TestRootEventsUseDomainTypes(t *testing.T) {
 	}
 }
 
+func TestHistoryLogUsesStorageAdapter(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "release", "node_modules", "web":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			if strings.Trim(spec.Path.Value, `"`) == "fkteams/events/log" {
+				t.Errorf("%s imports removed events/log package; use internal/adapters/storage/file/history", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertNotImported(t *testing.T, rel, importPath string, forbidden []string) {
 	t.Helper()
 	for _, prefix := range forbidden {

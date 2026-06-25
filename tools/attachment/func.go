@@ -8,7 +8,7 @@ import (
 
 	"fkteams/agentcore"
 	"fkteams/common"
-	eventlog "fkteams/events/log"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 )
 
 const maxDataURLBase64Len = 256 * 1024

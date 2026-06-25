@@ -15,7 +15,7 @@ import (
 	"fkteams/appstate"
 	"fkteams/common"
 	"fkteams/events"
-	"fkteams/events/log"
+	"fkteams/internal/adapters/storage/file/history"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"

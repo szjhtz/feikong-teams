@@ -5,7 +5,7 @@ import (
 	"fkteams/appstate"
 	cliruntime "fkteams/cli/runtime"
 	"fkteams/events"
-	eventlog "fkteams/events/log"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	domainmessage "fkteams/internal/domain/message"
 )
 

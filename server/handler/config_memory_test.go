@@ -7,7 +7,7 @@ import (
 
 	"fkteams/appstate"
 	"fkteams/config"
-	eventlog "fkteams/events/log"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/memory"
 
 	"github.com/gin-gonic/gin"

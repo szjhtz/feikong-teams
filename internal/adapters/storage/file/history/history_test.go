@@ -1,8 +1,8 @@
 package eventlog
 
 import (
-	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/internal/domain/message"
 	"testing"
 )
 
@@ -19,10 +19,10 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 		ToolCallRefs: map[int]string{
 			0: "tool_call:call_1",
 		},
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []message.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name:      "ask_fkagent_researcher",
 				Arguments: `{"task":"查资料"}`,
 			},
@@ -31,8 +31,8 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 	recorder.RecordEvent(Event{
 		Sequence:       2,
 		Type:           EventMessageDelta,
-		Role:           agentcore.RoleAssistant,
-		DeltaKind:      agentcore.DeltaOutput,
+		Role:           message.RoleAssistant,
+		DeltaKind:      events.DeltaOutput,
 		AgentName:      "researcher",
 		Content:        "结果",
 		MemberCallID:   "call_1",
@@ -64,8 +64,8 @@ func TestHistoryRecorderPreservesMemberEventSequences(t *testing.T) {
 	recorder.RecordEvent(Event{
 		Sequence:       10,
 		Type:           EventMessageDelta,
-		Role:           agentcore.RoleAssistant,
-		DeltaKind:      agentcore.DeltaReasoning,
+		Role:           message.RoleAssistant,
+		DeltaKind:      events.DeltaReasoning,
 		AgentName:      "ask-member",
 		Content:        "thinking",
 		MemberCallID:   "member-call-1",
@@ -76,8 +76,8 @@ func TestHistoryRecorderPreservesMemberEventSequences(t *testing.T) {
 	recorder.RecordEvent(Event{
 		Sequence:       11,
 		Type:           EventMessageDelta,
-		Role:           agentcore.RoleAssistant,
-		DeltaKind:      agentcore.DeltaOutput,
+		Role:           message.RoleAssistant,
+		DeltaKind:      events.DeltaOutput,
 		AgentName:      "ask-member",
 		Content:        "about to ask",
 		MemberCallID:   "member-call-1",
@@ -121,8 +121,8 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 	recorder.RecordEvent(Event{
 		Sequence:  1,
 		Type:      EventMessageDelta,
-		Role:      agentcore.RoleAssistant,
-		DeltaKind: agentcore.DeltaOutput,
+		Role:      message.RoleAssistant,
+		DeltaKind: events.DeltaOutput,
 		AgentName: "coordinator",
 		Content:   "ok",
 	})
@@ -190,10 +190,10 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 		Type:        EventToolStart,
 		AgentName:   "coordinator",
 		ToolCallRef: "tool_call:call_1",
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []message.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name:      "ask_fkagent_researcher",
 				Arguments: `{"task":"查资料"}`,
 			},
@@ -202,8 +202,8 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 	recorder.RecordEvent(Event{
 		Sequence:       2,
 		Type:           EventMessageDelta,
-		Role:           agentcore.RoleAssistant,
-		DeltaKind:      agentcore.DeltaReasoning,
+		Role:           message.RoleAssistant,
+		DeltaKind:      events.DeltaReasoning,
 		AgentName:      "researcher",
 		Content:        "working",
 		MemberCallID:   "call_1",
@@ -245,8 +245,8 @@ func TestHistoryRecorderRecordsToolRoleMessageEndAsToolResult(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    2,
-		Type:        agentcore.EventMessageEnd,
-		Role:        agentcore.RoleTool,
+		Type:        events.EventMessageEnd,
+		Role:        message.RoleTool,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",
 		ToolCallRef: "ref_1",
@@ -273,13 +273,13 @@ func TestHistoryRecorderUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.
 
 	recorder.RecordEvent(Event{
 		Sequence:  1,
-		Type:      agentcore.EventMessageEnd,
-		Role:      agentcore.RoleAssistant,
+		Type:      events.EventMessageEnd,
+		Role:      message.RoleAssistant,
 		AgentName: "assistant",
-		ToolCalls: []agentcore.ToolCall{
+		ToolCalls: []message.ToolCall{
 			{
 				ID: "call_1",
-				Function: agentcore.FunctionCall{
+				Function: message.FunctionCall{
 					Name:      "echo",
 					Arguments: `{"text":"hello"}`,
 				},
@@ -289,8 +289,8 @@ func TestHistoryRecorderUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    2,
-		Type:        agentcore.EventMessageEnd,
-		Role:        agentcore.RoleTool,
+		Type:        events.EventMessageEnd,
+		Role:        message.RoleTool,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",
 		ToolCallRef: "tool_call:call_1",
@@ -327,10 +327,10 @@ func TestHistoryRecorderMergesToolResultByIDWhenRefDiffers(t *testing.T) {
 		ToolCallRefs: map[int]string{
 			0: "ref_from_args",
 		},
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []message.ToolCall{{
 			ID:    "call_1",
 			Index: &toolIndex,
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name:      "echo",
 				Arguments: `{"text":"hello"}`,
 			},
@@ -389,8 +389,8 @@ func TestHistoryRecorderDoesNotDuplicateToolEndAndToolRoleMessageEnd(t *testing.
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    3,
-		Type:        agentcore.EventMessageEnd,
-		Role:        agentcore.RoleTool,
+		Type:        events.EventMessageEnd,
+		Role:        message.RoleTool,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",
 		ToolCallRef: "ref_1",

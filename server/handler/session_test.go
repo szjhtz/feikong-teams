@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/events/log"
+	"fkteams/internal/adapters/storage/file/history"
 
 	"github.com/gin-gonic/gin"
 )

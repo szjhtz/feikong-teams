@@ -12,7 +12,7 @@ import (
 	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/events"
-	"fkteams/events/log"
+	"fkteams/internal/adapters/storage/file/history"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"

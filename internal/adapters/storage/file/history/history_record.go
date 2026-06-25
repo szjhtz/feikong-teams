@@ -1,7 +1,7 @@
 package eventlog
 
 import (
-	"fkteams/agentcore"
+	"fkteams/internal/domain/message"
 
 	"fkteams/events"
 
@@ -240,7 +240,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		})
 
 	case EventMessageDelta:
-		if event.Role == agentcore.RoleUser {
+		if event.Role == message.RoleUser {
 			return
 		}
 		content := event.Content
@@ -248,7 +248,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
-		if event.Role == agentcore.RoleTool && (event.DeltaKind == "" || event.DeltaKind == events.DeltaOutput) {
+		if event.Role == message.RoleTool && (event.DeltaKind == "" || event.DeltaKind == events.DeltaOutput) {
 			if key := toolResultKey(event); key != "" {
 				ctx.toolResultChunks[key] += content
 			}
@@ -287,7 +287,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 
 	case events.EventMessageEnd:
-		if event.Role != agentcore.RoleTool {
+		if event.Role != message.RoleTool {
 			return
 		}
 		content := toolResultContentFromEvent(event)
@@ -311,13 +311,13 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		ctx := h.ensureMessageContext(event)
 		toolCalls := event.ToolCalls
 		if event.ToolCall != nil {
-			toolCalls = append([]agentcore.ToolCall{*event.ToolCall}, toolCalls...)
+			toolCalls = append([]message.ToolCall{*event.ToolCall}, toolCalls...)
 		}
 		if len(toolCalls) == 0 && event.ToolName != "" {
-			toolCalls = []agentcore.ToolCall{{
+			toolCalls = []message.ToolCall{{
 				ID:    event.ToolCallID,
 				Index: event.ToolCallIndex,
-				Function: agentcore.FunctionCall{
+				Function: message.FunctionCall{
 					Name:      event.ToolName,
 					Arguments: event.ToolArgs,
 				},
@@ -402,11 +402,12 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		ctx := h.ensureMessageContext(event)
 		friendly := events.NormalizeFriendlyError(event.Error)
 		friendly.TechnicalDetail = truncateErrorContent(friendly.TechnicalDetail)
+		historyError := FriendlyError(friendly)
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Sequence: event.Sequence,
 			Type:     MsgTypeError,
-			Content:  friendly.Message,
-			Error:    &friendly,
+			Content:  historyError.Message,
+			Error:    &historyError,
 		})
 
 	}

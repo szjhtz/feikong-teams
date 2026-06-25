@@ -5,21 +5,29 @@ import (
 	"fmt"
 	"strings"
 
-	"fkteams/appstate"
-	"fkteams/events/log"
 	"fkteams/fkenv"
+	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/log"
 	"fkteams/memory"
 )
 
+type HistoryReader interface {
+	GetMessages() []domainhistory.AgentMessage
+	GetSummary() (string, int)
+}
+
+type MemorySearcher interface {
+	Search(query string, topK int) []memory.MemoryEntry
+}
+
 // BuildTurnInput 构建一轮输入（长期记忆 + 对话历史 + 用户输入）
-func BuildTurnInput(recorder *eventlog.HistoryRecorder, userInput string) domainmessage.TurnInput {
+func BuildTurnInput(recorder HistoryReader, userInput string) domainmessage.TurnInput {
 	return BuildTurnInputWithMemory(recorder, userInput, nil)
 }
 
 // BuildTurnInputWithMemory 构建一轮输入并按需注入长期记忆。
-func BuildTurnInputWithMemory(recorder *eventlog.HistoryRecorder, userInput string, manager appstate.MemoryManager) domainmessage.TurnInput {
+func BuildTurnInputWithMemory(recorder HistoryReader, userInput string, manager MemorySearcher) domainmessage.TurnInput {
 	var contextMessages []domainmessage.Message
 
 	// 注入长期记忆
@@ -44,12 +52,12 @@ func BuildTurnInputWithMemory(recorder *eventlog.HistoryRecorder, userInput stri
 }
 
 // BuildMultimodalTurnInput 构建一轮多模态输入（长期记忆 + 对话历史 + 多模态内容）
-func BuildMultimodalTurnInput(recorder *eventlog.HistoryRecorder, textContent string, parts []domainmessage.ContentPart) domainmessage.TurnInput {
+func BuildMultimodalTurnInput(recorder HistoryReader, textContent string, parts []domainmessage.ContentPart) domainmessage.TurnInput {
 	return BuildMultimodalTurnInputWithMemory(recorder, textContent, parts, nil)
 }
 
 // BuildMultimodalTurnInputWithMemory 构建多模态输入并按需注入长期记忆。
-func BuildMultimodalTurnInputWithMemory(recorder *eventlog.HistoryRecorder, textContent string, parts []domainmessage.ContentPart, manager appstate.MemoryManager) domainmessage.TurnInput {
+func BuildMultimodalTurnInputWithMemory(recorder HistoryReader, textContent string, parts []domainmessage.ContentPart, manager MemorySearcher) domainmessage.TurnInput {
 	var contextMessages []domainmessage.Message
 
 	// 注入长期记忆（使用文本部分进行搜索）
@@ -142,7 +150,10 @@ func ExtractTextFromParts(parts []domainmessage.ContentPart) string {
 }
 
 // buildHistoryMessages 构建结构化历史消息列表
-func buildHistoryMessages(recorder *eventlog.HistoryRecorder) []domainmessage.Message {
+func buildHistoryMessages(recorder HistoryReader) []domainmessage.Message {
+	if recorder == nil {
+		return nil
+	}
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
 
@@ -225,19 +236,19 @@ func truncatePreview(s string, n int) string {
 
 // agentMessageToCoreMessages 将 AgentMessage 转为结构化消息列表。
 // 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
-func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []domainmessage.Message {
+func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int) []domainmessage.Message {
 	if msg.AgentName == "用户" {
 		var text strings.Builder
 		var parts []domainmessage.ContentPart
 		for _, event := range msg.Events {
-			if event.Type != eventlog.MsgTypeText {
+			if event.Type != domainhistory.MsgTypeText {
 				continue
 			}
 			text.WriteString(event.Content)
 			parts = append(parts, event.ContentParts...)
 		}
 		content := text.String()
-		refs := eventlog.AttachmentsForMessage(msg, messageIndex)
+		refs := domainhistory.AttachmentsForMessage(msg, messageIndex)
 		if notice := omittedContentPartsNotice(parts, refs); notice != "" {
 			content = strings.TrimSpace(content)
 			if content != "" {
@@ -270,13 +281,13 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []d
 
 	for _, event := range msg.Events {
 		switch event.Type {
-		case eventlog.MsgTypeText:
+		case domainhistory.MsgTypeText:
 			textBuf.WriteString(event.Content)
 
-		case eventlog.MsgTypeReasoning:
+		case domainhistory.MsgTypeReasoning:
 			reasoningBuf.WriteString(event.Content)
 
-		case eventlog.MsgTypeToolCall:
+		case domainhistory.MsgTypeToolCall:
 			tc := event.ToolCall
 			if tc == nil {
 				continue
@@ -294,15 +305,15 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []d
 			// ToolMessage 携带结果
 			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name})
 
-		case eventlog.MsgTypeAction:
+		case domainhistory.MsgTypeAction:
 			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
 				fmt.Fprintf(&textBuf, "[%s] %s\n", event.Action.ActionType, event.Action.Content)
 			}
 
-		case eventlog.MsgTypeError:
+		case domainhistory.MsgTypeError:
 			fmt.Fprintf(&textBuf, "[错误] %s\n", event.Content)
 
-		case eventlog.MsgTypeCancelled:
+		case domainhistory.MsgTypeCancelled:
 			fmt.Fprintf(&textBuf, "[用户取消] %s\n", cancellationNotice(event.Content))
 		}
 	}
@@ -311,7 +322,7 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []d
 	return messages
 }
 
-func omittedContentPartsNotice(parts []domainmessage.ContentPart, refs []eventlog.AttachmentRef) string {
+func omittedContentPartsNotice(parts []domainmessage.ContentPart, refs []domainhistory.AttachmentRef) string {
 	counts := map[domainmessage.ContentPartType]int{}
 	total := 0
 	for _, part := range parts {
