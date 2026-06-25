@@ -4,7 +4,7 @@ package events
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/hooks"
+	"fkteams/internal/runtime/hooks"
 	"fmt"
 	"strings"
 	"sync/atomic"

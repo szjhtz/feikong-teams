@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fkteams/agentcore"
-	"fkteams/hooks"
+	"fkteams/internal/runtime/hooks"
 	"testing"
 	"time"
 )

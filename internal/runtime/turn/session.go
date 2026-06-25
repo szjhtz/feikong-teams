@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/events"
-	"fkteams/hooks"
+	"fkteams/internal/runtime/hooks"
 )
 
 type EventHandler func(events.Event) error

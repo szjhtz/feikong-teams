@@ -1,6 +1,11 @@
 package hooks
 
-import "fkteams/agentcore"
+import (
+	"context"
+	"fkteams/internal/domain/event"
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
+)
 
 // HookPoint 表示运行期可扩展的稳定边界。
 type HookPoint string
@@ -49,10 +54,10 @@ type Result struct {
 type Handler interface {
 	Name() string
 	Points() []HookPoint
-	Handle(ctx Context, inv Invocation) (Result, error)
+	Handle(ctx context.Context, inv Invocation) (Result, error)
 }
 
-type HandlerFunc func(ctx Context, inv Invocation) (Result, error)
+type HandlerFunc func(ctx context.Context, inv Invocation) (Result, error)
 
 type funcHandler struct {
 	name   string
@@ -72,7 +77,7 @@ func (h *funcHandler) Points() []HookPoint {
 	return append([]HookPoint(nil), h.points...)
 }
 
-func (h *funcHandler) Handle(ctx Context, inv Invocation) (Result, error) {
+func (h *funcHandler) Handle(ctx context.Context, inv Invocation) (Result, error) {
 	if h.fn == nil {
 		return Result{}, nil
 	}
@@ -80,17 +85,17 @@ func (h *funcHandler) Handle(ctx Context, inv Invocation) (Result, error) {
 }
 
 type BeforeRunPayload struct {
-	Input agentcore.TurnInput
+	Input message.TurnInput
 }
 
 type AfterRunPayload struct {
-	Input  agentcore.TurnInput
-	Result *agentcore.RunResult
+	Input  message.TurnInput
+	Result *runtimeport.RunResult
 	Error  error
 }
 
 type EventPayload struct {
-	Event agentcore.Event
+	Event event.Event
 }
 
 type BeforeToolCallPayload struct {
@@ -108,13 +113,13 @@ type AfterToolCallPayload struct {
 }
 
 type BeforeModelRequestPayload struct {
-	Messages []agentcore.Message
+	Messages []message.Message
 	Meta     map[string]any
 }
 
 type AfterModelResponsePayload struct {
-	Message agentcore.Message
-	Usage   *agentcore.Event
+	Message message.Message
+	Usage   *event.Event
 	Error   error
 	Meta    map[string]any
 }

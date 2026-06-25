@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"fkteams/agentcore"
-	"fkteams/hooks"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/runtime/eino/middlewares/inject"
+	"fkteams/internal/runtime/hooks"
 	"fkteams/internal/testmodel"
 
 	"github.com/cloudwego/eino/schema"

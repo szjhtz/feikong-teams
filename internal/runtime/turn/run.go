@@ -5,7 +5,7 @@ import (
 	"fkteams/agentcore"
 	"fkteams/common"
 	"fkteams/events"
-	"fkteams/hooks"
+	"fkteams/internal/runtime/hooks"
 )
 
 // run 执行查询，处理事件和 HITL 中断。

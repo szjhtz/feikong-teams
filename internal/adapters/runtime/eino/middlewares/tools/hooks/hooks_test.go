@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	projecthooks "fkteams/hooks"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	projecthooks "fkteams/internal/runtime/hooks"
 
 	"github.com/cloudwego/eino/compose"
 )

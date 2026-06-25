@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/events"
-	"fkteams/hooks"
+	"fkteams/internal/runtime/hooks"
 )
 
 type ContextHook func(context.Context) context.Context

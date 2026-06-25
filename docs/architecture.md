@@ -32,7 +32,7 @@ internal/ports/
   runtime/          # Runtime、Runner、Model、Middleware、CheckpointStore
   storage/          # SessionStore、HistoryStore、MemoryStore、TaskStore
   tools/            # ToolRegistry、ToolFactory、MCPProvider
-  hooks/            # HookBus、HookPoint、HookHandler
+  hooks/            # HookPoint、HookHandler、明确 payload 契约
   scheduler/        # Scheduler、TaskExecutor、Clock
   transport/        # EventPublisher、StreamHub、ChannelGateway
 
@@ -48,6 +48,7 @@ internal/app/
 internal/runtime/
   turn/             # runtime-independent turn executor
   registry/         # runtime registry and default runtime selection
+  hooks/            # HookBus 实现、context 绑定和扩展点调用
   middleware/       # runtime-neutral middleware contracts
   checkpoint/       # checkpoint implementations used by runtime ports
   queue/            # steering/follow-up queue primitives
@@ -195,7 +196,7 @@ Hooks 属于用例和运行时之间的稳定扩展边界：
 - before/after memory injection
 - before/after schedule execution
 
-hook payload 使用明确结构体，不在业务代码里散落 `any` 和字符串 hook point。
+hook payload 使用 `internal/ports/hooks` 中的明确结构体，不在业务代码里散落 `any` 和字符串 hook point。`internal/runtime/hooks` 只负责总线实现、超时/错误策略、context 绑定和便捷调用；旧顶层 `hooks` 包不再保留。
 
 ## 事件分层
 

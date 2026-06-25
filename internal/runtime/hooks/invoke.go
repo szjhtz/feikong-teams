@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"fkteams/agentcore"
+	"fkteams/internal/domain/event"
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 // InvokeBeforeRun 执行运行前 hook，并返回可能被改写的输入。
-func (b *Bus) InvokeBeforeRun(ctx context.Context, input agentcore.TurnInput) (agentcore.TurnInput, error) {
+func (b *Bus) InvokeBeforeRun(ctx context.Context, input message.TurnInput) (message.TurnInput, error) {
 	result, err := b.Invoke(ctx, Invocation{
 		HookPoint: HookBeforeRun,
 		Payload:   BeforeRunPayload{Input: input},
@@ -23,7 +25,7 @@ func (b *Bus) InvokeBeforeRun(ctx context.Context, input agentcore.TurnInput) (a
 }
 
 // InvokeAfterRun 执行运行结束 hook。
-func (b *Bus) InvokeAfterRun(ctx context.Context, input agentcore.TurnInput, result *agentcore.RunResult, runErr error) error {
+func (b *Bus) InvokeAfterRun(ctx context.Context, input message.TurnInput, result *runtimeport.RunResult, runErr error) error {
 	_, err := b.Invoke(ctx, Invocation{
 		HookPoint: HookAfterRun,
 		Payload: AfterRunPayload{
@@ -36,7 +38,7 @@ func (b *Bus) InvokeAfterRun(ctx context.Context, input agentcore.TurnInput, res
 }
 
 // InvokeEvent 执行事件 hook，返回改写后的事件以及是否继续分发。
-func (b *Bus) InvokeEvent(ctx context.Context, event agentcore.Event) (agentcore.Event, bool, error) {
+func (b *Bus) InvokeEvent(ctx context.Context, event event.Event) (event.Event, bool, error) {
 	result, err := b.Invoke(ctx, Invocation{
 		HookPoint: HookOnEvent,
 		Payload:   EventPayload{Event: event},
@@ -81,7 +83,7 @@ func (b *Bus) InvokeAfterToolCall(ctx context.Context, payload AfterToolCallPayl
 }
 
 // InvokeBeforeModelRequest 执行模型请求前 hook，并返回可能被改写的消息。
-func (b *Bus) InvokeBeforeModelRequest(ctx context.Context, messages []agentcore.Message) ([]agentcore.Message, error) {
+func (b *Bus) InvokeBeforeModelRequest(ctx context.Context, messages []message.Message) ([]message.Message, error) {
 	result, err := b.Invoke(ctx, Invocation{
 		HookPoint: HookBeforeModelRequest,
 		Payload:   BeforeModelRequestPayload{Messages: messages},

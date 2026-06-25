@@ -38,7 +38,11 @@ internal/app/               # 应用用例层，入口只调用这里
 internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
   registry/                 #   runtime engine 注册表和默认 runtime 选择
+  hooks/                    #   HookBus 实现、context 绑定和 hook 调用
   checkpoint/               #   checkpoint 存储实现
+internal/ports/             # 运行时无关端口契约
+  hooks/                    #   HookPoint、HookHandler 和明确 payload 类型
+  runtime/                  #   Runtime / Engine / Runner / Model / Tool 等端口
 internal/adapters/runtime/
   eino/                     # CloudWeGo Eino ADK 适配层，唯一允许 import Eino 的目录
     runner.go               #   ADK AgentEvent -> events 协议转换，HITL resume 适配

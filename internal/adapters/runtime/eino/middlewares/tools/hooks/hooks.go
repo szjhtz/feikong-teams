@@ -5,8 +5,8 @@ import (
 	"context"
 
 	"fkteams/agentcore"
-	projecthooks "fkteams/hooks"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	projecthooks "fkteams/internal/runtime/hooks"
 
 	"github.com/cloudwego/eino/compose"
 )
