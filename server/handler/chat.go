@@ -8,8 +8,8 @@ import (
 	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
+	appagent "fkteams/internal/app/agent"
 	appchat "fkteams/internal/app/chat"
-	"fkteams/runner"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/ask"
 	"fmt"
@@ -21,7 +21,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var globalRunnerCache = runner.NewCache()
+var globalRunnerCache = appagent.NewCache()
 
 // ClearRunnerCache 清除 runner 缓存
 func ClearRunnerCache() {

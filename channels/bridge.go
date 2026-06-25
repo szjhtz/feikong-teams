@@ -9,9 +9,9 @@ import (
 	"fkteams/common"
 	"fkteams/events"
 	"fkteams/events/log"
+	appagent "fkteams/internal/app/agent"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/log"
-	"fkteams/runner"
 	"fkteams/tools/approval"
 	"path/filepath"
 	"strings"
@@ -100,7 +100,7 @@ func (b *Bridge) getRunner(ctx context.Context) (agentcore.Runner, error) {
 		return b.runner, b.runnerErr
 	}
 
-	b.runner, b.runnerErr = runner.Resolve(ctx, b.mode, "")
+	b.runner, b.runnerErr = appagent.Resolve(ctx, b.mode, "")
 	return b.runner, b.runnerErr
 }
 

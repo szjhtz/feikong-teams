@@ -7,8 +7,8 @@ import (
 	"fkteams/cli"
 	commonPkg "fkteams/common"
 	"fkteams/config"
+	appagent "fkteams/internal/app/agent"
 	"fkteams/lifecycle"
-	"fkteams/runner"
 	"fmt"
 	"log"
 	"syscall"
@@ -137,13 +137,13 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 func createModeRunner(ctx context.Context, mode cli.WorkMode) (agentcore.Runner, error) {
 	switch mode {
 	case cli.ModeTeam:
-		return runner.CreateTeamRunner(ctx)
+		return appagent.CreateTeamRunner(ctx)
 	case cli.ModeDeep:
-		return runner.CreateDeepAgentsRunner(ctx)
+		return appagent.CreateDeepAgentsRunner(ctx)
 	case cli.ModeGroup:
-		return runner.CreateLoopAgentRunner(ctx)
+		return appagent.CreateLoopAgentRunner(ctx)
 	case cli.ModeCustom:
-		return runner.CreateCustomRunner(ctx)
+		return appagent.CreateCustomRunner(ctx)
 	default:
 		return nil, nil
 	}

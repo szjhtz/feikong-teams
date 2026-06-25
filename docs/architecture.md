@@ -212,7 +212,7 @@ hook payload 使用明确结构体，不在业务代码里散落 `any` 和字符
 
 - `agentcore`：拆到 `internal/domain/*` 和 `internal/ports/runtime`。
 - `engine`：退化为兼容门面，实际执行内核迁入 `internal/runtime/turn`。
-- `runner`：并入 `internal/app/agent`，不再作为全局工厂包。
+- `runner`：退化为兼容门面，Runner 工厂和缓存实现并入 `internal/app/agent`。
 - `events/chat`：退化为兼容门面，turn input builder 实现并入 `internal/app/chat`。
 - `events/log`：迁移为 `internal/adapters/storage/file/history` 和 domain history model。
 - `tools/tools.go`：替换为 tool registry。

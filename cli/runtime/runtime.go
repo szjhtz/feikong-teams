@@ -5,8 +5,7 @@ import (
 
 	"fkteams/agentcore"
 	"fkteams/agents"
-
-	"fkteams/runner"
+	appagent "fkteams/internal/app/agent"
 	"fkteams/tools/ask"
 
 	"fmt"
@@ -129,7 +128,7 @@ func (r *Runtime) switchAgent(agentName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create agent %s: %w", agentName, err)
 	}
-	newRunner, err := runner.CreateAgentRunner(r.ctx, newAgent)
+	newRunner, err := appagent.CreateAgentRunner(r.ctx, newAgent)
 	if err != nil {
 		return "", err
 	}

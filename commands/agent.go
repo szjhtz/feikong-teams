@@ -12,8 +12,8 @@ import (
 	commonPkg "fkteams/common"
 	"fkteams/config"
 	"fkteams/events/view"
+	appagent "fkteams/internal/app/agent"
 	"fkteams/lifecycle"
-	"fkteams/runner"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
@@ -145,7 +145,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		if err != nil {
 			return fmt.Errorf("create agent %s: %w", agentName, err)
 		}
-		agentRunner, err = runner.CreateAgentRunner(ctx, agent)
+		agentRunner, err = appagent.CreateAgentRunner(ctx, agent)
 		return err
 	})
 

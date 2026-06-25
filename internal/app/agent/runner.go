@@ -1,5 +1,5 @@
-// Package runner 提供各工作模式的 Runner 创建工厂函数
-package runner
+// Package agent 提供智能体解析、团队组装和 Runner 创建用例。
+package agent
 
 import (
 	"context"
