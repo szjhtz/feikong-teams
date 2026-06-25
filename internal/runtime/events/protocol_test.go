@@ -93,6 +93,7 @@ func TestValidateEventContractRequiresStableToolIdentity(t *testing.T) {
 func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
+		Role: message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			ID: "call_1",
 			Function: message.FunctionCall{
@@ -105,6 +106,7 @@ func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
+		Role: message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			ID: "call_1",
 			Function: message.FunctionCall{
@@ -132,12 +134,12 @@ func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing
 	}
 
 	validEvents := []Event{
-		{Type: EventToolUpdate, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventToolEnd, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageDelta, DeltaKind: DeltaToolArgs, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageDelta, DeltaKind: DeltaToolResult, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventToolUpdate, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventToolEnd, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventMessageDelta, Role: message.RoleAssistant, DeltaKind: DeltaToolArgs, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventMessageDelta, Role: message.RoleTool, DeltaKind: DeltaToolResult, ToolCallID: "call_1", ToolCallRef: "ref_1"},
 		{Type: EventMessageEnd, Role: message.RoleTool, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageDelta, DeltaKind: DeltaOutput},
+		{Type: EventMessageDelta, Role: message.RoleAssistant, DeltaKind: DeltaOutput},
 	}
 	for i, event := range validEvents {
 		if err := ValidateEventContract(event); err != nil {
@@ -149,6 +151,7 @@ func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing
 func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T) {
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
+		Role: message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			Function: message.FunctionCall{Name: "continue_output"},
 		}},
@@ -158,11 +161,43 @@ func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T)
 
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
+		Role: message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			Function: message.FunctionCall{Name: "search"},
 		}},
 		ToolCallRefs: map[int]string{0: "ref_1"},
 	}); err == nil {
 		t.Fatal("missing tool call id should fail")
+	}
+}
+
+func TestValidateEventContractRequiresCorePayloadFields(t *testing.T) {
+	invalidEvents := []Event{
+		{},
+		{Type: EventTurnStart, RunID: "run_1"},
+		{Type: EventMessageStart, Content: "hello"},
+		{Type: EventToolStart, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventAction, Content: "paused"},
+		{Type: EventError},
+		{Type: EventUsage},
+	}
+	for i, event := range invalidEvents {
+		if err := ValidateEventContract(event); err == nil {
+			t.Fatalf("invalid core event %d unexpectedly passed: %#v", i, event)
+		}
+	}
+
+	validEvents := []Event{
+		{Type: EventTurnStart, RunID: "run_1", TurnID: "turn_1"},
+		{Type: EventMessageStart, Role: message.RoleAssistant},
+		{Type: EventToolStart, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventAction, ActionType: ActionInterrupted},
+		{Type: EventError, Error: "boom"},
+		{Type: EventUsage, TotalTokens: 1},
+	}
+	for i, event := range validEvents {
+		if err := ValidateEventContract(event); err != nil {
+			t.Fatalf("valid core event %d failed: %v", i, err)
+		}
 	}
 }
