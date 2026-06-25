@@ -4,9 +4,9 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/agents/common"
-	rootcommon "fkteams/common"
 	"fkteams/fkenv"
 	runtimeregistry "fkteams/internal/runtime/registry"
+	retry "fkteams/internal/runtime/retry"
 	"fkteams/tools"
 	"fmt"
 	"strconv"
@@ -60,10 +60,10 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		Name:             "deep_researcher",
 		Description:      "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
 		Model:            chatModel,
-		ModelRetryConfig: rootcommon.NewModelRetryConfig(),
+		ModelRetryConfig: retry.NewModelRetryConfig(),
 		SubAgents:        subAgents,
 		Tools:            toolList,
-		MaxIterations:    common.MaxIterations(),
+		MaxIterations:    retry.MaxIterations(),
 		Middlewares: []agentcore.AgentMiddleware{
 			middlewareProvider.NewSteeringMiddleware(),
 			summaryMiddleware,

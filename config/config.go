@@ -9,7 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"fkteams/common"
+	"fkteams/internal/app/appdata"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -252,7 +252,7 @@ func (c *Config) ResolveModel(name string) *ModelConfig {
 
 // WorkspaceDir 返回工作区目录（固定为 ~/.fkteams/workspace）
 func (c *Config) WorkspaceDir() string {
-	return filepath.Join(common.AppDir(), "workspace")
+	return filepath.Join(appdata.Dir(), "workspace")
 }
 
 // ==================== 全局单例 ====================
@@ -264,7 +264,7 @@ var (
 )
 
 func configFilePath() string {
-	return filepath.Join(common.AppDir(), "config", "config.toml")
+	return filepath.Join(appdata.Dir(), "config", "config.toml")
 }
 
 // Init 初始化全局配置（应在启动时调用一次）
@@ -337,7 +337,7 @@ func ensureDefaultModel() error {
 	if mc := cfg.ResolveModel("default"); mc != nil && (mc.APIKey != "" || mc.Provider != "") {
 		return nil
 	}
-	configPath := filepath.Join(common.AppDir(), "config", "config.toml")
+	configPath := filepath.Join(appdata.Dir(), "config", "config.toml")
 	return fmt.Errorf("未配置默认模型，请先完成配置后再使用\n\n"+
 		"  生成配置文件并编辑\n"+
 		"    fkteams generate config\n"+
@@ -355,7 +355,7 @@ func InitAndValidate() error {
 // load 从文件加载配置
 func load() (*Config, error) {
 	var config Config
-	if err := Unmarshal(filepath.Join(common.AppDir(), "config", "config.toml"), &config); err != nil {
+	if err := Unmarshal(filepath.Join(appdata.Dir(), "config", "config.toml"), &config); err != nil {
 		if os.IsNotExist(err) {
 			return defaultConfig(), nil
 		}
@@ -385,7 +385,7 @@ func Unmarshal(filePath string, v any) error {
 
 // GenerateExample 生成示例配置文件
 func GenerateExample() error {
-	filePath := filepath.Join(common.AppDir(), "config", "config.toml")
+	filePath := filepath.Join(appdata.Dir(), "config", "config.toml")
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("无法创建目录 %s: %w", dir, err)

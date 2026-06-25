@@ -9,9 +9,9 @@ import (
 	"fkteams/agentcore"
 	"fkteams/agents"
 	"fkteams/cli"
-	commonPkg "fkteams/common"
 	"fkteams/config"
 	"fkteams/events/view"
+	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/lifecycle"
 
@@ -131,7 +131,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	var inputHistory []string
 	app.OnInit(func(ctx context.Context) error {
 		var err error
-		inputHistory, err = commonPkg.LoadHistory(cfg.InputHistoryPath, 100)
+		inputHistory, err = inputhistory.Load(cfg.InputHistoryPath, 100)
 		if err != nil {
 			return fmt.Errorf("加载输入历史失败: %w", err)
 		}
@@ -196,7 +196,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		if session != nil {
 			history = session.InputHistory
 		}
-		if err := commonPkg.SaveHistory(cfg.InputHistoryPath, history); err != nil {
+		if err := inputhistory.Save(cfg.InputHistoryPath, history); err != nil {
 			log.Printf("保存输入历史失败: %v", err)
 		}
 		return nil

@@ -2,8 +2,8 @@ package eventlog
 
 import (
 	"fkteams/agents/toolmeta"
-	"fkteams/common"
 	"fkteams/common/atomicfile"
+	"fkteams/internal/app/appdata"
 
 	"fmt"
 
@@ -106,7 +106,7 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 func (h *HistoryRecorder) SaveToMarkdownWithTimestamp() (string, error) {
 	timestamp := time.Now().Format("20060102_150405")
-	filePath := filepath.Join(common.AppDir(), "history", "output_history", fmt.Sprintf("chat_%s.md", timestamp))
+	filePath := filepath.Join(appdata.Dir(), "history", "output_history", fmt.Sprintf("chat_%s.md", timestamp))
 	err := h.SaveToMarkdownFile(filePath)
 	return filePath, err
 }

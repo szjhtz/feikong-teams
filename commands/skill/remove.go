@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	commonPkg "fkteams/common"
+	"fkteams/internal/app/appdata"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
@@ -23,7 +23,7 @@ func removeCommand() *ucli.Command {
 			if slug == "" {
 				return fmt.Errorf("请提供技能 slug，例如: fkteams skill remove video-frames")
 			}
-			targetDir := filepath.Join(commonPkg.AppDir(), "skills", slug)
+			targetDir := filepath.Join(appdata.Dir(), "skills", slug)
 			if _, err := os.Stat(targetDir); os.IsNotExist(err) {
 				return fmt.Errorf("技能 %s 未安装", slug)
 			}

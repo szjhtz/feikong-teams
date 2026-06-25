@@ -4,9 +4,11 @@ import (
 	"context"
 	"fkteams/agentcore"
 	"fkteams/appstate"
-	rootcommon "fkteams/common"
 	"fkteams/fkenv"
+	"fkteams/internal/app/appdata"
 	runtimeregistry "fkteams/internal/runtime/registry"
+	"fkteams/internal/runtime/resources"
+	"fkteams/internal/runtime/retry"
 	"fkteams/tools"
 	"fmt"
 	"runtime"
@@ -44,7 +46,7 @@ func NewAgentBuilder(name, description string) *AgentBuilder {
 		templateVars: map[string]any{
 			"os_type":       runtime.GOOS,
 			"os_arch":       runtime.GOARCH,
-			"workspace_dir": rootcommon.WorkspaceDir(),
+			"workspace_dir": appdata.WorkspaceDir(),
 		},
 	}
 }
@@ -131,7 +133,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 
 	// 通过名称解析工具
 	toolList := append([]agentcore.Tool(nil), b.tools...)
-	var cleaner *rootcommon.ResourceCleaner
+	var cleaner *resources.Cleaner
 	if state := appstate.FromContext(ctx); state != nil {
 		cleaner = state.Cleaner()
 	}
@@ -173,7 +175,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		Tools:              toolList,
 		ToolMiddlewares:    defaultToolMiddlewares(engine),
 		UnknownToolHandler: unknownToolsHandler,
-		ModelRetryConfig:   rootcommon.NewModelRetryConfig(),
+		ModelRetryConfig:   retry.NewModelRetryConfig(),
 		MaxIterations:      MaxIterations(),
 		EmitInternalEvents: true,
 	}

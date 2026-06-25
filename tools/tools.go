@@ -1,22 +1,24 @@
 package tools
 
 import (
-	"fkteams/common"
-	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/tools/mcp"
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"fkteams/internal/app/appdata"
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/resources"
+	"fkteams/tools/mcp"
 )
 
 // workspacePath 返回工作区目录路径
 func workspacePath() string {
-	return common.WorkspaceDir()
+	return appdata.WorkspaceDir()
 }
 
 // runtimeDir 返回脚本运行时环境目录
 func runtimeDir() string {
-	return filepath.Join(common.AppDir(), "runtime")
+	return filepath.Join(appdata.Dir(), "runtime")
 }
 
 func GetToolsByName(name string) ([]runtimeport.Tool, error) {
@@ -24,7 +26,7 @@ func GetToolsByName(name string) ([]runtimeport.Tool, error) {
 }
 
 // GetToolsByNameWithCleaner 按名称返回工具列表，并按需注册进程级清理函数。
-func GetToolsByNameWithCleaner(name string, cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func GetToolsByNameWithCleaner(name string, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 	if resolved, ok, err := defaultRegistry.Resolve(name, cleaner); ok || err != nil {
 		return resolved, err
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/common"
+	"fkteams/internal/domain/session"
 )
 
 func newTestTodoTools(t *testing.T) (*TodoTools, context.Context) {
@@ -14,7 +14,7 @@ func newTestTodoTools(t *testing.T) (*TodoTools, context.Context) {
 	if err != nil {
 		t.Fatalf("NewTodoTools failed: %v", err)
 	}
-	return tools, common.WithSessionID(context.Background(), "session-a")
+	return tools, session.WithID(context.Background(), "session-a")
 }
 
 func strPtr(s string) *string { return &s }
@@ -125,7 +125,7 @@ func TestTodoValidationAndSessionRequired(t *testing.T) {
 
 func TestTodoBatchAndClearKeepSessionsIsolated(t *testing.T) {
 	tools, ctxA := newTestTodoTools(t)
-	ctxB := common.WithSessionID(context.Background(), "session-b")
+	ctxB := session.WithID(context.Background(), "session-b")
 
 	batchResp, err := tools.TodoBatchAdd(ctxA, &TodoBatchAddRequest{Todos: []struct {
 		Title       string `json:"title" jsonschema:"description=待办事项标题,required"`

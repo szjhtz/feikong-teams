@@ -128,7 +128,7 @@ fkteams logout openai                # 退出指定供应商
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)
 
-运行期数据默认保存在 `~/.fkteams/` 下，可通过 `FEIKONG_APP_DIR` 覆盖；常用子目录包括 `workspace`、`sessions`、`scheduler`、`history`、`config`、`log`、`share`。
+运行期数据默认保存在 `~/.fkteams/` 下，可通过 `FEIKONG_APP_DIR` 覆盖；常用子目录包括 `workspace`、`sessions`、`scheduler`、`history`、`config`、`log`、`share` 和 `runtime`。
 
 如果需要为所有智能体提供项目约定，可在 `~/.fkteams/workspace/` 放置 `AGENTS.md`（也兼容 `Agents.md`）。系统会在每次模型调用前临时注入该文件内容，支持 `@import` 拆分规则文件，内容不会写入会话历史。
 

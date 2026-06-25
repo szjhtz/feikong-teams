@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"fkteams/agentcore"
-	"fkteams/common"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/domain/session"
 )
 
 func TestListAndReadSessionAttachments(t *testing.T) {
@@ -23,7 +23,7 @@ func TestListAndReadSessionAttachments(t *testing.T) {
 			{Type: agentcore.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
 		},
 	})
-	ctx := common.WithSessionID(context.Background(), sessionID)
+	ctx := session.WithID(context.Background(), sessionID)
 
 	list, err := List(ctx, &ListRequest{})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestReadSessionAttachmentDefaultsToMetadataOnly(t *testing.T) {
 			{Type: agentcore.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
 		},
 	})
-	ctx := common.WithSessionID(context.Background(), sessionID)
+	ctx := session.WithID(context.Background(), sessionID)
 
 	read, err := Read(ctx, &ReadRequest{AttachmentID: "history:000000:00:01"})
 	if err != nil {

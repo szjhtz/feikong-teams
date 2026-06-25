@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	commonPkg "fkteams/common"
+	"fkteams/internal/app/appdata"
 
 	"github.com/goccy/go-yaml"
 	"github.com/pterm/pterm"
@@ -45,7 +45,7 @@ type localSkillInfo struct {
 }
 
 func listSkills() error {
-	skillsDir := filepath.Join(commonPkg.AppDir(), "skills")
+	skillsDir := appdata.SkillsDir()
 
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {

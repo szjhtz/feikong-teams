@@ -1,4 +1,4 @@
-package common
+package inputhistory
 
 import (
 	"bufio"
@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 )
 
-// SaveHistory 将输入历史保存到文件
-func SaveHistory(filePath string, history []string) error {
+// Save 将输入历史保存到文件。
+func Save(filePath string, history []string) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
+		return fmt.Errorf("create history directory: %w", err)
 	}
 
 	file, err := os.OpenFile(filePath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
@@ -29,8 +29,8 @@ func SaveHistory(filePath string, history []string) error {
 	return writer.Flush()
 }
 
-// LoadHistory 从文件加载输入历史，最多返回 maxLines 行
-func LoadHistory(filePath string, maxLines int) ([]string, error) {
+// Load 从文件加载输入历史，最多返回 maxLines 行。
+func Load(filePath string, maxLines int) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -48,7 +48,6 @@ func LoadHistory(filePath string, maxLines int) ([]string, error) {
 			lines = lines[1:]
 		}
 	}
-
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}

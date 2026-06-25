@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	rootcommon "fkteams/common"
 	"fkteams/events"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/runtime/checkpoint"
+	retry "fkteams/internal/runtime/retry"
 	"fkteams/providers/copilot"
 	"fkteams/tools/approval"
 	"fmt"
@@ -171,12 +171,12 @@ func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk
 		Description:      fmt.Sprintf("执行子任务: %s", desc),
 		Instruction:      subAgentInstruction,
 		Model:            m.chatModel,
-		ModelRetryConfig: einoruntime.AdaptModelRetryConfigForRunner(rootcommon.NewModelRetryConfig()),
+		ModelRetryConfig: einoruntime.AdaptModelRetryConfigForRunner(retry.NewModelRetryConfig()),
 		Handlers:         m.handlers,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: m.tools},
 		},
-		MaxIterations: rootcommon.MaxIterations(),
+		MaxIterations: retry.MaxIterations(),
 	})
 }
 

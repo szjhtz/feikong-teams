@@ -3,9 +3,9 @@ package skills
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/common"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/runtime/eino/middlewares/fkfs"
+	"fkteams/internal/app/appdata"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,7 +28,7 @@ func ensureDir(path string) error {
 }
 
 func New(ctx context.Context) (agentcore.AgentMiddleware, error) {
-	skillsDirPath := filepath.Join(common.AppDir(), "skills")
+	skillsDirPath := filepath.Join(appdata.Dir(), "skills")
 
 	if err := ensureDir(skillsDirPath); err != nil {
 		return nil, fmt.Errorf("无法创建或访问目录 %s: %w", skillsDirPath, err)

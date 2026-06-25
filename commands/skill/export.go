@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	commonPkg "fkteams/common"
+	"fkteams/internal/app/appdata"
 
 	"github.com/goccy/go-yaml"
 )
@@ -21,7 +21,7 @@ type LocalSkillInfo struct {
 
 // ListLocalSkills 列出本地已安装技能。
 func ListLocalSkills() ([]LocalSkillInfo, error) {
-	skillsDir := filepath.Join(commonPkg.AppDir(), "skills")
+	skillsDir := appdata.SkillsDir()
 
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
@@ -81,7 +81,7 @@ type SkillFileEntry struct {
 
 // ListSkillFiles 列出技能目录下指定路径的文件。
 func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
-	skillsDir := filepath.Join(commonPkg.AppDir(), "skills", slug)
+	skillsDir := filepath.Join(appdata.Dir(), "skills", slug)
 
 	// 防止路径穿越
 	cleanSub := filepath.Clean(filepath.ToSlash(subPath))
@@ -121,7 +121,7 @@ func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
 
 // ReadSkillFile 读取技能目录中的文件。
 func ReadSkillFile(slug, filePath string) (string, error) {
-	skillsDir := filepath.Join(commonPkg.AppDir(), "skills", slug)
+	skillsDir := filepath.Join(appdata.Dir(), "skills", slug)
 	fullPath := filepath.Join(skillsDir, filePath)
 
 	// 防止路径穿越
@@ -144,7 +144,7 @@ func InstallSkillFromProvider(ctx context.Context, slug, version string, provide
 
 // RemoveLocalSkill 删除已安装技能。
 func RemoveLocalSkill(slug string) error {
-	targetDir := filepath.Join(commonPkg.AppDir(), "skills", slug)
+	targetDir := filepath.Join(appdata.Dir(), "skills", slug)
 	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
 		return fmt.Errorf("skill %s is not installed", slug)
 	}

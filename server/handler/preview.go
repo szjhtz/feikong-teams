@@ -5,8 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"fkteams/common"
 	"fkteams/common/pathguard"
+	"fkteams/internal/app/appdata"
 	"fmt"
 	"io"
 	"mime"
@@ -53,7 +53,7 @@ func init() {
 }
 
 func shareLinksFilePath() string {
-	return filepath.Join(common.ShareDir(), shareFileName)
+	return filepath.Join(appdata.ShareDir(), shareFileName)
 }
 
 func loadShareLinks() {
@@ -140,7 +140,7 @@ type previewLinkEntry struct {
 // 参数: file_path(单文件路径) 或 file_paths(多文件路径数组), password(可选密码), expires_in(过期时间,秒)
 func CreatePreviewLinkHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := common.WorkspaceDir()
+		baseDir := appdata.WorkspaceDir()
 
 		var req struct {
 			FilePath  string   `json:"file_path"`
@@ -238,7 +238,7 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 // PreviewFileHandler 通过预览链接访问文件。
 func PreviewFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := common.WorkspaceDir()
+		baseDir := appdata.WorkspaceDir()
 
 		linkID := c.Param("linkId")
 		if linkID == "" {
@@ -393,7 +393,7 @@ func DeletePreviewLinkHandler() gin.HandlerFunc {
 // 返回文件名、大小、类型、是否需要密码、是否可预览等
 func PreviewInfoHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := common.WorkspaceDir()
+		baseDir := appdata.WorkspaceDir()
 
 		linkID := c.Param("linkId")
 		if linkID == "" {
@@ -608,7 +608,7 @@ func isPreviewable(contentType string) bool {
 // 密码校验支持 query 参数 password 或 cookie fk_preview_{linkId}
 func PreviewRenderHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := common.WorkspaceDir()
+		baseDir := appdata.WorkspaceDir()
 
 		linkID := c.Param("linkId")
 		if linkID == "" {

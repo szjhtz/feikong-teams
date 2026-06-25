@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"fkteams/agentcore"
-	"fkteams/common"
+	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
 	"fkteams/internal/testmodel"
 )
 
@@ -507,7 +507,7 @@ func runAgentForTestResult(t *testing.T, ctx context.Context, agent agentcore.Ag
 	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: streaming,
-		CheckPointStore: common.NewInMemoryStore(),
+		CheckPointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)

@@ -8,7 +8,7 @@ import (
 	"fkteams/agentcore"
 	agentscommon "fkteams/agents/common"
 	_ "fkteams/bootstrap/runtimes"
-	rootcommon "fkteams/common"
+	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/testmodel"
 )
@@ -29,7 +29,7 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	runner, err := runtimeregistry.Engine().NewRunner(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
-		CheckPointStore: rootcommon.NewInMemoryStore(),
+		CheckPointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)

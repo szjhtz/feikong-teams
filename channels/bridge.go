@@ -6,10 +6,10 @@ import (
 
 	"fkteams/agentcore"
 	"fkteams/appstate"
-	"fkteams/common"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/appdata"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/log"
 	"fkteams/tools/approval"
@@ -49,7 +49,7 @@ const (
 )
 
 // channelHistoryDir 通道会话历史存储目录，与 Web/CLI 共用
-var channelHistoryDir = common.SessionsDir()
+var channelHistoryDir = appdata.SessionsDir()
 
 // Bridge 连接通道消息与智能体执行引擎
 type Bridge struct {

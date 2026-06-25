@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	"fkteams/agentcore"
-	"fkteams/common"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appdata"
+	"fkteams/internal/domain/session"
 )
 
 const maxDataURLBase64Len = 256 * 1024
@@ -94,7 +95,7 @@ func Read(ctx context.Context, req *ReadRequest) (*ReadResponse, error) {
 }
 
 func loadCurrentSessionMessages(ctx context.Context) ([]eventlog.AgentMessage, error) {
-	sessionID, ok := common.SessionIDFromCtx(ctx)
+	sessionID, ok := session.IDFromContext(ctx)
 	if !ok || strings.TrimSpace(sessionID) == "" {
 		return nil, fmt.Errorf("session_id is not available in context")
 	}
@@ -102,7 +103,7 @@ func loadCurrentSessionMessages(ctx context.Context) ([]eventlog.AgentMessage, e
 		return recorder.GetMessages(), nil
 	}
 	recorder := eventlog.NewHistoryRecorder()
-	historyFile := filepath.Join(common.SessionsDir(), filepath.Base(sessionID), eventlog.HistoryFileName)
+	historyFile := filepath.Join(appdata.SessionsDir(), filepath.Base(sessionID), eventlog.HistoryFileName)
 	if err := recorder.LoadFromFile(historyFile); err != nil {
 		return nil, fmt.Errorf("read session history: %w", err)
 	}

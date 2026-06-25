@@ -8,9 +8,9 @@ import (
 	"os"
 
 	"fkteams/agentcore"
-	"fkteams/common"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/runtime/eino/middlewares/fkfs"
+	"fkteams/internal/app/appdata"
 
 	einoagentsmd "github.com/cloudwego/eino/adk/middlewares/agentsmd"
 )
@@ -20,7 +20,7 @@ const allAgentsMDMaxBytes = 256 * 1024
 var defaultAgentsMDFiles = []string{"AGENTS.md", "Agents.md"}
 
 func New(ctx context.Context) (agentcore.AgentMiddleware, error) {
-	backend, err := fkfs.NewLocalBackend(common.WorkspaceDir())
+	backend, err := fkfs.NewLocalBackend(appdata.WorkspaceDir())
 	if err != nil {
 		return nil, fmt.Errorf("create agents.md backend: %w", err)
 	}

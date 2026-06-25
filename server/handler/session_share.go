@@ -3,9 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fkteams/common"
 	"fkteams/common/atomicfile"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appdata"
 	"fmt"
 	"log"
 	"net/http"
@@ -65,7 +65,7 @@ func init() {
 }
 
 func sessionSharesFilePath() string {
-	return filepath.Join(common.ShareDir(), sessionShareFileName)
+	return filepath.Join(appdata.ShareDir(), sessionShareFileName)
 }
 
 func loadSessionShares() {

@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"sync"
 
-	"fkteams/common"
 	"fkteams/config"
 	schedulertool "fkteams/internal/adapters/tools/builtin/scheduler"
+	"fkteams/internal/app/appdata"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/resources"
 	"fkteams/tools/ask"
 	"fkteams/tools/command"
 	"fkteams/tools/doc"
@@ -22,7 +23,7 @@ import (
 	"fkteams/tools/todo"
 )
 
-type ToolGroupFactory func(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error)
+type ToolGroupFactory func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error)
 
 type ToolGroupRegistration struct {
 	Name    string
@@ -64,7 +65,7 @@ func (r *ToolGroupRegistry) Register(reg ToolGroupRegistration) error {
 	return nil
 }
 
-func (r *ToolGroupRegistry) Resolve(name string, cleaner *common.ResourceCleaner) ([]runtimeport.Tool, bool, error) {
+func (r *ToolGroupRegistry) Resolve(name string, cleaner *resources.Cleaner) ([]runtimeport.Tool, bool, error) {
 	if r == nil {
 		return nil, false, fmt.Errorf("tool group registry is nil")
 	}
@@ -130,7 +131,7 @@ func builtinToolGroups() []ToolGroupRegistration {
 
 var defaultRegistry = defaultToolGroupRegistry()
 
-func fileToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func fileToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	fileTools, err := file.NewFileTools(workspacePath())
 	if err != nil {
 		return nil, fmt.Errorf("初始化文件工具失败: %w", err)
@@ -138,7 +139,7 @@ func fileToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
 	return fileTools.GetTools()
 }
 
-func gitToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func gitToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	gitTools, err := git.NewGitTools(workspacePath())
 	if err != nil {
 		return nil, fmt.Errorf("初始化Git工具失败: %w", err)
@@ -146,7 +147,7 @@ func gitToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
 	return gitTools.GetTools()
 }
 
-func excelToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func excelToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	excelTools, err := excel.NewExcelTools(workspacePath())
 	if err != nil {
 		return nil, fmt.Errorf("初始化Excel工具失败: %w", err)
@@ -154,15 +155,15 @@ func excelToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
 	return excelTools.GetTools()
 }
 
-func todoToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
-	todoTools, err := todo.NewTodoTools(common.SessionsDir())
+func todoToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
+	todoTools, err := todo.NewTodoTools(appdata.SessionsDir())
 	if err != nil {
 		return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 	}
 	return todoTools.GetTools()
 }
 
-func sshToolGroup(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func sshToolGroup(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 	sshCfg := config.Get().Agents.SSHVisitor
 	host := sshCfg.Host
 	username := sshCfg.Username
@@ -183,7 +184,7 @@ func sshToolGroup(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error) {
 	return sshTools.GetTools()
 }
 
-func commandToolGroup(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func commandToolGroup(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 	if cleaner != nil {
 		cleaner.Add(func() error {
 			command.TerminateAll()
@@ -194,27 +195,27 @@ func commandToolGroup(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, erro
 	return command.NewCommandTools(workspacePath()).GetTools()
 }
 
-func schedulerToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func schedulerToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	return schedulertool.NewTools(nil).GetTools()
 }
 
-func searchToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func searchToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	return search.GetTools()
 }
 
-func fetchToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func fetchToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	return fetch.GetTools()
 }
 
-func docToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func docToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	return doc.GetTools()
 }
 
-func askToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func askToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	return ask.GetTools()
 }
 
-func uvToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func uvToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	uvTools, err := uv.NewUVTools(runtimeDir(), workspacePath())
 	if err != nil {
 		return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
@@ -222,7 +223,7 @@ func uvToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
 	return uvTools.GetTools()
 }
 
-func bunToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+func bunToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	bunTools, err := bun.NewBunTools(runtimeDir(), workspacePath())
 	if err != nil {
 		return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)

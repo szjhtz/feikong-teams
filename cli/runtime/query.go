@@ -13,11 +13,12 @@ import (
 
 	"fkteams/agentcore"
 	"fkteams/appstate"
-	"fkteams/common"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appdata"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"
+	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/turn"
 	"fkteams/report"
@@ -230,7 +231,7 @@ const (
 )
 
 // CLIHistoryDir CLI 会话历史存储目录
-var CLIHistoryDir = common.SessionsDir()
+var CLIHistoryDir = appdata.SessionsDir()
 
 // activeSessionID 当前活跃的会话 ID，每次启动时生成新 ID
 var activeSessionID = CLISessionID
@@ -246,7 +247,7 @@ var temporarySession bool
 
 // NewDirectSessionID 生成基于 UUID 的唯一会话 ID
 func NewDirectSessionID() string {
-	return common.GenerateSessionID()
+	return session.NewID()
 }
 
 // SetResumeSessionID 设置要恢复的会话 ID

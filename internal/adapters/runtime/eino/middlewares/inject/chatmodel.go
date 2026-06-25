@@ -5,9 +5,9 @@ package inject
 import (
 	"context"
 	"fkteams/agentcore"
-	rootcommon "fkteams/common"
 	"fkteams/common/typeutil"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	appdata "fkteams/internal/app/appdata"
 	"fkteams/internal/runtime/hooks"
 	"fmt"
 	"reflect"
@@ -171,7 +171,7 @@ func buildDynamicContext() string {
 		time.Now().Format("2006-01-02 15:04:05"),
 		runtime.GOOS,
 		runtime.GOARCH,
-		rootcommon.WorkspaceDir(),
+		appdata.WorkspaceDir(),
 	)
 	return contextMsg
 }

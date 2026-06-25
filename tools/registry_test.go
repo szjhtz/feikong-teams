@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"fkteams/common"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/resources"
 )
 
 type registryTestTool struct{}
@@ -35,7 +35,7 @@ func TestToolGroupRegistryRejectsDuplicateAndResolves(t *testing.T) {
 	registry := NewToolGroupRegistry()
 	reg := ToolGroupRegistration{
 		Name: "demo",
-		Factory: func(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error) {
+		Factory: func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 			return []runtimeport.Tool{registryTestTool{}}, nil
 		},
 	}

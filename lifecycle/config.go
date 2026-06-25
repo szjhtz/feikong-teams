@@ -1,8 +1,8 @@
 package lifecycle
 
 import (
-	"fkteams/common"
 	"fkteams/config"
+	"fkteams/internal/app/appdata"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -23,13 +23,13 @@ type AppConfig struct {
 
 // DefaultConfig 返回基于配置文件的默认配置
 func DefaultConfig() *AppConfig {
-	appDir := common.AppDir()
+	appDir := appdata.Dir()
 	cfg := config.Get()
 	return &AppConfig{
 		WorkspaceDir:     cfg.WorkspaceDir(),
 		MemoryEnabled:    cfg.Memory.Enabled,
 		SchedulerEnabled: true,
-		SchedulerDir:     common.SchedulerDir(),
+		SchedulerDir:     appdata.SchedulerDir(),
 		InputHistoryPath: filepath.Join(appDir, "history", "input_history", "fkteams_input_history"),
 		ChatHistoryDir:   filepath.Join(appDir, "history", "chat_history"),
 		ExitSignals:      []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP},

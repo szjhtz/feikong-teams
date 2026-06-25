@@ -1,4 +1,4 @@
-package common
+package resources
 
 import (
 	"errors"
@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestResourceCleanerExecutesLIFOAndClears(t *testing.T) {
-	cleaner := NewResourceCleaner()
+func TestCleanerExecutesLIFOAndClears(t *testing.T) {
+	cleaner := NewCleaner()
 	var order []string
 	cleaner.Add(func() error {
 		order = append(order, "first")
@@ -33,8 +33,8 @@ func TestResourceCleanerExecutesLIFOAndClears(t *testing.T) {
 	}
 }
 
-func TestResourceCleanerReturnsFirstErrorAndRecoversPanic(t *testing.T) {
-	cleaner := NewResourceCleaner()
+func TestCleanerReturnsFirstErrorAndRecoversPanic(t *testing.T) {
+	cleaner := NewCleaner()
 	cleaner.Add(func() error {
 		return errors.New("first")
 	})

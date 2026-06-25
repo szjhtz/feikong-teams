@@ -4,20 +4,20 @@ package common
 import (
 	"context"
 	"fkteams/agentcore"
-	rootcommon "fkteams/common"
 	"fkteams/config"
+	retry "fkteams/internal/runtime/retry"
 	"fkteams/providers"
 	"fmt"
 )
 
 // MaxIterations 返回智能体最大迭代次数
 func MaxIterations() int {
-	return rootcommon.MaxIterations()
+	return retry.MaxIterations()
 }
 
 const (
 	// MaxRetries 最大重试次数
-	MaxRetries = rootcommon.MaxRetries
+	MaxRetries = retry.MaxRetries
 )
 
 // WorkspaceDir 返回工作目录
@@ -53,5 +53,5 @@ func NewChatModelWithConfig(cfg *providers.Config) (agentcore.ChatModel, error) 
 
 // IsRetryAble 判断错误是否可重试（转发到 common 包）
 func IsRetryAble(ctx context.Context, err error) bool {
-	return rootcommon.IsRetryAble(ctx, err)
+	return retry.IsRetryable(ctx, err)
 }

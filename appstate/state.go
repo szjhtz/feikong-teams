@@ -2,8 +2,8 @@ package appstate
 
 import (
 	"context"
-	"fkteams/common"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/runtime/resources"
 	"fkteams/log"
 	"fkteams/memory"
 	"sync"
@@ -28,13 +28,13 @@ type MemoryManager interface {
 type State struct {
 	mu      sync.RWMutex
 	memory  MemoryManager
-	cleaner *common.ResourceCleaner
+	cleaner *resources.Cleaner
 }
 
 // New 创建独立的应用运行时状态。
 func New() *State {
 	return &State{
-		cleaner: common.NewResourceCleaner(),
+		cleaner: resources.NewCleaner(),
 	}
 }
 
@@ -76,9 +76,9 @@ func (s *State) SetMemory(manager MemoryManager) {
 }
 
 // Cleaner 返回进程生命周期资源清理器。
-func (s *State) Cleaner() *common.ResourceCleaner {
+func (s *State) Cleaner() *resources.Cleaner {
 	if s == nil {
-		return common.NewResourceCleaner()
+		return resources.NewCleaner()
 	}
 	return s.cleaner
 }

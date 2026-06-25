@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"fkteams/common"
 	"fkteams/common/atomicfile"
+	"fkteams/internal/domain/session"
 )
 
 // Todo 待办事项结构
@@ -47,7 +47,7 @@ func NewTodoTools(sessionsDir string) (*TodoTools, error) {
 
 // getFilePath 从 context 中提取会话 ID，返回该会话的 todos.json 路径
 func (tt *TodoTools) getFilePath(ctx context.Context) (string, error) {
-	sessionID, ok := common.SessionIDFromCtx(ctx)
+	sessionID, ok := session.IDFromContext(ctx)
 	if !ok || sessionID == "" {
 		return "", fmt.Errorf("会话 ID 未设置，todo 工具需要在会话上下文中使用")
 	}

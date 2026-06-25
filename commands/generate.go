@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fkteams/common"
 	"fkteams/config"
+	"fkteams/internal/app/appdata"
 	"fmt"
 
 	ucli "github.com/urfave/cli/v3"
@@ -24,7 +24,7 @@ func generateCommand() *ucli.Command {
 					if err := config.GenerateExample(); err != nil {
 						return err
 					}
-					fmt.Printf("成功生成示例配置文件: %s/config/config.toml\n", common.AppDir())
+					fmt.Printf("成功生成示例配置文件: %s/config/config.toml\n", appdata.Dir())
 					return nil
 				},
 			},

@@ -2,9 +2,9 @@ package turn
 
 import (
 	"context"
-	"fkteams/common"
 	"fkteams/events"
 	"fkteams/internal/domain/message"
+	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
 )
@@ -38,7 +38,7 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*runtimeport.RunResult, 
 }
 
 func (cfg runConfig) prepareContext(ctx context.Context, checkpointID string) context.Context {
-	ctx = common.WithSessionID(ctx, checkpointID)
+	ctx = session.WithID(ctx, checkpointID)
 	ctx = hooks.WithBus(ctx, cfg.hookBus())
 
 	if cfg.EventCallback != nil {

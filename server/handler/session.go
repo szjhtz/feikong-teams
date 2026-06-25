@@ -2,8 +2,8 @@ package handler
 
 import (
 	"errors"
-	"fkteams/common"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appdata"
 	"log"
 	"net/http"
 	"os"
@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var historyDir = common.SessionsDir()
+var historyDir = appdata.SessionsDir()
 
 // SessionInfo 会话信息
 type SessionInfo struct {

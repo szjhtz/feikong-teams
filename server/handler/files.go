@@ -4,8 +4,8 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
-	"fkteams/common"
 	"fkteams/common/pathguard"
+	"fkteams/internal/app/appdata"
 	"fmt"
 	"io"
 	"log"
@@ -31,7 +31,7 @@ type FileInfo struct {
 
 // getWorkspaceDir 获取工作目录并返回绝对路径
 func getWorkspaceDir() (string, string, error) {
-	baseDir := common.WorkspaceDir()
+	baseDir := appdata.WorkspaceDir()
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return "", "", fmt.Errorf("创建工作目录失败")
 	}

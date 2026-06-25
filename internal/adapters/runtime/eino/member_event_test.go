@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"fkteams/agentcore"
-	"fkteams/common"
+	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
 	"fkteams/internal/testmodel"
 	"fkteams/tools/ask"
 
@@ -287,7 +287,7 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
 		Agent:           parentAgent,
 		EnableStreaming: true,
-		CheckPointStore: common.NewInMemoryStore(),
+		CheckPointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)
@@ -432,7 +432,7 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 	runner, err := NewRunnerFromConfig(ctx, agentcore.RunnerConfig{
 		Agent:           parentAgent,
 		EnableStreaming: true,
-		CheckPointStore: common.NewInMemoryStore(),
+		CheckPointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)

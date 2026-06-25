@@ -480,6 +480,56 @@ func TestTaskStreamLivesInChatUseCase(t *testing.T) {
 	}
 }
 
+func TestRootCommonPackageIsNotUsed(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, legacy := range []string{
+		"common/common.go",
+		"common/input_history.go",
+		"common/memory.go",
+		"common/resource_cleaner.go",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(legacy))); err == nil {
+			t.Errorf("%s exists; split root common responsibilities into explicit packages", legacy)
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "release", "node_modules", "web":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			if strings.Trim(spec.Path.Value, `"`) == "fkteams/common" {
+				t.Errorf("%s imports removed root common package; use explicit internal packages", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertNotImported(t *testing.T, rel, importPath string, forbidden []string) {
 	t.Helper()
 	for _, prefix := range forbidden {

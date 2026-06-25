@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/common"
 	"fkteams/fkenv"
+	"fkteams/internal/app/appdata"
 
 	"github.com/gin-gonic/gin"
 )
@@ -193,7 +193,7 @@ func setupWorkspaceDir(t *testing.T) string {
 	t.Helper()
 
 	t.Setenv(fkenv.AppDir, t.TempDir())
-	workspace := common.WorkspaceDir()
+	workspace := appdata.WorkspaceDir()
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		t.Fatalf("mkdir workspace: %v", err)
 	}

@@ -1,10 +1,10 @@
 package runtime
 
 import (
-	"fkteams/common"
+	"fkteams/internal/app/appdata"
 )
 
 // GetWorkspaceDir 获取工作目录路径
 func GetWorkspaceDir() string {
-	return common.WorkspaceDir()
+	return appdata.WorkspaceDir()
 }

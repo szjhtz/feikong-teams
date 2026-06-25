@@ -3,6 +3,7 @@ package tasker
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/internal/app/appdata"
 	"fkteams/tools/command"
 	"fmt"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func NewAgent(ctx context.Context) (agentcore.Agent, error) {
-	workspaceDir := common.WorkspaceDir()
+	workspaceDir := appdata.WorkspaceDir()
 
 	cmdTools, err := command.NewCommandTools(workspaceDir, command.WithApprovalMode(command.ApprovalModeReject)).GetTools()
 	if err != nil {
