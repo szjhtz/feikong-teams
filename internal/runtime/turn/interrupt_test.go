@@ -2,16 +2,15 @@ package turn
 
 import (
 	"context"
+	runtimeport "fkteams/internal/ports/runtime"
 	"testing"
-
-	"fkteams/agentcore"
 )
 
 func TestChannelTargetHandlerOnlyTargetsSelectedInterrupt(t *testing.T) {
 	ch := make(chan any, 1)
 	ch <- "answer"
 
-	targets, err := ChannelTargetHandler(ch, "ask-2")(context.Background(), []agentcore.Interrupt{
+	targets, err := ChannelTargetHandler(ch, "ask-2")(context.Background(), []runtimeport.Interrupt{
 		{ID: "ask-1", IsRootCause: true},
 		{ID: "ask-2", IsRootCause: true},
 	})

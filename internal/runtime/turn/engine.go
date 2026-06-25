@@ -2,14 +2,14 @@
 package turn
 
 import (
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 type core struct {
-	runner       agentcore.Runner
+	runner       runtimeport.Runner
 	checkpointID string
 }
 
-func newEngine(runner agentcore.Runner, checkpointID string) *core {
+func newEngine(runner runtimeport.Runner, checkpointID string) *core {
 	return &core{runner: runner, checkpointID: checkpointID}
 }

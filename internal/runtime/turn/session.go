@@ -2,14 +2,15 @@ package turn
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
 )
 
 type EventHandler func(events.Event) error
 type StartHandler func(context.Context)
-type FinishHandler func(context.Context, *agentcore.RunResult, error)
+type FinishHandler func(context.Context, *runtimeport.RunResult, error)
 
 // Session 提供面向一次会话执行的易用接口。
 type Session struct {
@@ -17,7 +18,7 @@ type Session struct {
 	cfg    runConfig
 }
 
-func NewSession(runner agentcore.Runner, checkpointID string) *Session {
+func NewSession(runner runtimeport.Runner, checkpointID string) *Session {
 	return &Session{engine: newEngine(runner, checkpointID)}
 }
 
@@ -26,19 +27,19 @@ func (s *Session) WithInput(input TurnInput) *Session {
 	return s
 }
 
-func (s *Session) WithMessage(message agentcore.Message) *Session {
+func (s *Session) WithMessage(message message.Message) *Session {
 	s.cfg.Input.Message = message
 	return s
 }
 
 func (s *Session) WithText(text string) *Session {
-	return s.WithMessage(agentcore.Message{
-		Role:    agentcore.RoleUser,
+	return s.WithMessage(message.Message{
+		Role:    message.RoleUser,
 		Content: text,
 	})
 }
 
-func (s *Session) WithMessages(messages []agentcore.Message) *Session {
+func (s *Session) WithMessages(messages []message.Message) *Session {
 	s.cfg.Input.Context = messages
 	return s
 }
@@ -90,6 +91,6 @@ func (s *Session) OnFinish(handler FinishHandler) *Session {
 	return s
 }
 
-func (s *Session) Run(ctx context.Context) (*agentcore.RunResult, error) {
+func (s *Session) Run(ctx context.Context) (*runtimeport.RunResult, error) {
 	return s.engine.run(ctx, s.cfg)
 }

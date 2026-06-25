@@ -2,8 +2,9 @@ package turn
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
 	"fkteams/tools/approval"
 	"testing"
@@ -17,29 +18,29 @@ func (h *historySinkStub) GetMessageCount() int {
 	return h.count
 }
 
-func (h *historySinkStub) RecordUserMessage(agentcore.Message) {}
+func (h *historySinkStub) RecordUserMessage(message.Message) {}
 
 func (h *historySinkStub) SetSummary(string, int) {}
 
 type runnerStub struct {
-	input agentcore.TurnInput
-	opts  agentcore.RunOptions
+	input message.TurnInput
+	opts  runtimeport.RunOptions
 }
 
-func (r *runnerStub) Run(_ context.Context, input agentcore.TurnInput, opts agentcore.RunOptions) (*agentcore.RunResult, error) {
+func (r *runnerStub) Run(_ context.Context, input message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
 	r.input = input
 	r.opts = opts
-	return &agentcore.RunResult{}, nil
+	return &runtimeport.RunResult{}, nil
 }
 
 func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
-	messages := []agentcore.Message{{Role: agentcore.RoleUser, Content: "hello"}}
+	messages := []message.Message{{Role: message.RoleUser, Content: "hello"}}
 	history := &historySinkStub{}
 	approvalReg := approval.NewDefaultRegistry()
 	eventHandler := func(events.Event) error { return nil }
 	startHandler := func(context.Context) {}
 	interruptHandler := FixedDecisionHandler(approval.Reject)
-	finishHandler := func(context.Context, *agentcore.RunResult, error) {}
+	finishHandler := func(context.Context, *runtimeport.RunResult, error) {}
 
 	session := NewSession(&runnerStub{}, "session-1").
 		WithMessages(messages).
@@ -94,8 +95,8 @@ func TestSessionBuilderConfiguresHookBus(t *testing.T) {
 
 func TestSessionBuilderConfiguresTurnInput(t *testing.T) {
 	input := TurnInput{
-		Context: []agentcore.Message{{Role: agentcore.RoleSystem, Content: "context"}},
-		Message: agentcore.Message{Role: agentcore.RoleUser, Content: "hello"},
+		Context: []message.Message{{Role: message.RoleSystem, Content: "context"}},
+		Message: message.Message{Role: message.RoleUser, Content: "hello"},
 	}
 
 	session := NewSession(&runnerStub{}, "session-1").WithInput(input)
@@ -127,18 +128,18 @@ func TestSessionRunUsesConfiguredRunID(t *testing.T) {
 
 func TestSessionBuilderConfiguresPromptMessage(t *testing.T) {
 	session := NewSession(&runnerStub{}, "session-1").
-		WithMessages([]agentcore.Message{{Role: agentcore.RoleSystem, Content: "context"}}).
+		WithMessages([]message.Message{{Role: message.RoleSystem, Content: "context"}}).
 		WithText("hello")
 
-	if session.cfg.Input.Message.Role != agentcore.RoleUser {
+	if session.cfg.Input.Message.Role != message.RoleUser {
 		t.Fatalf("input role = %q, want user", session.cfg.Input.Message.Role)
 	}
 	if session.cfg.Input.Message.Content != "hello" {
 		t.Fatalf("input message = %q, want hello", session.cfg.Input.Message.Content)
 	}
 
-	message := agentcore.Message{Role: agentcore.RoleUser, Content: "override"}
-	session.WithMessage(message)
+	msg := message.Message{Role: message.RoleUser, Content: "override"}
+	session.WithMessage(msg)
 	if session.cfg.Input.Message.Content != "override" {
 		t.Fatalf("input message = %q, want override", session.cfg.Input.Message.Content)
 	}

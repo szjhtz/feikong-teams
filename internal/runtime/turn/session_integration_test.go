@@ -2,22 +2,24 @@ package turn
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/events"
+	domainevent "fkteams/internal/domain/event"
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
 	"testing"
 )
 
 type recordingRunner struct {
-	input agentcore.TurnInput
+	input message.TurnInput
 }
 
-func (r *recordingRunner) Run(_ context.Context, input agentcore.TurnInput, opts agentcore.RunOptions) (*agentcore.RunResult, error) {
+func (r *recordingRunner) Run(_ context.Context, input message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
 	r.input = input
-	event := agentcore.Event{
-		Type:      agentcore.EventMessageDelta,
-		Role:      agentcore.RoleAssistant,
-		DeltaKind: agentcore.DeltaOutput,
+	event := domainevent.Event{
+		Type:      domainevent.TypeMessageDelta,
+		Role:      message.RoleAssistant,
+		DeltaKind: domainevent.DeltaOutput,
 		Content:   "pong",
 	}
 	if opts.Sink != nil {
@@ -25,7 +27,7 @@ func (r *recordingRunner) Run(_ context.Context, input agentcore.TurnInput, opts
 			return nil, err
 		}
 	}
-	return &agentcore.RunResult{LastEvent: event}, nil
+	return &runtimeport.RunResult{LastEvent: event}, nil
 }
 
 func TestSessionRunsCoreRunner(t *testing.T) {
@@ -34,7 +36,7 @@ func TestSessionRunsCoreRunner(t *testing.T) {
 
 	var collectedEvents []events.Event
 	_, err := NewSession(r, "test-session").
-		WithInput(TurnInput{Message: agentcore.Message{Role: agentcore.RoleUser, Content: "ping"}}).
+		WithInput(TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}}).
 		OnEvent(func(event events.Event) error {
 			collectedEvents = append(collectedEvents, event)
 			return nil
@@ -86,7 +88,7 @@ func TestSessionInvokesRunHooks(t *testing.T) {
 
 	_, err := NewSession(r, "test-session").
 		WithHookBus(bus).
-		WithInput(TurnInput{Message: agentcore.Message{Role: agentcore.RoleUser, Content: "ping"}}).
+		WithInput(TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}}).
 		Run(ctx)
 	if err != nil {
 		t.Fatalf("run session: %v", err)

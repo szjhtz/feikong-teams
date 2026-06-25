@@ -2,10 +2,10 @@ package hooks
 
 import (
 	"context"
+	"fkteams/internal/domain/event"
+	"fkteams/internal/domain/message"
 	"strings"
 	"testing"
-
-	"fkteams/agentcore"
 )
 
 func TestInvokeEventCanRewriteAndSkipDispatch(t *testing.T) {
@@ -19,7 +19,7 @@ func TestInvokeEventCanRewriteAndSkipDispatch(t *testing.T) {
 		return Result{Action: ActionSkip}, nil
 	}, Options{})
 
-	event, emit, err := bus.InvokeEvent(context.Background(), agentcore.Event{Content: "original"})
+	event, emit, err := bus.InvokeEvent(context.Background(), event.Event{Content: "original"})
 	if err != nil {
 		t.Fatalf("invoke event: %v", err)
 	}
@@ -47,15 +47,15 @@ func TestInvokeBeforeModelRequestCanRewriteMessages(t *testing.T) {
 	bus := NewBus()
 	bus.RegisterFunc("rewrite-model", []HookPoint{HookBeforeModelRequest}, func(ctx Context, inv Invocation) (Result, error) {
 		payload := inv.Payload.(BeforeModelRequestPayload)
-		payload.Messages = append(payload.Messages, agentcore.Message{
-			Role:    agentcore.RoleSystem,
+		payload.Messages = append(payload.Messages, message.Message{
+			Role:    message.RoleSystem,
 			Content: "extra",
 		})
 		return Result{Payload: payload}, nil
 	}, Options{})
 
-	messages, err := bus.InvokeBeforeModelRequest(context.Background(), []agentcore.Message{
-		{Role: agentcore.RoleUser, Content: "ping"},
+	messages, err := bus.InvokeBeforeModelRequest(context.Background(), []message.Message{
+		{Role: message.RoleUser, Content: "ping"},
 	})
 	if err != nil {
 		t.Fatalf("invoke before model request: %v", err)

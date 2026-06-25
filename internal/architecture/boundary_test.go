@@ -74,6 +74,15 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"github.com/gin-gonic/gin",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
+	case strings.HasPrefix(rel, "internal/runtime/"):
+		forbidden := []string{
+			"fkteams/agentcore",
+			"fkteams/internal/adapters",
+			"fkteams/internal/adapters/runtime/eino",
+			"github.com/cloudwego/eino",
+			"github.com/gin-gonic/gin",
+		}
+		assertNotImported(t, rel, importPath, forbidden)
 	}
 }
 

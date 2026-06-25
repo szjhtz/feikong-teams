@@ -40,6 +40,7 @@ internal/runtime/           # 运行时无关内核
   registry/                 #   runtime engine 注册表和默认 runtime 选择
   hooks/                    #   HookBus 实现、context 绑定和 hook 调用
   checkpoint/               #   checkpoint 存储实现
+                            #   运行时内核禁止依赖 agentcore 旧门面
 internal/ports/             # 运行时无关端口契约
   hooks/                    #   HookPoint、HookHandler 和明确 payload 类型
   runtime/                  #   Runtime / Engine / Runner / Model / Tool 等端口

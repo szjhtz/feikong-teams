@@ -2,18 +2,19 @@ package turn
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/events"
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
 )
 
 type ContextHook func(context.Context) context.Context
 
-type TurnInput = agentcore.TurnInput
+type TurnInput = message.TurnInput
 
 type HistorySink interface {
 	GetMessageCount() int
-	RecordUserMessage(message agentcore.Message)
+	RecordUserMessage(message message.Message)
 	SetSummary(summary string, beforeCount int)
 }
 
@@ -21,7 +22,7 @@ type HistorySink interface {
 // 零值字段均有安全默认值。
 type runConfig struct {
 	// Input 本轮运行输入
-	Input agentcore.TurnInput
+	Input message.TurnInput
 
 	// RunID 本轮运行 ID；为空时使用 checkpointID
 	RunID string
@@ -48,5 +49,5 @@ type runConfig struct {
 	HookBus *hooks.Bus
 
 	// OnFinish 执行结束回调（含错误）。用于保存历史、更新元数据、提取记忆等
-	OnFinish func(ctx context.Context, result *agentcore.RunResult, err error)
+	OnFinish func(ctx context.Context, result *runtimeport.RunResult, err error)
 }
