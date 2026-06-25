@@ -3,7 +3,7 @@ package eventlog
 import (
 	"encoding/json"
 
-	"fkteams/common/atomicfile"
+	"fkteams/internal/runtime/atomicfile"
 
 	"fmt"
 	"io"

@@ -49,6 +49,9 @@ internal/runtime/           # 运行时无关内核
   registry/                 #   runtime engine 注册表和默认 runtime 选择
   env/                      #   FEIKONG_* 环境变量读取
   log/                      #   日志 facade 和文件轮转
+  atomicfile/               #   原子文件写入
+  pathguard/                #   工作区路径逃逸防护
+  typeutil/                 #   运行时类型名辅助
   hooks/                    #   HookBus 实现、context 绑定和 hook 调用
   checkpoint/               #   checkpoint 存储实现
   resources/                #   运行期资源清理器
@@ -112,7 +115,6 @@ config/                     # TOML 配置（atomic.Pointer 全局单例，支持
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
                             #   记忆模型适配使用 internal/ports/runtime 和 domain/message
 web/                        # 内嵌前端（//go:embed）
-common/                     # 明确基础包（atomicfile / pathguard / typeutil），禁止恢复 root common 杂物层
 tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环
                             #   CLI runtime 使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面

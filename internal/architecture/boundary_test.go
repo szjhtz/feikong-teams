@@ -596,6 +596,11 @@ func TestTaskStreamLivesInChatUseCase(t *testing.T) {
 
 func TestRootCommonPackageIsNotUsed(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "common")); err == nil {
+		t.Fatal("root common directory exists; use explicit internal packages")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
 	for _, legacy := range []string{
 		"common/common.go",
 		"common/input_history.go",
@@ -633,7 +638,8 @@ func TestRootCommonPackageIsNotUsed(t *testing.T) {
 			return err
 		}
 		for _, spec := range file.Imports {
-			if strings.Trim(spec.Path.Value, `"`) == "fkteams/common" {
+			importPath := strings.Trim(spec.Path.Value, `"`)
+			if importPath == "fkteams/common" || strings.HasPrefix(importPath, "fkteams/common/") {
 				t.Errorf("%s imports removed root common package; use explicit internal packages", rel)
 			}
 		}

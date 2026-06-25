@@ -4,12 +4,12 @@ package inject
 
 import (
 	"context"
-	"fkteams/common/typeutil"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	appdata "fkteams/internal/app/appdata"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
+	"fkteams/internal/runtime/typeutil"
 	"fmt"
 	"reflect"
 	"runtime"

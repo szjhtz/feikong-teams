@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"fkteams/common/pathguard"
+	"fkteams/internal/runtime/pathguard"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/cloudwego/eino/adk/filesystem"
