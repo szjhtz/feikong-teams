@@ -6,6 +6,7 @@ import (
 
 	"fkteams/common"
 	"fkteams/config"
+	schedulertool "fkteams/internal/adapters/tools/builtin/scheduler"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/ask"
 	"fkteams/tools/command"
@@ -14,7 +15,6 @@ import (
 	"fkteams/tools/fetch"
 	"fkteams/tools/file"
 	"fkteams/tools/git"
-	"fkteams/tools/scheduler"
 	"fkteams/tools/script/bun"
 	"fkteams/tools/script/uv"
 	"fkteams/tools/search"
@@ -195,11 +195,7 @@ func commandToolGroup(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, erro
 }
 
 func schedulerToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
-	s, err := scheduler.InitGlobal(common.SchedulerDir())
-	if err != nil {
-		return nil, fmt.Errorf("初始化调度器工具失败: %w", err)
-	}
-	return s.GetTools()
+	return schedulertool.NewTools(nil).GetTools()
 }
 
 func searchToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {

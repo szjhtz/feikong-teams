@@ -71,7 +71,7 @@ var builtinToolCatalog = []ToolGroupInfo{
 		Description:   "创建、查看和管理自然语言定时任务，适合提醒、周期执行和后台任务。",
 		Category:      "自动化",
 		Builtin:       true,
-		IncludedTools: []string{"schedule_create", "schedule_list", "schedule_cancel"},
+		IncludedTools: []string{"schedule_add", "schedule_list", "schedule_cancel", "schedule_delete"},
 	},
 	{
 		Name:          "search",

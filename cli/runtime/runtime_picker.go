@@ -1,19 +1,19 @@
 package runtime
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"fkteams/agents"
 	"fkteams/appstate"
 
 	"fkteams/internal/adapters/storage/file/history"
+	appschedule "fkteams/internal/app/schedule"
+	domainschedule "fkteams/internal/domain/schedule"
 	"fkteams/memory"
-
-	"fkteams/tools/scheduler"
-
-	"fmt"
-	"os"
-	"path/filepath"
-
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -390,10 +390,10 @@ func runtimeMemoryEntriesFrom(manager appstate.MemoryManager) ([]memory.MemoryEn
 	return manager.List(), nil
 }
 
-func runtimeScheduledTasks(status string) ([]scheduler.ScheduledTask, error) {
-	s := scheduler.Global()
-	if s == nil {
+func runtimeScheduledTasks(status string) ([]domainschedule.Task, error) {
+	service := appschedule.Default()
+	if service == nil {
 		return nil, fmt.Errorf("定时任务调度器未初始化")
 	}
-	return s.GetTasks(status)
+	return service.ListTasks(context.Background(), domainschedule.Status(status))
 }

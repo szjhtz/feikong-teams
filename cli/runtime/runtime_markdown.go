@@ -129,7 +129,7 @@ func runtimeScheduleMarkdown() string {
 	for _, task := range tasks {
 		fmt.Fprintf(&sb, "| `%s` | %s | %s | %s |\n",
 			markdownEscapeTable(task.ID),
-			markdownEscapeTable(task.Status),
+			markdownEscapeTable(string(task.Status)),
 			markdownEscapeTable(truncateRuntimeText(task.Task, 80)),
 			task.NextRunAt.Format("2006-01-02 15:04"),
 		)

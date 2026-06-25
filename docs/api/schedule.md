@@ -30,8 +30,7 @@
         "next_run_at": "2026-06-11T08:00:00+08:00",
         "status": "pending",
         "created_at": "2026-06-10T12:00:00+08:00",
-        "last_run_at": null,
-        "result_path": ""
+        "last_run_at": null
       }
     ],
     "total": 1
@@ -39,7 +38,7 @@
 }
 ```
 
-`tasks` 元素对应调度器的 `ScheduledTask`：
+`tasks` 元素对应调度任务领域模型：
 
 | 字段 | 说明 |
 | ---- | ---- |
@@ -51,7 +50,6 @@
 | `status` | 任务状态 |
 | `created_at` | 创建时间 |
 | `last_run_at` | 上次运行时间，可能为空 |
-| `result_path` | 最新结果文件路径，可能为空 |
 
 **失败响应**：
 
@@ -71,7 +69,7 @@
   "code": 0,
   "message": "success",
   "data": {
-    "message": "任务 task_001 已取消"
+    "message": "task cancelled"
   }
 }
 ```

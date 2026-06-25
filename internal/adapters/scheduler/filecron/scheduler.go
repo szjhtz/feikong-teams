@@ -1,4 +1,4 @@
-package scheduler
+package filecron
 
 import (
 	"context"
@@ -6,32 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	domainschedule "fkteams/internal/domain/schedule"
+	schedulerport "fkteams/internal/ports/scheduler"
 	"fkteams/log"
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 )
-
-// ScheduledTask 定时任务
-type ScheduledTask struct {
-	ID         string     `json:"id"`
-	Task       string     `json:"task"`
-	CronExpr   string     `json:"cron_expr,omitempty"`
-	OneTime    bool       `json:"one_time"`
-	NextRunAt  time.Time  `json:"next_run_at"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
-	LastRunAt  *time.Time `json:"last_run_at,omitempty"`
-	ResultPath string     `json:"result_path,omitempty"`
-}
-
-// ScheduledTaskList 定时任务列表
-type ScheduledTaskList struct {
-	Tasks []ScheduledTask `json:"tasks"`
-}
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
@@ -39,7 +24,7 @@ type Scheduler struct {
 	resultsDir  string
 	mu          sync.RWMutex
 	stopCh      chan struct{}
-	executor    TaskExecutor
+	executor    schedulerport.TaskExecutor
 	running     bool
 	cronParser  cron.Parser
 	semaphore   chan struct{}
@@ -47,44 +32,13 @@ type Scheduler struct {
 	cancelsMu   sync.Mutex
 }
 
-// TaskExecutor 任务执行器接口
-type TaskExecutor interface {
-	Execute(ctx context.Context, taskID string, task string) (string, error)
-}
-
 const (
 	maxConcurrentTasks = 5
 	taskResultTTL      = 7 * 24 * time.Hour
 )
 
-var (
-	globalScheduler *Scheduler
-	schedulerMu     sync.Mutex
-)
-
-// InitGlobal 初始化全局调度器（幂等，失败后可重试）
-func InitGlobal(baseDir string) (*Scheduler, error) {
-	schedulerMu.Lock()
-	defer schedulerMu.Unlock()
-
-	if globalScheduler != nil {
-		return globalScheduler, nil
-	}
-
-	s, err := newScheduler(baseDir)
-	if err != nil {
-		return nil, err
-	}
-	globalScheduler = s
-	return globalScheduler, nil
-}
-
-// Global 获取全局调度器
-func Global() *Scheduler {
-	return globalScheduler
-}
-
-func newScheduler(baseDir string) (*Scheduler, error) {
+// NewScheduler 创建基于文件存储和 cron 计算的调度器。
+func NewScheduler(baseDir string) (*Scheduler, error) {
 	absPath, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
@@ -102,7 +56,7 @@ func newScheduler(baseDir string) (*Scheduler, error) {
 	filePath := filepath.Join(absPath, "scheduled_tasks.json")
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		emptyList := ScheduledTaskList{Tasks: []ScheduledTask{}}
+		emptyList := domainschedule.TaskList{Tasks: []domainschedule.Task{}}
 		data, err := json.MarshalIndent(emptyList, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal task list: %w", err)
@@ -155,8 +109,153 @@ func (s *Scheduler) ComputeNextRun(expr string, after time.Time) (time.Time, err
 	return sched.Next(after), nil
 }
 
+// AddTask 创建调度任务。
+func (s *Scheduler) AddTask(ctx context.Context, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
+	if strings.TrimSpace(req.Task) == "" {
+		return nil, fmt.Errorf("task description is required")
+	}
+	if req.CronExpr == "" && req.ExecuteAt == "" {
+		return nil, fmt.Errorf("must provide cron_expr (recurring) or execute_at (one-time)")
+	}
+	if req.CronExpr != "" && req.ExecuteAt != "" {
+		return nil, fmt.Errorf("cron_expr and execute_at are mutually exclusive")
+	}
+
+	task := domainschedule.Task{
+		ID:        generateTaskID(),
+		Task:      strings.TrimSpace(req.Task),
+		CreatedAt: time.Now(),
+		Status:    domainschedule.StatusPending,
+	}
+
+	if req.CronExpr != "" {
+		expr := strings.TrimSpace(req.CronExpr)
+		nextRun, err := s.ParseCronExpr(expr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cron expression: %w", err)
+		}
+		task.CronExpr = expr
+		task.NextRunAt = nextRun
+	} else {
+		executeAt, err := time.Parse(time.RFC3339, req.ExecuteAt)
+		if err != nil {
+			return nil, fmt.Errorf("invalid time format, use ISO 8601: %w", err)
+		}
+		if executeAt.Before(time.Now()) {
+			return nil, fmt.Errorf("execute_at must be in the future")
+		}
+		task.OneTime = true
+		task.NextRunAt = executeAt
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tasks, err := s.loadTasks()
+	if err != nil {
+		return nil, fmt.Errorf("load task list: %w", err)
+	}
+	tasks.Tasks = append(tasks.Tasks, task)
+	if err := s.saveTasks(tasks); err != nil {
+		return nil, fmt.Errorf("save task list: %w", err)
+	}
+	return &task, nil
+}
+
+// ListTasks 列出调度任务。
+func (s *Scheduler) ListTasks(ctx context.Context, statusFilter domainschedule.Status) ([]domainschedule.Task, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tasks, err := s.loadTasks()
+	if err != nil {
+		return nil, err
+	}
+	if statusFilter == "" {
+		return tasks.Tasks, nil
+	}
+
+	var filtered []domainschedule.Task
+	for _, task := range tasks.Tasks {
+		if task.Status == statusFilter {
+			filtered = append(filtered, task)
+		}
+	}
+	return filtered, nil
+}
+
+// CancelTask 取消尚未执行的任务。
+func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
+	if taskID == "" {
+		return fmt.Errorf("task ID is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tasks, err := s.loadTasks()
+	if err != nil {
+		return fmt.Errorf("load task list: %w", err)
+	}
+
+	for i := range tasks.Tasks {
+		if tasks.Tasks[i].ID != taskID {
+			continue
+		}
+		if tasks.Tasks[i].Status != domainschedule.StatusPending {
+			return fmt.Errorf("task status is %s, only pending tasks can be cancelled", tasks.Tasks[i].Status)
+		}
+		tasks.Tasks[i].Status = domainschedule.StatusCancelled
+		if err := s.saveTasks(tasks); err != nil {
+			return fmt.Errorf("save task list: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("task not found")
+}
+
+// DeleteTask 删除非运行中的任务及其结果。
+func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
+	if taskID == "" {
+		return fmt.Errorf("task ID is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tasks, err := s.loadTasks()
+	if err != nil {
+		return fmt.Errorf("load task list: %w", err)
+	}
+
+	found := false
+	remaining := make([]domainschedule.Task, 0, len(tasks.Tasks))
+	for _, task := range tasks.Tasks {
+		if task.ID != taskID {
+			remaining = append(remaining, task)
+			continue
+		}
+		if task.Status == domainschedule.StatusRunning {
+			return fmt.Errorf("cannot delete a running task, cancel it first")
+		}
+		found = true
+	}
+	if !found {
+		return fmt.Errorf("task not found")
+	}
+
+	if err := os.RemoveAll(s.taskDir(taskID)); err != nil {
+		return fmt.Errorf("remove task dir: %w", err)
+	}
+	tasks.Tasks = remaining
+	if err := s.saveTasks(tasks); err != nil {
+		return fmt.Errorf("save task list: %w", err)
+	}
+	return nil
+}
+
 // SetExecutor 设置任务执行器
-func (s *Scheduler) SetExecutor(executor TaskExecutor) {
+func (s *Scheduler) SetExecutor(executor schedulerport.TaskExecutor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.executor = executor
@@ -189,8 +288,8 @@ func (s *Scheduler) recoverStaleRunningTasks() {
 
 	changed := false
 	for i := range tasks.Tasks {
-		if tasks.Tasks[i].Status == "running" {
-			tasks.Tasks[i].Status = "pending"
+		if tasks.Tasks[i].Status == domainschedule.StatusRunning {
+			tasks.Tasks[i].Status = domainschedule.StatusPending
 			changed = true
 			log.Printf("[scheduler] recover stale task: %s → pending", tasks.Tasks[i].ID)
 		}
@@ -250,7 +349,7 @@ func (s *Scheduler) nextCheckDuration() time.Duration {
 	now := time.Now()
 	minWait := 30 * time.Second
 	for _, t := range tasks.Tasks {
-		if t.Status != "pending" {
+		if t.Status != domainschedule.StatusPending {
 			continue
 		}
 		wait := t.NextRunAt.Sub(now)
@@ -291,7 +390,7 @@ func (s *Scheduler) checkAndExecute() {
 	now := time.Now()
 	for i := range tasks.Tasks {
 		task := &tasks.Tasks[i]
-		if task.Status != "pending" {
+		if task.Status != domainschedule.StatusPending {
 			continue
 		}
 		if now.Before(task.NextRunAt) {
@@ -307,7 +406,7 @@ func (s *Scheduler) checkAndExecute() {
 			continue
 		}
 
-		var currentTask *ScheduledTask
+		var currentTask *domainschedule.Task
 		for j := range currentTasks.Tasks {
 			if currentTasks.Tasks[j].ID == task.ID {
 				currentTask = &currentTasks.Tasks[j]
@@ -315,12 +414,12 @@ func (s *Scheduler) checkAndExecute() {
 			}
 		}
 
-		if currentTask == nil || currentTask.Status != "pending" {
+		if currentTask == nil || currentTask.Status != domainschedule.StatusPending {
 			s.mu.Unlock()
 			continue
 		}
 
-		currentTask.Status = "running"
+		currentTask.Status = domainschedule.StatusRunning
 		currentTask.LastRunAt = &now
 		if saveErr := s.saveTasks(currentTasks); saveErr != nil {
 			s.mu.Unlock()
@@ -332,7 +431,7 @@ func (s *Scheduler) checkAndExecute() {
 		// 通过 semaphore 控制并发
 		select {
 		case s.semaphore <- struct{}{}:
-			go func(tID, tContent, tCron string, tOneTime bool, tExec TaskExecutor) {
+			go func(tID, tContent, tCron string, tOneTime bool, tExec schedulerport.TaskExecutor) {
 				defer func() { <-s.semaphore }()
 				s.executeTask(tID, tContent, tCron, tOneTime, tExec)
 			}(currentTask.ID, currentTask.Task, currentTask.CronExpr, currentTask.OneTime, executor)
@@ -344,7 +443,7 @@ func (s *Scheduler) checkAndExecute() {
 			if fallbackTasks != nil {
 				for j := range fallbackTasks.Tasks {
 					if fallbackTasks.Tasks[j].ID == currentTask.ID {
-						fallbackTasks.Tasks[j].Status = "pending"
+						fallbackTasks.Tasks[j].Status = domainschedule.StatusPending
 						_ = s.saveTasks(fallbackTasks)
 						break
 					}
@@ -355,7 +454,7 @@ func (s *Scheduler) checkAndExecute() {
 	}
 }
 
-func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr string, oneTime bool, executor TaskExecutor) {
+func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr string, oneTime bool, executor schedulerport.TaskExecutor) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -386,29 +485,28 @@ func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr stri
 			now := time.Now()
 			tasks.Tasks[i].LastRunAt = &now
 
-			tasks.Tasks[i].ResultPath = s.taskResultPath(taskID)
 			if err != nil {
-				tasks.Tasks[i].Status = "failed"
+				tasks.Tasks[i].Status = domainschedule.StatusFailed
 				log.Printf("[scheduler] task failed: %s, err=%v", taskID, err)
 			} else {
 				if oneTime {
-					tasks.Tasks[i].Status = "completed"
+					tasks.Tasks[i].Status = domainschedule.StatusCompleted
 				} else {
 					nextRun, cronErr := s.ComputeNextRun(cronExpr, now)
 					if cronErr != nil {
-						tasks.Tasks[i].Status = "failed"
+						tasks.Tasks[i].Status = domainschedule.StatusFailed
 						log.Printf("[scheduler] cron parse failed: taskID=%s, err=%v", taskID, cronErr)
 					} else {
 						// 避免紧贴当前时间重复触发
 						if nextRun.Sub(now) < 30*time.Second {
 							nextRun, cronErr = s.ComputeNextRun(cronExpr, nextRun)
 							if cronErr != nil {
-								tasks.Tasks[i].Status = "failed"
+								tasks.Tasks[i].Status = domainschedule.StatusFailed
 								log.Printf("[scheduler] cron parse failed (skip): taskID=%s, err=%v", taskID, cronErr)
 								break
 							}
 						}
-						tasks.Tasks[i].Status = "pending"
+						tasks.Tasks[i].Status = domainschedule.StatusPending
 						tasks.Tasks[i].NextRunAt = nextRun
 					}
 				}
@@ -434,11 +532,11 @@ func (s *Scheduler) cleanupExpiredTasks() {
 	}
 
 	cutoff := time.Now().Add(-taskResultTTL)
-	var remaining []ScheduledTask
+	var remaining []domainschedule.Task
 	removed := 0
 
 	for _, t := range tasks.Tasks {
-		if t.Status == "completed" || t.Status == "failed" || t.Status == "cancelled" {
+		if t.Status == domainschedule.StatusCompleted || t.Status == domainschedule.StatusFailed || t.Status == domainschedule.StatusCancelled {
 			refTime := t.LastRunAt
 			if refTime == nil {
 				refTime = &t.CreatedAt
@@ -475,31 +573,8 @@ func (s *Scheduler) CancelExecution(taskID string) {
 	s.cancelsMu.Unlock()
 }
 
-// GetTasks 获取任务列表（供外部查询）
-func (s *Scheduler) GetTasks(statusFilter string) ([]ScheduledTask, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	tasks, err := s.loadTasks()
-	if err != nil {
-		return nil, err
-	}
-
-	if statusFilter == "" {
-		return tasks.Tasks, nil
-	}
-
-	var filtered []ScheduledTask
-	for _, t := range tasks.Tasks {
-		if t.Status == statusFilter {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered, nil
-}
-
 // loadTaskByID 在持有锁的情况下根据 ID 查找任务
-func (s *Scheduler) loadTaskByID(taskID string) (*ScheduledTask, error) {
+func (s *Scheduler) loadTaskByID(taskID string) (*domainschedule.Task, error) {
 	tasks, err := s.loadTasks()
 	if err != nil {
 		return nil, err
@@ -512,13 +587,13 @@ func (s *Scheduler) loadTaskByID(taskID string) (*ScheduledTask, error) {
 	return nil, nil
 }
 
-func (s *Scheduler) loadTasks() (*ScheduledTaskList, error) {
+func (s *Scheduler) loadTasks() (*domainschedule.TaskList, error) {
 	data, err := os.ReadFile(s.filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read task list: %w", err)
 	}
 
-	var list ScheduledTaskList
+	var list domainschedule.TaskList
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, fmt.Errorf("failed to parse task list: %w", err)
 	}
@@ -526,7 +601,7 @@ func (s *Scheduler) loadTasks() (*ScheduledTaskList, error) {
 	return &list, nil
 }
 
-func (s *Scheduler) saveTasks(list *ScheduledTaskList) error {
+func (s *Scheduler) saveTasks(list *domainschedule.TaskList) error {
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal task list: %w", err)
@@ -544,7 +619,7 @@ func (s *Scheduler) saveTasks(list *ScheduledTaskList) error {
 }
 
 // ReadTaskResult 读取任务执行结果。
-func (s *Scheduler) ReadTaskResult(taskID string) (string, error) {
+func (s *Scheduler) ReadTaskResult(ctx context.Context, taskID string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -555,13 +630,66 @@ func (s *Scheduler) ReadTaskResult(taskID string) (string, error) {
 	if task == nil {
 		return "", fmt.Errorf("task not found: %s", taskID)
 	}
-	if task.ResultPath == "" {
+	resultPath := s.taskResultPath(taskID)
+	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("task %s has no result yet", taskID)
 	}
 
-	data, err := os.ReadFile(task.ResultPath)
+	data, err := os.ReadFile(resultPath)
 	if err != nil {
 		return "", fmt.Errorf("read result file: %w", err)
+	}
+	return string(data), nil
+}
+
+// ListHistoryEntries 列出任务的历史结果文件。
+func (s *Scheduler) ListHistoryEntries(ctx context.Context, taskID string) ([]domainschedule.HistoryEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	historyDir := filepath.Join(s.taskDir(taskID), "history")
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read history dir: %w", err)
+	}
+
+	var result []domainschedule.HistoryEntry
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		name := entry.Name()
+		timeStr := ""
+		if len(name) >= 15 {
+			timeStr = fmt.Sprintf("%s-%s-%s %s:%s:%s",
+				name[0:4], name[4:6], name[6:8],
+				name[9:11], name[11:13], name[13:15])
+		}
+		result = append(result, domainschedule.HistoryEntry{
+			Filename: name,
+			Time:     timeStr,
+		})
+	}
+	return result, nil
+}
+
+// ReadHistoryFile 读取指定历史结果文件。
+func (s *Scheduler) ReadHistoryFile(ctx context.Context, taskID string, filename string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	filename = filepath.Base(filename)
+	if filepath.Ext(filename) != ".md" {
+		return "", fmt.Errorf("invalid file type")
+	}
+
+	filePath := filepath.Join(s.taskDir(taskID), "history", filename)
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read history file: %w", err)
 	}
 	return string(data), nil
 }

@@ -34,8 +34,10 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
 internal/app/               # 应用用例层，入口只调用这里
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
-  schedule/                 #   定时任务执行用例，调度任务通过 chat service 执行
+  schedule/                 #   定时任务用例入口，工具/HTTP/CLI 只调用这里
                             #   用例层禁止依赖 agentcore 旧门面
+internal/domain/
+  schedule/                 #   Task / Status / HistoryEntry 等调度领域模型
 internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
   registry/                 #   runtime engine 注册表和默认 runtime 选择
@@ -45,6 +47,11 @@ internal/runtime/           # 运行时无关内核
 internal/ports/             # 运行时无关端口契约
   hooks/                    #   HookPoint、HookHandler 和明确 payload 类型
   runtime/                  #   Runtime / Engine / Runner / Model / Tool 等端口
+  scheduler/                #   Scheduler / TaskExecutor 调度端口
+internal/adapters/scheduler/
+  filecron/                 #   文件存储 + cron 轮询调度器
+internal/adapters/tools/
+  builtin/scheduler/        #   schedule_* 工具适配器，只委托 app/schedule
 internal/adapters/runtime/
   eino/                     # CloudWeGo Eino ADK 适配层，唯一允许 import Eino 的目录
     runner.go               #   ADK AgentEvent -> events 协议转换，HITL resume 适配
@@ -68,6 +75,7 @@ tools/                      # 工具系统
   registry.go               #   ToolGroupRegistry，注册和解析工具组
   tools.go                  #   GetToolsByName() — 委托注册表和 MCP fallback
   metadata.go               #   ClassifyTools() — 标记只读/破坏性工具
+                            #   定时任务工具适配器位于 internal/adapters/tools/builtin/scheduler
 lifecycle/                  # 应用生命周期管理
   lifecycle.go              #   Application — Init → Setup → Start → Ready → [wait] → Stop → Cleanup
                             #   Service 接口，服务按序启动、逆序停止（LIFO）

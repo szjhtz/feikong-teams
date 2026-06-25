@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"fkteams/internal/adapters/storage/file/history"
+	appschedule "fkteams/internal/app/schedule"
 
-	"fkteams/tools/scheduler"
 	"fkteams/tui"
 
 	"fmt"
@@ -391,14 +391,13 @@ func (m runtimeModel) clearRuntimeMemory() runtimeModel {
 }
 
 func (m runtimeModel) cancelRuntimeSchedule(taskID string) runtimeModel {
-	s := scheduler.Global()
-	if s == nil {
+	service := appschedule.Default()
+	if service == nil {
 		m.appendBlock(runtimeBlockError, "取消定时任务失败", "定时任务调度器未初始化")
 		return m
 	}
-	resp, _ := s.ScheduleCancel(context.Background(), &scheduler.ScheduleCancelRequest{TaskID: taskID})
-	if resp.ErrorMessage != "" {
-		m.appendBlock(runtimeBlockError, "取消定时任务失败", resp.ErrorMessage)
+	if err := service.CancelTask(context.Background(), taskID); err != nil {
+		m.appendBlock(runtimeBlockError, "取消定时任务失败", err.Error())
 		return m
 	}
 	m.appendBlock(runtimeBlockSystem, "定时任务", "已取消: "+taskID)
@@ -406,14 +405,13 @@ func (m runtimeModel) cancelRuntimeSchedule(taskID string) runtimeModel {
 }
 
 func (m runtimeModel) deleteRuntimeSchedule(taskID string) runtimeModel {
-	s := scheduler.Global()
-	if s == nil {
+	service := appschedule.Default()
+	if service == nil {
 		m.appendBlock(runtimeBlockError, "删除定时任务失败", "定时任务调度器未初始化")
 		return m
 	}
-	resp, _ := s.ScheduleDelete(context.Background(), &scheduler.ScheduleDeleteRequest{TaskID: taskID})
-	if resp.ErrorMessage != "" {
-		m.appendBlock(runtimeBlockError, "删除定时任务失败", resp.ErrorMessage)
+	if err := service.DeleteTask(context.Background(), taskID); err != nil {
+		m.appendBlock(runtimeBlockError, "删除定时任务失败", err.Error())
 		return m
 	}
 	m.appendBlock(runtimeBlockSystem, "定时任务", "已删除: "+taskID)

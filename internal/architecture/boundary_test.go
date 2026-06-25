@@ -367,6 +367,71 @@ func TestToolResolutionUsesRegistry(t *testing.T) {
 	t.Fatal("GetToolsByNameWithCleaner not found")
 }
 
+func TestSchedulerBoundariesUseAppAndAdapters(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	legacyDir := filepath.Join(root, "tools", "scheduler")
+	if entries, err := os.ReadDir(legacyDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+				t.Errorf("tools/scheduler/%s exists; scheduler tool adapter belongs under internal/adapters/tools/builtin/scheduler", entry.Name())
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "release", "node_modules", "web":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			importPath := strings.Trim(spec.Path.Value, `"`)
+			if importPath == "fkteams/tools/scheduler" {
+				t.Errorf("%s imports removed tools/scheduler package; use app/schedule or scheduler adapters", rel)
+			}
+			if strings.HasPrefix(rel, "internal/adapters/tools/builtin/scheduler/") &&
+				strings.HasPrefix(importPath, "fkteams/internal/adapters/scheduler/") {
+				t.Errorf("%s imports scheduler storage adapter; tool adapter must call app/schedule service", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registryPath := filepath.Join(root, "tools", "registry.go")
+	content, err := os.ReadFile(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, forbidden := range []string{"InitGlobal(", "NewScheduler("} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("tools/registry.go initializes scheduler with %s; scheduler lifecycle belongs to service composition", forbidden)
+		}
+	}
+}
+
 func assertNotImported(t *testing.T, rel, importPath string, forbidden []string) {
 	t.Helper()
 	for _, prefix := range forbidden {
