@@ -81,6 +81,7 @@ internal/adapters/transport/
   cli/tui/                  #   CLI 终端 UI 组件、Markdown 渲染和交互控件
   cli/report/               #   CLI Markdown 报告导出 HTML 适配器
   cli/update/               #   CLI 自更新、下载、校验和替换适配器
+  channel/                  #   Discord / QQ / 微信消息通道适配器和 Bridge
 internal/adapters/runtime/
   eino/                     # CloudWeGo Eino ADK 适配层，唯一允许 import Eino 的目录
     runner.go               #   ADK AgentEvent -> events 协议转换，HITL resume 适配
@@ -105,10 +106,6 @@ server/                     # HTTP 服务（Gin）
   handler/                  #   请求处理器（chat / websocket / stream / files / sessions / memory / config）
                             #   handler 使用 internal/ports/runtime、domain/message 与 app/chat，禁止依赖 agentcore 旧门面
   middleware/               #   CORS / JWT 认证 / API Key 认证 / Body Limit
-channels/                   # 消息通道桥接
-  channel.go                #   Channel 接口 + Manager 管理器 + Factory 工厂注册
-  bridge.go                 #   Bridge — 连接通道和引擎，goroutine 串行处理会话消息
-                            #   通道桥接使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面
 events/                     # 事件协议与展示/历史
   types.go                  #   domain/event 事件类型别名和常量导出
   facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
@@ -178,8 +175,9 @@ web/                        # 内嵌前端（//go:embed）
 
 ### 通道
 
-- 通道实现必须通过 `channels.RegisterFactory` 注册工厂
-- 通道消息处理通过 `Bridge` 桥接器路由到引擎
+- 通道实现必须通过 `internal/adapters/transport/channel.RegisterFactory` 注册工厂
+- 通道消息处理通过 `internal/adapters/transport/channel.Bridge` 桥接器路由到应用用例
+- 禁止恢复根 `channels` 包；Discord/QQ/微信实现属于 `internal/adapters/transport/channel`
 
 ### 模型提供者
 

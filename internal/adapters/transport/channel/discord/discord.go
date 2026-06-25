@@ -2,7 +2,7 @@ package discord
 
 import (
 	"context"
-	"fkteams/channels"
+	channel "fkteams/internal/adapters/transport/channel"
 	"fkteams/internal/runtime/env"
 	"fkteams/internal/runtime/log"
 	"net/http"
@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	channels.RegisterFactory("discord", NewChannel)
+	channel.RegisterFactory("discord", NewChannel)
 }
 
 // Channel Discord 机器人通道
@@ -26,14 +26,14 @@ type Channel struct {
 	allowFrom map[string]bool
 
 	session *discordgo.Session
-	handler channels.MessageHandler
+	handler channel.MessageHandler
 	running atomic.Bool
 	botID   string
 	mu      sync.Mutex
 }
 
 // NewChannel 创建 Discord 通道实例
-func NewChannel(cfg channels.ChannelConfig, handler channels.MessageHandler) (channels.Channel, error) {
+func NewChannel(cfg channel.ChannelConfig, handler channel.MessageHandler) (channel.Channel, error) {
 	c := &Channel{
 		token:   cfg.Extra["token"],
 		handler: handler,
@@ -118,7 +118,7 @@ func (c *Channel) Stop(_ context.Context) error {
 }
 
 // Send 向指定频道发送消息
-func (c *Channel) Send(_ context.Context, chatID string, msg channels.Message) error {
+func (c *Channel) Send(_ context.Context, chatID string, msg channel.Message) error {
 	c.mu.Lock()
 	session := c.session
 	c.mu.Unlock()
@@ -183,12 +183,12 @@ func (c *Channel) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 		return
 	}
 
-	inMsg := channels.Message{Content: content, Attachments: attachments}
+	inMsg := channel.Message{Content: content, Attachments: attachments}
 	if len(attachments) > 0 {
 		inMsg.Type = attachments[0].Type
 	}
 
-	ctx := channels.WithChannelName(context.Background(), "discord")
+	ctx := channel.WithChannelName(context.Background(), "discord")
 	go func() {
 		// 启动 typing 指示器，每 8 秒刷新一次直到处理完成
 		typingCtx, cancelTyping := context.WithCancel(ctx)
@@ -241,14 +241,14 @@ func cleanMentions(content, botID string) string {
 }
 
 // extractAttachments 从 Discord 消息附件中提取 Attachment 列表
-func extractAttachments(atts []*discordgo.MessageAttachment) []channels.Attachment {
+func extractAttachments(atts []*discordgo.MessageAttachment) []channel.Attachment {
 	if len(atts) == 0 {
 		return nil
 	}
-	var result []channels.Attachment
+	var result []channel.Attachment
 	for _, a := range atts {
 		t := guessAttachmentType(a.Filename, a.ContentType)
-		result = append(result, channels.Attachment{
+		result = append(result, channel.Attachment{
 			Type:     t,
 			URL:      a.URL,
 			FileName: a.Filename,
@@ -258,30 +258,30 @@ func extractAttachments(atts []*discordgo.MessageAttachment) []channels.Attachme
 }
 
 // guessAttachmentType 根据文件名和 Content-Type 推断附件类型
-func guessAttachmentType(fileName, contentType string) channels.MessageType {
+func guessAttachmentType(fileName, contentType string) channel.MessageType {
 	ct := strings.ToLower(contentType)
 	switch {
 	case strings.HasPrefix(ct, "image/"):
-		return channels.MsgImage
+		return channel.MsgImage
 	case strings.HasPrefix(ct, "video/"):
-		return channels.MsgVideo
+		return channel.MsgVideo
 	case strings.HasPrefix(ct, "audio/"):
-		return channels.MsgAudio
+		return channel.MsgAudio
 	}
 	name := strings.ToLower(fileName)
 	switch {
 	case strings.HasSuffix(name, ".jpg"), strings.HasSuffix(name, ".jpeg"),
 		strings.HasSuffix(name, ".png"), strings.HasSuffix(name, ".gif"),
 		strings.HasSuffix(name, ".webp"):
-		return channels.MsgImage
+		return channel.MsgImage
 	case strings.HasSuffix(name, ".mp4"), strings.HasSuffix(name, ".avi"),
 		strings.HasSuffix(name, ".mov"), strings.HasSuffix(name, ".mkv"):
-		return channels.MsgVideo
+		return channel.MsgVideo
 	case strings.HasSuffix(name, ".mp3"), strings.HasSuffix(name, ".wav"),
 		strings.HasSuffix(name, ".ogg"), strings.HasSuffix(name, ".flac"):
-		return channels.MsgAudio
+		return channel.MsgAudio
 	default:
-		return channels.MsgFile
+		return channel.MsgFile
 	}
 }
 

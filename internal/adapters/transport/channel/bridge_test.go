@@ -1,12 +1,12 @@
-package channels
+package channel
 
 import (
 	"context"
 	"strings"
 	"testing"
 
-	"fkteams/events"
 	domainmessage "fkteams/internal/domain/message"
+	"fkteams/internal/runtime/events"
 )
 
 func TestBuildUserInputCombinesContentAndAttachments(t *testing.T) {

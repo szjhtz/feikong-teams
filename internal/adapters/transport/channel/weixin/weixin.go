@@ -2,8 +2,8 @@ package weixin
 
 import (
 	"context"
-	"fkteams/channels"
-	wechatbot "fkteams/channels/weixin/sdk"
+	channel "fkteams/internal/adapters/transport/channel"
+	wechatbot "fkteams/internal/adapters/transport/channel/weixin/sdk"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"os"
@@ -16,7 +16,7 @@ import (
 )
 
 func init() {
-	channels.RegisterFactory("weixin", NewChannel)
+	channel.RegisterFactory("weixin", NewChannel)
 }
 
 // Channel 微信机器人通道
@@ -27,7 +27,7 @@ type Channel struct {
 	allowFrom map[string]bool
 
 	bot     *wechatbot.Bot
-	handler channels.MessageHandler
+	handler channel.MessageHandler
 	running atomic.Bool
 	cancel  context.CancelFunc
 	mu      sync.Mutex
@@ -37,7 +37,7 @@ type Channel struct {
 }
 
 // NewChannel 创建微信通道实例
-func NewChannel(cfg channels.ChannelConfig, handler channels.MessageHandler) (channels.Channel, error) {
+func NewChannel(cfg channel.ChannelConfig, handler channel.MessageHandler) (channel.Channel, error) {
 	c := &Channel{
 		baseURL:       cfg.Extra["base_url"],
 		credPath:      cfg.Extra["cred_path"],
@@ -141,7 +141,7 @@ func (c *Channel) Stop(_ context.Context) error {
 }
 
 // Send 向指定用户发送消息
-func (c *Channel) Send(ctx context.Context, chatID string, msg channels.Message) error {
+func (c *Channel) Send(ctx context.Context, chatID string, msg channel.Message) error {
 	c.mu.Lock()
 	bot := c.bot
 	c.mu.Unlock()
@@ -168,27 +168,27 @@ func (c *Channel) onMessage(bot *wechatbot.Bot, msg *wechatbot.IncomingMessage) 
 	}
 
 	content := strings.TrimSpace(msg.Text)
-	var attachments []channels.Attachment
+	var attachments []channel.Attachment
 
 	for _, img := range msg.Images {
-		a := channels.Attachment{Type: channels.MsgImage}
+		a := channel.Attachment{Type: channel.MsgImage}
 		if img.URL != "" {
 			a.URL = img.URL
 		}
 		attachments = append(attachments, a)
 	}
 	for _, v := range msg.Voices {
-		a := channels.Attachment{Type: channels.MsgAudio}
+		a := channel.Attachment{Type: channel.MsgAudio}
 		_ = v
 		attachments = append(attachments, a)
 	}
 	for _, vid := range msg.Videos {
-		a := channels.Attachment{Type: channels.MsgVideo}
+		a := channel.Attachment{Type: channel.MsgVideo}
 		_ = vid
 		attachments = append(attachments, a)
 	}
 	for _, f := range msg.Files {
-		a := channels.Attachment{Type: channels.MsgFile, FileName: f.FileName}
+		a := channel.Attachment{Type: channel.MsgFile, FileName: f.FileName}
 		attachments = append(attachments, a)
 	}
 
@@ -196,12 +196,12 @@ func (c *Channel) onMessage(bot *wechatbot.Bot, msg *wechatbot.IncomingMessage) 
 		return
 	}
 
-	inMsg := channels.Message{Content: content, Attachments: attachments}
+	inMsg := channel.Message{Content: content, Attachments: attachments}
 	if len(attachments) > 0 {
 		inMsg.Type = attachments[0].Type
 	}
 
-	msgCtx := channels.WithChannelName(context.Background(), "weixin")
+	msgCtx := channel.WithChannelName(context.Background(), "weixin")
 	// 启动 typing 指示器（持续刷新，直到 Send 时停止）
 	c.startTyping(bot, msg.UserID)
 	c.handler(msgCtx, msg.UserID, msg.UserID, inMsg, false)

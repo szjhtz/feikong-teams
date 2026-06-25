@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"fkteams/channels/weixin/sdk/auth"
-	"fkteams/channels/weixin/sdk/crypto"
-	"fkteams/channels/weixin/sdk/protocol"
+	"fkteams/internal/adapters/transport/channel/weixin/sdk/auth"
+	"fkteams/internal/adapters/transport/channel/weixin/sdk/crypto"
+	"fkteams/internal/adapters/transport/channel/weixin/sdk/protocol"
 )
 
 // MessageHandler 处理收到的用户消息。

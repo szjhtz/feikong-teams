@@ -2,7 +2,7 @@ package qq
 
 import (
 	"context"
-	"fkteams/channels"
+	channel "fkteams/internal/adapters/transport/channel"
 	"fkteams/internal/runtime/log"
 	"strings"
 	"sync"
@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	channels.RegisterFactory("qq", NewChannel)
+	channel.RegisterFactory("qq", NewChannel)
 }
 
 // chatState 保存每个会话的最近消息 ID 和序号（用于被动回复）
@@ -35,7 +35,7 @@ type Channel struct {
 	sandbox   bool
 
 	api     openapi.OpenAPI
-	handler channels.MessageHandler
+	handler channel.MessageHandler
 	running atomic.Bool
 	cancel  context.CancelFunc
 
@@ -49,7 +49,7 @@ type Channel struct {
 }
 
 // NewChannel 创建 QQ 通道实例
-func NewChannel(cfg channels.ChannelConfig, handler channels.MessageHandler) (channels.Channel, error) {
+func NewChannel(cfg channel.ChannelConfig, handler channel.MessageHandler) (channel.Channel, error) {
 	return &Channel{
 		appID:     cfg.Extra["app_id"],
 		appSecret: cfg.Extra["app_secret"],
@@ -122,7 +122,7 @@ func (c *Channel) Stop(_ context.Context) error {
 }
 
 // Send 向指定会话发送消息（支持文本和多媒体）
-func (c *Channel) Send(ctx context.Context, chatID string, msg channels.Message) error {
+func (c *Channel) Send(ctx context.Context, chatID string, msg channel.Message) error {
 	isGroup := strings.HasPrefix(chatID, "group:")
 	targetID := strings.TrimPrefix(chatID, "group:")
 	targetID = strings.TrimPrefix(targetID, "c2c:")
@@ -131,7 +131,7 @@ func (c *Channel) Send(ctx context.Context, chatID string, msg channels.Message)
 	seq := state.msgSeq.Add(1)
 
 	// 富媒体消息（图片、语音、视频、文件）
-	if msg.Type != channels.MsgText && len(msg.Attachments) > 0 {
+	if msg.Type != channel.MsgText && len(msg.Attachments) > 0 {
 		for _, att := range msg.Attachments {
 			richMsg := &dto.RichMediaMessage{
 				FileType:   qqFileType(att.Type),
@@ -178,13 +178,13 @@ func (c *Channel) Send(ctx context.Context, chatID string, msg channels.Message)
 }
 
 // qqFileType 将通用消息类型映射为 QQ 富媒体文件类型
-func qqFileType(t channels.MessageType) uint64 {
+func qqFileType(t channel.MessageType) uint64 {
 	switch t {
-	case channels.MsgImage:
+	case channel.MsgImage:
 		return 1
-	case channels.MsgVideo:
+	case channel.MsgVideo:
 		return 2
-	case channels.MsgAudio:
+	case channel.MsgAudio:
 		return 3
 	default:
 		return 1
@@ -208,12 +208,12 @@ func (c *Channel) c2cMessageHandler() event.C2CMessageEventHandler {
 			return nil
 		}
 
-		inMsg := channels.Message{Content: content, Attachments: attachments}
+		inMsg := channel.Message{Content: content, Attachments: attachments}
 		if len(attachments) > 0 {
 			inMsg.Type = attachments[0].Type
 		}
 
-		ctx := channels.WithChannelName(context.Background(), "qq")
+		ctx := channel.WithChannelName(context.Background(), "qq")
 		go c.handler(ctx, chatID, msg.Author.ID, inMsg, false)
 		return nil
 	}
@@ -236,26 +236,26 @@ func (c *Channel) groupATMessageHandler() event.GroupATMessageEventHandler {
 			return nil
 		}
 
-		inMsg := channels.Message{Content: content, Attachments: attachments}
+		inMsg := channel.Message{Content: content, Attachments: attachments}
 		if len(attachments) > 0 {
 			inMsg.Type = attachments[0].Type
 		}
 
-		ctx := channels.WithChannelName(context.Background(), "qq")
+		ctx := channel.WithChannelName(context.Background(), "qq")
 		go c.handler(ctx, chatID, msg.Author.ID, inMsg, true)
 		return nil
 	}
 }
 
 // extractAttachments 从 QQ 消息中提取附件
-func extractAttachments(msg *dto.Message) []channels.Attachment {
+func extractAttachments(msg *dto.Message) []channel.Attachment {
 	if len(msg.Attachments) == 0 {
 		return nil
 	}
-	var atts []channels.Attachment
+	var atts []channel.Attachment
 	for _, a := range msg.Attachments {
 		t := guessAttachmentType(a.URL, a.FileName)
-		atts = append(atts, channels.Attachment{
+		atts = append(atts, channel.Attachment{
 			Type:     t,
 			URL:      a.URL,
 			FileName: a.FileName,
@@ -265,7 +265,7 @@ func extractAttachments(msg *dto.Message) []channels.Attachment {
 }
 
 // guessAttachmentType 根据文件名或 URL 推断附件类型
-func guessAttachmentType(url, fileName string) channels.MessageType {
+func guessAttachmentType(url, fileName string) channel.MessageType {
 	name := strings.ToLower(fileName)
 	if name == "" {
 		name = strings.ToLower(url)
@@ -274,16 +274,16 @@ func guessAttachmentType(url, fileName string) channels.MessageType {
 	case strings.HasSuffix(name, ".jpg"), strings.HasSuffix(name, ".jpeg"),
 		strings.HasSuffix(name, ".png"), strings.HasSuffix(name, ".gif"),
 		strings.HasSuffix(name, ".webp"), strings.HasSuffix(name, ".bmp"):
-		return channels.MsgImage
+		return channel.MsgImage
 	case strings.HasSuffix(name, ".mp4"), strings.HasSuffix(name, ".avi"),
 		strings.HasSuffix(name, ".mov"), strings.HasSuffix(name, ".mkv"):
-		return channels.MsgVideo
+		return channel.MsgVideo
 	case strings.HasSuffix(name, ".mp3"), strings.HasSuffix(name, ".wav"),
 		strings.HasSuffix(name, ".silk"), strings.HasSuffix(name, ".amr"),
 		strings.HasSuffix(name, ".ogg"):
-		return channels.MsgAudio
+		return channel.MsgAudio
 	default:
-		return channels.MsgFile
+		return channel.MsgFile
 	}
 }
 

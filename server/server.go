@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"fkteams/channels"
-	_ "fkteams/channels/discord"
-	_ "fkteams/channels/qq"
-	_ "fkteams/channels/weixin"
+	channel "fkteams/internal/adapters/transport/channel"
+	_ "fkteams/internal/adapters/transport/channel/discord"
+	_ "fkteams/internal/adapters/transport/channel/qq"
+	_ "fkteams/internal/adapters/transport/channel/weixin"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
@@ -160,7 +160,7 @@ func run(mode serverMode, opts *ServeOptions) error {
 	app.RegisterService(httpSvc)
 
 	// 注册消息通道
-	if svc, err := channels.SetupWithState(cfg.Channels.List(), state); err != nil {
+	if svc, err := channel.SetupWithState(cfg.Channels.List(), state); err != nil {
 		return fmt.Errorf("setup channels: %w", err)
 	} else if svc != nil {
 		app.RegisterService(svc)

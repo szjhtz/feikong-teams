@@ -1,5 +1,5 @@
-// Package channels 提供多平台消息通道的抽象接口和管理器
-package channels
+// Package channel 提供多平台消息通道的抽象接口和管理器。
+package channel
 
 import (
 	"context"

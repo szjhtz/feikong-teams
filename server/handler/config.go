@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"fkteams/channels"
 	memorymodel "fkteams/internal/adapters/model/memory"
+	channel "fkteams/internal/adapters/transport/channel"
 	"fkteams/internal/app/agent/catalog"
 	agentcommon "fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appstate"
@@ -155,7 +155,7 @@ func UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		agents.ReloadRegistry()
 		ClearRunnerCache()
 		mcp.ClearCache()
-		channels.ResetAllBridges()
+		channel.ResetAllBridges()
 		resetMemoryLLM(state)
 
 		OK(c, gin.H{"auth_changed": authChanged})

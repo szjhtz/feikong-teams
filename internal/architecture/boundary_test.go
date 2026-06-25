@@ -218,6 +218,15 @@ func TestRootCLIPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootChannelsPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "channels")); err == nil {
+		t.Fatal("root channels package exists; use internal/adapters/transport/channel")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -318,6 +327,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/cli" || strings.HasPrefix(importPath, "fkteams/cli/") {
 		t.Errorf("%s imports removed root cli package; use internal/adapters/transport/cli/runtime", rel)
+	}
+	if importPath == "fkteams/channels" || strings.HasPrefix(importPath, "fkteams/channels/") {
+		t.Errorf("%s imports removed root channels package; use internal/adapters/transport/channel", rel)
 	}
 }
 
@@ -947,7 +959,7 @@ func TestMemoryAndTestModelUseDomainAndRuntimePorts(t *testing.T) {
 
 func TestChannelsUseDomainAndRuntimePorts(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	err := filepath.WalkDir(filepath.Join(root, "channels"), func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(filepath.Join(root, "internal", "adapters", "transport", "channel"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

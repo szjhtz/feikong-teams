@@ -1,10 +1,9 @@
-package channels
+package channel
 
 import (
 	"context"
 	"fmt"
 
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/appdata"
@@ -12,6 +11,7 @@ import (
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/tools/approval"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/log"
 	"path/filepath"
 	"strings"

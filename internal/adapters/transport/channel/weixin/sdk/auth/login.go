@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"fkteams/channels/weixin/sdk/protocol"
+	"fkteams/internal/adapters/transport/channel/weixin/sdk/protocol"
 )
 
 // Credentials 表示机器人认证数据。
