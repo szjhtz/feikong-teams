@@ -2,13 +2,13 @@ package eino
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 )
 
-func WrapAgent(agent adk.Agent) agentcore.Agent {
+func WrapAgent(agent adk.Agent) runtimeport.Agent {
 	if agent == nil {
 		return nil
 	}
@@ -16,7 +16,7 @@ func WrapAgent(agent adk.Agent) agentcore.Agent {
 	return WrapNamedAgent(agent.Name(ctx), agent.Description(ctx), agent)
 }
 
-func WrapNamedAgent(name, description string, agent adk.Agent) agentcore.Agent {
+func WrapNamedAgent(name, description string, agent adk.Agent) runtimeport.Agent {
 	return &runtimeAgent{name: name, description: description, inner: agent}
 }
 
@@ -47,7 +47,7 @@ func (a *runtimeAgent) runnerAgent() adk.Agent {
 	return a.inner
 }
 
-func AdaptAgentForRunner(agent agentcore.Agent) (adk.Agent, error) {
+func AdaptAgentForRunner(agent runtimeport.Agent) (adk.Agent, error) {
 	if agent == nil {
 		return nil, fmt.Errorf("agent is nil")
 	}
@@ -58,7 +58,7 @@ func AdaptAgentForRunner(agent agentcore.Agent) (adk.Agent, error) {
 	return runnerAgent.runnerAgent(), nil
 }
 
-func AdaptAgentsForRunner(agents []agentcore.Agent) ([]adk.Agent, error) {
+func AdaptAgentsForRunner(agents []runtimeport.Agent) ([]adk.Agent, error) {
 	result := make([]adk.Agent, 0, len(agents))
 	for _, agent := range agents {
 		runnerAgent, err := AdaptAgentForRunner(agent)

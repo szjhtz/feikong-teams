@@ -2,7 +2,8 @@ package eino
 
 import (
 	"context"
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"io"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-func AdaptChatModelForRunner(m agentcore.ChatModel) (model.ToolCallingChatModel, error) {
+func AdaptChatModelForRunner(m runtimeport.ChatModel) (model.ToolCallingChatModel, error) {
 	if m == nil {
 		return nil, fmt.Errorf("model is nil")
 	}
@@ -25,19 +26,19 @@ func AdaptChatModelForRunner(m agentcore.ChatModel) (model.ToolCallingChatModel,
 	return &nativeChatModelAdapter{inner: m}, nil
 }
 
-func WrapChatModel(inner model.ToolCallingChatModel) agentcore.ChatModel {
+func WrapChatModel(inner model.ToolCallingChatModel) runtimeport.ChatModel {
 	return &runtimeChatModelAdapter{inner: inner}
 }
 
-func AdaptMessagesForRunner(messages []agentcore.Message) []*schema.Message {
+func AdaptMessagesForRunner(messages []domainmessage.Message) []*schema.Message {
 	return adaptMessagesForRunner(messages)
 }
 
-func AdaptMessagesFromRunner(messages []*schema.Message) []agentcore.Message {
+func AdaptMessagesFromRunner(messages []*schema.Message) []domainmessage.Message {
 	return adaptMessagesFromRunner(messages)
 }
 
-func AdaptMessageFromRunner(msg *schema.Message) agentcore.Message {
+func AdaptMessageFromRunner(msg *schema.Message) domainmessage.Message {
 	return adaptMessageFromRunner(msg)
 }
 
@@ -52,15 +53,15 @@ func (m *runtimeChatModelAdapter) runnerModel() model.ToolCallingChatModel {
 	return m.inner
 }
 
-func (m *runtimeChatModelAdapter) Generate(ctx context.Context, input []agentcore.Message) (agentcore.Message, error) {
+func (m *runtimeChatModelAdapter) Generate(ctx context.Context, input []domainmessage.Message) (domainmessage.Message, error) {
 	msg, err := m.inner.Generate(ctx, adaptMessagesForRunner(input))
 	if err != nil {
-		return agentcore.Message{}, err
+		return domainmessage.Message{}, err
 	}
 	return adaptMessageFromRunner(msg), nil
 }
 
-func (m *runtimeChatModelAdapter) Stream(ctx context.Context, input []agentcore.Message) (agentcore.MessageStream, error) {
+func (m *runtimeChatModelAdapter) Stream(ctx context.Context, input []domainmessage.Message) (runtimeport.MessageStream, error) {
 	stream, err := m.inner.Stream(ctx, adaptMessagesForRunner(input))
 	if err != nil {
 		return nil, err
@@ -68,7 +69,7 @@ func (m *runtimeChatModelAdapter) Stream(ctx context.Context, input []agentcore.
 	return &runtimeMessageStreamAdapter{inner: stream}, nil
 }
 
-func (m *runtimeChatModelAdapter) WithTools(tools []agentcore.ToolInfo) (agentcore.ChatModel, error) {
+func (m *runtimeChatModelAdapter) WithTools(tools []runtimeport.ToolInfo) (runtimeport.ChatModel, error) {
 	runnerTools := make([]*schema.ToolInfo, 0, len(tools))
 	for _, t := range tools {
 		runnerTools = append(runnerTools, &schema.ToolInfo{Name: t.Name, Desc: t.Desc, Extra: t.Extra})
@@ -84,10 +85,10 @@ type runtimeMessageStreamAdapter struct {
 	inner *schema.StreamReader[*schema.Message]
 }
 
-func (s *runtimeMessageStreamAdapter) Recv() (agentcore.Message, error) {
+func (s *runtimeMessageStreamAdapter) Recv() (domainmessage.Message, error) {
 	msg, err := s.inner.Recv()
 	if err != nil {
-		return agentcore.Message{}, err
+		return domainmessage.Message{}, err
 	}
 	return adaptMessageFromRunner(msg), nil
 }
@@ -96,7 +97,7 @@ func (s *runtimeMessageStreamAdapter) Close() {
 	s.inner.Close()
 }
 
-type nativeChatModelAdapter struct{ inner agentcore.ChatModel }
+type nativeChatModelAdapter struct{ inner runtimeport.ChatModel }
 
 func (m *nativeChatModelAdapter) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	msg, err := m.inner.Generate(ctx, adaptMessagesFromRunner(input))
@@ -133,12 +134,12 @@ func (m *nativeChatModelAdapter) Stream(ctx context.Context, input []*schema.Mes
 }
 
 func (m *nativeChatModelAdapter) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	coreTools := make([]agentcore.ToolInfo, 0, len(tools))
+	coreTools := make([]runtimeport.ToolInfo, 0, len(tools))
 	for _, t := range tools {
 		if t == nil {
 			continue
 		}
-		coreTools = append(coreTools, agentcore.ToolInfo{Name: t.Name, Desc: t.Desc, Extra: t.Extra})
+		coreTools = append(coreTools, runtimeport.ToolInfo{Name: t.Name, Desc: t.Desc, Extra: t.Extra})
 	}
 	next, err := m.inner.WithTools(coreTools)
 	if err != nil {
@@ -151,16 +152,16 @@ func (m *nativeChatModelAdapter) WithTools(tools []*schema.ToolInfo) (model.Tool
 	return runnerModel, nil
 }
 
-func adaptMessageForRunner(msg agentcore.Message) *schema.Message {
-	messages := adaptMessagesForRunner([]agentcore.Message{msg})
+func adaptMessageForRunner(msg domainmessage.Message) *schema.Message {
+	messages := adaptMessagesForRunner([]domainmessage.Message{msg})
 	if len(messages) == 0 || messages[0] == nil {
 		return &schema.Message{}
 	}
 	return messages[0]
 }
 
-func adaptMessagesFromRunner(messages []*schema.Message) []agentcore.Message {
-	result := make([]agentcore.Message, 0, len(messages))
+func adaptMessagesFromRunner(messages []*schema.Message) []domainmessage.Message {
+	result := make([]domainmessage.Message, 0, len(messages))
 	for _, msg := range messages {
 		result = append(result, adaptMessageFromRunner(msg))
 	}

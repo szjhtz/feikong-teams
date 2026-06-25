@@ -1,7 +1,8 @@
 package eino
 
 import (
-	"fkteams/agentcore"
+	domainevent "fkteams/internal/domain/event"
+	domainmessage "fkteams/internal/domain/message"
 	"fmt"
 	"strings"
 	"sync"
@@ -24,7 +25,7 @@ func newToolIdentityTracker() *toolIdentityTracker {
 	}
 }
 
-func (t *toolIdentityTracker) ensure(sourceMessageID string, position int, scope MemberScope, tc *agentcore.ToolCall) string {
+func (t *toolIdentityTracker) ensure(sourceMessageID string, position int, scope MemberScope, tc *domainmessage.ToolCall) string {
 	if tc == nil {
 		return ""
 	}
@@ -48,7 +49,7 @@ func (t *toolIdentityTracker) ensure(sourceMessageID string, position int, scope
 	return ref
 }
 
-func (t *toolIdentityTracker) refsFor(toolCalls []agentcore.ToolCall) map[int]string {
+func (t *toolIdentityTracker) refsFor(toolCalls []domainmessage.ToolCall) map[int]string {
 	if len(toolCalls) == 0 {
 		return nil
 	}
@@ -77,12 +78,12 @@ func (t *toolIdentityTracker) refsFor(toolCalls []agentcore.ToolCall) map[int]st
 	return refs
 }
 
-func (t *toolIdentityTracker) attach(event *agentcore.Event) {
+func (t *toolIdentityTracker) attach(event *domainevent.Event) {
 	if event == nil {
 		return
 	}
 	if event.ToolCallID == "" && event.ToolName != "" {
-		event.ToolCallID = t.resultIDByName(event.ToolName, event.Type == agentcore.EventToolEnd)
+		event.ToolCallID = t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolEnd)
 	}
 	if event.ToolCallID == "" {
 		return
@@ -93,7 +94,7 @@ func (t *toolIdentityTracker) attach(event *agentcore.Event) {
 		}
 	}
 	if event.ToolCallRef == "" && event.ToolName != "" {
-		if mappedID := t.resultIDByName(event.ToolName, event.Type == agentcore.EventToolEnd); mappedID != "" {
+		if mappedID := t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolEnd); mappedID != "" {
 			event.ToolCallID = mappedID
 			if ref, ok := t.refsByID.Load(event.ToolCallID); ok {
 				if value, ok := ref.(string); ok && value != "" {
@@ -105,7 +106,7 @@ func (t *toolIdentityTracker) attach(event *agentcore.Event) {
 	if order, ok := t.orderForID(event.ToolCallID); ok {
 		event.ToolCallIndex = &order
 	}
-	if event.Type == agentcore.EventToolEnd && event.ToolName != "" {
+	if event.Type == domainevent.TypeToolEnd && event.ToolName != "" {
 		delete(t.activeResultsByName, event.ToolName)
 		t.consumePendingResult(event.ToolName, event.ToolCallID)
 	}
@@ -127,7 +128,7 @@ func (t *toolIdentityTracker) orderForID(id string) (int, bool) {
 	return value, ok
 }
 
-func (t *toolIdentityTracker) syntheticKey(sourceMessageID string, position int, scope MemberScope, tc *agentcore.ToolCall) string {
+func (t *toolIdentityTracker) syntheticKey(sourceMessageID string, position int, scope MemberScope, tc *domainmessage.ToolCall) string {
 	idx := position
 	if tc != nil && tc.Index != nil {
 		idx = *tc.Index

@@ -1,7 +1,7 @@
 package eino
 
 import (
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -13,7 +13,7 @@ type agentMiddleware struct {
 	inner adk.ChatModelAgentMiddleware
 }
 
-func WrapAgentMiddleware(name string, inner adk.ChatModelAgentMiddleware) agentcore.AgentMiddleware {
+func WrapAgentMiddleware(name string, inner adk.ChatModelAgentMiddleware) runtimeport.AgentMiddleware {
 	return &agentMiddleware{name: name, inner: inner}
 }
 
@@ -36,7 +36,7 @@ type toolMiddleware struct {
 	inner compose.ToolMiddleware
 }
 
-func WrapToolMiddleware(name string, inner compose.ToolMiddleware) agentcore.ToolMiddleware {
+func WrapToolMiddleware(name string, inner compose.ToolMiddleware) runtimeport.ToolMiddleware {
 	return &toolMiddleware{name: name, inner: inner}
 }
 
@@ -54,7 +54,7 @@ func (m *toolMiddleware) runnerMiddleware() compose.ToolMiddleware {
 	return m.inner
 }
 
-func AdaptAgentMiddlewareForRunner(m agentcore.AgentMiddleware) (adk.ChatModelAgentMiddleware, error) {
+func AdaptAgentMiddlewareForRunner(m runtimeport.AgentMiddleware) (adk.ChatModelAgentMiddleware, error) {
 	if m == nil {
 		return nil, fmt.Errorf("middleware is nil")
 	}
@@ -67,7 +67,7 @@ func AdaptAgentMiddlewareForRunner(m agentcore.AgentMiddleware) (adk.ChatModelAg
 	return handler.runnerMiddleware(), nil
 }
 
-func AdaptAgentMiddlewaresForRunner(middlewares []agentcore.AgentMiddleware) ([]adk.ChatModelAgentMiddleware, error) {
+func AdaptAgentMiddlewaresForRunner(middlewares []runtimeport.AgentMiddleware) ([]adk.ChatModelAgentMiddleware, error) {
 	result := make([]adk.ChatModelAgentMiddleware, 0, len(middlewares))
 	for _, m := range middlewares {
 		if m == nil {
@@ -82,7 +82,7 @@ func AdaptAgentMiddlewaresForRunner(middlewares []agentcore.AgentMiddleware) ([]
 	return result, nil
 }
 
-func AdaptToolMiddlewareForRunner(m agentcore.ToolMiddleware) (compose.ToolMiddleware, error) {
+func AdaptToolMiddlewareForRunner(m runtimeport.ToolMiddleware) (compose.ToolMiddleware, error) {
 	if m == nil {
 		return compose.ToolMiddleware{}, fmt.Errorf("middleware is nil")
 	}

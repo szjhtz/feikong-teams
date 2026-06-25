@@ -1,13 +1,13 @@
 package eino
 
 import (
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 )
 
-func adaptMessagesForRunner(messages []agentcore.Message) []adk.Message {
+func adaptMessagesForRunner(messages []domainmessage.Message) []adk.Message {
 	result := make([]adk.Message, 0, len(messages))
 	for _, msg := range messages {
 		m := &schema.Message{
@@ -19,7 +19,7 @@ func adaptMessagesForRunner(messages []agentcore.Message) []adk.Message {
 			Name:             msg.Name,
 		}
 		if len(msg.ContentParts) > 0 {
-			if msg.Role == agentcore.RoleAssistant {
+			if msg.Role == domainmessage.RoleAssistant {
 				m.AssistantGenMultiContent = adaptOutputPartsForRunner(msg.ContentParts)
 			} else {
 				m.UserInputMultiContent = adaptPartsForRunner(msg.ContentParts)
@@ -33,15 +33,15 @@ func adaptMessagesForRunner(messages []agentcore.Message) []adk.Message {
 	return result
 }
 
-func adaptMessageFromRunner(msg *schema.Message) agentcore.Message {
+func adaptMessageFromRunner(msg *schema.Message) domainmessage.Message {
 	if msg == nil {
-		return agentcore.Message{}
+		return domainmessage.Message{}
 	}
 	parts := adaptPartsFromRunner(msg.UserInputMultiContent)
 	if len(msg.AssistantGenMultiContent) > 0 {
 		parts = append(parts, adaptOutputPartsFromRunner(msg.AssistantGenMultiContent)...)
 	}
-	return agentcore.Message{
+	return domainmessage.Message{
 		Role:             adaptRoleFromRunner(msg.Role),
 		Content:          msg.Content,
 		ReasoningContent: msg.ReasoningContent,
@@ -53,37 +53,37 @@ func adaptMessageFromRunner(msg *schema.Message) agentcore.Message {
 	}
 }
 
-func adaptRoleForRunner(role agentcore.MessageRole) schema.RoleType {
+func adaptRoleForRunner(role domainmessage.Role) schema.RoleType {
 	switch role {
-	case agentcore.RoleSystem:
+	case domainmessage.RoleSystem:
 		return schema.System
-	case agentcore.RoleUser:
+	case domainmessage.RoleUser:
 		return schema.User
-	case agentcore.RoleAssistant:
+	case domainmessage.RoleAssistant:
 		return schema.Assistant
-	case agentcore.RoleTool:
+	case domainmessage.RoleTool:
 		return schema.Tool
 	default:
 		return schema.User
 	}
 }
 
-func adaptRoleFromRunner(role schema.RoleType) agentcore.MessageRole {
+func adaptRoleFromRunner(role schema.RoleType) domainmessage.Role {
 	switch role {
 	case schema.System:
-		return agentcore.RoleSystem
+		return domainmessage.RoleSystem
 	case schema.User:
-		return agentcore.RoleUser
+		return domainmessage.RoleUser
 	case schema.Assistant:
-		return agentcore.RoleAssistant
+		return domainmessage.RoleAssistant
 	case schema.Tool:
-		return agentcore.RoleTool
+		return domainmessage.RoleTool
 	default:
-		return agentcore.MessageRole(role)
+		return domainmessage.Role(role)
 	}
 }
 
-func adaptToolCallsForRunner(toolCalls []agentcore.ToolCall) []schema.ToolCall {
+func adaptToolCallsForRunner(toolCalls []domainmessage.ToolCall) []schema.ToolCall {
 	result := make([]schema.ToolCall, 0, len(toolCalls))
 	for _, tc := range toolCalls {
 		result = append(result, schema.ToolCall{
@@ -99,34 +99,34 @@ func adaptToolCallsForRunner(toolCalls []agentcore.ToolCall) []schema.ToolCall {
 	return result
 }
 
-func adaptToolCallsFromRunner(toolCalls []schema.ToolCall) []agentcore.ToolCall {
-	result := make([]agentcore.ToolCall, 0, len(toolCalls))
+func adaptToolCallsFromRunner(toolCalls []schema.ToolCall) []domainmessage.ToolCall {
+	result := make([]domainmessage.ToolCall, 0, len(toolCalls))
 	for _, tc := range toolCalls {
 		result = append(result, adaptToolCallFromRunner(tc))
 	}
 	return result
 }
 
-func adaptToolCallFromRunner(tc schema.ToolCall) agentcore.ToolCall {
-	return agentcore.ToolCall{
+func adaptToolCallFromRunner(tc schema.ToolCall) domainmessage.ToolCall {
+	return domainmessage.ToolCall{
 		ID:    tc.ID,
 		Index: tc.Index,
 		Type:  tc.Type,
-		Function: agentcore.FunctionCall{
+		Function: domainmessage.FunctionCall{
 			Name:      tc.Function.Name,
 			Arguments: tc.Function.Arguments,
 		},
 	}
 }
 
-func adaptPartsForRunner(parts []agentcore.ContentPart) []schema.MessageInputPart {
+func adaptPartsForRunner(parts []domainmessage.ContentPart) []schema.MessageInputPart {
 	result := make([]schema.MessageInputPart, 0, len(parts))
 	for _, part := range parts {
 		p := schema.MessageInputPart{Text: part.Text}
 		switch part.Type {
-		case agentcore.ContentPartText:
+		case domainmessage.ContentPartText:
 			p.Type = schema.ChatMessagePartTypeText
-		case agentcore.ContentPartImageURL:
+		case domainmessage.ContentPartImageURL:
 			p.Type = schema.ChatMessagePartTypeImageURL
 			p.Image = &schema.MessageInputImage{
 				MessagePartCommon: schema.MessagePartCommon{
@@ -136,13 +136,13 @@ func adaptPartsForRunner(parts []agentcore.ContentPart) []schema.MessageInputPar
 				},
 				Detail: schema.ImageURLDetail(part.Detail),
 			}
-		case agentcore.ContentPartAudioURL:
+		case domainmessage.ContentPartAudioURL:
 			p.Type = schema.ChatMessagePartTypeAudioURL
 			p.Audio = &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
-		case agentcore.ContentPartVideoURL:
+		case domainmessage.ContentPartVideoURL:
 			p.Type = schema.ChatMessagePartTypeVideoURL
 			p.Video = &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
-		case agentcore.ContentPartFileURL:
+		case domainmessage.ContentPartFileURL:
 			p.Type = schema.ChatMessagePartTypeFileURL
 			p.File = &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
 		}
@@ -151,15 +151,15 @@ func adaptPartsForRunner(parts []agentcore.ContentPart) []schema.MessageInputPar
 	return result
 }
 
-func adaptPartsFromRunner(parts []schema.MessageInputPart) []agentcore.ContentPart {
-	result := make([]agentcore.ContentPart, 0, len(parts))
+func adaptPartsFromRunner(parts []schema.MessageInputPart) []domainmessage.ContentPart {
+	result := make([]domainmessage.ContentPart, 0, len(parts))
 	for _, part := range parts {
-		p := agentcore.ContentPart{Text: part.Text}
+		p := domainmessage.ContentPart{Text: part.Text}
 		switch part.Type {
 		case schema.ChatMessagePartTypeText:
-			p.Type = agentcore.ContentPartText
+			p.Type = domainmessage.ContentPartText
 		case schema.ChatMessagePartTypeImageURL:
-			p.Type = agentcore.ContentPartImageURL
+			p.Type = domainmessage.ContentPartImageURL
 			if part.Image != nil {
 				if part.Image.URL != nil {
 					p.URL = *part.Image.URL
@@ -171,17 +171,17 @@ func adaptPartsFromRunner(parts []schema.MessageInputPart) []agentcore.ContentPa
 				p.Detail = string(part.Image.Detail)
 			}
 		case schema.ChatMessagePartTypeAudioURL:
-			p.Type = agentcore.ContentPartAudioURL
+			p.Type = domainmessage.ContentPartAudioURL
 			if part.Audio != nil && part.Audio.URL != nil {
 				p.URL = *part.Audio.URL
 			}
 		case schema.ChatMessagePartTypeVideoURL:
-			p.Type = agentcore.ContentPartVideoURL
+			p.Type = domainmessage.ContentPartVideoURL
 			if part.Video != nil && part.Video.URL != nil {
 				p.URL = *part.Video.URL
 			}
 		case schema.ChatMessagePartTypeFileURL:
-			p.Type = agentcore.ContentPartFileURL
+			p.Type = domainmessage.ContentPartFileURL
 			if part.File != nil && part.File.URL != nil {
 				p.URL = *part.File.URL
 			}
@@ -191,12 +191,12 @@ func adaptPartsFromRunner(parts []schema.MessageInputPart) []agentcore.ContentPa
 	return result
 }
 
-func adaptOutputPartsForRunner(parts []agentcore.ContentPart) []schema.MessageOutputPart {
+func adaptOutputPartsForRunner(parts []domainmessage.ContentPart) []schema.MessageOutputPart {
 	result := make([]schema.MessageOutputPart, 0, len(parts))
 	for _, part := range parts {
 		p := schema.MessageOutputPart{Type: schema.ChatMessagePartType(part.Type), Text: part.Text}
 		switch part.Type {
-		case agentcore.ContentPartImageURL:
+		case domainmessage.ContentPartImageURL:
 			p.Image = &schema.MessageOutputImage{
 				MessagePartCommon: schema.MessagePartCommon{
 					URL:        stringPtr(part.URL),
@@ -204,11 +204,11 @@ func adaptOutputPartsForRunner(parts []agentcore.ContentPart) []schema.MessageOu
 					MIMEType:   part.MIMEType,
 				},
 			}
-		case agentcore.ContentPartAudioURL:
+		case domainmessage.ContentPartAudioURL:
 			p.Audio = &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL), Base64Data: stringPtr(part.Base64Data), MIMEType: part.MIMEType}}
-		case agentcore.ContentPartVideoURL:
+		case domainmessage.ContentPartVideoURL:
 			p.Video = &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL), Base64Data: stringPtr(part.Base64Data), MIMEType: part.MIMEType}}
-		case agentcore.ContentPartFileURL:
+		case domainmessage.ContentPartFileURL:
 			p.Extra = map[string]any{"url": part.URL, "mime_type": part.MIMEType}
 		}
 		result = append(result, p)
@@ -216,13 +216,13 @@ func adaptOutputPartsForRunner(parts []agentcore.ContentPart) []schema.MessageOu
 	return result
 }
 
-func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []agentcore.ContentPart {
-	result := make([]agentcore.ContentPart, 0, len(parts))
+func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []domainmessage.ContentPart {
+	result := make([]domainmessage.ContentPart, 0, len(parts))
 	for _, part := range parts {
-		p := agentcore.ContentPart{Type: agentcore.ContentPartType(part.Type), Text: part.Text}
+		p := domainmessage.ContentPart{Type: domainmessage.ContentPartType(part.Type), Text: part.Text}
 		switch part.Type {
 		case schema.ChatMessagePartTypeImageURL:
-			p.Type = agentcore.ContentPartImageURL
+			p.Type = domainmessage.ContentPartImageURL
 			if part.Image != nil {
 				if part.Image.URL != nil {
 					p.URL = *part.Image.URL
@@ -233,7 +233,7 @@ func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []agentcore.Co
 				p.MIMEType = part.Image.MIMEType
 			}
 		case schema.ChatMessagePartTypeAudioURL:
-			p.Type = agentcore.ContentPartAudioURL
+			p.Type = domainmessage.ContentPartAudioURL
 			if part.Audio != nil {
 				if part.Audio.URL != nil {
 					p.URL = *part.Audio.URL
@@ -244,7 +244,7 @@ func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []agentcore.Co
 				p.MIMEType = part.Audio.MIMEType
 			}
 		case schema.ChatMessagePartTypeVideoURL:
-			p.Type = agentcore.ContentPartVideoURL
+			p.Type = domainmessage.ContentPartVideoURL
 			if part.Video != nil {
 				if part.Video.URL != nil {
 					p.URL = *part.Video.URL
@@ -255,7 +255,7 @@ func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []agentcore.Co
 				p.MIMEType = part.Video.MIMEType
 			}
 		case schema.ChatMessagePartTypeFileURL:
-			p.Type = agentcore.ContentPartFileURL
+			p.Type = domainmessage.ContentPartFileURL
 			if part.Extra != nil {
 				if url, ok := part.Extra["url"].(string); ok {
 					p.URL = url

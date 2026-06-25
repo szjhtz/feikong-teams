@@ -2,19 +2,19 @@ package eino
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/compose"
 )
 
-func NewAgentTools(ctx context.Context, subAgents []agentcore.Agent, cfg agentcore.AgentToolConfig) ([]agentcore.Tool, error) {
+func NewAgentTools(ctx context.Context, subAgents []runtimeport.Agent, cfg runtimeport.AgentToolConfig) ([]runtimeport.Tool, error) {
 	runnerAgents, err := AdaptAgentsForRunner(subAgents)
 	if err != nil {
 		return nil, err
 	}
-	agentTools := make([]agentcore.Tool, 0, len(runnerAgents))
+	agentTools := make([]runtimeport.Tool, 0, len(runnerAgents))
 	for i, subAgent := range runnerAgents {
 		displayName := subAgent.Name(ctx)
 		toolName := displayName
@@ -83,7 +83,7 @@ func (a *agentToolNameAgent) contextWithMemberScope(ctx context.Context) (contex
 		Name:     a.displayName,
 	}
 	if scope.CallID != "" {
-		ctx = agentcore.WithInterruptMetadata(ctx, agentcore.InterruptMetadata{
+		ctx = runtimeport.WithInterruptMetadata(ctx, runtimeport.InterruptMetadata{
 			MemberCallID:   scope.CallID,
 			MemberToolName: scope.ToolName,
 			MemberName:     scope.Name,

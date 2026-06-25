@@ -62,6 +62,7 @@ internal/adapters/runtime/
   eino/                     # CloudWeGo Eino ADK 适配层，唯一允许 import Eino 的目录
     runner.go               #   ADK AgentEvent -> events 协议转换，HITL resume 适配
     engine/engine.go        #   runtime.Engine 的 Eino 实现
+                            #   核心适配层直接使用 internal/ports/runtime 与 domain 类型，禁止依赖 agentcore 旧门面
     middlewares/            #   autocontinue / summary / skills / dispatch / inject / fkfs
     middlewares/tools/      #   warperror / trimresult / patch / destructiveguard
     providers/              #   OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot

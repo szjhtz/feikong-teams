@@ -2,14 +2,15 @@ package eino
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
+	checkpointstore "fkteams/internal/runtime/checkpoint"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/compose"
 )
 
-func NewChatModelAgent(ctx context.Context, cfg *agentcore.ChatAgentConfig) (agentcore.Agent, error) {
+func NewChatModelAgent(ctx context.Context, cfg *runtimeport.ChatAgentConfig) (runtimeport.Agent, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("agent config is nil")
 	}
@@ -55,7 +56,7 @@ func NewChatModelAgent(ctx context.Context, cfg *agentcore.ChatAgentConfig) (age
 	return WrapNamedAgent(cfg.Name, cfg.Description, agent), nil
 }
 
-func NewLoopAgent(ctx context.Context, cfg *agentcore.LoopAgentConfig) (agentcore.Agent, error) {
+func NewLoopAgent(ctx context.Context, cfg *runtimeport.LoopAgentConfig) (runtimeport.Agent, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("loop agent config is nil")
 	}
@@ -75,7 +76,7 @@ func NewLoopAgent(ctx context.Context, cfg *agentcore.LoopAgentConfig) (agentcor
 	return WrapNamedAgent(cfg.Name, cfg.Description, loopAgent), nil
 }
 
-func NewRunnerFromConfig(ctx context.Context, cfg agentcore.RunnerConfig) (agentcore.Runner, error) {
+func NewRunnerFromConfig(ctx context.Context, cfg runtimeport.RunnerConfig) (runtimeport.Runner, error) {
 	runnerAgent, err := AdaptAgentForRunner(cfg.Agent)
 	if err != nil {
 		return nil, err
@@ -87,7 +88,7 @@ func NewRunnerFromConfig(ctx context.Context, cfg agentcore.RunnerConfig) (agent
 	})), nil
 }
 
-func adaptToolMiddlewaresForRunner(middlewares []agentcore.ToolMiddleware) ([]compose.ToolMiddleware, error) {
+func adaptToolMiddlewaresForRunner(middlewares []runtimeport.ToolMiddleware) ([]compose.ToolMiddleware, error) {
 	result := make([]compose.ToolMiddleware, 0, len(middlewares))
 	for _, middleware := range middlewares {
 		if middleware == nil {
@@ -102,7 +103,7 @@ func adaptToolMiddlewaresForRunner(middlewares []agentcore.ToolMiddleware) ([]co
 	return result, nil
 }
 
-func adaptUnknownToolHandlerForRunner(agentName string, handler agentcore.UnknownToolHandler) func(context.Context, string, string) (string, error) {
+func adaptUnknownToolHandlerForRunner(agentName string, handler runtimeport.UnknownToolHandler) func(context.Context, string, string) (string, error) {
 	if handler == nil {
 		return nil
 	}
@@ -120,16 +121,16 @@ func adaptUnknownToolHandlerForRunner(agentName string, handler agentcore.Unknow
 	}
 }
 
-func AdaptModelRetryConfigForRunner(cfg *agentcore.ModelRetryConfig) *adk.ModelRetryConfig {
+func AdaptModelRetryConfigForRunner(cfg *runtimeport.ModelRetryConfig) *adk.ModelRetryConfig {
 	if cfg == nil {
 		return nil
 	}
 	return &adk.ModelRetryConfig{
 		MaxRetries: cfg.MaxRetries,
 		ShouldRetry: func(ctx context.Context, retryCtx *adk.RetryContext) *adk.RetryDecision {
-			var coreRetryCtx *agentcore.RetryContext
+			var coreRetryCtx *runtimeport.RetryContext
 			if retryCtx != nil {
-				coreRetryCtx = &agentcore.RetryContext{Err: retryCtx.Err}
+				coreRetryCtx = &runtimeport.RetryContext{Err: retryCtx.Err}
 			}
 			decision := cfg.ShouldRetry(ctx, coreRetryCtx)
 			if decision == nil {
@@ -144,10 +145,10 @@ func AdaptModelRetryConfigForRunner(cfg *agentcore.ModelRetryConfig) *adk.ModelR
 }
 
 type checkPointStoreAdapter struct {
-	inner agentcore.CheckPointStore
+	inner checkpointstore.Store
 }
 
-func adaptCheckPointStoreForRunner(store agentcore.CheckPointStore) compose.CheckPointStore {
+func adaptCheckPointStoreForRunner(store checkpointstore.Store) compose.CheckPointStore {
 	if store == nil {
 		return nil
 	}

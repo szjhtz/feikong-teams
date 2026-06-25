@@ -2,7 +2,7 @@ package eino
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -10,7 +10,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-func NewDeepAgent(ctx context.Context, cfg *agentcore.DeepAgentConfig) (agentcore.Agent, error) {
+func NewDeepAgent(ctx context.Context, cfg *runtimeport.DeepAgentConfig) (runtimeport.Agent, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("deep agent config is nil")
 	}

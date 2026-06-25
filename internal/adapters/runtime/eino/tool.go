@@ -2,7 +2,7 @@ package eino
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"reflect"
 	"strings"
@@ -14,7 +14,7 @@ import (
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
-func AdaptToolsForRunner(ctx context.Context, tools []agentcore.Tool) ([]tool.BaseTool, error) {
+func AdaptToolsForRunner(ctx context.Context, tools []runtimeport.Tool) ([]tool.BaseTool, error) {
 	result := make([]tool.BaseTool, 0, len(tools))
 	for _, t := range tools {
 		if t == nil {
@@ -59,11 +59,11 @@ type runtimeTool struct {
 	inner tool.BaseTool
 }
 
-func WrapTool(inner tool.BaseTool) agentcore.Tool {
+func WrapTool(inner tool.BaseTool) runtimeport.Tool {
 	return &runtimeTool{inner: inner}
 }
 
-func (t *runtimeTool) Info(ctx context.Context) (*agentcore.ToolInfo, error) {
+func (t *runtimeTool) Info(ctx context.Context) (*runtimeport.ToolInfo, error) {
 	if t == nil || t.inner == nil {
 		return nil, fmt.Errorf("tool is nil")
 	}
@@ -71,10 +71,10 @@ func (t *runtimeTool) Info(ctx context.Context) (*agentcore.ToolInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &agentcore.ToolInfo{Name: info.Name, Desc: info.Desc, Extra: info.Extra}, nil
+	return &runtimeport.ToolInfo{Name: info.Name, Desc: info.Desc, Extra: info.Extra}, nil
 }
 
-func (t *runtimeTool) Invoke(ctx context.Context, invocation agentcore.ToolInvocation) (*agentcore.ToolResult, error) {
+func (t *runtimeTool) Invoke(ctx context.Context, invocation runtimeport.ToolInvocation) (*runtimeport.ToolResult, error) {
 	if t == nil || t.inner == nil {
 		return nil, fmt.Errorf("tool is nil")
 	}
@@ -86,7 +86,7 @@ func (t *runtimeTool) Invoke(ctx context.Context, invocation agentcore.ToolInvoc
 	if err != nil {
 		return nil, err
 	}
-	return &agentcore.ToolResult{Content: result}, nil
+	return &runtimeport.ToolResult{Content: result}, nil
 }
 
 func (t *runtimeTool) runnerTool() tool.BaseTool {
@@ -99,12 +99,12 @@ func (t *runtimeTool) runnerTool() tool.BaseTool {
 type reflectedTool struct {
 	info      *schema.ToolInfo
 	inputType reflect.Type
-	inner     agentcore.Tool
+	inner     runtimeport.Tool
 }
 
-func newCoreTool(info *agentcore.ToolInfo, inner agentcore.Tool) (tool.InvokableTool, error) {
+func newCoreTool(info *runtimeport.ToolInfo, inner runtimeport.Tool) (tool.InvokableTool, error) {
 	inputType := reflect.TypeOf(struct{}{})
-	if provider, ok := inner.(agentcore.ToolInputTypeProvider); ok {
+	if provider, ok := inner.(runtimeport.ToolInputTypeProvider); ok {
 		inputType = provider.InputType()
 		if inputType == nil {
 			return nil, fmt.Errorf("tool %s input type is nil", info.Name)
@@ -129,11 +129,11 @@ func (t *reflectedTool) Info(context.Context) (*schema.ToolInfo, error) {
 
 func (t *reflectedTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
 	callID := compose.GetToolCallID(ctx)
-	ctx = agentcore.WithToolRuntimeMetadata(ctx, agentcore.ToolRuntimeMetadata{
+	ctx = runtimeport.WithToolRuntimeMetadata(ctx, runtimeport.ToolRuntimeMetadata{
 		CallID: callID,
 		Name:   t.info.Name,
 	})
-	result, err := t.inner.Invoke(ctx, agentcore.ToolInvocation{
+	result, err := t.inner.Invoke(ctx, runtimeport.ToolInvocation{
 		Name:      t.info.Name,
 		CallID:    callID,
 		Arguments: argumentsInJSON,

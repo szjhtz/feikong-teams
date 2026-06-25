@@ -1,7 +1,7 @@
 package eino
 
 import (
-	"fkteams/agentcore"
+	domainevent "fkteams/internal/domain/event"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
@@ -35,7 +35,7 @@ func consumeAgentEventScope(event *adk.AgentEvent) (MemberScope, func()) {
 	return scope, func() { agentEventScopes.Delete(event) }
 }
 
-func (s MemberScope) apply(event *agentcore.Event, c *converter) {
+func (s MemberScope) apply(event *domainevent.Event, c *converter) {
 	if event == nil || s.CallID == "" {
 		return
 	}

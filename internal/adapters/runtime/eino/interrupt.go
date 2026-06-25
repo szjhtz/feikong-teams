@@ -2,21 +2,21 @@ package eino
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"reflect"
 
 	"github.com/cloudwego/eino/components/tool"
 )
 
 func init() {
-	agentcore.RegisterInterruptRuntime(interruptRuntime{})
+	runtimeport.RegisterInterruptRuntime(interruptRuntime{})
 }
 
 type interruptRuntime struct{}
 
 func (interruptRuntime) Interrupt(ctx context.Context, info any) error {
-	if metadata, ok := agentcore.InterruptMetadataFromContext(ctx); ok && metadata.MemberCallID != "" {
-		return tool.Interrupt(ctx, agentcore.InterruptPayload{
+	if metadata, ok := runtimeport.InterruptMetadataFromContext(ctx); ok && metadata.MemberCallID != "" {
+		return tool.Interrupt(ctx, runtimeport.InterruptPayload{
 			Info:     info,
 			Metadata: metadata,
 		})
