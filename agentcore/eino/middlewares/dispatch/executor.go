@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fkteams/agentcore/checkpoint"
 	einoruntime "fkteams/agentcore/eino"
 	rootcommon "fkteams/common"
 	"fkteams/events"
@@ -183,7 +184,7 @@ func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk
 func (m *middleware) runAgent(taskCtx context.Context, agent adk.Agent, index int, desc string, ch chan<- viewEvent) (string, []string, error) {
 	runner := adk.NewRunner(taskCtx, adk.RunnerConfig{
 		Agent: agent, EnableStreaming: true,
-		CheckPointStore: rootcommon.NewInMemoryStore(),
+		CheckPointStore: checkpoint.NewMemoryStore(),
 	})
 
 	iter := runner.Run(taskCtx, []*schema.Message{{Role: schema.User, Content: desc}})

@@ -4,6 +4,7 @@ package runner
 import (
 	"context"
 	"fkteams/agentcore"
+	"fkteams/agentcore/checkpoint"
 	agentruntime "fkteams/agentcore/runtime"
 	"fkteams/agents"
 	"fkteams/agents/coordinator"
@@ -13,7 +14,6 @@ import (
 	"fkteams/agents/moderator"
 	"fkteams/agents/tasker"
 	"fkteams/agents/toolmeta"
-	"fkteams/common"
 	"fkteams/config"
 	"fmt"
 	"regexp"
@@ -67,7 +67,7 @@ func newRunner(ctx context.Context, agent agentcore.Agent) (agentcore.Runner, er
 	return agentruntime.Engine().NewRunner(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
-		CheckPointStore: common.NewInMemoryStore(),
+		CheckPointStore: checkpoint.NewMemoryStore(),
 	})
 }
 

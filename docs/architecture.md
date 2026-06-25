@@ -9,6 +9,7 @@
 | 入口层 | `commands/`、`server/`、`channels/`、`cli/` | 处理 CLI、HTTP、WebSocket 和消息通道输入，只编排会话，不直接依赖具体运行时框架 |
 | 会话执行层 | `engine/` | 装配 context、历史、HITL、事件分发和运行级 hooks，并把本轮输入交给 `agentcore.Runner` |
 | 核心协议层 | `agentcore/` | 定义 Agent、Runner、Engine、Model、Tool、Event、Checkpoint、Runtime capability 等稳定接口 |
+| 核心存储层 | `agentcore/checkpoint/` | 提供运行时 checkpoint store 接口、内存实现和命名空间封装 |
 | 运行时注册层 | `agentcore/runtime/` | 管理运行时注册表、默认运行时选择和 MCP 工具提供者桥接，不 import 任何具体运行时适配器 |
 | 应用装配层 | `bootstrap/runtimes/` | 安装默认运行时实现，是应用二进制的 composition root |
 | 运行时适配层 | `agentcore/eino/` | 把 CloudWeGo Eino ADK 的 Agent、Runner、Tool、Model、Middleware 和事件转换为 `agentcore` 协议 |
@@ -37,4 +38,4 @@
 - hooks 默认带超时、panic recover 和错误策略；前置 hooks 默认失败即停止，后置和事件 hooks 默认告警后继续。
 - 业务代码优先使用 `hooks.Bus` 的类型化方法触发扩展点，例如 `InvokeBeforeRun`、`InvokeEvent`、`InvokeBeforeToolCall` 和 `InvokeBeforeModelRequest`；只有新增扩展点时才直接构造底层 `Invocation`。
 - 所有运行时事件必须转换为 `agentcore.Event`，事件类型使用 `agentcore/types.go` 和 `events/types.go` 中的常量。
-- checkpoint、history、memory 等状态能力通过接口传入，不允许运行时适配层直接耦合入口层存储实现。
+- checkpoint 通过 `agentcore/checkpoint.Store` 传入运行时；history、memory 等状态能力也通过接口传入，不允许运行时适配层直接耦合入口层存储实现。
