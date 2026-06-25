@@ -165,6 +165,11 @@ web/                        # 内嵌前端（//go:embed）
 - WebSocket `steer`、`/stream/steer` 和终端运行中 Enter 必须进入 steering 通道，由 `SteeringSource` 在下一次模型调用前消费；运行中的普通 `chat`/`follow_up` 只作为后续任务排队
 - 流式任务队列项必须带稳定 `queue_id`；Web/SSE/WS 通过 `queue_updated` 同步快照。队列管理只能修改尚未消费的项，Web 运行中输入默认追加 follow-up，并支持在队列面板中转换 steering/follow-up、编辑、删除、同类排序；终端运行中只追加 steering，消费时合并当前队列，`Esc` 暂停时将未消费 steering 回填到输入框
 
+### Hooks
+
+- Hook payload 必须在 `internal/ports/hooks` 中定义为明确结构体并实现 `hooks.Payload`，禁止在 `Invocation` / `Result` 中使用 `any` 作为 payload 契约
+- 新增 hook point 必须补充 payload 结构、便捷调用函数和架构边界测试
+
 ### 通道
 
 - 通道实现必须通过 `internal/adapters/transport/channel.RegisterFactory` 注册工厂

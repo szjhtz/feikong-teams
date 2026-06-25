@@ -570,6 +570,20 @@ func TestHooksUseInternalPackages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	content, err := os.ReadFile(filepath.Join(root, "internal", "ports", "hooks", "types.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, forbidden := range []string{"Payload any", "Payload   any", "Payload\tany"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("hooks payload contract uses %q; use explicit hooks.Payload implementations", forbidden)
+		}
+	}
+	if !strings.Contains(text, "type Payload interface") {
+		t.Fatal("hooks port must expose an explicit Payload interface")
+	}
 }
 
 func TestEventViewUsesDomainTypes(t *testing.T) {

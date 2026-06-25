@@ -3,8 +3,11 @@ package hooks
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+
+	"fkteams/internal/domain/message"
 )
 
 func TestBusInvokesHandlersInPriorityOrder(t *testing.T) {
@@ -30,15 +33,34 @@ func TestBusInvokesHandlersInPriorityOrder(t *testing.T) {
 func TestBusPassesMutatedPayload(t *testing.T) {
 	bus := NewBus()
 	bus.RegisterFunc("mutate", []HookPoint{HookBeforeRun}, func(ctx Context, inv Invocation) (Result, error) {
-		return Result{Payload: "changed"}, nil
+		payload := inv.Payload.(BeforeRunPayload)
+		payload.Input.Message.Content = "changed"
+		return Result{Payload: payload}, nil
 	}, Options{})
 
-	result, err := bus.Invoke(context.Background(), Invocation{HookPoint: HookBeforeRun, Payload: "original"})
+	result, err := bus.Invoke(context.Background(), Invocation{
+		HookPoint: HookBeforeRun,
+		Payload: BeforeRunPayload{Input: message.TurnInput{
+			Message: message.Message{Role: message.RoleUser, Content: "original"},
+		}},
+	})
 	if err != nil {
 		t.Fatalf("invoke hooks: %v", err)
 	}
-	if result.Payload != "changed" {
-		t.Fatalf("payload = %#v, want changed", result.Payload)
+	payload, ok := result.Payload.(BeforeRunPayload)
+	if !ok || payload.Input.Message.Content != "changed" {
+		t.Fatalf("payload = %#v, want changed before-run payload", result.Payload)
+	}
+}
+
+func TestBusRejectsMismatchedPayloadPoint(t *testing.T) {
+	bus := NewBus()
+	_, err := bus.Invoke(context.Background(), Invocation{
+		HookPoint: HookBeforeRun,
+		Payload:   EventPayload{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("error = %v, want payload mismatch", err)
 	}
 }
 

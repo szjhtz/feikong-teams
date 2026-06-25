@@ -32,6 +32,7 @@ const (
 
 type Invocation = hookport.Invocation
 type Result = hookport.Result
+type Payload = hookport.Payload
 type Handler = hookport.Handler
 type HandlerFunc = hookport.HandlerFunc
 type BeforeRunPayload = hookport.BeforeRunPayload

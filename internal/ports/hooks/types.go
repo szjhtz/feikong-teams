@@ -42,13 +42,18 @@ type Invocation struct {
 	SessionID string
 	RunID     string
 	TurnID    string
-	Payload   any
+	Payload   Payload
 }
 
 type Result struct {
-	Payload any
+	Payload Payload
 	Action  Action
 	Message string
+}
+
+// Payload 是所有 hook 载荷必须实现的显式契约。
+type Payload interface {
+	HookPoint() HookPoint
 }
 
 type Handler interface {
@@ -88,21 +93,29 @@ type BeforeRunPayload struct {
 	Input message.TurnInput
 }
 
+func (BeforeRunPayload) HookPoint() HookPoint { return HookBeforeRun }
+
 type AfterRunPayload struct {
 	Input  message.TurnInput
 	Result *runtimeport.RunResult
 	Error  error
 }
 
+func (AfterRunPayload) HookPoint() HookPoint { return HookAfterRun }
+
 type EventPayload struct {
 	Event event.Event
 }
+
+func (EventPayload) HookPoint() HookPoint { return HookOnEvent }
 
 type BeforeToolCallPayload struct {
 	ToolName string
 	Args     string
 	Meta     map[string]any
 }
+
+func (BeforeToolCallPayload) HookPoint() HookPoint { return HookBeforeToolCall }
 
 type AfterToolCallPayload struct {
 	ToolName string
@@ -112,10 +125,14 @@ type AfterToolCallPayload struct {
 	Meta     map[string]any
 }
 
+func (AfterToolCallPayload) HookPoint() HookPoint { return HookAfterToolCall }
+
 type BeforeModelRequestPayload struct {
 	Messages []message.Message
 	Meta     map[string]any
 }
+
+func (BeforeModelRequestPayload) HookPoint() HookPoint { return HookBeforeModelRequest }
 
 type AfterModelResponsePayload struct {
 	Message message.Message
@@ -123,3 +140,5 @@ type AfterModelResponsePayload struct {
 	Error   error
 	Meta    map[string]any
 }
+
+func (AfterModelResponsePayload) HookPoint() HookPoint { return HookAfterModelResponse }

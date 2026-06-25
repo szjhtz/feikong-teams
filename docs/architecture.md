@@ -209,7 +209,7 @@ Hooks 属于用例和运行时之间的稳定扩展边界：
 - before/after memory injection
 - before/after schedule execution
 
-hook payload 使用 `internal/ports/hooks` 中的明确结构体，不在业务代码里散落 `any` 和字符串 hook point。`internal/runtime/hooks` 只负责总线实现、超时/错误策略、context 绑定和便捷调用；旧顶层 `hooks` 包不再保留。
+hook payload 使用 `internal/ports/hooks` 中的明确结构体，并统一实现 `hooks.Payload` 契约；`Invocation` 和 `Result` 只能携带 `hooks.Payload`，不能退回 `any`。`internal/runtime/hooks` 只负责总线实现、payload 与 hook point 匹配校验、超时/错误策略、context 绑定和便捷调用；旧顶层 `hooks` 包不再保留。
 
 ## 事件分层
 

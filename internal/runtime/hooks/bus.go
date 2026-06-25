@@ -99,8 +99,14 @@ func (b *Bus) unregister(handler Handler) {
 }
 
 func (b *Bus) Invoke(ctx context.Context, inv Invocation) (Result, error) {
+	if inv.HookPoint == "" && inv.Payload != nil {
+		inv.HookPoint = inv.Payload.HookPoint()
+	}
 	if b == nil || inv.HookPoint == "" {
 		return Result{Payload: inv.Payload, Action: ActionContinue}, nil
+	}
+	if inv.Payload != nil && inv.Payload.HookPoint() != inv.HookPoint {
+		return Result{Payload: inv.Payload, Action: ActionContinue}, fmt.Errorf("hook payload point %s does not match invocation point %s", inv.Payload.HookPoint(), inv.HookPoint)
 	}
 	handlers := b.handlersFor(inv.HookPoint)
 	payload := inv.Payload
