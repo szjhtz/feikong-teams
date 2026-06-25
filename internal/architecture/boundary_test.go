@@ -182,6 +182,15 @@ func TestRootVersionPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootUpdatePackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "update")); err == nil {
+		t.Fatal("root update package exists; use internal/adapters/transport/cli/update")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -273,6 +282,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/version" || strings.HasPrefix(importPath, "fkteams/version/") {
 		t.Errorf("%s imports removed root version package; use internal/app/version", rel)
+	}
+	if importPath == "fkteams/update" || strings.HasPrefix(importPath, "fkteams/update/") {
+		t.Errorf("%s imports removed root update package; use internal/adapters/transport/cli/update", rel)
 	}
 }
 

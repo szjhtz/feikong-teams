@@ -2,8 +2,8 @@ package commands
 
 import (
 	"context"
+	cliupdate "fkteams/internal/adapters/transport/cli/update"
 	"fkteams/internal/app/config"
-	"fkteams/update"
 
 	ucli "github.com/urfave/cli/v3"
 )
@@ -17,7 +17,7 @@ func updateCommand() *ucli.Command {
 			if err := config.Init(); err != nil {
 				return err
 			}
-			return update.SelfUpdate("fkteams", "wsshow", "feikong-teams")
+			return cliupdate.SelfUpdate("fkteams", "wsshow", "feikong-teams")
 		},
 	}
 }

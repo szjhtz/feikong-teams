@@ -77,6 +77,7 @@ internal/adapters/tools/
   builtin/scheduler/        #   schedule_* 工具适配器，只委托 app/schedule
 internal/adapters/transport/
   cli/report/               #   CLI Markdown 报告导出 HTML 适配器
+  cli/update/               #   CLI 自更新、下载、校验和替换适配器
 internal/adapters/runtime/
   eino/                     # CloudWeGo Eino ADK 适配层，唯一允许 import Eino 的目录
     runner.go               #   ADK AgentEvent -> events 协议转换，HITL resume 适配
