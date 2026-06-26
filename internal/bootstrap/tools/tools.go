@@ -44,7 +44,7 @@ func runtimeDir() string {
 // RegisterDefaults 将工具适配器连接到应用工具注册表。
 func RegisterDefaults() error {
 	registerOnce.Do(func() {
-		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.GlobalSessionManager))
+		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.NewSessionHistoryManager()))
 		apptools.RegisterMCPProvider(mcpadapter.DefaultProvider())
 		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{

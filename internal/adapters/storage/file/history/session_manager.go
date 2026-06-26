@@ -129,6 +129,3 @@ func (m *SessionHistoryManager) SaveSession(sessionID, filePath string) error {
 
 	return recorder.SaveToFile(filePath)
 }
-
-// GlobalSessionManager Web 和 CLI 共用的全局实例
-var GlobalSessionManager = NewSessionHistoryManager()

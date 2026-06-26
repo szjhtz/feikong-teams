@@ -152,7 +152,7 @@ func runtimeWelcomeInfo(session *Session) tui.WelcomeInfo {
 	return tui.WelcomeInfo{
 		Version:   fmt.Sprint(version.Get()),
 		Mode:      runtimeModeName(session.CurrentMode),
-		SessionID: activeSessionID,
+		SessionID: session.sessionID(),
 		Workspace: runtimeShortPath(GetWorkspaceDir()),
 		Model:     modelName,
 	}

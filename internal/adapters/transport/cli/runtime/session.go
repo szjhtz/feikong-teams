@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
@@ -28,6 +29,12 @@ type Session struct {
 	createModeRunner ModeRunnerCreator
 	callbackBuilder  func(*eventlog.HistoryRecorder) func(events.Event) error
 	memory           appstate.MemoryManager
+	historyDir       string
+	historyManager   *eventlog.SessionHistoryManager
+	activeSessionID  string
+	sessionTitle     string
+	resumeSessionID  string
+	temporary        bool
 }
 
 // NewSession 创建交互会话
@@ -37,6 +44,9 @@ func NewSession(mode WorkMode, inputHistory []string, createModeRunner ModeRunne
 		CurrentMode:      mode,
 		queryState:       NewQueryState(),
 		createModeRunner: createModeRunner,
+		historyDir:       appdata.SessionsDir(),
+		historyManager:   eventlog.NewSessionHistoryManager(),
+		activeSessionID:  CLISessionID,
 	}
 }
 
@@ -48,6 +58,61 @@ func (s *Session) GetQueryState() *QueryState {
 // SetMemoryManager 设置会话使用的长期记忆管理器。
 func (s *Session) SetMemoryManager(manager appstate.MemoryManager) {
 	s.memory = manager
+}
+
+// SetResumeSessionID 设置当前 CLI 会话要恢复的会话 ID。
+func (s *Session) SetResumeSessionID(sessionID string) {
+	s.resumeSessionID = sessionID
+}
+
+// SetTemporary 设置当前 CLI 会话是否不持久化。
+func (s *Session) SetTemporary(v bool) {
+	s.temporary = v
+}
+
+func (s *Session) isTemporary() bool {
+	return s != nil && s.temporary
+}
+
+func (s *Session) sessionID() string {
+	if s == nil || s.activeSessionID == "" {
+		return CLISessionID
+	}
+	return s.activeSessionID
+}
+
+func (s *Session) recorder() *eventlog.HistoryRecorder {
+	if s.historyManager == nil {
+		s.historyManager = eventlog.NewSessionHistoryManager()
+	}
+	if s.historyDir == "" {
+		s.historyDir = appdata.SessionsDir()
+	}
+	return s.historyManager.GetOrCreate(s.sessionID(), s.historyDir)
+}
+
+func (s *Session) setTitleFromInput(input string) {
+	if s != nil && s.sessionTitle == "" {
+		s.sessionTitle = truncateTitle(input)
+	}
+}
+
+func (s *Session) activateSession(nonInteractive bool) {
+	if s.resumeSessionID != "" {
+		s.activeSessionID = s.resumeSessionID
+		if nonInteractive {
+			pterm.Info.Printf("[非交互模式] 恢复会话: %s\n", s.activeSessionID)
+		}
+		return
+	}
+	s.activeSessionID = NewDirectSessionID()
+	if nonInteractive {
+		if s.isTemporary() {
+			pterm.Info.Printf("[非交互模式] 临时会话 ID: %s\n", s.activeSessionID)
+		} else {
+			pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", s.activeSessionID)
+		}
+	}
 }
 
 // StartSignalHandler 监听系统信号（SIGINT 运行时取消查询；其他信号转发为退出信号）
@@ -75,23 +140,14 @@ func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
 func (s *Session) HandleDirect(ctx context.Context, r runtimeport.Runner, exitSignals chan os.Signal, query string) {
 	s.InputHistory = append(s.InputHistory, query)
 
-	if resumeSessionID != "" {
-		activeSessionID = resumeSessionID
-		pterm.Info.Printf("[非交互模式] 恢复会话: %s\n", activeSessionID)
-	} else {
-		activeSessionID = NewDirectSessionID()
-		if IsTemporarySession() {
-			pterm.Info.Printf("[非交互模式] 临时会话 ID: %s\n", activeSessionID)
-		} else {
-			pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", activeSessionID)
-		}
-	}
+	s.activateSession(true)
 
 	// 回显用户输入
 	fmt.Printf("\n\033[1;90m╭─ [用户]\033[0m\n")
 	fmt.Printf("\033[1;90m╰─▶ %s\033[0m\n", query)
 
 	executor := NewQueryExecutor(r, s.queryState)
+	executor.SetSession(s)
 	executor.SetMemoryManager(s.memory)
 	executor.SetAutoReject(true)
 	executor.SetApproveStores(s.ApproveStores)
@@ -110,11 +166,7 @@ func (s *Session) HandleDirect(ctx context.Context, r runtimeport.Runner, exitSi
 
 // HandleInteractive 交互模式：启动 REPL 循环
 func (s *Session) HandleInteractive(ctx context.Context, r runtimeport.Runner, exitSignals chan os.Signal) {
-	if resumeSessionID != "" {
-		activeSessionID = resumeSessionID
-	} else {
-		activeSessionID = NewDirectSessionID()
-	}
+	s.activateSession(false)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -146,9 +198,9 @@ func (s *Session) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(eve
 	s.callbackBuilder = cb
 }
 
-// PrintResumeHint 打印当前会话的恢复命令。
-func PrintResumeHint() {
-	printResumeHint(activeSessionID)
+// PrintResumeHint 打印当前实例会话的恢复命令。
+func (s *Session) PrintResumeHint() {
+	printResumeHint(s.sessionID())
 }
 
 func printResumeHint(sessionID string) {

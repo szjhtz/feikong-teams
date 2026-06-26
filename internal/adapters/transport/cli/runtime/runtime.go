@@ -40,6 +40,7 @@ type Runtime struct {
 
 func NewRuntime(ctx context.Context, session *Session, r runtimeport.Runner, exitSignals chan os.Signal) *Runtime {
 	executor := NewQueryExecutor(r, session.queryState)
+	executor.SetSession(session)
 	executor.SetMemoryManager(session.memory)
 	return &Runtime{
 		ctx:         ctx,

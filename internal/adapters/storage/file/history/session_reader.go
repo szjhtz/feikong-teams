@@ -16,7 +16,7 @@ type SessionMessageReader struct {
 
 func NewSessionMessageReader(sessionsDir string, manager *SessionHistoryManager) *SessionMessageReader {
 	if manager == nil {
-		manager = GlobalSessionManager
+		manager = NewSessionHistoryManager()
 	}
 	return &SessionMessageReader{sessionsDir: sessionsDir, manager: manager}
 }

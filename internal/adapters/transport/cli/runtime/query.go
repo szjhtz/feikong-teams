@@ -89,6 +89,7 @@ func (s *QueryState) Cancel() bool {
 type QueryExecutor struct {
 	state         *QueryState
 	runner        runtimeport.Runner
+	session       *Session
 	autoReject    bool
 	approveStores []string // 自动批准的 store 列表
 	view          QueryView
@@ -127,6 +128,11 @@ func (e *QueryExecutor) SetApproveStores(s string) {
 // SetRunner 设置 runner
 func (e *QueryExecutor) SetRunner(runner runtimeport.Runner) {
 	e.runner = runner
+}
+
+// SetSession 设置执行器所属的 CLI 会话实例。
+func (e *QueryExecutor) SetSession(session *Session) {
+	e.session = session
 }
 
 // SetMemoryManager 设置执行器使用的长期记忆管理器。
@@ -230,64 +236,23 @@ const (
 // CLIHistoryDir CLI 会话历史存储目录
 var CLIHistoryDir = appdata.SessionsDir()
 
-// activeSessionID 当前活跃的会话 ID，每次启动时生成新 ID
-var activeSessionID = CLISessionID
-
-// cliSessionTitle 缓存第一次用户输入作为会话标题，仅在保存时使用
-var cliSessionTitle string
-
-// resumeSessionID 恢复会话的 ID，由 -r 参数设置
-var resumeSessionID string
-
-// temporarySession 标记当前 CLI 会话不持久化。
-var temporarySession bool
-
 // NewDirectSessionID 生成基于 UUID 的唯一会话 ID
 func NewDirectSessionID() string {
 	return session.NewID()
 }
 
-// SetResumeSessionID 设置要恢复的会话 ID
-func SetResumeSessionID(sessionID string) {
-	resumeSessionID = sessionID
-}
-
-// SetTemporarySession 设置当前 CLI 是否为临时会话。
-func SetTemporarySession(v bool) {
-	temporarySession = v
-}
-
-// IsTemporarySession 返回当前 CLI 是否为临时会话。
-func IsTemporarySession() bool {
-	return temporarySession
-}
-
-// getCliRecorder 获取 CLI 模式的历史记录器
-func getCliRecorder() *eventlog.HistoryRecorder {
-	return eventlog.GlobalSessionManager.GetOrCreate(activeSessionID, CLIHistoryDir)
-}
-
-// BuildTurnInput 构建一轮输入（包含历史对话，支持上下文压缩摘要）
-func BuildTurnInput(input string) domainmessage.TurnInput {
-	recorder := getCliRecorder()
-	return appchat.BuildTurnInput(recorder, input)
-}
-
-// BuildTurnInputWithMemory 构建包含显式长期记忆依赖的一轮输入。
-func BuildTurnInputWithMemory(input string, manager appstate.MemorySearcher) domainmessage.TurnInput {
-	recorder := getCliRecorder()
-	return appchat.BuildTurnInputWithMemory(recorder, input, manager)
-}
-
 // Execute 执行查询
 func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
-	turnInput := BuildTurnInputWithMemory(input, e.memory)
-	recorder := getCliRecorder()
+	session := e.session
+	if session == nil {
+		session = NewSession(ModeTeam, nil, nil)
+		session.activateSession(false)
+	}
+	recorder := session.recorder()
+	turnInput := appchat.BuildTurnInputWithMemory(recorder, input, e.memory)
 
 	// 缓存第一次输入作为会话标题（不立即创建文件，等用户保存时才写入）
-	if cliSessionTitle == "" {
-		cliSessionTitle = truncateTitle(input)
-	}
+	session.setTitleFromInput(input)
 
 	// 创建可取消的 context
 	queryCtx, cancelFunc := context.WithCancel(ctx)
@@ -335,7 +300,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	}
 	for {
 		_, err := appchat.NewService().RunTurn(queryCtx, appchat.TurnRequest{
-			SessionID: activeSessionID,
+			SessionID: session.sessionID(),
 			Runner:    e.runner,
 			Input:     currentInput,
 		},
@@ -370,7 +335,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		e.view.Flush()
 	}
 
-	appchat.ExtractMemoryAsync(e.memory, eventlog.ConvertMemoryMessages(recorder), activeSessionID)
+	appchat.ExtractMemoryAsync(e.memory, eventlog.ConvertMemoryMessages(recorder), session.sessionID())
 
 	elapsed := time.Since(startTime).Round(time.Millisecond)
 	e.view.Done(elapsed)
@@ -444,9 +409,9 @@ func HandleCtrlC(state *QueryState) {
 	state.cancelMu.Unlock()
 }
 
-// SaveChatHistoryToHTML 保存聊天历史到 HTML 文件
-func SaveChatHistoryToHTML() (string, error) {
-	recorder := getCliRecorder()
+// SaveChatHistoryToHTML 保存当前会话聊天历史到 HTML 文件。
+func (s *Session) SaveChatHistoryToHTML() (string, error) {
+	recorder := s.recorder()
 	filePath, err := recorder.SaveToMarkdownWithTimestamp()
 	if err != nil {
 		return "", fmt.Errorf("保存聊天历史到 Markdown 失败: %w", err)
@@ -458,30 +423,25 @@ func SaveChatHistoryToHTML() (string, error) {
 	return htmlFilePath, nil
 }
 
-// FlushSessionMemory 退出前强制提取当前会话的剩余记忆
-func FlushSessionMemory() {
-	FlushSessionMemoryWithManager(nil)
-}
-
-// FlushSessionMemoryWithManager 退出前强制提取当前会话的剩余记忆。
-func FlushSessionMemoryWithManager(manager appstate.MemoryManager) {
+// FlushMemoryWithManager 退出前强制提取当前会话的剩余记忆。
+func (s *Session) FlushMemoryWithManager(manager appstate.MemoryManager) {
 	if manager == nil {
 		return
 	}
-	recorder := getCliRecorder()
+	recorder := s.recorder()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	appchat.FlushMemory(ctx, manager, eventlog.ConvertMemoryMessages(recorder), activeSessionID)
+	appchat.FlushMemory(ctx, manager, eventlog.ConvertMemoryMessages(recorder), s.sessionID())
 }
 
-// SaveCLISessionHistory 保存 CLI 模式的可恢复会话历史。
-func SaveCLISessionHistory() bool {
-	recorder := getCliRecorder()
+// SaveHistory 保存当前 CLI 实例的可恢复会话历史。
+func (s *Session) SaveHistory() bool {
+	recorder := s.recorder()
 	if recorder.GetMessageCount() == 0 {
 		return false
 	}
-	store := eventlog.NewChatSessionStore(CLIHistoryDir)
-	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), activeSessionID, cliSessionTitle, recorder); err != nil {
+	store := eventlog.NewChatSessionStore(s.historyDir)
+	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), s.sessionID(), s.sessionTitle, recorder); err != nil {
 		pterm.Error.Printfln("保存聊天历史失败: %v", err)
 		return false
 	}

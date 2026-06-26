@@ -154,9 +154,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		session = cliruntime.NewSession(cliruntime.ModeTeam, inputHistory, nil)
 		session.SetMemoryManager(state.Memory())
 		session.SetCurrentAgent(agentName)
-		cliruntime.SetTemporarySession(temporarySession)
+		session.SetTemporary(temporarySession)
 		if resumeSession != "" {
-			cliruntime.SetResumeSessionID(resumeSession)
+			session.SetResumeSessionID(resumeSession)
 		}
 
 		approve := cmd.String("approve")
@@ -181,9 +181,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 
 	app.OnPreStop(func(ctx context.Context) error {
 		if !temporarySession {
-			if cliruntime.SaveCLISessionHistory() {
+			if session != nil && session.SaveHistory() {
 				if query == "" {
-					cliruntime.PrintResumeHint()
+					session.PrintResumeHint()
 				}
 			}
 		}

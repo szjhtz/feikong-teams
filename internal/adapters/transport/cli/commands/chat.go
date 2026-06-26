@@ -87,9 +87,9 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		session = cliruntime.NewSession(currentMode, inputHistory, createModeRunner)
 		session.SetMemoryManager(state.Memory())
 		session.ApproveStores = approve
-		cliruntime.SetTemporarySession(temporarySession)
+		session.SetTemporary(temporarySession)
 		if resumeSession != "" {
-			cliruntime.SetResumeSessionID(resumeSession)
+			session.SetResumeSessionID(resumeSession)
 		}
 
 		if query != "" {
@@ -103,17 +103,21 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 
 	app.OnPreStop(func(ctx context.Context) error {
 		if !temporarySession {
-			if cliruntime.SaveCLISessionHistory() {
+			if session != nil && session.SaveHistory() {
 				if query == "" {
-					cliruntime.PrintResumeHint()
+					session.PrintResumeHint()
 				}
 			}
 		}
 		if cfg.MemoryEnabled && query != "" {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
-			cliruntime.FlushSessionMemoryWithManager(state.Memory())
+			if session != nil {
+				session.FlushMemoryWithManager(state.Memory())
+			}
 		} else if cfg.MemoryEnabled {
-			cliruntime.FlushSessionMemoryWithManager(state.Memory())
+			if session != nil {
+				session.FlushMemoryWithManager(state.Memory())
+			}
 		}
 		return nil
 	})

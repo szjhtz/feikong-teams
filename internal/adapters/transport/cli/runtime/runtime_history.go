@@ -28,7 +28,7 @@ func (m *runtimeModel) trimBlocks() {
 }
 
 func (m *runtimeModel) appendLoadedHistory() {
-	recorder := getCliRecorder()
+	recorder := m.runtime.session.recorder()
 	messages := recorder.GetMessages()
 	if len(messages) == 0 {
 		return

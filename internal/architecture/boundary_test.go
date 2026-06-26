@@ -744,6 +744,18 @@ func TestInterruptRuntimeDoesNotExposeProcessDefault(t *testing.T) {
 	}
 }
 
+func TestFileHistoryDoesNotExposeGlobalSessionManager(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "adapters", "storage", "file", "history", "session_manager.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "GlobalSessionManager") {
+		t.Fatal("file history adapter exposes GlobalSessionManager; entrypoints must own SessionHistoryManager instances explicitly")
+	}
+}
+
 func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{

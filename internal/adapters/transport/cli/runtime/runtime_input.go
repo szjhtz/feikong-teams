@@ -301,10 +301,10 @@ func (m runtimeModel) openRuntimePicker(picker *runtimePicker, err error, title 
 }
 
 func (m runtimeModel) saveRuntimeChatHistory() runtimeModel {
-	recorder := getCliRecorder()
-	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, eventlog.HistoryFileName)
-	store := eventlog.NewChatSessionStore(CLIHistoryDir)
-	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), activeSessionID, cliSessionTitle, recorder); err != nil {
+	recorder := m.runtime.session.recorder()
+	historyFile := filepath.Join(m.runtime.session.historyDir, m.runtime.session.sessionID(), eventlog.HistoryFileName)
+	store := eventlog.NewChatSessionStore(m.runtime.session.historyDir)
+	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), m.runtime.session.sessionID(), m.runtime.session.sessionTitle, recorder); err != nil {
 		m.appendBlock(runtimeBlockError, "保存聊天历史失败", err.Error())
 		return m
 	}
@@ -313,7 +313,7 @@ func (m runtimeModel) saveRuntimeChatHistory() runtimeModel {
 }
 
 func (m runtimeModel) saveRuntimeChatHistoryMarkdown() runtimeModel {
-	recorder := getCliRecorder()
+	recorder := m.runtime.session.recorder()
 	filePath, err := recorder.SaveToMarkdownWithTimestamp()
 	if err != nil {
 		m.appendBlock(runtimeBlockError, "导出 Markdown 失败", err.Error())
@@ -324,7 +324,7 @@ func (m runtimeModel) saveRuntimeChatHistoryMarkdown() runtimeModel {
 }
 
 func (m runtimeModel) saveRuntimeChatHistoryHTML() runtimeModel {
-	htmlFilePath, err := SaveChatHistoryToHTML()
+	htmlFilePath, err := m.runtime.session.SaveChatHistoryToHTML()
 	if err != nil {
 		m.appendBlock(runtimeBlockError, "导出 HTML 失败", err.Error())
 		return m
@@ -334,20 +334,20 @@ func (m runtimeModel) saveRuntimeChatHistoryHTML() runtimeModel {
 }
 
 func (m runtimeModel) clearRuntimeChatHistory() runtimeModel {
-	eventlog.GlobalSessionManager.Clear(activeSessionID)
+	m.runtime.session.recorder().Clear()
 	m.appendBlock(runtimeBlockSystem, "聊天历史", "已清空当前聊天历史")
 	return m
 }
 
 func (m runtimeModel) loadRuntimeSession(sessionID string) runtimeModel {
-	historyFile := filepath.Join(CLIHistoryDir, sessionID, eventlog.HistoryFileName)
+	historyFile := filepath.Join(m.runtime.session.historyDir, sessionID, eventlog.HistoryFileName)
 	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
 		m.appendBlock(runtimeBlockError, "加载聊天历史失败", "历史文件不存在: "+historyFile)
 		return m
 	}
 
-	activeSessionID = sessionID
-	recorder := getCliRecorder()
+	m.runtime.session.activeSessionID = sessionID
+	recorder := m.runtime.session.recorder()
 	if err := recorder.LoadFromFile(historyFile); err != nil {
 		m.appendBlock(runtimeBlockError, "加载聊天历史失败", err.Error())
 		return m
