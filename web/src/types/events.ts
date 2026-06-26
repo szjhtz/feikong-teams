@@ -25,6 +25,10 @@ export interface ToolCallDTO {
   target?: string;
   arguments?: string;
   result?: string;
+  status?: "pending" | "running" | "completed" | "error" | string;
+  agent_name?: string;
+  member_name?: string;
+  content?: string;
 }
 
 export interface QueueItem {
@@ -56,6 +60,8 @@ export interface ChatEvent {
   tool_display_name?: string;
   tool_kind?: string;
   tool_target?: string;
+  tool_args?: string;
+  tool_result?: string;
   tool_call_id?: string;
   tool_call_ref?: string;
   tool_call_index?: number;

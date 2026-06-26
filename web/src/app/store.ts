@@ -106,7 +106,7 @@ const chatSlice = createSlice({
           });
         }
       }
-      if (event.type === "message_start" || event.type === "message_delta") {
+      if (isRenderableMessageEvent(event)) {
         const key = `${event.message_id || event.stream_id || event.agent_name || "assistant"}`;
         let message = state.messages.find((item) => item.id === key);
         if (!message) {
@@ -120,7 +120,7 @@ const chatSlice = createSlice({
           state.messages.push(message);
         }
         const content = eventText(event);
-        if (event.type === "message_delta" && event.delta_kind !== "reasoning" && event.delta_kind !== "tool_args" && content) {
+        if (event.type === "message_delta" && content) {
           message.content += content;
         }
         message.events.push(event);
@@ -151,6 +151,19 @@ const chatSlice = createSlice({
 
 function eventText(event: ChatEvent) {
   return String(event.content || event.delta || event.message || "");
+}
+
+function isRenderableMessageEvent(event: ChatEvent) {
+  if (event.type === "message_start") {
+    return event.role !== "tool";
+  }
+  if (event.type !== "message_delta") {
+    return false;
+  }
+  if (event.role === "tool") {
+    return false;
+  }
+  return event.delta_kind !== "reasoning" && event.delta_kind !== "tool_args" && event.delta_kind !== "tool_result";
 }
 
 const sessionsSlice = createSlice({

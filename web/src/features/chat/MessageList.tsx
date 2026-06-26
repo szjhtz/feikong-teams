@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import anime from "animejs";
-import { Bot, User } from "lucide-react";
+import { Bot, GitBranch, User } from "lucide-react";
 import { useAppSelector } from "@/app/hooks";
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/cn";
 import { ActivityCanvas } from "@/components/layout/ActivityCanvas";
 import { ToolCallCard } from "./ToolCallCard";
+import type { ChatEvent, ToolCallDTO } from "@/types/events";
 
 export function MessageList() {
   const messages = useAppSelector((state) => state.chat.messages);
@@ -45,7 +46,8 @@ export function MessageList() {
     );
   }
 
-  const toolEvents = events.flatMap((event) => event.tool_calls || (event.tool_call ? [event.tool_call] : []));
+  const toolEvents = collectToolActivities(events);
+  const memberEvents = collectMemberActivities(events);
 
   return (
     <div className="h-full overflow-auto px-6 py-5">
@@ -94,7 +96,17 @@ export function MessageList() {
           </div>
         ) : null}
         {error ? <div className="sketch-surface rounded-md border-destructive/50 px-4 py-3 text-sm text-destructive">{error}</div> : null}
-        {toolEvents.slice(-8).map((tool, index) => (
+        {memberEvents.map((member) => (
+          <div key={member.id} className="sketch-surface rounded-md px-4 py-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+              <GitBranch className="h-4 w-4" />
+              <span className="font-medium text-foreground">{member.name}</span>
+              <span className="text-xs">{member.eventCount} 个事件</span>
+            </div>
+            {member.preview ? <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(member.preview) }} /> : null}
+          </div>
+        ))}
+        {toolEvents.slice(-12).map((tool, index) => (
           <ToolCallCard key={`${tool.ref || tool.id || tool.name}-${index}`} tool={tool} />
         ))}
         <div ref={bottomRef} />
@@ -103,6 +115,104 @@ export function MessageList() {
   );
 }
 
-function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unknown }>) {
-  return events.map((event) => (event.tool_calls?.length || 0) + (event.tool_call ? 1 : 0)).join(":");
+function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unknown; tool_call_ref?: string; type?: string }>) {
+  return events
+    .map((event) => `${event.type}:${event.tool_call_ref || ""}:${event.tool_calls?.length || 0}:${event.tool_call ? 1 : 0}`)
+    .join(":");
+}
+
+function collectToolActivities(events: ChatEvent[]): ToolCallDTO[] {
+  const result = new Map<string, ToolCallDTO>();
+  const order: string[] = [];
+  const upsert = (key: string, patch: Partial<ToolCallDTO>) => {
+    if (!result.has(key)) {
+      result.set(key, {
+        id: patch.id,
+        ref: patch.ref,
+        name: patch.name || "tool",
+        status: "pending",
+      });
+      order.push(key);
+    }
+    Object.assign(result.get(key)!, patch);
+  };
+
+  for (const event of events) {
+    for (const tool of event.tool_calls || []) {
+      const key = toolKey(tool, event);
+      upsert(key, {
+        ...tool,
+        ref: tool.ref || event.tool_call_ref,
+        id: tool.id || event.tool_call_id,
+        status: event.type === "message_end" ? "completed" : "pending",
+        member_name: event.member_name || tool.member_name,
+      });
+    }
+    if (event.tool_call) {
+      const key = toolKey(event.tool_call, event);
+      upsert(key, {
+        ...event.tool_call,
+        ref: event.tool_call.ref || event.tool_call_ref,
+        id: event.tool_call.id || event.tool_call_id,
+        status: event.type === "message_end" ? "completed" : "pending",
+        member_name: event.member_name || event.tool_call.member_name,
+      });
+    }
+    if (event.tool_name || event.tool_call_ref || event.tool_call_id) {
+      const key = event.tool_call_ref || event.tool_call_id || event.tool_name || "tool";
+      const current = result.get(key);
+      upsert(key, {
+        ref: event.tool_call_ref,
+        id: event.tool_call_id,
+        name: event.tool_name || current?.name || "tool",
+        display_name: event.tool_display_name || current?.display_name,
+        kind: event.tool_kind || current?.kind,
+        target: event.tool_target || current?.target,
+        member_name: event.member_name || current?.member_name,
+        status: event.type === "tool_end" ? "completed" : event.type === "error" ? "error" : current?.status || "running",
+      });
+      const next = result.get(key)!;
+      const content = String(event.tool_args || event.content || event.delta || "");
+      if (event.delta_kind === "tool_args" && content) {
+        next.arguments = appendText(next.arguments, content);
+      }
+      if ((event.type === "tool_start" || event.delta_kind === "tool_args") && content && !next.arguments) {
+        next.arguments = content;
+      }
+      if ((event.type === "tool_update" || event.type === "tool_end" || event.delta_kind === "tool_result" || event.role === "tool") && content) {
+        next.result = appendText(next.result, content);
+      }
+    }
+  }
+  return order.map((key) => result.get(key)!).filter((tool) => tool.name && tool.name !== "tool");
+}
+
+function collectMemberActivities(events: ChatEvent[]) {
+  const result = new Map<string, { id: string; name: string; eventCount: number; preview: string }>();
+  for (const event of events) {
+    if (!event.is_member_event && !event.member_call_id && !event.member_name) continue;
+    const id = event.member_call_id || event.member_name || event.agent_name || "member";
+    const current = result.get(id) || {
+      id,
+      name: event.member_name || event.agent_name || "子智能体",
+      eventCount: 0,
+      preview: "",
+    };
+    current.eventCount += 1;
+    const content = event.delta_kind === "output" || event.type === "action" ? String(event.content || event.delta || "") : "";
+    if (content) current.preview = appendText(current.preview, content);
+    result.set(id, current);
+  }
+  return Array.from(result.values()).filter((member) => member.preview || member.eventCount > 1);
+}
+
+function toolKey(tool: ToolCallDTO, event: ChatEvent) {
+  return tool.ref || event.tool_call_ref || tool.id || event.tool_call_id || `${tool.name}:${tool.index ?? ""}`;
+}
+
+function appendText(left = "", right = "") {
+  if (!right) return left;
+  if (!left) return right;
+  if (left.includes(right)) return left;
+  return left + right;
 }
