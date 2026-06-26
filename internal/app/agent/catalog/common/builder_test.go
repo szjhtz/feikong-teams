@@ -15,10 +15,11 @@ import (
 )
 
 func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
-	engine, err := bootstrapruntimes.DefaultEngine()
+	defaults, err := bootstrapruntimes.NewDefaults()
 	if err != nil {
 		t.Fatalf("runtime engine: %v", err)
 	}
+	engine := defaults.Engine
 	ctx := runtimeport.WithEngine(context.Background(), engine)
 	cm := testmodel.New().EnqueueStream(testmodel.AssistantMessage("builder-ok"))
 

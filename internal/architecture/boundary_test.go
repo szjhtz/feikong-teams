@@ -721,6 +721,50 @@ func TestBootstrapDoesNotAutoRegisterInInit(t *testing.T) {
 	}
 }
 
+func TestRuntimeCompositionDoesNotExposeProcessDefaults(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	checks := map[string][]string{
+		"internal/runtime/registry/runtime.go": {
+			"var registry",
+			"func Engine()",
+			"func Register(",
+			"func Use(",
+			"func DefaultName()",
+			"func EngineByName(",
+			"func RegisteredNames()",
+		},
+		"internal/bootstrap/runtimes/runtimes.go": {
+			"sync.Once",
+			"registerOnce",
+			"registerErr",
+			"modelReg     *",
+			"providerReg  *",
+			"DefaultEngine(",
+			"DefaultModelRegistry(",
+			"DefaultModelProviderRegistry(",
+		},
+		"internal/bootstrap/tools/tools.go": {
+			"sync.Once",
+			"registerOnce",
+			"registerErr",
+			"toolRegistry *",
+		},
+	}
+	for rel, forbiddenList := range checks {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		for _, forbidden := range forbiddenList {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s exposes process-default composition state through %q", rel, forbidden)
+			}
+		}
+	}
+}
+
 func TestModelProvidersRegisterExplicitly(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{

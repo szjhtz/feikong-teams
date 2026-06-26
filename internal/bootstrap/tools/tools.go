@@ -3,7 +3,6 @@ package tools
 import (
 	"fmt"
 	"path/filepath"
-	"sync"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	commandtool "fkteams/internal/adapters/tools/builtin/command"
@@ -28,24 +27,18 @@ import (
 	"fkteams/internal/runtime/resources"
 )
 
-var (
-	registerOnce sync.Once
-	registerErr  error
-	toolRegistry *apptools.ToolGroupRegistry
-)
-
 func runtimeDir() string {
 	return filepath.Join(appdata.Dir(), "runtime")
 }
 
-// RegisterDefaults 将工具适配器连接到应用工具注册表。
+// RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
 func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
-	registerOnce.Do(func() {
-		registry := apptools.NewToolGroupRegistry()
-		toolRegistry = registry
-		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.NewSessionHistoryManager()))
-		registry.RegisterMCPProvider(mcpadapter.DefaultProvider())
-		if err := registry.Register(apptools.ToolGroupRegistration{
+	registry := apptools.NewToolGroupRegistry()
+	attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.NewSessionHistoryManager()))
+	registry.RegisterMCPProvider(mcpadapter.DefaultProvider())
+
+	registrations := []apptools.ToolGroupRegistration{
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "file",
 				DisplayName:   "文件",
@@ -61,11 +54,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				}
 				return fileTools.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "todo",
 				DisplayName:   "待办事项",
@@ -81,11 +71,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				}
 				return todoTools.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "ask",
 				DisplayName:   "向用户提问",
@@ -97,11 +84,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
 				return ask.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "command",
 				DisplayName:   "命令执行",
@@ -111,11 +95,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				IncludedTools: []string{"execute"},
 			},
 			Factory: commandToolGroup(commandtool.ApprovalModeHITL),
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "command_reject",
 				DisplayName:   "命令执行（自动拒绝危险操作）",
@@ -126,11 +107,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				Hidden:        true,
 			},
 			Factory: commandToolGroup(commandtool.ApprovalModeReject),
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "uv",
 				DisplayName:   "Python",
@@ -146,11 +124,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				}
 				return uvTools.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "bun",
 				DisplayName:   "JavaScript",
@@ -166,11 +141,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				}
 				return bunTools.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "excel",
 				DisplayName:   "Excel",
@@ -186,11 +158,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				}
 				return excelTools.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "search",
 				DisplayName:   "网络搜索",
@@ -202,11 +171,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
 				return searchtool.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "fetch",
 				DisplayName:   "网页抓取",
@@ -218,11 +184,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
 				return fetchtool.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "doc",
 				DisplayName:   "文档",
@@ -234,11 +197,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
 				return doctool.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "git",
 				DisplayName:   "Git",
@@ -254,11 +214,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				}
 				return gitTools.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "ssh",
 				DisplayName:   "SSH",
@@ -287,11 +244,8 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 				}
 				return sshTools.GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
-		}
-		if err := registry.Register(apptools.ToolGroupRegistration{
+		},
+		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "scheduler",
 				DisplayName:   "定时任务",
@@ -303,19 +257,16 @@ func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
 				return schedulertool.NewTools(nil).GetTools()
 			},
-		}); err != nil {
-			registerErr = err
-			return
+		},
+	}
+
+	for _, reg := range registrations {
+		if err := registry.Register(reg); err != nil {
+			return nil, err
 		}
-		registry.Freeze()
-	})
-	if registerErr != nil {
-		return nil, registerErr
 	}
-	if toolRegistry == nil {
-		return nil, fmt.Errorf("tool registry is not registered")
-	}
-	return toolRegistry, nil
+	registry.Freeze()
+	return registry, nil
 }
 
 func commandToolGroup(mode commandtool.ApprovalMode) apptools.ToolGroupFactory {

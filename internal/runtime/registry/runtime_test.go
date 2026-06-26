@@ -8,24 +8,18 @@ import (
 )
 
 func TestRegisterAndUseRuntime(t *testing.T) {
-	original := DefaultName()
-	t.Cleanup(func() {
-		registry.Lock()
-		registry.defaultName = original
-		registry.Unlock()
-	})
-
+	registry := NewRegistry(DefaultRuntimeName)
 	engine := testEngine{}
-	if err := Register("test-runtime", engine); err != nil {
+	if err := registry.Register("test-runtime", engine); err != nil {
 		t.Fatalf("register runtime: %v", err)
 	}
-	if err := Use("test-runtime"); err != nil {
+	if err := registry.Use("test-runtime"); err != nil {
 		t.Fatalf("use runtime: %v", err)
 	}
-	if DefaultName() != "test-runtime" {
-		t.Fatalf("default runtime = %q, want test-runtime", DefaultName())
+	if registry.DefaultName() != "test-runtime" {
+		t.Fatalf("default runtime = %q, want test-runtime", registry.DefaultName())
 	}
-	got, err := Engine()
+	got, err := registry.Engine()
 	if err != nil {
 		t.Fatalf("default engine: %v", err)
 	}
@@ -35,26 +29,29 @@ func TestRegisterAndUseRuntime(t *testing.T) {
 }
 
 func TestEngineByNameRequiresExplicitRegistration(t *testing.T) {
-	if _, err := EngineByName("missing-runtime"); err == nil {
+	registry := NewRegistry(DefaultRuntimeName)
+	if _, err := registry.EngineByName("missing-runtime"); err == nil {
 		t.Fatal("expected missing runtime error")
 	}
 }
 
 func TestUseUnknownRuntimeReturnsError(t *testing.T) {
-	if err := Use("missing-runtime"); err == nil {
+	registry := NewRegistry(DefaultRuntimeName)
+	if err := registry.Use("missing-runtime"); err == nil {
 		t.Fatal("expected error for missing runtime")
 	}
 }
 
 func TestRegisteredNamesAreSorted(t *testing.T) {
-	if err := Register("z-runtime", testEngine{}); err != nil {
+	registry := NewRegistry(DefaultRuntimeName)
+	if err := registry.Register("z-runtime", testEngine{}); err != nil {
 		t.Fatalf("register z runtime: %v", err)
 	}
-	if err := Register("a-runtime", testEngine{}); err != nil {
+	if err := registry.Register("a-runtime", testEngine{}); err != nil {
 		t.Fatalf("register a runtime: %v", err)
 	}
 
-	names := RegisteredNames()
+	names := registry.RegisteredNames()
 	if !sort.StringsAreSorted(names) {
 		t.Fatalf("registered names are not sorted: %v", names)
 	}

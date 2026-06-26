@@ -1,9 +1,6 @@
 package runtimes
 
 import (
-	"fmt"
-	"sync"
-
 	modelproviders "fkteams/internal/adapters/model/providers"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	einoengine "fkteams/internal/adapters/runtime/eino/engine"
@@ -14,64 +11,38 @@ import (
 	runtimeregistry "fkteams/internal/runtime/registry"
 )
 
-var (
-	registerOnce sync.Once
-	registerErr  error
-	modelReg     *modelregistry.Registry
-	providerReg  *modelproviders.Registry
-)
-
-// RegisterDefaults 注册默认 runtime adapter 和关联桥接能力。
-func RegisterDefaults() error {
-	registerOnce.Do(func() {
-		registerErr = registerDefaults()
-	})
-	return registerErr
+// Defaults 保存组合根创建的默认 runtime 依赖。
+type Defaults struct {
+	RuntimeRegistry       *runtimeregistry.Registry
+	Engine                runtimeport.Engine
+	Interrupt             runtimeport.InterruptRuntime
+	ModelRegistry         *modelregistry.Registry
+	ModelProviderRegistry *modelproviders.Registry
 }
 
-// DefaultEngine 返回组合根注册的默认 runtime engine。
-func DefaultEngine() (runtimeport.Engine, error) {
-	if err := RegisterDefaults(); err != nil {
-		return nil, err
-	}
-	return runtimeregistry.Engine()
-}
+// NewDefaults 显式创建默认 runtime adapter 和关联桥接能力。
+func NewDefaults() (*Defaults, error) {
+	providerRegistry := modelproviders.NewRegistry()
+	modelRegistry := modelregistry.NewRegistry()
+	einoproviders.RegisterDefaults(providerRegistry, modelRegistry)
 
-// DefaultModelRegistry 返回组合根注册的模型工厂注册表。
-func DefaultModelRegistry() (*modelregistry.Registry, error) {
-	if err := RegisterDefaults(); err != nil {
-		return nil, err
-	}
-	if modelReg == nil {
-		return nil, fmt.Errorf("model registry is not registered")
-	}
-	return modelReg, nil
-}
-
-// DefaultModelProviderRegistry 返回组合根注册的模型 provider 注册表。
-func DefaultModelProviderRegistry() (*modelproviders.Registry, error) {
-	if err := RegisterDefaults(); err != nil {
-		return nil, err
-	}
-	if providerReg == nil {
-		return nil, fmt.Errorf("model provider registry is not registered")
-	}
-	return providerReg, nil
-}
-
-// DefaultInterruptRuntime 返回默认 HITL 中断 runtime。
-func DefaultInterruptRuntime() runtimeport.InterruptRuntime {
-	return einoruntime.NewInterruptRuntime()
-}
-
-func registerDefaults() error {
-	providerReg = modelproviders.NewRegistry()
-	modelReg = modelregistry.NewRegistry()
-	einoproviders.RegisterDefaults(providerReg, modelReg)
 	engine := einoengine.NewEngine()
-	if err := runtimeregistry.Register(runtimeregistry.DefaultRuntimeName, engine); err != nil {
-		return err
+	runtimeRegistry := runtimeregistry.NewRegistry(runtimeregistry.DefaultRuntimeName)
+	if err := runtimeRegistry.Register(runtimeregistry.DefaultRuntimeName, engine); err != nil {
+		return nil, err
 	}
+	if err := runtimeRegistry.Use(runtimeregistry.DefaultRuntimeName); err != nil {
+		return nil, err
+	}
+
+	// MCP tool provider 桥接仍由 MCP adapter 持有，组合根负责唯一装配点。
 	toolmcp.RegisterToolProvider(engine.MCPTools)
-	return nil
+
+	return &Defaults{
+		RuntimeRegistry:       runtimeRegistry,
+		Engine:                engine,
+		Interrupt:             einoruntime.NewInterruptRuntime(),
+		ModelRegistry:         modelRegistry,
+		ModelProviderRegistry: providerRegistry,
+	}, nil
 }

@@ -1,71 +1,105 @@
 package registry
 
 import (
-	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"sort"
 	"sync"
+
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 const DefaultRuntimeName = "eino"
 
-var registry = struct {
-	sync.RWMutex
+// Registry 保存一组可用 runtime engine。
+type Registry struct {
+	mu          sync.RWMutex
 	defaultName string
 	engines     map[string]runtimeport.Engine
-}{
-	defaultName: DefaultRuntimeName,
-	engines:     make(map[string]runtimeport.Engine),
 }
 
-func Engine() (runtimeport.Engine, error) {
-	return EngineByName(DefaultName())
+// NewRegistry 创建 runtime engine 注册表。
+func NewRegistry(defaultName string) *Registry {
+	if defaultName == "" {
+		defaultName = DefaultRuntimeName
+	}
+	return &Registry{
+		defaultName: defaultName,
+		engines:     make(map[string]runtimeport.Engine),
+	}
 }
 
-func Register(name string, engine runtimeport.Engine) error {
+// Engine 返回当前默认 runtime engine。
+func (r *Registry) Engine() (runtimeport.Engine, error) {
+	if r == nil {
+		return nil, fmt.Errorf("runtime registry is nil")
+	}
+	return r.EngineByName(r.DefaultName())
+}
+
+// Register 注册 runtime engine。
+func (r *Registry) Register(name string, engine runtimeport.Engine) error {
+	if r == nil {
+		return fmt.Errorf("runtime registry is nil")
+	}
 	if name == "" {
 		return fmt.Errorf("runtime name is empty")
 	}
 	if engine == nil {
 		return fmt.Errorf("runtime engine is nil")
 	}
-	registry.Lock()
-	registry.engines[name] = engine
-	registry.Unlock()
+	r.mu.Lock()
+	r.engines[name] = engine
+	r.mu.Unlock()
 	return nil
 }
 
-func Use(name string) error {
-	registry.Lock()
-	defer registry.Unlock()
-	if _, ok := registry.engines[name]; !ok {
+// Use 设置默认 runtime engine。
+func (r *Registry) Use(name string) error {
+	if r == nil {
+		return fmt.Errorf("runtime registry is nil")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.engines[name]; !ok {
 		return fmt.Errorf("runtime %s is not registered", name)
 	}
-	registry.defaultName = name
+	r.defaultName = name
 	return nil
 }
 
-func DefaultName() string {
-	registry.RLock()
-	defer registry.RUnlock()
-	return registry.defaultName
+// DefaultName 返回当前默认 runtime 名称。
+func (r *Registry) DefaultName() string {
+	if r == nil {
+		return ""
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.defaultName
 }
 
-func EngineByName(name string) (runtimeport.Engine, error) {
-	registry.RLock()
-	defer registry.RUnlock()
-	engine, ok := registry.engines[name]
+// EngineByName 返回指定 runtime engine。
+func (r *Registry) EngineByName(name string) (runtimeport.Engine, error) {
+	if r == nil {
+		return nil, fmt.Errorf("runtime registry is nil")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	engine, ok := r.engines[name]
 	if !ok {
 		return nil, fmt.Errorf("runtime %s is not registered", name)
 	}
 	return engine, nil
 }
 
-func RegisteredNames() []string {
-	registry.RLock()
-	defer registry.RUnlock()
-	names := make([]string, 0, len(registry.engines))
-	for name := range registry.engines {
+// RegisteredNames 返回已注册 runtime 名称。
+func (r *Registry) RegisteredNames() []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.engines))
+	for name := range r.engines {
 		names = append(names, name)
 	}
 	sort.Strings(names)

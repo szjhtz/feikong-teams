@@ -21,7 +21,8 @@ func init() {
 }
 
 func main() {
-	if err := bootstrapruntimes.RegisterDefaults(); err != nil {
+	runtimeDefaults, err := bootstrapruntimes.NewDefaults()
+	if err != nil {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
@@ -30,25 +31,10 @@ func main() {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
-	engine, err := bootstrapruntimes.DefaultEngine()
-	if err != nil {
-		pterm.Error.Println(err)
-		os.Exit(1)
-	}
-	modelRegistry, err := bootstrapruntimes.DefaultModelRegistry()
-	if err != nil {
-		pterm.Error.Println(err)
-		os.Exit(1)
-	}
-	modelProviderRegistry, err := bootstrapruntimes.DefaultModelProviderRegistry()
-	if err != nil {
-		pterm.Error.Println(err)
-		os.Exit(1)
-	}
-	ctx := runtimeport.WithEngine(context.Background(), engine)
-	ctx = runtimeport.WithInterruptRuntime(ctx, bootstrapruntimes.DefaultInterruptRuntime())
-	ctx = modelregistry.WithRegistry(ctx, modelRegistry)
-	ctx = modelproviders.WithRegistry(ctx, modelProviderRegistry)
+	ctx := runtimeport.WithEngine(context.Background(), runtimeDefaults.Engine)
+	ctx = runtimeport.WithInterruptRuntime(ctx, runtimeDefaults.Interrupt)
+	ctx = modelregistry.WithRegistry(ctx, runtimeDefaults.ModelRegistry)
+	ctx = modelproviders.WithRegistry(ctx, runtimeDefaults.ModelProviderRegistry)
 	ctx = apptools.WithRegistry(ctx, toolRegistry)
 	ctx = agents.WithRegistry(ctx, agents.NewRegistry())
 	if err := clicommands.Root().Run(ctx, os.Args); err != nil {
