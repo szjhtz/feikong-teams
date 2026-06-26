@@ -33,28 +33,51 @@ type Provider interface {
 	Download(ctx context.Context, slug, version string) (io.ReadCloser, error)
 }
 
-// --- 默认 Provider 注册 ---
-
-var defaultProviders = []Provider{
-	NewSkillHubProvider("https://lightmake.site/api/skills"),
+// ProviderRegistry 保存技能市场后端实例。
+type ProviderRegistry struct {
+	providers []Provider
 }
 
-// GetProviders 返回所有注册的后端
-func GetProviders() []Provider {
-	return defaultProviders
-}
-
-// GetDefaultProvider 返回默认的后端
-func GetDefaultProvider() Provider {
-	if len(defaultProviders) > 0 {
-		return defaultProviders[0]
+// NewProviderRegistry 创建技能市场后端注册表。
+func NewProviderRegistry(providers ...Provider) *ProviderRegistry {
+	registry := &ProviderRegistry{}
+	for _, provider := range providers {
+		if provider != nil {
+			registry.providers = append(registry.providers, provider)
+		}
 	}
-	return nil
+	return registry
 }
 
-// GetProviderByName 按名称查找后端（不区分大小写）
-func GetProviderByName(name string) Provider {
-	for _, p := range defaultProviders {
+// NewDefaultProviderRegistry 创建内置技能市场后端注册表。
+func NewDefaultProviderRegistry() *ProviderRegistry {
+	return NewProviderRegistry(NewSkillHubProvider("https://lightmake.site/api/skills"))
+}
+
+// Providers 返回所有后端。
+func (r *ProviderRegistry) Providers() []Provider {
+	if r == nil || len(r.providers) == 0 {
+		return nil
+	}
+	providers := make([]Provider, len(r.providers))
+	copy(providers, r.providers)
+	return providers
+}
+
+// DefaultProvider 返回默认后端。
+func (r *ProviderRegistry) DefaultProvider() Provider {
+	if r == nil || len(r.providers) == 0 {
+		return nil
+	}
+	return r.providers[0]
+}
+
+// ProviderByName 按名称查找后端（不区分大小写）。
+func (r *ProviderRegistry) ProviderByName(name string) Provider {
+	if r == nil {
+		return nil
+	}
+	for _, p := range r.providers {
 		if strings.EqualFold(p.Name(), name) {
 			return p
 		}
@@ -62,27 +85,30 @@ func GetProviderByName(name string) Provider {
 	return nil
 }
 
-// GetProvidersByNames 按名称列表查找后端，返回匹配的后端列表
-// 如果 names 为空，返回所有后端
-func GetProvidersByNames(names []string) ([]Provider, error) {
+// ProvidersByNames 按名称列表查找后端，返回匹配的后端列表。
+// 如果 names 为空，返回所有后端。
+func (r *ProviderRegistry) ProvidersByNames(names []string) ([]Provider, error) {
 	if len(names) == 0 {
-		return defaultProviders, nil
+		return r.Providers(), nil
 	}
 	var result []Provider
 	for _, name := range names {
-		p := GetProviderByName(name)
+		p := r.ProviderByName(name)
 		if p == nil {
-			return nil, fmt.Errorf("未找到后端: %s", name)
+			return nil, fmt.Errorf("skill provider not found: %s", name)
 		}
 		result = append(result, p)
 	}
 	return result, nil
 }
 
-// ProviderNames 返回所有后端名称
-func ProviderNames() []string {
-	names := make([]string, len(defaultProviders))
-	for i, p := range defaultProviders {
+// Names 返回所有后端名称。
+func (r *ProviderRegistry) Names() []string {
+	if r == nil || len(r.providers) == 0 {
+		return nil
+	}
+	names := make([]string, len(r.providers))
+	for i, p := range r.providers {
 		names[i] = p.Name()
 	}
 	return names

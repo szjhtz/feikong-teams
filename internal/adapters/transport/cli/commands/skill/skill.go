@@ -13,6 +13,7 @@ import (
 
 // Command 创建 skill 子命令
 func Command(initConfig func() error) *ucli.Command {
+	providers := appskill.NewDefaultProviderRegistry()
 	return &ucli.Command{
 		Name:  "skill",
 		Usage: "技能管理",
@@ -28,8 +29,8 @@ func Command(initConfig func() error) *ucli.Command {
 					return listSkills()
 				},
 			},
-			searchCommand(),
-			installCommand(),
+			searchCommand(providers),
+			installCommand(providers),
 			removeCommand(),
 		},
 	}

@@ -156,8 +156,8 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		skills := apiV1.Group("/skills")
 		{
 			skills.GET("", handler.GetInstalledSkillsHandler())
-			skills.GET("/search", handler.SearchSkillsHandler())
-			skills.POST("/install", handler.InstallSkillHandler())
+			skills.GET("/search", runtime.SearchSkillsHandler())
+			skills.POST("/install", runtime.InstallSkillHandler())
 			skills.DELETE("/:slug", handler.RemoveSkillHandler())
 			skills.GET("/:slug/files", handler.GetSkillFilesHandler())
 			skills.GET("/:slug/file", handler.GetSkillFileContentHandler())

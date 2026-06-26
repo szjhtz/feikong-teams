@@ -189,6 +189,8 @@ type ToolRegistry interface {
 
 消息通道工厂由 `internal/bootstrap/channels` 显式组合，Discord、QQ、微信等平台 adapter 只导出注册函数；禁止通过 `init()`、空白 import 或 channel 包级全局工厂表装配平台通道。
 
+技能市场后端通过 `internal/app/skill.ProviderRegistry` 由入口实例显式持有。HTTP runtime 与 CLI skill 命令各自创建或注入 registry；`internal/app/skill` 不保留包级默认 provider 切片，也不提供 `GetDefaultProvider` 形式的进程默认门面。
+
 ## 状态与存储
 
 状态能力按用途拆分，不在入口层散落读写：

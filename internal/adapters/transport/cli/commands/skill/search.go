@@ -11,7 +11,7 @@ import (
 	ucli "github.com/urfave/cli/v3"
 )
 
-func searchCommand() *ucli.Command {
+func searchCommand(providers *appskill.ProviderRegistry) *ucli.Command {
 	return &ucli.Command{
 		Name:      "search",
 		Usage:     "搜索技能市场",
@@ -29,7 +29,7 @@ func searchCommand() *ucli.Command {
 			},
 			&ucli.StringSliceFlag{
 				Name:  "provider",
-				Usage: "指定后端（可多次指定），可选: " + strings.Join(appskill.ProviderNames(), ", "),
+				Usage: "指定后端（可多次指定），可选: " + strings.Join(providers.Names(), ", "),
 			},
 		},
 		Action: func(ctx context.Context, cmd *ucli.Command) error {
@@ -39,11 +39,11 @@ func searchCommand() *ucli.Command {
 			}
 			page := int(cmd.Int("page"))
 			size := int(cmd.Int("size"))
-			providers, err := appskill.GetProvidersByNames(cmd.StringSlice("provider"))
+			selected, err := providers.ProvidersByNames(cmd.StringSlice("provider"))
 			if err != nil {
 				return err
 			}
-			return searchSkills(ctx, keyword, page, size, providers)
+			return searchSkills(ctx, keyword, page, size, selected)
 		},
 	}
 }

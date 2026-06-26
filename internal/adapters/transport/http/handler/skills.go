@@ -27,6 +27,11 @@ func GetInstalledSkillsHandler() gin.HandlerFunc {
 
 // SearchSkillsHandler 搜索技能市场。
 func SearchSkillsHandler() gin.HandlerFunc {
+	return NewRuntime().SearchSkillsHandler()
+}
+
+// SearchSkillsHandler 搜索技能市场。
+func (rt *Runtime) SearchSkillsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		keyword := c.Query("q")
 		if keyword == "" {
@@ -55,7 +60,7 @@ func SearchSkillsHandler() gin.HandlerFunc {
 			order = "desc"
 		}
 
-		provider := appskill.GetDefaultProvider()
+		provider := rt.SkillProviders.DefaultProvider()
 		if provider == nil {
 			Fail(c, http.StatusServiceUnavailable, "no skill provider available")
 			return
@@ -78,6 +83,11 @@ func SearchSkillsHandler() gin.HandlerFunc {
 
 // InstallSkillHandler 从技能市场安装技能。
 func InstallSkillHandler() gin.HandlerFunc {
+	return NewRuntime().InstallSkillHandler()
+}
+
+// InstallSkillHandler 从技能市场安装技能。
+func (rt *Runtime) InstallSkillHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Slug string `json:"slug"`
@@ -87,7 +97,7 @@ func InstallSkillHandler() gin.HandlerFunc {
 			return
 		}
 
-		provider := appskill.GetDefaultProvider()
+		provider := rt.SkillProviders.DefaultProvider()
 		if provider == nil {
 			Fail(c, http.StatusServiceUnavailable, "no skill provider available")
 			return

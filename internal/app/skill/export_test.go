@@ -31,6 +31,57 @@ func (p fakeProvider) Download(context.Context, string, string) (io.ReadCloser, 
 	return io.NopCloser(bytes.NewReader(p.data)), nil
 }
 
+type providerRegistryProvider struct {
+	name string
+}
+
+func (p providerRegistryProvider) Name() string { return p.name }
+
+func (p providerRegistryProvider) Search(context.Context, string, int, int, string, string) (*SearchResponse, error) {
+	return &SearchResponse{}, nil
+}
+
+func (p providerRegistryProvider) Download(context.Context, string, string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
+}
+
+func TestProviderRegistrySelectsProvidersExplicitly(t *testing.T) {
+	first := providerRegistryProvider{name: "SkillHub"}
+	second := providerRegistryProvider{name: "Mirror"}
+	registry := NewProviderRegistry(nil, first, second)
+
+	if got := registry.DefaultProvider(); got == nil || got.Name() != "SkillHub" {
+		t.Fatalf("DefaultProvider = %#v, want SkillHub", got)
+	}
+	if got := registry.ProviderByName("mirror"); got == nil || got.Name() != "Mirror" {
+		t.Fatalf("ProviderByName = %#v, want Mirror", got)
+	}
+
+	selected, err := registry.ProvidersByNames([]string{"skillhub", "mirror"})
+	if err != nil {
+		t.Fatalf("ProvidersByNames returned error: %v", err)
+	}
+	if len(selected) != 2 || selected[0].Name() != "SkillHub" || selected[1].Name() != "Mirror" {
+		t.Fatalf("selected providers = %#v", selected)
+	}
+	if _, err := registry.ProvidersByNames([]string{"missing"}); err == nil || !strings.Contains(err.Error(), "skill provider not found") {
+		t.Fatalf("missing provider error = %v, want skill provider not found", err)
+	}
+}
+
+func TestProviderRegistryReturnsCopies(t *testing.T) {
+	registry := NewProviderRegistry(providerRegistryProvider{name: "one"})
+	providers := registry.Providers()
+	providers[0] = providerRegistryProvider{name: "mutated"}
+
+	if got := registry.DefaultProvider().Name(); got != "one" {
+		t.Fatalf("registry provider mutated to %q, want one", got)
+	}
+	if names := registry.Names(); len(names) != 1 || names[0] != "one" {
+		t.Fatalf("Names = %#v, want one", names)
+	}
+}
+
 func TestListReadAndRemoveLocalSkills(t *testing.T) {
 	appDir := t.TempDir()
 	t.Setenv(env.AppDir, appDir)

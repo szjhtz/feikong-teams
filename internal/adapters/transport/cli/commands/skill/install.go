@@ -14,7 +14,7 @@ import (
 	ucli "github.com/urfave/cli/v3"
 )
 
-func installCommand() *ucli.Command {
+func installCommand(providers *appskill.ProviderRegistry) *ucli.Command {
 	return &ucli.Command{
 		Name:      "install",
 		Usage:     "从技能市场安装技能",
@@ -26,7 +26,7 @@ func installCommand() *ucli.Command {
 			},
 			&ucli.StringFlag{
 				Name:  "provider",
-				Usage: "指定后端，可选: " + strings.Join(appskill.ProviderNames(), ", "),
+				Usage: "指定后端，可选: " + strings.Join(providers.Names(), ", "),
 			},
 		},
 		Action: func(ctx context.Context, cmd *ucli.Command) error {
@@ -38,12 +38,12 @@ func installCommand() *ucli.Command {
 
 			var provider appskill.Provider
 			if name := cmd.String("provider"); name != "" {
-				provider = appskill.GetProviderByName(name)
+				provider = providers.ProviderByName(name)
 				if provider == nil {
 					return fmt.Errorf("未找到后端: %s", name)
 				}
 			} else {
-				provider = appskill.GetDefaultProvider()
+				provider = providers.DefaultProvider()
 			}
 			if provider == nil {
 				return fmt.Errorf("无可用的技能后端")

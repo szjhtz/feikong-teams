@@ -15,6 +15,7 @@ import (
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	appschedule "fkteams/internal/app/schedule"
+	appskill "fkteams/internal/app/skill"
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	modelregistry "fkteams/internal/runtime/model"
@@ -22,44 +23,46 @@ import (
 
 // Runtime 持有单个 HTTP server 实例的运行态依赖。
 type Runtime struct {
-	Streams       *taskstream.Manager
-	Sessions      *eventlog.SessionHistoryManager
-	HistoryDir    string
-	RunnerCache   *appagent.Cache
-	Connections   *WebSocketHub
-	ChunkUploads  *ChunkUploadStore
-	PreviewLinks  *PreviewLinkStore
-	SessionShares *SessionShareStore
-	Favicons      *FaviconProxy
-	Scheduler     *appschedule.Service
-	AgentRegistry *agents.Registry
-	ToolRegistry  *apptools.ToolGroupRegistry
-	ModelRegistry *modelregistry.Registry
-	Providers     *modelproviders.Registry
-	Engine        runtimeport.Engine
-	Interrupt     runtimeport.InterruptRuntime
-	ResetChannels func()
+	Streams        *taskstream.Manager
+	Sessions       *eventlog.SessionHistoryManager
+	HistoryDir     string
+	RunnerCache    *appagent.Cache
+	Connections    *WebSocketHub
+	ChunkUploads   *ChunkUploadStore
+	PreviewLinks   *PreviewLinkStore
+	SessionShares  *SessionShareStore
+	Favicons       *FaviconProxy
+	Scheduler      *appschedule.Service
+	AgentRegistry  *agents.Registry
+	ToolRegistry   *apptools.ToolGroupRegistry
+	SkillProviders *appskill.ProviderRegistry
+	ModelRegistry  *modelregistry.Registry
+	Providers      *modelproviders.Registry
+	Engine         runtimeport.Engine
+	Interrupt      runtimeport.InterruptRuntime
+	ResetChannels  func()
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
 type RuntimeOptions struct {
-	Streams       *taskstream.Manager
-	Sessions      *eventlog.SessionHistoryManager
-	HistoryDir    string
-	RunnerCache   *appagent.Cache
-	Connections   *WebSocketHub
-	ChunkUploads  *ChunkUploadStore
-	PreviewLinks  *PreviewLinkStore
-	SessionShares *SessionShareStore
-	Favicons      *FaviconProxy
-	Scheduler     *appschedule.Service
-	AgentRegistry *agents.Registry
-	ToolRegistry  *apptools.ToolGroupRegistry
-	ModelRegistry *modelregistry.Registry
-	Providers     *modelproviders.Registry
-	Engine        runtimeport.Engine
-	Interrupt     runtimeport.InterruptRuntime
-	ResetChannels func()
+	Streams        *taskstream.Manager
+	Sessions       *eventlog.SessionHistoryManager
+	HistoryDir     string
+	RunnerCache    *appagent.Cache
+	Connections    *WebSocketHub
+	ChunkUploads   *ChunkUploadStore
+	PreviewLinks   *PreviewLinkStore
+	SessionShares  *SessionShareStore
+	Favicons       *FaviconProxy
+	Scheduler      *appschedule.Service
+	AgentRegistry  *agents.Registry
+	ToolRegistry   *apptools.ToolGroupRegistry
+	SkillProviders *appskill.ProviderRegistry
+	ModelRegistry  *modelregistry.Registry
+	Providers      *modelproviders.Registry
+	Engine         runtimeport.Engine
+	Interrupt      runtimeport.InterruptRuntime
+	ResetChannels  func()
 }
 
 // NewRuntime 创建一个独立的 HTTP runtime 实例。
@@ -73,23 +76,24 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		streams = newStreamManager()
 	}
 	rt := &Runtime{
-		Streams:       streams,
-		Sessions:      opt.Sessions,
-		HistoryDir:    opt.HistoryDir,
-		RunnerCache:   opt.RunnerCache,
-		Connections:   opt.Connections,
-		ChunkUploads:  opt.ChunkUploads,
-		PreviewLinks:  opt.PreviewLinks,
-		SessionShares: opt.SessionShares,
-		Favicons:      opt.Favicons,
-		Scheduler:     opt.Scheduler,
-		AgentRegistry: opt.AgentRegistry,
-		ToolRegistry:  opt.ToolRegistry,
-		ModelRegistry: opt.ModelRegistry,
-		Providers:     opt.Providers,
-		Engine:        opt.Engine,
-		Interrupt:     opt.Interrupt,
-		ResetChannels: opt.ResetChannels,
+		Streams:        streams,
+		Sessions:       opt.Sessions,
+		HistoryDir:     opt.HistoryDir,
+		RunnerCache:    opt.RunnerCache,
+		Connections:    opt.Connections,
+		ChunkUploads:   opt.ChunkUploads,
+		PreviewLinks:   opt.PreviewLinks,
+		SessionShares:  opt.SessionShares,
+		Favicons:       opt.Favicons,
+		Scheduler:      opt.Scheduler,
+		AgentRegistry:  opt.AgentRegistry,
+		ToolRegistry:   opt.ToolRegistry,
+		SkillProviders: opt.SkillProviders,
+		ModelRegistry:  opt.ModelRegistry,
+		Providers:      opt.Providers,
+		Engine:         opt.Engine,
+		Interrupt:      opt.Interrupt,
+		ResetChannels:  opt.ResetChannels,
 	}
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()
@@ -114,6 +118,9 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	}
 	if rt.Favicons == nil {
 		rt.Favicons = NewFaviconProxy(FaviconProxyOptions{})
+	}
+	if rt.SkillProviders == nil {
+		rt.SkillProviders = appskill.NewDefaultProviderRegistry()
 	}
 	return rt
 }

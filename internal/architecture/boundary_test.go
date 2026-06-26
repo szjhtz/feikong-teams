@@ -1133,6 +1133,28 @@ func TestAppToolsDoNotExposeProcessDefaultRegistry(t *testing.T) {
 	}
 }
 
+func TestSkillProvidersDoNotExposeProcessDefaultRegistry(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "app", "skill", "provider.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{
+		"var defaultProviders",
+		"func GetProviders()",
+		"func GetDefaultProvider()",
+		"func GetProviderByName(",
+		"func GetProvidersByNames(",
+		"func ProviderNames()",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("skill provider package exposes process-default registry through %q", forbidden)
+		}
+	}
+}
+
 func TestAgentCatalogDoesNotExposeProcessDefaultRegistry(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "app", "agent", "catalog", "registry.go")
