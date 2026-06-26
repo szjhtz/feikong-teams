@@ -43,6 +43,7 @@ export interface ChatViewMessage {
 
 export interface ChatState {
   activeSessionID: string;
+  runningSessionID: string;
   currentAgent: string;
   mode: string;
   messages: ChatViewMessage[];
@@ -51,4 +52,5 @@ export interface ChatState {
   isProcessing: boolean;
   connectionState: "disconnected" | "connecting" | "connected";
   error?: string;
+  statusText?: string;
 }

@@ -27,6 +27,7 @@ function panelFromPath(path: string): AppPanel {
 
 const initialChatState: ChatState = {
   activeSessionID: localStorage.getItem(storageKeys.sessionID) || "",
+  runningSessionID: "",
   currentAgent: "",
   mode: "team",
   messages: [],
@@ -56,6 +57,11 @@ const chatSlice = createSlice({
     },
     setProcessing(state, action: PayloadAction<boolean>) {
       state.isProcessing = action.payload;
+      if (!action.payload) state.runningSessionID = "";
+    },
+    setRunningSession(state, action: PayloadAction<string>) {
+      state.runningSessionID = action.payload;
+      state.isProcessing = Boolean(action.payload);
     },
     setMessages(state, action: PayloadAction<ChatViewMessage[]>) {
       state.messages = action.payload;
@@ -78,10 +84,29 @@ const chatSlice = createSlice({
     receiveEvent(state, action: PayloadAction<ChatEvent>) {
       const event = action.payload;
       state.events.push(event);
+      if (event.session_id) {
+        state.runningSessionID = event.session_id;
+      }
       if (event.type === "queue_updated" && Array.isArray(event.queue)) {
         state.queue = event.queue;
       }
-      if (event.type === "message_delta" && event.content) {
+      if (event.type === "processing_start") {
+        state.isProcessing = true;
+        state.statusText = String(event.message || event.content || "处理中");
+      }
+      if (event.type === "user_message") {
+        const content = eventText(event);
+        const exists = state.messages.some((item) => item.role === "user" && item.content === content);
+        if (content && !exists) {
+          state.messages.push({
+            id: `user-${event.stream_event_id ?? Date.now()}`,
+            role: "user",
+            content,
+            events: [event],
+          });
+        }
+      }
+      if (event.type === "message_start" || event.type === "message_delta") {
         const key = `${event.message_id || event.stream_id || event.agent_name || "assistant"}`;
         let message = state.messages.find((item) => item.id === key);
         if (!message) {
@@ -94,17 +119,25 @@ const chatSlice = createSlice({
           };
           state.messages.push(message);
         }
-        if (event.delta_kind !== "reasoning") {
-          message.content += event.content || event.delta || "";
+        const content = eventText(event);
+        if (event.type === "message_delta" && event.delta_kind !== "reasoning" && event.delta_kind !== "tool_args" && content) {
+          message.content += content;
         }
         message.events.push(event);
       }
-      if (event.type === "error") {
-        state.error = String(event.error || event.content || "request failed");
-        state.isProcessing = false;
+      if (event.type === "action") {
+        state.statusText = eventText(event) || state.statusText;
       }
-      if (event.type === "message_end") {
+      if (event.type === "error") {
+        state.error = String(event.error || event.content || event.message || "request failed");
         state.isProcessing = false;
+        state.runningSessionID = "";
+        state.statusText = undefined;
+      }
+      if (event.type === "cancelled" || event.type === "processing_end") {
+        state.isProcessing = false;
+        state.runningSessionID = "";
+        state.statusText = String(event.message || event.content || "");
       }
     },
     setQueue(state, action: PayloadAction<QueueItem[]>) {
@@ -115,6 +148,10 @@ const chatSlice = createSlice({
     },
   },
 });
+
+function eventText(event: ChatEvent) {
+  return String(event.content || event.delta || event.message || "");
+}
 
 const sessionsSlice = createSlice({
   name: "sessions",

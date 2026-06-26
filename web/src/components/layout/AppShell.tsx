@@ -9,6 +9,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const connectionState = useAppSelector((state) => state.chat.connectionState);
   const activePanel = useAppSelector((state) => state.app.activePanel);
   const toast = useAppSelector((state) => state.app.toast);
+  const statusText = useAppSelector((state) => state.chat.statusText);
   const title = {
     chat: "对话",
     files: "文件",
@@ -18,10 +19,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }[activePanel];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen overflow-hidden bg-background/95 text-foreground">
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b px-4">
+        <header className="sketch-rule flex h-14 items-center justify-between border-b bg-card/70 px-5 backdrop-blur">
           <div className="flex items-center gap-2">
             <Button
               className="md:hidden"
@@ -33,15 +34,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Menu className="h-4 w-4" />
             </Button>
             <div>
-              <div className="text-sm font-semibold">{title}</div>
+              <div className="text-base font-semibold">{title}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            {statusText ? <span className="hidden max-w-72 truncate md:inline">{statusText}</span> : null}
             <span
               className={
                 connectionState === "connected"
-                  ? "h-2 w-2 rounded-full bg-emerald-500"
-                  : "h-2 w-2 rounded-full bg-amber-500"
+                  ? "h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_3px_hsl(152_70%_45%/0.12)]"
+                  : "h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_3px_hsl(38_90%_45%/0.12)]"
               }
             />
             {connectionState === "connected" ? "已连接" : connectionState === "connecting" ? "连接中" : "未连接"}
@@ -50,7 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </main>
       {toast ? (
-        <div className="fixed bottom-4 right-4 z-50 rounded-md border bg-popover px-4 py-3 text-sm shadow-lg">
+        <div className="sketch-surface fixed bottom-4 right-4 z-50 rounded-md px-4 py-3 text-sm">
           {toast}
         </div>
       ) : null}

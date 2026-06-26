@@ -36,15 +36,15 @@ export function ActivityCanvas() {
         const t = ticker.lastTime / 1000;
         graphics.clear();
         for (let x = 20; x <= 340; x += 40) {
-          graphics.moveTo(x, 18).lineTo(x, 102).stroke({ color: 0xd7dde8, width: 1, alpha: 0.55 });
+          graphics.moveTo(x, 18).lineTo(x + Math.sin(t + x) * 2, 102).stroke({ color: 0x9fb3c8, width: 1, alpha: 0.4 });
         }
         for (let y = 24; y <= 96; y += 24) {
-          graphics.moveTo(16, y).lineTo(344, y).stroke({ color: 0xd7dde8, width: 1, alpha: 0.55 });
+          graphics.moveTo(16, y).lineTo(344, y + Math.cos(t + y) * 1.5).stroke({ color: 0x9fb3c8, width: 1, alpha: 0.36 });
         }
         for (let i = 0; i < 6; i += 1) {
           const x = 32 + ((t * 38 + i * 54) % 296);
           const y = 24 + ((i % 4) * 24);
-          graphics.roundRect(x, y - 5, 18, 10, 3).fill({ color: 0x2563eb, alpha: 0.72 });
+          graphics.roundRect(x, y - 5, 18, 10, 3).fill({ color: 0x3b82b8, alpha: 0.62 });
         }
       });
     }

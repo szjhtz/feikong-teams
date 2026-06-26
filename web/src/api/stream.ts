@@ -61,11 +61,18 @@ export async function subscribeStream(
     const chunks = buffer.split("\n\n");
     buffer = chunks.pop() || "";
     for (const chunk of chunks) {
-      const line = chunk.split("\n").find((part) => part.startsWith("data:"));
-      if (!line) continue;
-      const raw = line.replace(/^data:\s*/, "");
+      const lines = chunk.split("\n");
+      const idLine = lines.find((part) => part.startsWith("id:"));
+      const dataLines = lines.filter((part) => part.startsWith("data:"));
+      if (dataLines.length === 0) continue;
+      const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
       if (!raw || raw === "[DONE]") continue;
-      onEvent(JSON.parse(raw) as ChatEvent);
+      const event = JSON.parse(raw) as ChatEvent;
+      if (idLine && event.stream_event_id === undefined) {
+        const id = Number(idLine.replace(/^id:\s*/, ""));
+        if (Number.isFinite(id)) event.stream_event_id = id;
+      }
+      onEvent(event);
     }
   }
 }

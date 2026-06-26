@@ -8,7 +8,11 @@ export type ChatEventType =
   | "action"
   | "usage"
   | "error"
+  | "processing_start"
+  | "processing_end"
+  | "user_message"
   | "queue_updated"
+  | "cancelled"
   | string;
 
 export interface ToolCallDTO {
@@ -59,6 +63,7 @@ export interface ChatEvent {
   tool_call?: ToolCallDTO;
   action_type?: string;
   error?: string;
+  message?: string;
   queue?: QueueItem[];
   is_member_event?: boolean;
   member_call_id?: string;

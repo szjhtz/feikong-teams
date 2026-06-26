@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 export function ChatInput() {
   const dispatch = useAppDispatch();
   const sessionID = useAppSelector((state) => state.chat.activeSessionID);
+  const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
   const mode = useAppSelector((state) => state.chat.mode);
   const currentAgent = useAppSelector((state) => state.chat.currentAgent);
   const isProcessing = useAppSelector((state) => state.chat.isProcessing);
@@ -21,21 +22,29 @@ export function ChatInput() {
     const message = value.trim();
     if (!message || isProcessing) return;
     setValue("");
+    dispatch(chatActions.setError(undefined));
     dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: message }));
     dispatch(chatActions.setProcessing(true));
-    const result = await startStream({
-      session_id: sessionID || undefined,
-      message,
-      mode,
-      agent_name: currentAgent || undefined,
-    });
-    dispatch(chatActions.setActiveSession(result.session_id));
-    void subscribe(result.session_id);
+    try {
+      const result = await startStream({
+        session_id: sessionID || undefined,
+        message,
+        mode,
+        agent_name: currentAgent || undefined,
+      });
+      dispatch(chatActions.setActiveSession(result.session_id));
+      dispatch(chatActions.setRunningSession(result.session_id));
+      resetOffset(result.session_id);
+      void subscribe(result.session_id, 0);
+    } catch (error) {
+      dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
+      dispatch(chatActions.setProcessing(false));
+    }
   }
 
-  async function subscribe(id: string) {
+  async function subscribe(id: string, initialOffset?: number) {
     const offsets = readJSON<Record<string, number>>(storageKeys.streamOffsets, {});
-    const offset = offsets[id] || 0;
+    const offset = initialOffset ?? offsets[id] ?? 0;
     await subscribeStream(id, offset, (event) => {
       dispatch(chatActions.receiveEvent(event));
       if (event.stream_event_id !== undefined) {
@@ -49,13 +58,19 @@ export function ChatInput() {
   }
 
   async function stop() {
-    if (!sessionID) return;
-    await stopStream(sessionID);
-    dispatch(chatActions.setProcessing(false));
+    const id = runningSessionID || sessionID;
+    if (!id) return;
+    try {
+      await stopStream(id);
+    } catch (error) {
+      dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
+    } finally {
+      dispatch(chatActions.setProcessing(false));
+    }
   }
 
   return (
-    <div className="border-t bg-background p-4">
+    <div className="sketch-rule border-t bg-card/55 p-4 backdrop-blur">
       <div className="mx-auto flex max-w-5xl gap-3">
         <Button variant="outline" size="icon" aria-label="添加附件">
           <Paperclip className="h-4 w-4" />
@@ -71,13 +86,13 @@ export function ChatInput() {
               void submit();
             }
           }}
-          className="min-h-12 flex-1 resize-none"
+          className="min-h-12 flex-1 resize-none text-base"
           placeholder="输入任务，使用 # 引用文件，@ 指定智能体。"
         />
         {isProcessing ? (
           <Button variant="destructive" onClick={stop}>
             <Square className="h-4 w-4" />
-            停止
+            取消
           </Button>
         ) : (
           <Button onClick={submit}>
@@ -88,4 +103,10 @@ export function ChatInput() {
       </div>
     </div>
   );
+}
+
+function resetOffset(sessionID: string) {
+  const offsets = readJSON<Record<string, number>>(storageKeys.streamOffsets, {});
+  delete offsets[sessionID];
+  writeJSON(storageKeys.streamOffsets, offsets);
 }

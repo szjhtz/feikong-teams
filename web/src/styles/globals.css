@@ -4,28 +4,28 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --background: 42 58% 97%;
+    --foreground: 219 34% 17%;
+    --card: 42 64% 99%;
+    --card-foreground: 219 34% 17%;
+    --popover: 42 64% 99%;
+    --popover-foreground: 219 34% 17%;
+    --primary: 214 72% 46%;
+    --primary-foreground: 42 70% 98%;
+    --secondary: 202 54% 92%;
+    --secondary-foreground: 218 36% 20%;
+    --muted: 42 42% 92%;
+    --muted-foreground: 216 18% 43%;
+    --accent: 189 45% 89%;
+    --accent-foreground: 218 36% 20%;
+    --destructive: 1 78% 58%;
+    --destructive-foreground: 42 70% 98%;
+    --border: 218 30% 76%;
+    --input: 218 30% 78%;
+    --ring: 204 65% 48%;
     --radius: 0.5rem;
-    --sidebar: 220 20% 98%;
-    --sidebar-foreground: 222.2 47.4% 11.2%;
+    --sidebar: 43 52% 94%;
+    --sidebar-foreground: 219 34% 17%;
   }
 
   * {
@@ -34,8 +34,13 @@
 
   body {
     @apply bg-background text-foreground;
+    background-image:
+      linear-gradient(hsl(218 30% 82% / 0.18) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(218 30% 82% / 0.14) 1px, transparent 1px);
+    background-size: 28px 28px;
     font-family:
-      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      "Kaiti SC", "STKaiti", "KaiTi", "LXGW WenKai", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
   }
 
   code,
@@ -45,6 +50,24 @@
 }
 
 @layer components {
+  .sketch-surface {
+    background:
+      linear-gradient(135deg, hsl(42 70% 99% / 0.94), hsl(198 68% 96% / 0.44)),
+      hsl(var(--card));
+    border: 1.5px solid hsl(var(--border));
+    box-shadow: 3px 4px 0 hsl(218 32% 30% / 0.1);
+  }
+
+  .sketch-inset {
+    background: hsl(42 68% 98% / 0.92);
+    border: 1.5px solid hsl(var(--input));
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.75);
+  }
+
+  .sketch-rule {
+    border-color: hsl(218 30% 76% / 0.72);
+  }
+
   .prose {
     color: inherit;
   }

@@ -56,13 +56,13 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width]",
-        sidebarOpen ? "w-80" : "w-16",
+        "sketch-rule flex h-screen shrink-0 flex-col border-r bg-sidebar/92 text-sidebar-foreground transition-[width]",
+        sidebarOpen ? "w-[300px]" : "w-16",
       )}
     >
-      <div className="flex h-14 items-center gap-3 border-b px-3">
-        <img className="h-8 w-8" src="/assets/fkteams-logo.svg" alt="" />
-        {sidebarOpen ? <div className="min-w-0 flex-1 font-semibold">非空小队</div> : null}
+      <div className="sketch-rule flex h-14 items-center gap-3 border-b px-3">
+        <img className="h-9 w-9 drop-shadow-sm" src="/assets/fkteams-logo.svg" alt="" />
+        {sidebarOpen ? <div className="min-w-0 flex-1 text-lg font-semibold">非空小队</div> : null}
         <Button
           size="icon"
           variant="ghost"
@@ -73,14 +73,14 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <div className="space-y-2 border-b p-2">
+      <div className="sketch-rule space-y-2 border-b p-2">
         {panels.map((panel) => {
           const Icon = panel.icon;
           return (
             <Button
               key={panel.key}
               variant={activePanel === panel.key ? "secondary" : "ghost"}
-              className={cn("w-full justify-start", !sidebarOpen && "justify-center px-0")}
+              className={cn("h-10 w-full justify-start", activePanel === panel.key && "bg-accent", !sidebarOpen && "justify-center px-0")}
               onClick={() => switchPanel(panel)}
               title={panel.label}
             >
@@ -93,13 +93,13 @@ export function Sidebar() {
 
       {sidebarOpen ? (
         <>
-          <div className="flex items-center gap-2 border-b p-3">
+          <div className="sketch-rule flex items-center gap-2 border-b p-3">
             <Button className="flex-1" onClick={handleNewSession}>
               <MessageSquarePlus className="h-4 w-4" />
               新建会话
             </Button>
           </div>
-          <div className="border-b p-3">
+          <div className="sketch-rule border-b p-3">
             <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
               <History className="h-3.5 w-3.5" />
               会话历史
@@ -118,8 +118,8 @@ export function Sidebar() {
                 <button
                   key={session.session_id}
                   className={cn(
-                    "mb-1 w-full rounded-md px-3 py-2 text-left text-sm hover:bg-accent",
-                    activeSessionID === session.session_id && "bg-accent text-accent-foreground",
+                    "mb-2 w-full rounded-md border border-transparent px-3 py-2 text-left text-sm hover:border-border hover:bg-card/70",
+                    activeSessionID === session.session_id && "border-border bg-card text-accent-foreground shadow-[2px_2px_0_hsl(218_32%_30%/0.08)]",
                   )}
                   onClick={() => dispatch(chatActions.setActiveSession(session.session_id))}
                 >
@@ -134,7 +134,7 @@ export function Sidebar() {
               ))
             )}
           </div>
-          <div className="border-t p-3 text-xs text-muted-foreground">
+          <div className="sketch-rule border-t p-3 text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <Wrench className="h-3.5 w-3.5" />
               {version?.version || "dev"}
