@@ -47,14 +47,13 @@ const (
 	sessionIdleTimeout = 10 * time.Minute
 )
 
-// channelHistoryDir 通道会话历史存储目录，与 Web/CLI 共用
-var channelHistoryDir = appdata.SessionsDir()
-
 // Bridge 连接通道消息与智能体执行引擎
 type Bridge struct {
-	manager *Manager
-	mode    string // 运行模式: team, deep, roundtable, custom 或智能体名称
-	state   *appstate.State
+	manager    *Manager
+	mode       string // 运行模式: team, deep, roundtable, custom 或智能体名称
+	state      *appstate.State
+	historyDir string
+	sessions   *eventlog.SessionHistoryManager
 
 	runnerMu  sync.Mutex
 	runner    runtimeport.Runner
@@ -68,6 +67,13 @@ type Bridge struct {
 	queues  map[string]*sessionQueue // per-session 消息队列
 }
 
+// BridgeOptions 描述通道桥接器的显式依赖。
+type BridgeOptions struct {
+	State      *appstate.State
+	HistoryDir string
+	Sessions   *eventlog.SessionHistoryManager
+}
+
 // NewBridge 创建消息桥接器
 func NewBridge(manager *Manager, mode string) *Bridge {
 	return NewBridgeWithState(manager, mode, nil)
@@ -75,14 +81,29 @@ func NewBridge(manager *Manager, mode string) *Bridge {
 
 // NewBridgeWithState 创建带应用状态的消息桥接器。
 func NewBridgeWithState(manager *Manager, mode string, state *appstate.State) *Bridge {
+	return NewBridgeWithOptions(manager, mode, BridgeOptions{State: state})
+}
+
+// NewBridgeWithOptions 创建带显式依赖的消息桥接器。
+func NewBridgeWithOptions(manager *Manager, mode string, options BridgeOptions) *Bridge {
 	if mode == "" {
 		mode = "team"
 	}
+	historyDir := options.HistoryDir
+	if historyDir == "" {
+		historyDir = appdata.SessionsDir()
+	}
+	sessions := options.Sessions
+	if sessions == nil {
+		sessions = eventlog.NewSessionHistoryManager()
+	}
 	return &Bridge{
-		manager: manager,
-		mode:    mode,
-		state:   state,
-		queues:  make(map[string]*sessionQueue),
+		manager:    manager,
+		mode:       mode,
+		state:      options.State,
+		historyDir: historyDir,
+		sessions:   sessions,
+		queues:     make(map[string]*sessionQueue),
 	}
 }
 
@@ -271,7 +292,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		combinedInput = merged.String()
 	}
 
-	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
+	recorder := b.sessions.GetOrCreate(sessionID, b.historyDir)
 	turnInput := appchat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
@@ -303,7 +324,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			if err != nil {
 				status = "error"
 			}
-			store := eventlog.NewChatSessionStore(channelHistoryDir)
+			store := eventlog.NewChatSessionStore(b.historyDir)
 			lifecycleErr := appchat.NewSessionLifecycle(store, store).Finish(ctx, appchat.FinishRequest{
 				SessionID:      sessionID,
 				TitleSource:    combinedInput,

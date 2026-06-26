@@ -2,6 +2,8 @@ package channel
 
 import (
 	"context"
+	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -37,11 +39,17 @@ func SetupWithState(entries []config.ChannelEntry, state *appstate.State) (*Serv
 	}
 
 	mgr := NewManager(nil)
+	historyDir := appdata.SessionsDir()
+	sessions := eventlog.NewSessionHistoryManager()
 
 	// 为每个通道创建独立的 Bridge（支持不同 mode）
 	bridges := make(map[string]*Bridge)
 	for _, entry := range entries {
-		bridge := NewBridgeWithState(mgr, entry.Mode, state)
+		bridge := NewBridgeWithOptions(mgr, entry.Mode, BridgeOptions{
+			State:      state,
+			HistoryDir: historyDir,
+			Sessions:   sessions,
+		})
 		bridges[entry.Name] = bridge
 	}
 
