@@ -108,32 +108,26 @@ docs/
 
 ## 核心用例中轴
 
-所有入口统一调用 `internal/app/chat.Service` 或对应应用服务。Web、CLI、消息通道、定时任务不直接调用 runner、engine 或具体 runtime。
+所有入口统一调用 `internal/app/chat.Service` 或对应应用服务。Web、CLI、消息通道、定时任务不直接调用 engine 或具体 runtime；runner 创建由 `internal/app/agent` 完成，并通过 context 注入的 `runtime.Engine` 与组合根连接。
 
 ```go
 type Service interface {
-    StartTurn(ctx context.Context, req StartTurnRequest) (*TurnHandle, error)
-    SubmitFollowUp(ctx context.Context, req SubmitMessageRequest) (*QueueItem, error)
-    SubmitSteering(ctx context.Context, req SubmitMessageRequest) (*QueueItem, error)
-    StopTurn(ctx context.Context, sessionID string) error
+    RunTurn(ctx context.Context, req TurnRequest, opts ...TurnOption) (*runtime.RunResult, error)
 }
 ```
 
 `chat.Service` 负责：
 
-- 加载和保存 session/history。
-- 注入长期记忆。
-- 创建或复用 runner。
-- 通过类型化运行选项装配 approval、ask、steering、事件记录、hooks，入口层不得直接散落这些 context key 或重复历史记录逻辑。
-- 分发事件到 history、stream、CLI view、channel reply。
-- 处理 follow-up 队列和 steering 队列。
-- 运行结束后提取记忆、更新 session metadata。
+- 将入口层能力转换为稳定的 turn 执行选项：approval、ask、steering、事件记录、history sink、hooks 和 context hook。
+- 统一调用 `internal/runtime/turn.Session`，入口层不得直接散落这些 runtime context key。
+- 通过 `SessionLifecycle` 统一保存 history、更新 metadata、记录取消/错误、提取或 flush 长期记忆。
+- 通过 `internal/app/chat/taskstream` 提供运行中事件流、follow-up 队列、steering 队列、interrupt/ask 响应和断线续接能力。
 
 入口层只负责：
 
 - HTTP handler：JSON、SSE、WebSocket DTO 转换。
-- CLI：终端输入、展示、快捷键。
-- Channel：平台消息转换和回复发送。
+- CLI：终端输入、展示、快捷键和当前 CLI `Session` 实例生命周期。
+- Channel：平台消息转换、回复发送和当前 Bridge 实例生命周期。
 - Scheduler：时间触发和结果归档。
 
 ## Runtime 边界
