@@ -1,10 +1,11 @@
-package tools
+package toolpolicy
 
 import (
 	"context"
-	"fkteams/internal/app/tools/approval"
-	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
+
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
 )
 
 const (
@@ -179,6 +180,14 @@ func PolicyForTool(toolName string) (ToolPolicy, bool) {
 func ShouldSerializeTool(toolName string) bool {
 	policy, ok := PolicyForTool(toolName)
 	return ok && policy.Serialize
+}
+
+func IsPolicyRequired(info *runtimeport.ToolInfo) bool {
+	if info == nil || info.Extra == nil {
+		return false
+	}
+	required, _ := info.Extra[metaPolicyRequired].(bool)
+	return required
 }
 
 // MarkPolicyRequired 标记工具必须在策略表中声明安全策略。

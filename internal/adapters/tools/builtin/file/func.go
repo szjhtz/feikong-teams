@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/mdiff"
 	"fkteams/internal/runtime/pathguard"
 

@@ -4,6 +4,7 @@ import (
 	"fkteams/internal/app/tools/attachment"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
+	"fkteams/internal/runtime/toolpolicy"
 	"fmt"
 )
 
@@ -43,7 +44,7 @@ func GetBuiltinCapabilityToolsWithCleaner(cleaner *resources.Cleaner) ([]runtime
 		if err != nil {
 			return nil, fmt.Errorf("init builtin capability %s: %w", capability.Name, err)
 		}
-		if err := MarkPolicyRequired(resolved); err != nil {
+		if err := toolpolicy.MarkPolicyRequired(resolved); err != nil {
 			return nil, fmt.Errorf("mark builtin capability %s policy: %w", capability.Name, err)
 		}
 		result = append(result, resolved...)

@@ -266,6 +266,59 @@ func TestRootCommandsPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestToolApprovalAndPolicyLiveInRuntime(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/app/tools/approval",
+		"internal/app/tools/metadata.go",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+			t.Fatalf("%s exists; tool approval and policy belong under internal/runtime", rel)
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []string{
+		"internal/runtime/approval",
+		"internal/runtime/toolpolicy",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("%s is required: %v", rel, err)
+		}
+	}
+}
+
+func TestEinoRuntimeAdapterDoesNotResolveAppTools(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	adapterRoot := filepath.Join(root, "internal", "adapters", "runtime", "eino")
+	err := filepath.WalkDir(adapterRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			if strings.Trim(spec.Path.Value, `"`) == "fkteams/internal/app/tools" {
+				t.Errorf("%s imports app tool registry; resolve tools before entering runtime adapters", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):

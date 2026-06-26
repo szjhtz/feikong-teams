@@ -10,6 +10,7 @@ import (
 	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/runtime/resources"
 	"fkteams/internal/runtime/retry"
+	"fkteams/internal/runtime/toolpolicy"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -146,26 +147,14 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	}
 	toolList = append(toolList, builtinTools...)
 
-	seenToolNames := make(map[string]bool, len(b.toolNames))
-	for _, name := range b.toolNames {
-		if seenToolNames[name] {
-			continue
-		}
-		seenToolNames[name] = true
-		resolved, err := tools.GetToolsByNameWithCleaner(name, cleaner)
-		if err != nil {
-			return nil, fmt.Errorf("init tool %s: %w", name, err)
-		}
-		if !strings.HasPrefix(name, "mcp-") {
-			if err := tools.MarkPolicyRequired(resolved); err != nil {
-				return nil, fmt.Errorf("mark tool policy %s: %w", name, err)
-			}
-		}
-		toolList = append(toolList, resolved...)
+	namedTools, err := resolveNamedToolGroups(b.toolNames, cleaner)
+	if err != nil {
+		return nil, err
 	}
+	toolList = append(toolList, namedTools...)
 
 	// 工具元数据分类
-	if err := tools.ClassifyTools(toolList); err != nil {
+	if err := toolpolicy.ClassifyTools(toolList); err != nil {
 		return nil, fmt.Errorf("classify tools: %w", err)
 	}
 
@@ -233,6 +222,15 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 		if dispatchConfig.Model == nil {
 			dispatchConfig.Model = coreModel
 		}
+		dispatchTools, err := resolveNamedToolGroups(dispatchConfig.ToolNames, cleaner)
+		if err != nil {
+			return nil, fmt.Errorf("init dispatch tools: %w", err)
+		}
+		dispatchConfig.ToolNames = nil
+		dispatchConfig.Tools = append(dispatchConfig.Tools, dispatchTools...)
+		if err := toolpolicy.ClassifyTools(dispatchConfig.Tools); err != nil {
+			return nil, fmt.Errorf("classify dispatch tools: %w", err)
+		}
 		if !hasAgentPipelineProvider {
 			return nil, fmt.Errorf("runtime does not support dispatch middleware")
 		}
@@ -253,6 +251,28 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 
 	cfg.Middlewares = append(cfg.Middlewares, b.handlers...)
 	return engine.NewChatModelAgent(ctx, cfg)
+}
+
+func resolveNamedToolGroups(names []string, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
+	seen := make(map[string]bool, len(names))
+	var result []runtimeport.Tool
+	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		resolved, err := tools.GetToolsByNameWithCleaner(name, cleaner)
+		if err != nil {
+			return nil, fmt.Errorf("init tool %s: %w", name, err)
+		}
+		if !strings.HasPrefix(name, "mcp-") {
+			if err := toolpolicy.MarkPolicyRequired(resolved); err != nil {
+				return nil, fmt.Errorf("mark tool policy %s: %w", name, err)
+			}
+		}
+		result = append(result, resolved...)
+	}
+	return result, nil
 }
 
 // unknownToolsHandler 处理模型幻觉出的不存在的工具调用，

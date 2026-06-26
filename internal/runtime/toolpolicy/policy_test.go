@@ -1,10 +1,11 @@
-package tools
+package toolpolicy
 
 import (
 	"context"
-	"fkteams/internal/app/tools/approval"
-	runtimeport "fkteams/internal/ports/runtime"
 	"testing"
+
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
 )
 
 type stubTool struct {

@@ -141,7 +141,6 @@ func (e *Engine) NewDispatchMiddleware(ctx context.Context, cfg *runtimeport.Dis
 	}
 	return dispatch.New(ctx, &dispatch.Config{
 		Model:          cfg.Model,
-		ToolNames:      cfg.ToolNames,
 		Tools:          cfg.Tools,
 		MaxConcurrency: cfg.MaxConcurrency,
 		TaskTimeout:    cfg.TaskTimeout,

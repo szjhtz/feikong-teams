@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fkteams/internal/adapters/model/providers/copilot"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
-	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/checkpoint"
 	"fkteams/internal/runtime/events"
 	retry "fkteams/internal/runtime/retry"

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/runtime/approval"
 )
 
 // ApprovalMode 审批模式

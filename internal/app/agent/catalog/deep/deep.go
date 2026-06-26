@@ -8,6 +8,7 @@ import (
 	"fkteams/internal/runtime/env"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	retry "fkteams/internal/runtime/retry"
+	"fkteams/internal/runtime/toolpolicy"
 	"fmt"
 	"strconv"
 )
@@ -24,9 +25,12 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 		if err != nil {
 			return nil, fmt.Errorf("init tool %s: %w", toolName, err)
 		}
+		if err := toolpolicy.MarkPolicyRequired(baseTools); err != nil {
+			return nil, fmt.Errorf("mark tool policy %s: %w", toolName, err)
+		}
 		toolList = append(toolList, baseTools...)
 	}
-	if err := tools.ClassifyTools(toolList); err != nil {
+	if err := toolpolicy.ClassifyTools(toolList); err != nil {
 		return nil, fmt.Errorf("classify tools: %w", err)
 	}
 	chatModel, err := common.NewChatModel()

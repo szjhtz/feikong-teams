@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fkteams/internal/runtime/toolpolicy"
 	"slices"
 	"testing"
 )
@@ -34,11 +35,11 @@ func TestBuiltinCapabilityToolsRequirePolicies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool info: %v", err)
 		}
-		if info.Extra[metaPolicyRequired] != true {
+		if !toolpolicy.IsPolicyRequired(info) {
 			t.Fatalf("tool %s should require an explicit policy", info.Name)
 		}
 	}
-	if err := ClassifyTools(capabilityTools); err != nil {
+	if err := toolpolicy.ClassifyTools(capabilityTools); err != nil {
 		t.Fatalf("classify builtin capability tools: %v", err)
 	}
 }

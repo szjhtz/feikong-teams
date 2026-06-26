@@ -13,10 +13,10 @@ import (
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
-	"fkteams/internal/app/tools/approval"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/turn"
 

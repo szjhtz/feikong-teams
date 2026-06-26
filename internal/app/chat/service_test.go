@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"fkteams/internal/app/tools/approval"
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
 )
 
 func TestRunTurnDelegatesToRunnerAndPublishesEvents(t *testing.T) {

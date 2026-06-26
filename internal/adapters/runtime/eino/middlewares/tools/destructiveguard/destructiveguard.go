@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	einoruntime "fkteams/internal/adapters/runtime/eino"
-	"fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/toolpolicy"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -19,7 +19,7 @@ func New() runtimeport.ToolMiddleware {
 	return einoruntime.WrapToolMiddleware("destructive_guard", compose.ToolMiddleware{
 		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-				if tools.ShouldSerializeTool(input.Name) {
+				if toolpolicy.ShouldSerializeTool(input.Name) {
 					mu.Lock()
 					defer mu.Unlock()
 				}

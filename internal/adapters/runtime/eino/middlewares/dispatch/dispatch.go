@@ -4,13 +4,12 @@ package dispatch
 
 import (
 	"context"
-	einoruntime "fkteams/internal/adapters/runtime/eino"
-	"fkteams/internal/adapters/runtime/eino/middlewares/agentsmd"
-	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"time"
 
-	"fkteams/internal/app/tools"
+	einoruntime "fkteams/internal/adapters/runtime/eino"
+	"fkteams/internal/adapters/runtime/eino/middlewares/agentsmd"
+	runtimeport "fkteams/internal/ports/runtime"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
@@ -26,8 +25,7 @@ const (
 // Config 分发中间件配置。未指定工具时子智能体自动继承父智能体的工具。
 type Config struct {
 	Model          runtimeport.ChatModel // 子智能体模型（由 AgentBuilder 自动填充）
-	ToolNames      []string              // 工具名称，通过 tools.GetToolsByName 解析
-	Tools          []runtimeport.Tool    // 工具实例，与 ToolNames 合并
+	Tools          []runtimeport.Tool    // 子智能体工具实例；为空时继承父智能体工具
 	MaxConcurrency int                   // 最大并发数（默认 3）
 	TaskTimeout    time.Duration         // 单任务超时（默认 30min）
 }
@@ -52,17 +50,7 @@ func New(ctx context.Context, cfg *Config) (runtimeport.AgentMiddleware, error) 
 		return nil, fmt.Errorf("dispatch: adapt model: %w", err)
 	}
 
-	var resolved []runtimeport.Tool
-	for _, name := range cfg.ToolNames {
-		t, err := tools.GetToolsByName(name)
-		if err != nil {
-			return nil, fmt.Errorf("dispatch: init tool %s: %w", name, err)
-		}
-		resolved = append(resolved, t...)
-	}
-
-	coreTools := append(resolved, cfg.Tools...)
-	runnerTools, err := einoruntime.AdaptToolsForRunner(ctx, coreTools)
+	runnerTools, err := einoruntime.AdaptToolsForRunner(ctx, cfg.Tools)
 	if err != nil {
 		return nil, fmt.Errorf("dispatch: adapt tools: %w", err)
 	}
