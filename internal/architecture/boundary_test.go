@@ -675,6 +675,21 @@ func TestAppToolRegistryDoesNotOwnBuiltinImplementations(t *testing.T) {
 	}
 }
 
+func TestMCPBridgeDoesNotLeakRawClientIntoPorts(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "ports", "tools", "mcp.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"MCPClientToolProvider", "rawClient", "MCPTools(ctx context.Context, rawClient any)"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("internal/ports/tools/mcp.go contains %q; MCP client bridging belongs in adapters/bootstrap", forbidden)
+		}
+	}
+}
+
 func TestHooksUseInternalPackages(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {

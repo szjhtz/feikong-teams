@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/runtime/eino/middlewares/agentsmd"
@@ -161,11 +160,7 @@ func (e *Engine) newHookToolMiddleware() runtimeport.ToolMiddleware {
 	return hooktools.New()
 }
 
-func (e *Engine) MCPTools(ctx context.Context, rawClient any) ([]runtimeport.Tool, error) {
-	cli, ok := rawClient.(*client.Client)
-	if !ok {
-		return nil, fmt.Errorf("unsupported MCP client: %T", rawClient)
-	}
+func (e *Engine) MCPTools(ctx context.Context, cli *client.Client) ([]runtimeport.Tool, error) {
 	tools, err := einoMCP.GetTools(ctx, &einoMCP.Config{Cli: cli})
 	if err != nil {
 		return nil, err

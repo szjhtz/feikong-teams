@@ -7,9 +7,11 @@ import (
 
 	runtimeport "fkteams/internal/ports/runtime"
 	toolport "fkteams/internal/ports/tools"
+
+	"github.com/mark3labs/mcp-go/client"
 )
 
-type ToolProvider func(context.Context, any) ([]runtimeport.Tool, error)
+type ToolProvider func(context.Context, *client.Client) ([]runtimeport.Tool, error)
 
 type Provider struct {
 	mu           sync.RWMutex

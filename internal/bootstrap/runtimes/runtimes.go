@@ -7,7 +7,6 @@ import (
 	einoengine "fkteams/internal/adapters/runtime/eino/engine"
 	toolmcp "fkteams/internal/adapters/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
-	toolport "fkteams/internal/ports/tools"
 	runtimeregistry "fkteams/internal/runtime/registry"
 
 	_ "fkteams/internal/adapters/runtime/eino/providers/register"
@@ -35,9 +34,7 @@ func registerDefaults() error {
 	if err := runtimeregistry.Register(runtimeregistry.DefaultRuntimeName, engine); err != nil {
 		return err
 	}
-	if provider, ok := any(engine).(toolport.MCPClientToolProvider); ok {
-		toolmcp.RegisterToolProvider(provider.MCPTools)
-	}
+	toolmcp.RegisterToolProvider(engine.MCPTools)
 	runtimeport.RegisterInterruptRuntime(einoruntime.NewInterruptRuntime())
 	return nil
 }
