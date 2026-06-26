@@ -4,7 +4,6 @@ import { Bot, GitBranch, User } from "lucide-react";
 import { useAppSelector } from "@/app/hooks";
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/cn";
-import { ActivityCanvas } from "@/components/layout/ActivityCanvas";
 import { ToolCallCard } from "./ToolCallCard";
 import type { ChatEvent, ToolCallDTO } from "@/types/events";
 
@@ -38,7 +37,13 @@ export function MessageList() {
     return (
       <div className="flex h-full items-center justify-center p-10 text-center">
         <div className="sketch-surface max-w-md rounded-md px-8 py-7">
-          <ActivityCanvas />
+          <div className="mx-auto mb-5 h-[120px] w-full max-w-[360px] rounded-md border border-dashed border-border/80 bg-card/60 p-4">
+            <div className="h-full rounded-md bg-[linear-gradient(90deg,hsl(218_30%_76%/.22)_1px,transparent_1px),linear-gradient(hsl(218_30%_76%/.18)_1px,transparent_1px)] bg-[size:32px_24px]">
+              <div className="flex h-full items-center justify-center">
+                <div className="h-10 w-40 rounded-[50%] border-2 border-primary/35 border-dashed" />
+              </div>
+            </div>
+          </div>
           <div className="mb-3 text-lg font-semibold">准备接收任务</div>
           <p className="text-sm text-muted-foreground">当前会话尚无消息。</p>
         </div>

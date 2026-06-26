@@ -26,13 +26,5 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
-    chunkSizeWarningLimit: 1024,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          pixi: ["pixi.js"],
-        },
-      },
-    },
   },
 });
