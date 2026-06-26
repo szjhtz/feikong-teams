@@ -105,7 +105,8 @@ type ModelLister func(ctx context.Context, cfg *providerkit.Config) ([]ModelInfo
 
 var modelListers = map[Type]ModelLister{}
 
-func init() {
+// RegisterDefaultModelListers 注册内置模型列表查询实现。
+func RegisterDefaultModelListers() {
 	RegisterModelLister(OpenAI, providerkit.ListOpenAIModels)
 	RegisterModelLister(DeepSeek, providerkit.ListOpenAIModels)
 	RegisterModelLister(Qwen, providerkit.ListOpenAIModels)

@@ -8,7 +8,8 @@ import (
 	modelproviders "fkteams/internal/adapters/model/providers"
 )
 
-func TestInitRegistersAllProviderFactories(t *testing.T) {
+func TestRegisterDefaultsRegistersAllProviderFactories(t *testing.T) {
+	RegisterDefaults()
 	for _, provider := range []modelproviders.Type{
 		modelproviders.OpenAI,
 		modelproviders.DeepSeek,

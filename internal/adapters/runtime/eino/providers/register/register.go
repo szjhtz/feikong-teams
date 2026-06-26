@@ -17,7 +17,10 @@ import (
 	modelregistry "fkteams/internal/runtime/model"
 )
 
-func init() {
+// RegisterDefaults 显式注册 Eino runtime 的内置模型提供者。
+func RegisterDefaults() {
+	modelproviders.RegisterDefaultModelListers()
+
 	modelproviders.Register(modelproviders.OpenAI, openai.New)
 	modelproviders.Register(modelproviders.DeepSeek, deepseek.New)
 	modelproviders.Register(modelproviders.Claude, claude.New)

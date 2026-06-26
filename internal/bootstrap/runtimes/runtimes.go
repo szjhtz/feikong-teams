@@ -5,11 +5,10 @@ import (
 
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	einoengine "fkteams/internal/adapters/runtime/eino/engine"
+	einoproviders "fkteams/internal/adapters/runtime/eino/providers/register"
 	toolmcp "fkteams/internal/adapters/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
 	runtimeregistry "fkteams/internal/runtime/registry"
-
-	_ "fkteams/internal/adapters/runtime/eino/providers/register"
 )
 
 var (
@@ -39,6 +38,7 @@ func DefaultInterruptRuntime() runtimeport.InterruptRuntime {
 }
 
 func registerDefaults() error {
+	einoproviders.RegisterDefaults()
 	engine := einoengine.NewEngine()
 	if err := runtimeregistry.Register(runtimeregistry.DefaultRuntimeName, engine); err != nil {
 		return err

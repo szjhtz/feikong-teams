@@ -721,6 +721,34 @@ func TestBootstrapDoesNotAutoRegisterInInit(t *testing.T) {
 	}
 }
 
+func TestModelProvidersRegisterExplicitly(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/adapters/runtime/eino/providers/register/register.go",
+		"internal/adapters/model/providers/providers.go",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "func init()") {
+			t.Fatalf("%s uses init for model provider registration; bootstrap must call explicit registration", rel)
+		}
+	}
+
+	path := filepath.Join(root, "internal", "bootstrap", "runtimes", "runtimes.go")
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range file.Imports {
+		if spec.Name != nil && spec.Name.Name == "_" && strings.Contains(spec.Path.Value, "providers/register") {
+			t.Fatal("bootstrap/runtimes imports provider registration for side effects; call RegisterDefaults explicitly")
+		}
+	}
+}
+
 func TestHooksDoNotExposeGlobalBus(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "runtime", "hooks")
