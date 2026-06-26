@@ -1,6 +1,8 @@
 Name = fkteams
 Version = 0.0.1
 BuildTime = $(shell date +'%Y-%m-%d %H:%M:%S')
+BUN ?= bun
+WEB_DIR = web
 
 # 提取当前系统的 OS 和 ARCH
 CURRENT_OS = $(shell go env GOOS)
@@ -22,7 +24,7 @@ all:
 	@$(MAKE) build t="$(targets)"
 
 # 3. 核心编译逻辑
-build:
+build: web-build
 	@if [ -z "$(t)" ]; then \
 		echo "错误: 请指定目标，例如 make build t=linux:amd64"; \
 		exit 1; \
@@ -40,6 +42,16 @@ build:
 
 clean:
 	rm -rf ./release
+	rm -rf ./web/dist
+
+web-install:
+	cd $(WEB_DIR) && $(BUN) install --frozen-lockfile
+
+web-typecheck: web-install
+	cd $(WEB_DIR) && $(BUN) run typecheck
+
+web-build: web-install
+	cd $(WEB_DIR) && $(BUN) run build
 
 fmt-check:
 	@files=$$(find . -name '*.go' -not -path './.git/*' -print | xargs gofmt -l); \
@@ -49,18 +61,15 @@ fmt-check:
 		exit 1; \
 	fi
 
-test:
+test: web-build
 	go test ./...
 
-vet:
+vet: web-build
 	go vet ./...
-
-js-test:
-	node --test web/js_test/*.test.js
 
 diff-check:
 	git diff --check
 
-check: fmt-check vet test js-test diff-check
+check: fmt-check web-typecheck web-build vet test diff-check
 
-.PHONY: native all build clean fmt-check test vet js-test diff-check check
+.PHONY: native all build clean web-install web-typecheck web-build fmt-check test vet diff-check check

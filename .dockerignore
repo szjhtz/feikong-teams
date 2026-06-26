@@ -4,6 +4,8 @@
 .gitignore
 .DS_Store
 release/
+web/node_modules/
+web/dist/
 docs/
 *.md
 *.log

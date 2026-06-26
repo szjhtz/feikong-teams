@@ -23,6 +23,11 @@ jobs:
           go-version-file: "go.mod"
           cache: true
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:

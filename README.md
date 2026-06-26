@@ -151,11 +151,18 @@ fkteams serve
 
 ## 构建与部署
 
+源码构建需要 Go 和 Bun。`make native`、`make build`、`make all` 会先在 `web/` 下执行 Bun 依赖安装与 Vite 生产构建，再把 `web/dist` 嵌入 Go 二进制。
+
 ```bash
 # 从源码构建
 git clone https://github.com/wsshow/feikong-teams.git
 cd feikong-teams
 make native
+
+# 仅开发前端
+cd web
+bun install
+bun run dev
 
 # 源码直接运行
 go run ./cmd/fkteams web

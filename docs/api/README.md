@@ -41,7 +41,7 @@
 - `/favicon.ico`
 - `/api/fkteams/login`
 - `/api/fkteams/favicon`
-- `/static/*`
+- `/assets/*`
 - `/p/*`、`/s/*`
 - `GET` / `HEAD` `/api/fkteams/preview/*`
 - `/api/fkteams/public/session-shares/*`
@@ -73,7 +73,7 @@ Authorization: Bearer <api_key>
 | ---- | ---- |
 | CORS | 默认允许同源和本机开发来源；跨域部署需配置 `[server] allow_origins` |
 | Body Limit | 请求体上限 100MB，超出返回 413 `request body too large` |
-| 静态资源缓存 | 带 `?v=` 的静态资源返回 `public, max-age=31536000, immutable`；HTML 返回 `no-cache` |
+| 静态资源缓存 | Vite 构建产物 `/assets/*` 返回 `public, max-age=31536000, immutable`；HTML 返回 `no-cache` |
 
 ## API 分册
 
@@ -103,7 +103,7 @@ Authorization: Bearer <api_key>
 | GET | `/login` | 登录页，仅启用登录认证时注册 |
 | GET | `/p/:linkId` | 文件预览页 |
 | GET | `/s/:shareID` | 会话分享页 |
-| GET | `/static/*filepath` | 静态资源 |
+| GET | `/assets/*filepath` | 静态资源 |
 | GET | `/favicon.ico` | favicon |
 
 ### 公共与系统

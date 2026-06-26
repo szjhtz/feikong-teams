@@ -22,7 +22,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		// 静态资源不需要验证（CSS/JS/字体等）
-		if strings.HasPrefix(path, "/static/") {
+		if strings.HasPrefix(path, "/assets/") {
 			c.Next()
 			return
 		}
@@ -88,7 +88,7 @@ func Auth() gin.HandlerFunc {
 
 func serveLoginPage(c *gin.Context) {
 	webFS := web.GetFS()
-	data, err := webFS.Open("login.html")
+	data, err := webFS.Open("index.html")
 	if err != nil {
 		c.String(http.StatusInternalServerError, "login page not found")
 		return

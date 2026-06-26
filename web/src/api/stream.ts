@@ -1,0 +1,71 @@
+import type { ChatEvent, QueueItem } from "@/types/events";
+import { authToken } from "@/lib/storage";
+import { del, get, patch, post } from "./client";
+
+export function streamStatus(sessionID: string) {
+  return get<{ status: string }>(`/api/fkteams/stream/status/${encodeURIComponent(sessionID)}`);
+}
+
+export function streamQueue(sessionID: string) {
+  return get<{ queue: QueueItem[] }>(`/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}`);
+}
+
+export function updateQueueItem(sessionID: string, queueID: string, content: string) {
+  return patch<{ queue: QueueItem[] }>(
+    `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}`,
+    { content },
+  );
+}
+
+export function deleteQueueItem(sessionID: string, queueID: string) {
+  return del<{ queue: QueueItem[] }>(
+    `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}`,
+  );
+}
+
+export function changeQueueKind(sessionID: string, queueID: string, kind: string) {
+  return post<{ queue: QueueItem[] }>(
+    `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}/kind`,
+    { kind },
+  );
+}
+
+export function moveQueueItem(sessionID: string, queueID: string, direction: "up" | "down") {
+  return post<{ queue: QueueItem[] }>(
+    `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}/move`,
+    { direction },
+  );
+}
+
+export async function subscribeStream(
+  sessionID: string,
+  offset: number,
+  onEvent: (event: ChatEvent) => void,
+  signal?: AbortSignal,
+) {
+  const headers = new Headers();
+  const token = authToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(
+    `/api/fkteams/stream/subscribe/${encodeURIComponent(sessionID)}?offset=${encodeURIComponent(String(offset))}`,
+    { headers, signal },
+  );
+  if (!response.ok || !response.body) throw new Error("stream subscribe failed");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() || "";
+    for (const chunk of chunks) {
+      const line = chunk.split("\n").find((part) => part.startsWith("data:"));
+      if (!line) continue;
+      const raw = line.replace(/^data:\s*/, "");
+      if (!raw || raw === "[DONE]") continue;
+      onEvent(JSON.parse(raw) as ChatEvent);
+    }
+  }
+}

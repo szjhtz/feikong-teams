@@ -95,6 +95,8 @@ web/
 docs/
 ```
 
+`web/` 是独立的 React + TypeScript + Vite 前端工程，使用 Bun 管理依赖和构建，TailwindCSS 负责样式系统，Redux Toolkit 负责跨页面状态，Lucide icons 提供图标。生产构建输出到 `web/dist`，由 `web/embed.go` 嵌入 Go 二进制；HTTP adapter 只暴露 `/assets/*` 静态构建产物和统一的 SPA `index.html`，登录页、文件预览页和会话分享页都由前端路由接管。
+
 ## 层级职责
 
 | 层级 | 职责 | 边界 |

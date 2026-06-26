@@ -76,11 +76,11 @@ func TestNewEngineAddsMiddlewareAndRoutesCanBeRegistered(t *testing.T) {
 	}
 }
 
-func TestServeHTMLVersionsStaticAssets(t *testing.T) {
+func TestServeHTMLServesSPAEntry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.GET("/", func(c *gin.Context) {
-		serveHTML(c, web.GetFS(), "index.html")
+		serveHTML(c, web.GetFS())
 	})
 
 	recorder := httptest.NewRecorder()
@@ -96,23 +96,22 @@ func TestServeHTMLVersionsStaticAssets(t *testing.T) {
 
 	body := recorder.Body.String()
 	for _, ref := range []string{
-		"/static/css/style.css?v=",
-		"/static/js/history.js?v=",
-		"/static/assets/fkteams-logo.svg?v=",
+		"/assets/",
+		`id="root"`,
 	} {
 		if !strings.Contains(body, ref) {
-			t.Fatalf("expected html to contain versioned ref %q", ref)
+			t.Fatalf("expected html to contain %q", ref)
 		}
 	}
 }
 
-func TestServeStaticStyleVersionsLocalCSSImports(t *testing.T) {
+func TestServeAssetsUsesImmutableCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.GET("/static/*filepath", serveStatic(web.GetFS()))
+	engine.GET("/assets/*filepath", serveAssets(web.GetFS()))
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/static/css/style.css?v=test", nil)
+	request := httptest.NewRequest(http.MethodGet, "/assets/fkteams-logo.svg", nil)
 	engine.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -120,39 +119,6 @@ func TestServeStaticStyleVersionsLocalCSSImports(t *testing.T) {
 	}
 	if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
 		t.Fatalf("expected immutable static response, got %q", got)
-	}
-
-	body := recorder.Body.String()
-	for _, ref := range []string{
-		"url('variables.css?v=",
-		"url('layout.css?v=",
-		"url('messages.css?v=",
-	} {
-		if !strings.Contains(body, ref) {
-			t.Fatalf("expected css to contain versioned import %q", ref)
-		}
-	}
-	if strings.Contains(body, "fonts.googleapis.com/css2?family=Caveat") {
-		t.Fatal("style.css should not inline external font imports")
-	}
-}
-
-func TestStaticAssetVersionUsesCompactBuildTime(t *testing.T) {
-	got := compactBuildTime("2026-06-10 16:53:39")
-	if got != "20260610165339" {
-		t.Fatalf("compact build time = %q, want 20260610165339", got)
-	}
-
-	got = compactBuildTime("20260610165339")
-	if got != "20260610165339" {
-		t.Fatalf("numeric build time = %q, want 20260610165339", got)
-	}
-}
-
-func TestSanitizeAssetVersionPartAvoidsEscapedQueryCharacters(t *testing.T) {
-	got := sanitizeAssetVersionPart("0.0.1 beta+local")
-	if got != "0.0.1-beta-local" {
-		t.Fatalf("sanitized version = %q, want 0.0.1-beta-local", got)
 	}
 }
 

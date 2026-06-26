@@ -1,4 +1,15 @@
-# ---- 构建阶段 ----
+# ---- 前端构建阶段 ----
+FROM oven/bun:1-alpine AS web-builder
+
+WORKDIR /src/web
+
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY web ./
+RUN bun run build
+
+# ---- Go 构建阶段 ----
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
@@ -9,6 +20,7 @@ RUN go mod download
 
 # 复制源码并编译
 COPY . .
+COPY --from=web-builder /src/web/dist ./web/dist
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X 'fkteams/internal/app/version.version=$(cat VERSION 2>/dev/null || echo dev)'" \
     -o fkteams ./cmd/fkteams
