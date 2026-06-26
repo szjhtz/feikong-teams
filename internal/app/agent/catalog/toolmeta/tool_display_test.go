@@ -3,9 +3,9 @@ package toolmeta
 import "testing"
 
 func TestFormatToolDisplayDefaultsToToolKind(t *testing.T) {
-	resetAgentToolDisplays(t)
+	registry := NewRegistry()
 
-	display := FormatToolDisplay("file_read")
+	display := registry.FormatToolDisplay("file_read")
 	if display.Name != "file_read" {
 		t.Fatalf("name = %q, want file_read", display.Name)
 	}
@@ -21,11 +21,11 @@ func TestFormatToolDisplayDefaultsToToolKind(t *testing.T) {
 }
 
 func TestRegisterAgentToolDisplayUsesExplicitDisplayName(t *testing.T) {
-	resetAgentToolDisplays(t)
+	registry := NewRegistry()
 
-	RegisterAgentToolDisplay("ask_fkagent_coder", "代码助手")
+	registry.RegisterAgentToolDisplay("ask_fkagent_coder", "代码助手")
 
-	display := FormatToolDisplay("ask_fkagent_coder")
+	display := registry.FormatToolDisplay("ask_fkagent_coder")
 	if display.Name != "ask_fkagent_coder" {
 		t.Fatalf("name = %q, want ask_fkagent_coder", display.Name)
 	}
@@ -41,11 +41,11 @@ func TestRegisterAgentToolDisplayUsesExplicitDisplayName(t *testing.T) {
 }
 
 func TestRegisterAgentToolDisplayDerivesTargetFromToolName(t *testing.T) {
-	resetAgentToolDisplays(t)
+	registry := NewRegistry()
 
-	RegisterAgentToolDisplay("ask_fkagent_data-analyst", "")
+	registry.RegisterAgentToolDisplay("ask_fkagent_data-analyst", "")
 
-	display := FormatToolDisplay("ask_fkagent_data-analyst")
+	display := registry.FormatToolDisplay("ask_fkagent_data-analyst")
 	if display.DisplayName != "指派给 Data Analyst" {
 		t.Fatalf("display name = %q, want 指派给 Data Analyst", display.DisplayName)
 	}
@@ -55,11 +55,11 @@ func TestRegisterAgentToolDisplayDerivesTargetFromToolName(t *testing.T) {
 }
 
 func TestRegisterAgentToolDisplayIgnoresEmptyName(t *testing.T) {
-	resetAgentToolDisplays(t)
+	registry := NewRegistry()
 
-	RegisterAgentToolDisplay("", "Nobody")
+	registry.RegisterAgentToolDisplay("", "Nobody")
 
-	display := FormatToolDisplay("")
+	display := registry.FormatToolDisplay("")
 	if display.Kind != ToolKindTool {
 		t.Fatalf("kind = %q, want %q", display.Kind, ToolKindTool)
 	}
@@ -87,19 +87,4 @@ func TestTitleIdentifier(t *testing.T) {
 			}
 		})
 	}
-}
-
-func resetAgentToolDisplays(t *testing.T) {
-	t.Helper()
-
-	agentToolDisplays.Range(func(key, value any) bool {
-		agentToolDisplays.Delete(key)
-		return true
-	})
-	t.Cleanup(func() {
-		agentToolDisplays.Range(func(key, value any) bool {
-			agentToolDisplays.Delete(key)
-			return true
-		})
-	})
 }

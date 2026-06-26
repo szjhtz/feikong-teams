@@ -1174,6 +1174,25 @@ func TestSkillProvidersDoNotExposeProcessDefaultRegistry(t *testing.T) {
 	}
 }
 
+func TestToolMetaDoesNotExposeProcessGlobalDisplayRegistry(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "app", "agent", "catalog", "toolmeta", "tool_display.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{
+		"var agentToolDisplays",
+		"func RegisterAgentToolDisplay(",
+		"agentToolDisplays sync.Map",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("toolmeta exposes process-global display state through %q", forbidden)
+		}
+	}
+}
+
 func TestAgentCatalogDoesNotExposeProcessDefaultRegistry(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "app", "agent", "catalog", "registry.go")

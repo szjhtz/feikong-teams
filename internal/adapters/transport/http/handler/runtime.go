@@ -10,6 +10,7 @@ import (
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	agents "fkteams/internal/app/agent/catalog"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -35,6 +36,7 @@ type Runtime struct {
 	Scheduler      *appschedule.Service
 	AgentRegistry  *agents.Registry
 	ToolRegistry   *apptools.ToolGroupRegistry
+	ToolDisplays   *toolmeta.Registry
 	SkillProviders *appskill.ProviderRegistry
 	ModelRegistry  *modelregistry.Registry
 	Providers      *modelproviders.Registry
@@ -57,6 +59,7 @@ type RuntimeOptions struct {
 	Scheduler      *appschedule.Service
 	AgentRegistry  *agents.Registry
 	ToolRegistry   *apptools.ToolGroupRegistry
+	ToolDisplays   *toolmeta.Registry
 	SkillProviders *appskill.ProviderRegistry
 	ModelRegistry  *modelregistry.Registry
 	Providers      *modelproviders.Registry
@@ -88,6 +91,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		Scheduler:      opt.Scheduler,
 		AgentRegistry:  opt.AgentRegistry,
 		ToolRegistry:   opt.ToolRegistry,
+		ToolDisplays:   opt.ToolDisplays,
 		SkillProviders: opt.SkillProviders,
 		ModelRegistry:  opt.ModelRegistry,
 		Providers:      opt.Providers,
@@ -119,6 +123,9 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	if rt.Favicons == nil {
 		rt.Favicons = NewFaviconProxy(FaviconProxyOptions{})
 	}
+	if rt.ToolDisplays == nil {
+		rt.ToolDisplays = toolmeta.NewRegistry()
+	}
 	if rt.SkillProviders == nil {
 		rt.SkillProviders = appskill.NewDefaultProviderRegistry()
 	}
@@ -132,7 +139,9 @@ func newStreamManager() *taskstream.Manager {
 }
 
 func (rt *Runtime) recorder(sessionID string) *eventlog.HistoryRecorder {
-	return rt.Sessions.GetOrCreate(sessionID, rt.HistoryDir)
+	recorder := rt.Sessions.GetOrCreate(sessionID, rt.HistoryDir)
+	recorder.SetToolDisplayResolver(rt.ToolDisplays)
+	return recorder
 }
 
 func (rt *Runtime) sessionDirPath(sessionID string) string {
@@ -159,6 +168,7 @@ func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
 	ctx = modelregistry.WithRegistry(ctx, rt.ModelRegistry)
 	ctx = modelproviders.WithRegistry(ctx, rt.Providers)
 	ctx = apptools.WithRegistry(ctx, rt.ToolRegistry)
+	ctx = toolmeta.WithRegistry(ctx, rt.ToolDisplays)
 	ctx = agents.WithRegistry(ctx, rt.AgentRegistry)
 	return appschedule.WithService(ctx, rt.Scheduler)
 }

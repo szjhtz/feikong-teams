@@ -7,6 +7,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	agents "fkteams/internal/app/agent/catalog"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -69,6 +70,7 @@ type Bridge struct {
 	agents    *agents.Registry
 	models    *modelregistry.Registry
 	tools     *apptools.ToolGroupRegistry
+	displays  *toolmeta.Registry
 	scheduler func() *appschedule.Service
 
 	queueMu sync.Mutex
@@ -126,13 +128,14 @@ func (b *Bridge) ResetRunner() {
 }
 
 // SetRuntimeDependencies 设置当前通道服务实例使用的 runtime 依赖。
-func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime, agentRegistry *agents.Registry, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry) {
+func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime, agentRegistry *agents.Registry, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry, displays *toolmeta.Registry) {
 	b.runtimeMu.Lock()
 	b.engine = engine
 	b.interrupt = interrupt
 	b.agents = agentRegistry
 	b.models = models
 	b.tools = tools
+	b.displays = displays
 	b.runtimeMu.Unlock()
 	b.ResetRunner()
 }
@@ -144,12 +147,14 @@ func (b *Bridge) withRuntimeContext(ctx context.Context) context.Context {
 	agentRegistry := b.agents
 	models := b.models
 	tools := b.tools
+	displays := b.displays
 	b.runtimeMu.RUnlock()
 	ctx = runtimeport.WithEngine(ctx, engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
 	ctx = agents.WithRegistry(ctx, agentRegistry)
 	ctx = modelregistry.WithRegistry(ctx, models)
 	ctx = apptools.WithRegistry(ctx, tools)
+	ctx = toolmeta.WithRegistry(ctx, displays)
 	if b.scheduler != nil {
 		ctx = appschedule.WithService(ctx, b.scheduler())
 	}
@@ -316,6 +321,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	}
 
 	recorder := b.sessions.GetOrCreate(sessionID, b.historyDir)
+	recorder.SetToolDisplayResolver(toolmeta.ResolverFromContext(ctx))
 	turnInput := appchat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
 
 	rc := newReplyCollector(b.manager, channelName, chatID)

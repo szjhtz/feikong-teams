@@ -381,7 +381,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 					return nil
 				}
-				data := convertEventToMap(event)
+				data := rt.convertEventToMap(event)
 				data["session_id"] = sessionID
 				stream.Publish(taskstream.Event(data))
 				return nil

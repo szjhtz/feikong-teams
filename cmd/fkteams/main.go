@@ -6,6 +6,7 @@ import (
 	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	clicommands "fkteams/internal/adapters/transport/cli/commands"
 	agents "fkteams/internal/app/agent/catalog"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	apptools "fkteams/internal/app/tools"
 	bootstrapruntimes "fkteams/internal/bootstrap/runtimes"
 	bootstraptools "fkteams/internal/bootstrap/tools"
@@ -23,6 +24,7 @@ func init() {
 
 func main() {
 	mcpProvider := mcpadapter.NewProvider()
+	toolDisplays := toolmeta.NewRegistry()
 	runtimeDefaults, err := bootstrapruntimes.NewDefaults(bootstrapruntimes.Options{
 		MCPProvider: mcpProvider,
 	})
@@ -40,6 +42,7 @@ func main() {
 	ctx = modelregistry.WithRegistry(ctx, runtimeDefaults.ModelRegistry)
 	ctx = modelproviders.WithRegistry(ctx, runtimeDefaults.ModelProviderRegistry)
 	ctx = apptools.WithRegistry(ctx, toolRegistry)
+	ctx = toolmeta.WithRegistry(ctx, toolDisplays)
 	ctx = agents.WithRegistry(ctx, agents.NewRegistry())
 	if err := clicommands.Root().Run(ctx, os.Args); err != nil {
 		pterm.Error.Println(err)

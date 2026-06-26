@@ -33,7 +33,9 @@ func TestAgentToolNameNormalizesAndDeduplicates(t *testing.T) {
 
 func TestBuildAgentToolsUsesRuntimeToolNameMapping(t *testing.T) {
 	engine := &runnerTestEngine{}
+	displays := toolmeta.NewRegistry()
 	ctx := runtimeport.WithEngine(context.Background(), engine)
+	ctx = toolmeta.WithRegistry(ctx, displays)
 
 	agents := []runtimeport.Agent{
 		runnerTestAgent{name: "成员 A"},
@@ -53,6 +55,10 @@ func TestBuildAgentToolsUsesRuntimeToolNameMapping(t *testing.T) {
 	}
 	if names[0] != toolmeta.AgentToolPrefix+"a" || names[1] != toolmeta.AgentToolPrefix+"a_2" {
 		t.Fatalf("tool names = %v, want normalized duplicate names", names)
+	}
+	display := displays.FormatToolDisplay(names[0])
+	if display.Kind != toolmeta.ToolKindAgent || display.DisplayName != "指派给 成员 A" {
+		t.Fatalf("tool display = %#v, want registered agent display", display)
 	}
 }
 

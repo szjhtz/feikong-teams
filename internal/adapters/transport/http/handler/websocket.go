@@ -9,6 +9,7 @@ import (
 
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/adapters/transport/http/origin"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
@@ -272,12 +273,12 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 // --- WebSocket 事件回调 ---
 
 // wsEventCallbackBuffered 构建支持断线缓冲的事件发布回调。
-func wsEventCallbackBuffered(sessionID string, stream *taskstream.Stream) func(events.Event) error {
+func wsEventCallbackBuffered(sessionID string, stream *taskstream.Stream, resolver toolmeta.Resolver) func(events.Event) error {
 	return func(event events.Event) error {
 		if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 			return nil
 		}
-		data := convertEventToMap(event)
+		data := convertEventToMapWithResolver(event, resolver)
 		data["session_id"] = sessionID
 		stream.Publish(taskstream.Event(data))
 		return nil
@@ -369,7 +370,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 			Input:     currentInput,
 		},
 			appchat.WithRunID(currentRunID),
-			appchat.OnEvent(wsEventCallbackBuffered(sessionID, stream)),
+			appchat.OnEvent(wsEventCallbackBuffered(sessionID, stream, rt.ToolDisplays)),
 			appchat.WithEventRecorderFunc(func(event events.Event) {
 				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 					return

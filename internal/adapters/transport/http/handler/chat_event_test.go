@@ -17,7 +17,8 @@ import (
 func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 	toolIndex := 0
 	toolName := "ask_fkagent_event_flow_member"
-	toolmeta.RegisterAgentToolDisplay(toolName, "Event Flow Member")
+	displays := toolmeta.NewRegistry()
+	displays.RegisterAgentToolDisplay(toolName, "Event Flow Member")
 	event := events.NormalizeEvent(events.Event{
 		Type:             events.EventMessageDelta,
 		Sequence:         42,
@@ -49,7 +50,7 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 		ToolCallRefs: map[int]string{0: "ref-tool-call-1"},
 	})
 
-	got := convertEventToMap(event)
+	got := convertEventToMapWithResolver(event, displays)
 	requireMapValue(t, got, "type", events.EventMessageDelta)
 	requireMapValue(t, got, "sequence", int64(42))
 	requireMapValue(t, got, "message_id", "msg_member_1")

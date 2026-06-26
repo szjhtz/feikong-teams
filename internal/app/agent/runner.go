@@ -43,11 +43,15 @@ func buildAgentTools(ctx context.Context, subAgents []runtimeport.Agent) ([]runt
 		return nil, err
 	}
 	usedNames := make(map[string]bool, len(subAgents))
+	var registerDisplay runtimeport.AgentToolDisplayFunc
+	if registry, ok := toolmeta.RegistryFromContext(ctx); ok {
+		registerDisplay = registry.RegisterAgentToolDisplay
+	}
 	return engine.NewAgentTools(ctx, subAgents, runtimeport.AgentToolConfig{
 		ToolName: func(displayName string, index int) string {
 			return agentToolName(displayName, index, usedNames)
 		},
-		RegisterDisplay: toolmeta.RegisterAgentToolDisplay,
+		RegisterDisplay: registerDisplay,
 	})
 }
 

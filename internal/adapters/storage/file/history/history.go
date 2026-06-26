@@ -63,6 +63,7 @@ type pendingToolCall struct {
 	EventIndex  int
 	Sequence    int64
 	Name        string
+	Display     toolmeta.ToolDisplay
 	DisplayName string
 	Kind        string
 	Target      string
@@ -83,8 +84,26 @@ type HistoryRecorder struct {
 	messages        []AgentMessage
 	activeMessages  map[string]*activeMessageContext
 	activeOrder     []string
+	toolDisplays    toolmeta.Resolver
 	summary         string // 上下文压缩摘要
 	summarizedCount int    // 已被摘要覆盖的消息数量
+}
+
+// SetToolDisplayResolver 设置当前 recorder 使用的工具展示解析器。
+func (h *HistoryRecorder) SetToolDisplayResolver(resolver toolmeta.Resolver) {
+	if h == nil || resolver == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.toolDisplays = resolver
+}
+
+func (h *HistoryRecorder) formatToolDisplay(name string) toolmeta.ToolDisplay {
+	if h != nil && h.toolDisplays != nil {
+		return h.toolDisplays.FormatToolDisplay(name)
+	}
+	return toolmeta.FallbackDisplay(name)
 }
 
 func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord {
@@ -100,7 +119,10 @@ func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord
 		Result:      result,
 	}
 	if record.DisplayName == "" || record.Kind == "" {
-		display := toolmeta.FormatToolDisplay(tc.Name)
+		display := tc.Display
+		if display.Name == "" {
+			display = toolmeta.FallbackDisplay(tc.Name)
+		}
 		if record.DisplayName == "" {
 			record.DisplayName = display.DisplayName
 		}
@@ -118,8 +140,8 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 	return &record
 }
 
-func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string, sequence int64) pendingToolCall {
-	display := toolmeta.FormatToolDisplay(name)
+func (h *HistoryRecorder) pendingToolCallFromEvent(ref, id string, index *int, name, arguments string, sequence int64) pendingToolCall {
+	display := h.formatToolDisplay(name)
 	return pendingToolCall{
 		Ref:         ref,
 		ID:          id,
@@ -127,6 +149,7 @@ func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string
 		EventIndex:  -1,
 		Sequence:    sequence,
 		Name:        name,
+		Display:     display,
 		DisplayName: display.DisplayName,
 		Kind:        display.Kind,
 		Target:      display.Target,

@@ -102,7 +102,7 @@ func (rt *Runtime) handleStreamChat(c *gin.Context, ctx context.Context, r runti
 		Input:     turnInput,
 	},
 		appchat.OnEvent(func(event events.Event) error {
-			data, _ := json.Marshal(convertEventToMap(event))
+			data, _ := json.Marshal(rt.convertEventToMap(event))
 			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 			return err

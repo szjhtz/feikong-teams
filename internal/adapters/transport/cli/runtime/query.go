@@ -12,6 +12,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	clireport "fkteams/internal/adapters/transport/cli/report"
 	"fkteams/internal/adapters/transport/cli/tui"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -255,6 +256,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		session.activateSession(false)
 	}
 	recorder := session.recorder()
+	recorder.SetToolDisplayResolver(toolmeta.ResolverFromContext(ctx))
 	turnInput := appchat.BuildTurnInputWithMemory(recorder, input, e.memory)
 
 	// 缓存第一次输入作为会话标题（不立即创建文件，等用户保存时才写入）

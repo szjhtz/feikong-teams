@@ -4,6 +4,7 @@ import (
 	"context"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	agents "fkteams/internal/app/agent/catalog"
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
@@ -106,8 +107,9 @@ func (s *Service) Start(ctx context.Context) error {
 	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	models, _ := modelregistry.RegistryFromContext(ctx)
 	tools, _ := apptools.RegistryFromContext(ctx)
+	displays, _ := toolmeta.RegistryFromContext(ctx)
 	for _, bridge := range s.bridges {
-		bridge.SetRuntimeDependencies(engine, interrupt, agentRegistry, models, tools)
+		bridge.SetRuntimeDependencies(engine, interrupt, agentRegistry, models, tools, displays)
 	}
 	log.Printf("[channels] starting all channels...")
 	return s.manager.StartAll(ctx)

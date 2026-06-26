@@ -191,6 +191,8 @@ type ToolRegistry interface {
 
 技能市场后端通过 `internal/app/skill.ProviderRegistry` 由入口实例显式持有。HTTP runtime 与 CLI skill 命令各自创建或注入 registry；`internal/app/skill` 不保留包级默认 provider 切片，也不提供 `GetDefaultProvider` 形式的进程默认门面。
 
+成员工具展示元信息通过 `internal/app/agent/catalog/toolmeta.Registry` 显式持有，并由组合根注入 context。agent tool 创建时只写入当前 registry；历史记录和 HTTP 实时事件转换使用注入的 resolver 固化 display metadata。`toolmeta` 禁止恢复包级 `sync.Map` 或全局注册函数。
+
 ## 状态与存储
 
 状态能力按用途拆分，不在入口层散落读写：

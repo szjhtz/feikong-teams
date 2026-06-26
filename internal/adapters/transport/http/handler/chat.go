@@ -322,7 +322,7 @@ func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.
 		askEvent = events.NormalizeEvent(askEvent)
 		recorder.RecordEvent(askEvent)
 
-		askPayload := taskstream.Event(convertEventToMap(askEvent)).
+		askPayload := taskstream.Event(convertEventToMapWithResolver(askEvent, nil)).
 			With("type", events.NotifyAskQuestions).
 			With("session_id", sessionID).
 			With("ask_id", req.ID).
@@ -390,6 +390,23 @@ func attachMemberPayload(payload map[string]any, event events.Event) map[string]
 
 // convertEventToMap 将事件转换为前端可用的格式
 func convertEventToMap(event events.Event) map[string]any {
+	return convertEventToMapWithResolver(event, nil)
+}
+
+type fallbackToolDisplayResolver struct{}
+
+func (fallbackToolDisplayResolver) FormatToolDisplay(name string) toolmeta.ToolDisplay {
+	return toolmeta.FallbackDisplay(name)
+}
+
+func (rt *Runtime) convertEventToMap(event events.Event) map[string]any {
+	return convertEventToMapWithResolver(event, rt.ToolDisplays)
+}
+
+func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolver) map[string]any {
+	if resolver == nil {
+		resolver = fallbackToolDisplayResolver{}
+	}
 	result := map[string]any{
 		"type":       event.Type,
 		"agent_name": event.AgentName,
@@ -439,7 +456,7 @@ func convertEventToMap(event events.Event) map[string]any {
 	if toolCallsFromEvent := events.ToolCallsFromEvent(event); len(toolCallsFromEvent) > 0 {
 		toolCalls := make([]map[string]any, 0, len(toolCallsFromEvent))
 		for i, tc := range toolCallsFromEvent {
-			display := toolmeta.FormatToolDisplay(tc.Function.Name)
+			display := resolver.FormatToolDisplay(tc.Function.Name)
 			toolCall := map[string]any{
 				"name":         tc.Function.Name,
 				"display_name": display.DisplayName,
@@ -478,7 +495,7 @@ func convertEventToMap(event events.Event) map[string]any {
 	}
 	if event.ToolName != "" {
 		result["tool_name"] = event.ToolName
-		display := toolmeta.FormatToolDisplay(event.ToolName)
+		display := resolver.FormatToolDisplay(event.ToolName)
 		result["tool_display_name"] = display.DisplayName
 		result["tool_kind"] = display.Kind
 		if display.Target != "" {

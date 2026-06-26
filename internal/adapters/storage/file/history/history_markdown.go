@@ -71,8 +71,11 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 			case MsgTypeToolCall:
 				if event.ToolCall != nil {
-					display := toolmeta.FormatToolDisplay(event.ToolCall.Name)
-					fmt.Fprintf(&md, "> **工具调用**: %s\n", display.DisplayName)
+					displayName := event.ToolCall.DisplayName
+					if displayName == "" {
+						displayName = toolmeta.FallbackDisplay(event.ToolCall.Name).DisplayName
+					}
+					fmt.Fprintf(&md, "> **工具调用**: %s\n", displayName)
 					if event.ToolCall.Arguments != "" {
 						fmt.Fprintf(&md, "> - **参数**: `%s`\n", event.ToolCall.Arguments)
 					}

@@ -118,7 +118,7 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 	if event.ToolName == "" {
 		return
 	}
-	pending := pendingToolCallFromEvent(resultKey, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs, event.Sequence)
+	pending := h.pendingToolCallFromEvent(resultKey, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs, event.Sequence)
 	if !events.IsInternalToolName(pending.Name) {
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Sequence: event.Sequence,
@@ -349,7 +349,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				}
 			}
 			if !updated {
-				pending := pendingToolCallFromEvent(ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments, event.Sequence)
+				pending := h.pendingToolCallFromEvent(ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments, event.Sequence)
 				pending.EventIndex = h.appendToolCallEvent(ctx, pending, event.Sequence)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
