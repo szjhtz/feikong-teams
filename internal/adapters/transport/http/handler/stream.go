@@ -393,7 +393,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 		}
 
 		recorder.FinalizeCurrent()
-		saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+		saveTurnHistory(recorder, sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
@@ -410,8 +410,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			"session_id": sessionID,
 			"message":    "处理完成",
 		})
-		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
-		extractChatMemory(manager, recorder, sessionID)
+		finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}
 }

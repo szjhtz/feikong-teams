@@ -107,7 +107,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner,
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("connection closed, stopping: session=%s", sessionID)
-					saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+					saveTurnHistory(recorder, sessionID)
 					return
 				}
 				log.Printf("error processing event: %v", err)

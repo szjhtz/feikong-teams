@@ -4,8 +4,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"log"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -372,7 +370,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		e.view.Flush()
 	}
 
-	extractSessionMemory(e.memory, recorder, activeSessionID)
+	appchat.ExtractMemoryAsync(e.memory, eventlog.ConvertMemoryMessages(recorder), activeSessionID)
 
 	elapsed := time.Since(startTime).Round(time.Millisecond)
 	e.view.Done(elapsed)
@@ -471,35 +469,9 @@ func FlushSessionMemoryWithManager(manager appstate.MemoryManager) {
 		return
 	}
 	recorder := getCliRecorder()
-	flushSessionMemory(manager, recorder, activeSessionID)
-}
-
-func extractSessionMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
-	if manager == nil || recorder == nil {
-		return
-	}
-	messages := eventlog.ConvertMemoryMessages(recorder)
-	if len(messages) == 0 {
-		return
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		manager.ExtractAndStore(ctx, messages, sessionID)
-	}()
-}
-
-func flushSessionMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
-	if manager == nil || recorder == nil {
-		return
-	}
-	messages := eventlog.ConvertMemoryMessages(recorder)
-	if len(messages) == 0 {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	manager.FlushExtract(ctx, messages, sessionID)
+	appchat.FlushMemory(ctx, manager, eventlog.ConvertMemoryMessages(recorder), activeSessionID)
 }
 
 // SaveCLISessionHistory 保存 CLI 模式的可恢复会话历史。
@@ -508,52 +480,12 @@ func SaveCLISessionHistory() bool {
 	if recorder.GetMessageCount() == 0 {
 		return false
 	}
-	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, eventlog.HistoryFileName)
-
-	if err := recorder.SaveToFile(historyFile); err != nil {
+	store := eventlog.NewChatSessionStore(CLIHistoryDir)
+	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), activeSessionID, cliSessionTitle, recorder); err != nil {
 		pterm.Error.Printfln("保存聊天历史失败: %v", err)
 		return false
 	}
-	saveCliSessionMetadata(activeSessionID, cliSessionTitle)
 	return true
-}
-
-// saveCliSessionMetadata 保存 CLI 会话元数据
-// 如果提供了 userInput 且当前标题是默认时间戳格式，则更新为用户输入
-func saveCliSessionMetadata(sessionID, userInput string) {
-	sessionDir := filepath.Join(CLIHistoryDir, sessionID)
-	now := time.Now()
-	meta, err := eventlog.LoadMetadata(sessionDir)
-	if err != nil {
-		title := "未命名会话"
-		if userInput != "" {
-			title = truncateTitle(userInput)
-		}
-		meta = &eventlog.SessionMetadata{
-			ID:        sessionID,
-			Title:     title,
-			Status:    "active",
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-	} else {
-		meta.UpdatedAt = now
-		if userInput != "" && isDefaultTitle(meta.Title) {
-			meta.Title = truncateTitle(userInput)
-		}
-	}
-	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
-		log.Printf("failed to save CLI session metadata: %v", err)
-	}
-}
-
-// isDefaultTitle 检查标题是否为默认标题
-func isDefaultTitle(title string) bool {
-	if title == "未命名会话" {
-		return true
-	}
-	_, err := time.Parse("2006-01-02 15:04:05", title)
-	return err == nil
 }
 
 // truncateTitle 截断标题，最多 50 个字符（对中文安全）

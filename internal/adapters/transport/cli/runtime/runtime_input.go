@@ -7,6 +7,7 @@ import (
 	appschedule "fkteams/internal/app/schedule"
 
 	"fkteams/internal/adapters/transport/cli/tui"
+	appchat "fkteams/internal/app/chat"
 
 	"fmt"
 	"os"
@@ -302,11 +303,11 @@ func (m runtimeModel) openRuntimePicker(picker *runtimePicker, err error, title 
 func (m runtimeModel) saveRuntimeChatHistory() runtimeModel {
 	recorder := getCliRecorder()
 	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, eventlog.HistoryFileName)
-	if err := recorder.SaveToFile(historyFile); err != nil {
+	store := eventlog.NewChatSessionStore(CLIHistoryDir)
+	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), activeSessionID, cliSessionTitle, recorder); err != nil {
 		m.appendBlock(runtimeBlockError, "保存聊天历史失败", err.Error())
 		return m
 	}
-	saveCliSessionMetadata(activeSessionID, cliSessionTitle)
 	m.appendBlock(runtimeBlockSystem, "聊天历史", "已保存到: "+historyFile)
 	return m
 }

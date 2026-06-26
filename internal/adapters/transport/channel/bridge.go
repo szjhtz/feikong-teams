@@ -13,7 +13,6 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/log"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -277,16 +276,21 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			}
 			recorder.FinalizeCurrent()
 			rc.flush()
-			historyFile := filepath.Join(channelHistoryDir, sessionID, eventlog.HistoryFileName)
-			if err := recorder.SaveToFile(historyFile); err != nil {
-				log.Printf("[bridge] save history failed: session=%s, err=%v", sessionID, err)
-			}
 			status := "completed"
 			if err != nil {
 				status = "error"
 			}
-			saveChannelSessionMetadata(sessionID, combinedInput, status)
-			extractChannelMemory(b.memoryManager(), recorder, sessionID)
+			store := eventlog.NewChatSessionStore(channelHistoryDir)
+			lifecycleErr := appchat.NewSessionLifecycle(store, store).Finish(ctx, appchat.FinishRequest{
+				SessionID:      sessionID,
+				TitleSource:    combinedInput,
+				DefaultTitle:   "通道会话",
+				Status:         status,
+				History:        recorder,
+				Memory:         b.memoryManager(),
+				MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
+			})
+			appchat.LogLifecycleError("channel", sessionID, lifecycleErr)
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")
 			}
@@ -302,54 +306,6 @@ func (b *Bridge) memoryManager() appstate.MemoryManager {
 		return nil
 	}
 	return b.state.Memory()
-}
-
-func extractChannelMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
-	if manager == nil || recorder == nil {
-		return
-	}
-	messages := eventlog.ConvertMemoryMessages(recorder)
-	if len(messages) == 0 {
-		return
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		manager.ExtractAndStore(ctx, messages, sessionID)
-	}()
-}
-
-// saveChannelSessionMetadata 保存通道会话的元数据
-func saveChannelSessionMetadata(sessionID, userInput, status string) {
-	if status == "" {
-		status = "completed"
-	}
-	sessionDir := filepath.Join(channelHistoryDir, sessionID)
-	now := time.Now()
-	meta, err := eventlog.LoadMetadata(sessionDir)
-	if err != nil {
-		title := userInput
-		runes := []rune(title)
-		if len(runes) > 50 {
-			title = string(runes[:50]) + "..."
-		}
-		if title == "" {
-			title = "通道会话"
-		}
-		meta = &eventlog.SessionMetadata{
-			ID:        sessionID,
-			Title:     title,
-			Status:    status,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-	} else {
-		meta.UpdatedAt = now
-		meta.Status = status
-	}
-	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
-		log.Printf("[bridge] save metadata failed: session=%s, err=%v", sessionID, err)
-	}
 }
 
 // buildUserInput 将消息内容和附件构建为用户输入文本

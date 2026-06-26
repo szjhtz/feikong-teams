@@ -403,7 +403,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		}
 
 		recorder.FinalizeCurrent()
-		saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+		saveTurnHistory(recorder, sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
@@ -420,8 +420,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			"session_id": sessionID,
 			"message":    "处理完成",
 		})
-		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
-		extractChatMemory(manager, recorder, sessionID)
+		finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}
 }

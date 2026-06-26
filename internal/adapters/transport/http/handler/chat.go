@@ -14,9 +14,7 @@ import (
 	"fkteams/internal/runtime/events"
 	"fmt"
 	"log"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -201,125 +199,58 @@ func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRe
 }
 
 // chatHistoryPath 返回会话历史文件路径（使用 filepath.Base 防止路径穿越）
-func chatHistoryPath(sessionID string) string {
-	return filepath.Join(historyDir, filepath.Base(sessionID), eventlog.HistoryFileName)
-}
-
 // --- 执行后处理 ---
 
-// saveHistory 保存聊天历史到文件
-func saveHistory(recorder *eventlog.HistoryRecorder, filePath, sessionID string) {
-	if err := recorder.SaveToFile(filePath); err != nil {
-		log.Printf("failed to save history: session=%s, err=%v", sessionID, err)
-	}
+func chatLifecycle() *appchat.SessionLifecycle {
+	store := eventlog.NewChatSessionStore(historyDir)
+	return appchat.NewSessionLifecycle(store, store)
+}
+
+func saveTurnHistory(recorder *eventlog.HistoryRecorder, sessionID string) {
+	err := eventlog.NewChatSessionStore(historyDir).SaveHistory(context.Background(), sessionID, recorder)
+	appchat.LogLifecycleError("http", sessionID, err)
 }
 
 // updateSessionTitleAndStatus 更新会话标题（仅当标题为默认值时）和状态
 func updateSessionTitleAndStatus(sessionID, userInput, status string) {
-	sessionDir := sessionDirPath(sessionID)
-	meta, err := eventlog.LoadMetadata(sessionDir)
-	if err != nil {
-		return
-	}
-	if userInput != "" && isDefaultTitle(meta.Title) {
-		meta.Title = truncateTitle(userInput)
-	}
-	meta.Status = status
-	meta.UpdatedAt = time.Now()
-	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
-		log.Printf("failed to update session metadata: session=%s, err=%v", sessionID, err)
-	}
+	err := chatLifecycle().MarkProcessing(context.Background(), sessionID, userInput)
+	appchat.LogLifecycleError("http", sessionID, err)
 }
 
 // finishChat 保存历史、更新元数据、提取记忆
 func finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, manager appstate.MemoryManager) {
-	recorder.FinalizeCurrent()
-	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-	ensureSessionMetadataWithStatus(sessionID, userInput, "completed")
-	extractChatMemory(manager, recorder, sessionID)
-}
-
-func extractChatMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
-	if manager == nil || recorder == nil {
-		return
-	}
-	messages := eventlog.ConvertMemoryMessages(recorder)
-	if len(messages) == 0 {
-		return
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		manager.ExtractAndStore(ctx, messages, sessionID)
-	}()
+	err := chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
+		SessionID:       sessionID,
+		TitleSource:     userInput,
+		Status:          appchat.SessionStatusCompleted,
+		History:         recorder,
+		FinalizeHistory: true,
+		Memory:          manager,
+		MemoryMessages:  eventlog.ConvertMemoryMessages(recorder),
+	})
+	appchat.LogLifecycleError("http", sessionID, err)
 }
 
 func finishCancelledChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {
-	recorder.RecordCancelled("任务已取消")
-	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-	ensureSessionMetadataWithStatus(sessionID, userInput, "cancelled")
+	err := chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
+		SessionID:   sessionID,
+		TitleSource: userInput,
+		Status:      appchat.SessionStatusCancelled,
+		History:     recorder,
+	})
+	appchat.LogLifecycleError("http", sessionID, err)
 }
 
 func finishErrorChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, err error) {
-	if err != nil {
-		recorder.RecordEvent(events.Event{
-			Type:    events.EventError,
-			Content: err.Error(),
-			Error:   err.Error(),
-		})
-	}
-	recorder.FinalizeCurrent()
-	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-	ensureSessionMetadataWithStatus(sessionID, userInput, "error")
-}
-
-func ensureSessionMetadataWithStatus(sessionID, userInput, status string) {
-	sessionDir := sessionDirPath(sessionID)
-	now := time.Now()
-	meta, err := eventlog.LoadMetadata(sessionDir)
-	if err != nil {
-		// 首次创建
-		title := "未命名会话"
-		if userInput != "" {
-			title = truncateTitle(userInput)
-		}
-		meta = &eventlog.SessionMetadata{
-			ID:        sessionID,
-			Title:     title,
-			Status:    status,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-	} else {
-		meta.UpdatedAt = now
-		meta.Status = status
-		// 如果标题仍是默认时间戳格式且有用户输入，则更新
-		if userInput != "" && isDefaultTitle(meta.Title) {
-			meta.Title = truncateTitle(userInput)
-		}
-	}
-	if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
-		log.Printf("failed to save metadata: session=%s, err=%v", sessionID, err)
-	}
-}
-
-// isDefaultTitle 检查标题是否为默认标题
-func isDefaultTitle(title string) bool {
-	if title == "未命名会话" {
-		return true
-	}
-	_, err := time.Parse("2006-01-02 15:04:05", title)
-	return err == nil
-}
-
-// truncateTitle 截断标题，最多 50 个字符（按 rune 处理，对中文安全）
-func truncateTitle(s string) string {
-	const maxLen = 50
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-	return string(runes[:maxLen]) + "..."
+	lifecycleErr := chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
+		SessionID:       sessionID,
+		TitleSource:     userInput,
+		Status:          appchat.SessionStatusError,
+		History:         recorder,
+		FinalizeHistory: true,
+		Error:           err,
+	})
+	appchat.LogLifecycleError("http", sessionID, lifecycleErr)
 }
 
 // isConnectionClosed 检查是否为连接断开导致的错误
