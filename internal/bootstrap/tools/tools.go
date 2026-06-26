@@ -2,14 +2,18 @@ package tools
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	commandtool "fkteams/internal/adapters/tools/builtin/command"
 	doctool "fkteams/internal/adapters/tools/builtin/doc"
 	exceltool "fkteams/internal/adapters/tools/builtin/excel"
 	fetchtool "fkteams/internal/adapters/tools/builtin/fetch"
 	gittool "fkteams/internal/adapters/tools/builtin/git"
 	schedulertool "fkteams/internal/adapters/tools/builtin/scheduler"
+	buntool "fkteams/internal/adapters/tools/builtin/script/bun"
+	uvtool "fkteams/internal/adapters/tools/builtin/script/uv"
 	searchtool "fkteams/internal/adapters/tools/builtin/search"
 	sshtool "fkteams/internal/adapters/tools/builtin/ssh"
 	mcpadapter "fkteams/internal/adapters/tools/mcp"
@@ -30,11 +34,84 @@ func init() {
 	_ = RegisterDefaults()
 }
 
+func runtimeDir() string {
+	return filepath.Join(appdata.Dir(), "runtime")
+}
+
 // RegisterDefaults 将工具适配器连接到应用工具注册表。
 func RegisterDefaults() error {
 	registerOnce.Do(func() {
 		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.GlobalSessionManager))
 		apptools.RegisterMCPProvider(mcpadapter.DefaultProvider())
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "command",
+				DisplayName:   "命令执行",
+				Description:   "在工作区内执行 shell 命令，适合构建、测试、检查和自动化脚本。",
+				Category:      "开发",
+				Builtin:       true,
+				IncludedTools: []string{"execute"},
+			},
+			Factory: commandToolGroup(commandtool.ApprovalModeHITL),
+		}); err != nil {
+			registerErr = err
+			return
+		}
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "command_reject",
+				DisplayName:   "命令执行（自动拒绝危险操作）",
+				Description:   "后台任务内部使用的命令执行工具，遇到高风险命令时自动拒绝。",
+				Category:      "内部",
+				Builtin:       true,
+				IncludedTools: []string{"execute"},
+				Hidden:        true,
+			},
+			Factory: commandToolGroup(commandtool.ApprovalModeReject),
+		}); err != nil {
+			registerErr = err
+			return
+		}
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "uv",
+				DisplayName:   "Python",
+				Description:   "使用 uv 创建隔离 Python 环境、安装依赖并执行 Python 代码。",
+				Category:      "开发",
+				Builtin:       true,
+				IncludedTools: []string{"uv_python"},
+			},
+			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+				uvTools, err := uvtool.NewUVTools(runtimeDir(), appdata.WorkspaceDir())
+				if err != nil {
+					return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
+				}
+				return uvTools.GetTools()
+			},
+		}); err != nil {
+			registerErr = err
+			return
+		}
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "bun",
+				DisplayName:   "JavaScript",
+				Description:   "使用 bun 创建隔离 JavaScript 环境、安装依赖并执行 JS/TS 代码。",
+				Category:      "开发",
+				Builtin:       true,
+				IncludedTools: []string{"bun_javascript"},
+			},
+			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+				bunTools, err := buntool.NewBunTools(runtimeDir(), appdata.WorkspaceDir())
+				if err != nil {
+					return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
+				}
+				return bunTools.GetTools()
+			},
+		}); err != nil {
+			registerErr = err
+			return
+		}
 		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "excel",
@@ -171,4 +248,17 @@ func RegisterDefaults() error {
 		})
 	})
 	return registerErr
+}
+
+func commandToolGroup(mode commandtool.ApprovalMode) apptools.ToolGroupFactory {
+	return func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
+		if cleaner != nil {
+			cleaner.Add(func() error {
+				commandtool.TerminateAll()
+				commandtool.CleanupTempFiles(appdata.WorkspaceDir())
+				return nil
+			})
+		}
+		return commandtool.NewCommandTools(appdata.WorkspaceDir(), commandtool.WithApprovalMode(mode)).GetTools()
+	}
 }

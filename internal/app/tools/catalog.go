@@ -13,6 +13,7 @@ type ToolGroupInfo struct {
 	Category      string   `json:"category"`
 	Builtin       bool     `json:"builtin"`
 	IncludedTools []string `json:"included_tools,omitempty"`
+	Hidden        bool     `json:"-"`
 }
 
 // BuiltinToolInfos 返回内置可配置工具组信息。

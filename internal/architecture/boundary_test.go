@@ -299,6 +299,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 			"github.com/pterm/pterm",
+			"os/exec",
 			"golang.org/x/crypto/ssh",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
@@ -611,6 +612,29 @@ func TestRuntimeAdaptersDoNotRegisterInterruptRuntimeInInit(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/app/tools/command",
+		"internal/app/tools/script",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+			t.Fatalf("%s exists; process-backed tool implementations belong under internal/adapters/tools/builtin", rel)
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []string{
+		"internal/adapters/tools/builtin/command",
+		"internal/adapters/tools/builtin/script/uv",
+		"internal/adapters/tools/builtin/script/bun",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("%s is required: %v", rel, err)
+		}
 	}
 }
 

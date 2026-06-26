@@ -2,7 +2,6 @@ package tools
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"fkteams/internal/app/appdata"
@@ -13,11 +12,6 @@ import (
 // workspacePath 返回工作区目录路径
 func workspacePath() string {
 	return appdata.WorkspaceDir()
-}
-
-// runtimeDir 返回脚本运行时环境目录
-func runtimeDir() string {
-	return filepath.Join(appdata.Dir(), "runtime")
 }
 
 func GetToolsByName(name string) ([]runtimeport.Tool, error) {

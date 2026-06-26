@@ -6,10 +6,7 @@ import (
 
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/tools/ask"
-	"fkteams/internal/app/tools/command"
 	"fkteams/internal/app/tools/file"
-	"fkteams/internal/app/tools/script/bun"
-	"fkteams/internal/app/tools/script/uv"
 	"fkteams/internal/app/tools/todo"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
@@ -95,7 +92,15 @@ func (r *ToolGroupRegistry) Names() []string {
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return append([]string(nil), r.order...)
+	names := make([]string, 0, len(r.order))
+	for _, name := range r.order {
+		entry, ok := r.groups[name]
+		if !ok || entry.info.Hidden {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 func (r *ToolGroupRegistry) Infos() []ToolGroupInfo {
@@ -107,7 +112,7 @@ func (r *ToolGroupRegistry) Infos() []ToolGroupInfo {
 	infos := make([]ToolGroupInfo, 0, len(r.order))
 	for _, name := range r.order {
 		entry, ok := r.groups[name]
-		if !ok {
+		if !ok || entry.info.Hidden {
 			continue
 		}
 		infos = append(infos, cloneToolGroupInfo(entry.info))
@@ -153,14 +158,6 @@ func builtinToolGroups() []ToolGroupRegistration {
 			IncludedTools: []string{"todo_create", "todo_update", "todo_list"},
 		}, Factory: todoToolGroup},
 		{Info: ToolGroupInfo{
-			Name:          "command",
-			DisplayName:   "命令执行",
-			Description:   "在工作区运行 shell 命令，危险操作会进入安全审批流程。",
-			Category:      "开发",
-			Builtin:       true,
-			IncludedTools: []string{"execute"},
-		}, Factory: commandToolGroup},
-		{Info: ToolGroupInfo{
 			Name:          "ask",
 			DisplayName:   "向用户提问",
 			Description:   "允许智能体在信息不足或需要选择时向用户提问，并等待用户回答后继续。",
@@ -168,22 +165,6 @@ func builtinToolGroups() []ToolGroupRegistration {
 			Builtin:       true,
 			IncludedTools: []string{"ask_questions"},
 		}, Factory: askToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "uv",
-			DisplayName:   "Python 脚本",
-			Description:   "使用 uv 管理隔离的 Python 环境，安装依赖并运行脚本或代码片段。",
-			Category:      "脚本",
-			Builtin:       true,
-			IncludedTools: []string{"uv_run_script", "uv_run_code", "uv_install_package"},
-		}, Factory: uvToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "bun",
-			DisplayName:   "JavaScript 脚本",
-			Description:   "使用 Bun 管理 JavaScript/TypeScript 运行环境，安装依赖并执行脚本。",
-			Category:      "脚本",
-			Builtin:       true,
-			IncludedTools: []string{"bun_run_script", "bun_run_code", "bun_install_package"},
-		}, Factory: bunToolGroup},
 	}
 }
 
@@ -212,33 +193,6 @@ func todoToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	return todoTools.GetTools()
 }
 
-func commandToolGroup(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
-	if cleaner != nil {
-		cleaner.Add(func() error {
-			command.TerminateAll()
-			command.CleanupTempFiles(workspacePath())
-			return nil
-		})
-	}
-	return command.NewCommandTools(workspacePath()).GetTools()
-}
-
 func askToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 	return ask.GetTools()
-}
-
-func uvToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	uvTools, err := uv.NewUVTools(runtimeDir(), workspacePath())
-	if err != nil {
-		return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
-	}
-	return uvTools.GetTools()
-}
-
-func bunToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	bunTools, err := bun.NewBunTools(runtimeDir(), workspacePath())
-	if err != nil {
-		return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
-	}
-	return bunTools.GetTools()
 }
