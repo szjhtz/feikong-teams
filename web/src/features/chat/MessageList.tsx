@@ -4,6 +4,7 @@ import { Bot, User } from "lucide-react";
 import { useAppSelector } from "@/app/hooks";
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/cn";
+import { ActivityCanvas } from "@/components/layout/ActivityCanvas";
 import { ToolCallCard } from "./ToolCallCard";
 
 export function MessageList() {
@@ -26,6 +27,7 @@ export function MessageList() {
     return (
       <div className="flex h-full items-center justify-center p-10 text-center">
         <div className="max-w-md">
+          <ActivityCanvas />
           <div className="mb-3 text-lg font-semibold">准备接收任务</div>
           <p className="text-sm text-muted-foreground">当前会话尚无消息。</p>
         </div>
