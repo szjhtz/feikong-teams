@@ -33,10 +33,6 @@ var (
 	registerErr  error
 )
 
-func init() {
-	_ = RegisterDefaults()
-}
-
 func runtimeDir() string {
 	return filepath.Join(appdata.Dir(), "runtime")
 }

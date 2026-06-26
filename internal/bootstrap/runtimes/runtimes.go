@@ -17,10 +17,6 @@ var (
 	registerErr  error
 )
 
-func init() {
-	_ = RegisterDefaults()
-}
-
 // RegisterDefaults 注册默认 runtime adapter 和关联桥接能力。
 func RegisterDefaults() error {
 	registerOnce.Do(func() {

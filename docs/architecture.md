@@ -104,7 +104,7 @@ docs/
 | `app` | 用例编排、事务边界、状态流转、策略选择 | 不 import adapter、Eino、Gin、pterm 等具体实现 |
 | `runtime` | 与 Eino 无关的执行内核、事件、hooks、checkpoint、模型注册表等 | 不依赖 adapter、HTTP/CLI handler 或 Eino |
 | `adapters` | Eino、模型 provider、HTTP、CLI、channel、文件存储、MCP、Git、SSH、调度器等实现 | 可以依赖 domain、ports 和第三方 SDK；不得被 app/domain 反向依赖 |
-| `bootstrap` | 初始化环境、注册 runtime/provider/tool/service | 唯一主动连接各层的 composition root |
+| `bootstrap` | 初始化环境、注册 runtime/provider/tool/service | 唯一主动连接各层的 composition root；注册必须由命令入口或服务启动显式调用，禁止用 `init()` 自动装配 |
 
 ## 核心用例中轴
 

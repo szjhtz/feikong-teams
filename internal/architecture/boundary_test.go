@@ -674,6 +674,23 @@ func TestBootstrapAndRuntimeRegistryDoNotPanic(t *testing.T) {
 	}
 }
 
+func TestBootstrapDoesNotAutoRegisterInInit(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/bootstrap/runtimes/runtimes.go",
+		"internal/bootstrap/tools/tools.go",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "func init()") {
+			t.Fatalf("%s uses init for registration; bootstrap registration must be called explicitly by the composition root", rel)
+		}
+	}
+}
+
 func TestHooksDoNotExposeGlobalBus(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "runtime", "hooks")
