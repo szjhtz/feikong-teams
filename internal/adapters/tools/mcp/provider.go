@@ -23,16 +23,6 @@ func NewProvider() *Provider {
 	return &Provider{}
 }
 
-var defaultProvider = NewProvider()
-
-func DefaultProvider() *Provider {
-	return defaultProvider
-}
-
-func RegisterToolProvider(provider ToolProvider) {
-	defaultProvider.RegisterToolProvider(provider)
-}
-
 func (p *Provider) RegisterToolProvider(provider ToolProvider) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -1133,6 +1133,25 @@ func TestAppToolsDoNotExposeProcessDefaultRegistry(t *testing.T) {
 	}
 }
 
+func TestMCPToolProviderDoesNotExposeProcessDefault(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "adapters", "tools", "mcp", "provider.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{
+		"var defaultProvider",
+		"func DefaultProvider()",
+		"func RegisterToolProvider(provider ToolProvider)",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("MCP adapter exposes process-default provider through %q", forbidden)
+		}
+	}
+}
+
 func TestSkillProvidersDoNotExposeProcessDefaultRegistry(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "app", "skill", "provider.go")

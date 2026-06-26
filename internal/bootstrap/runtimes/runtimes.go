@@ -20,8 +20,18 @@ type Defaults struct {
 	ModelProviderRegistry *modelproviders.Registry
 }
 
+// Options 描述 runtime 组合根的显式外部依赖。
+type Options struct {
+	MCPProvider *toolmcp.Provider
+}
+
 // NewDefaults 显式创建默认 runtime adapter 和关联桥接能力。
-func NewDefaults() (*Defaults, error) {
+func NewDefaults(options ...Options) (*Defaults, error) {
+	var opt Options
+	if len(options) > 0 {
+		opt = options[0]
+	}
+
 	providerRegistry := modelproviders.NewRegistry()
 	modelRegistry := modelregistry.NewRegistry()
 	einoproviders.RegisterDefaults(providerRegistry, modelRegistry)
@@ -35,8 +45,9 @@ func NewDefaults() (*Defaults, error) {
 		return nil, err
 	}
 
-	// MCP tool provider 桥接仍由 MCP adapter 持有，组合根负责唯一装配点。
-	toolmcp.RegisterToolProvider(engine.MCPTools)
+	if opt.MCPProvider != nil {
+		opt.MCPProvider.RegisterToolProvider(engine.MCPTools)
+	}
 
 	return &Defaults{
 		RuntimeRegistry:       runtimeRegistry,

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	modelproviders "fkteams/internal/adapters/model/providers"
+	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	clicommands "fkteams/internal/adapters/transport/cli/commands"
 	agents "fkteams/internal/app/agent/catalog"
 	apptools "fkteams/internal/app/tools"
@@ -21,12 +22,15 @@ func init() {
 }
 
 func main() {
-	runtimeDefaults, err := bootstrapruntimes.NewDefaults()
+	mcpProvider := mcpadapter.NewProvider()
+	runtimeDefaults, err := bootstrapruntimes.NewDefaults(bootstrapruntimes.Options{
+		MCPProvider: mcpProvider,
+	})
 	if err != nil {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
-	toolRegistry, err := bootstraptools.RegisterDefaults()
+	toolRegistry, err := bootstraptools.RegisterDefaults(mcpProvider)
 	if err != nil {
 		pterm.Error.Println(err)
 		os.Exit(1)

@@ -24,6 +24,7 @@ import (
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/app/tools/attachment"
 	runtimeport "fkteams/internal/ports/runtime"
+	toolport "fkteams/internal/ports/tools"
 	"fkteams/internal/runtime/resources"
 )
 
@@ -32,10 +33,13 @@ func runtimeDir() string {
 }
 
 // RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
-func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
+func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegistry, error) {
 	registry := apptools.NewToolGroupRegistry()
 	attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.NewSessionHistoryManager()))
-	registry.RegisterMCPProvider(mcpadapter.DefaultProvider())
+	if mcpProvider == nil {
+		mcpProvider = mcpadapter.NewProvider()
+	}
+	registry.RegisterMCPProvider(mcpProvider)
 
 	registrations := []apptools.ToolGroupRegistration{
 		{

@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	apptools "fkteams/internal/app/tools"
 )
 
 func TestBootstrapRegistersSchedulerToolGroup(t *testing.T) {
-	registry, err := RegisterDefaults()
+	registry, err := RegisterDefaults(mcpadapter.NewProvider())
 	if err != nil {
 		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
 	}
@@ -33,7 +34,7 @@ func TestBootstrapRegistersSchedulerToolGroup(t *testing.T) {
 }
 
 func TestBootstrapRegistersGitToolGroup(t *testing.T) {
-	registry, err := RegisterDefaults()
+	registry, err := RegisterDefaults(mcpadapter.NewProvider())
 	if err != nil {
 		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestBootstrapRegistersGitToolGroup(t *testing.T) {
 }
 
 func TestBootstrapRegistersSSHToolGroup(t *testing.T) {
-	registry, err := RegisterDefaults()
+	registry, err := RegisterDefaults(mcpadapter.NewProvider())
 	if err != nil {
 		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
 	}

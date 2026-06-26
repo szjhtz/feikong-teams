@@ -179,7 +179,7 @@ type ToolRegistry interface {
 - `internal/app/tools` 只保留工具组注册表、目录查询、MCP provider 门面、审批策略和无需外部 IO 生命周期的应用级能力；默认工具组不在 app 层内建，也不保留进程级默认注册表或 MCP provider。
 - `internal/bootstrap/runtimes` 显式注册 runtime engine、MCP tool provider 桥接和模型 provider；运行时模型工厂注册表和 adapter 模型 provider 注册表都由组合根创建并注入入口上下文，`internal/runtime/model` 与 `internal/adapters/model/providers` 不提供可变的进程级默认注册表；禁止用空白 import 或 `init()` 完成 provider 装配。
 - `internal/bootstrap/tools` 是唯一默认工具组组合入口，负责创建工具注册表实例，注册 file、todo、ask、command、uv、bun、excel、doc、fetch、search、git、ssh、scheduler 等工具组，并由命令入口注入 HTTP、CLI、channel 和 scheduler 上下文。
-- `tools/mcp`：MCP client、缓存和工具组 provider 位于 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`。MCP client 转 runtime tool 的桥接由 `internal/bootstrap/runtimes` 连接具体 runtime adapter，不进入 ports 契约。
+- `tools/mcp`：MCP client、缓存和工具组 provider 位于 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`。MCP provider 实例由组合根创建，并同时传给 `internal/bootstrap/runtimes` 注册 runtime tool bridge、传给 `internal/bootstrap/tools` 注册工具目录；adapter 不提供进程级默认 provider。
 - `tools/command`、`tools/script/uv`、`tools/script/bun`：进程执行和脚本运行时实现位于 `internal/adapters/tools/builtin/*`；后台 tasker 通过隐藏工具组 `command_reject` 使用自动拒绝危险操作的命令策略。
 - `tools/file`、`tools/todo`：工作区文件 IO 和会话 todo 持久化位于 `internal/adapters/tools/builtin/*`，由 bootstrap 注入工作区和会话目录。
 - `tools/scheduler`：`schedule_*` 工具位于 `internal/adapters/tools/builtin/scheduler`，只委托 `internal/app/schedule`；工具执行时从 context 读取调度用例服务，不依赖进程级默认实例。调度器实现位于 `internal/adapters/scheduler/filecron`。
