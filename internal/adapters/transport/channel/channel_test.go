@@ -72,7 +72,8 @@ func TestManagerRegisterStartSendStop(t *testing.T) {
 	factoryName := "fake_manager_test"
 	var created *fakeChannel
 	var handlerSeen MessageHandler
-	RegisterFactory(factoryName, func(cfg ChannelConfig, handler MessageHandler) (Channel, error) {
+	factories := NewFactoryRegistry()
+	factories.Register(factoryName, func(cfg ChannelConfig, handler MessageHandler) (Channel, error) {
 		handlerSeen = handler
 		created = &fakeChannel{name: factoryName, handler: handler}
 		return created, nil
@@ -81,7 +82,7 @@ func TestManagerRegisterStartSendStop(t *testing.T) {
 	var handled bool
 	manager := NewManager(func(context.Context, string, string, Message, bool) {
 		handled = true
-	})
+	}, factories)
 	if err := manager.Register(factoryName, ChannelConfig{Enabled: false}); err != nil {
 		t.Fatalf("Register disabled returned error: %v", err)
 	}
@@ -121,7 +122,8 @@ func TestManagerRegisterStartSendStop(t *testing.T) {
 }
 
 func TestManagerErrors(t *testing.T) {
-	manager := NewManager(nil)
+	factories := NewFactoryRegistry()
+	manager := NewManager(nil, factories)
 	if err := manager.Register("missing_factory", ChannelConfig{Enabled: true}); err == nil || !strings.Contains(err.Error(), "unknown channel") {
 		t.Fatalf("Register missing factory error = %v, want unknown channel", err)
 	}
@@ -131,7 +133,7 @@ func TestManagerErrors(t *testing.T) {
 
 	factoryName := "fake_start_error_test"
 	startErr := errors.New("boom")
-	RegisterFactory(factoryName, func(ChannelConfig, MessageHandler) (Channel, error) {
+	factories.Register(factoryName, func(ChannelConfig, MessageHandler) (Channel, error) {
 		return &fakeChannel{name: factoryName, startErr: startErr}, nil
 	})
 	if err := manager.Register(factoryName, ChannelConfig{Enabled: true}); err != nil {

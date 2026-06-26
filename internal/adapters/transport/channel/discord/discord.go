@@ -16,8 +16,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func init() {
-	channel.RegisterFactory("discord", NewChannel)
+// Register 注册 Discord 通道工厂。
+func Register(registry *channel.FactoryRegistry) {
+	registry.Register("discord", NewChannel)
 }
 
 // Channel Discord 机器人通道

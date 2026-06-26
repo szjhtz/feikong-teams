@@ -15,21 +15,11 @@ import (
 	"fmt"
 )
 
-// Setup 从配置中创建并注册所有启用的通道，返回可注册到 lifecycle 的 Service
-// 如果没有启用任何通道则返回 nil
-func Setup(entries []config.ChannelEntry) (*Service, error) {
-	return SetupWithState(entries, nil)
-}
-
-// SetupWithState 从配置中创建通道，并把应用状态传给通道桥接器。
-func SetupWithState(entries []config.ChannelEntry, state *appstate.State) (*Service, error) {
-	return SetupWithOptions(entries, SetupOptions{State: state})
-}
-
 // SetupOptions 描述通道服务的显式依赖。
 type SetupOptions struct {
 	State             *appstate.State
 	SchedulerProvider func() *appschedule.Service
+	FactoryRegistry   *FactoryRegistry
 }
 
 // SetupWithOptions 从配置中创建通道，并注入入口依赖。
@@ -37,8 +27,11 @@ func SetupWithOptions(entries []config.ChannelEntry, options SetupOptions) (*Ser
 	if len(entries) == 0 {
 		return nil, nil
 	}
+	if options.FactoryRegistry == nil {
+		return nil, fmt.Errorf("channel factory registry is required")
+	}
 
-	mgr := NewManager(nil)
+	mgr := NewManager(nil, options.FactoryRegistry)
 	historyDir := appdata.SessionsDir()
 	sessions := eventlog.NewSessionHistoryManager()
 

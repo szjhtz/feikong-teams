@@ -9,9 +9,6 @@ import (
 
 	modelproviders "fkteams/internal/adapters/model/providers"
 	channel "fkteams/internal/adapters/transport/channel"
-	_ "fkteams/internal/adapters/transport/channel/discord"
-	_ "fkteams/internal/adapters/transport/channel/qq"
-	_ "fkteams/internal/adapters/transport/channel/weixin"
 	"fkteams/internal/adapters/transport/http/handler"
 	"fkteams/internal/adapters/transport/http/router"
 	agents "fkteams/internal/app/agent/catalog"
@@ -21,6 +18,7 @@ import (
 	appschedule "fkteams/internal/app/schedule"
 	apptools "fkteams/internal/app/tools"
 	"fkteams/internal/app/version"
+	bootstrapchannels "fkteams/internal/bootstrap/channels"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
@@ -200,6 +198,7 @@ func run(ctx context.Context, mode serverMode, opts *ServeOptions) error {
 	if svc, err := channel.SetupWithOptions(cfg.Channels.List(), channel.SetupOptions{
 		State:             state,
 		SchedulerProvider: schedulerProvider,
+		FactoryRegistry:   bootstrapchannels.RegisterDefaults(),
 	}); err != nil {
 		return fmt.Errorf("setup channels: %w", err)
 	} else if svc != nil {

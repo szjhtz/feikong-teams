@@ -187,6 +187,8 @@ type ToolRegistry interface {
 - `tools/ssh`：SSH/SFTP 实现位于 `internal/adapters/tools/builtin/ssh`，配置读取、连接创建和资源清理由 `internal/bootstrap/tools` 组合。
 - `tools/excel`、`tools/doc`、`tools/fetch`、`tools/search`：文件格式引擎、HTTP 抓取和搜索实现位于 `internal/adapters/tools/builtin/*`，由 `internal/bootstrap/tools` 注册。
 
+消息通道工厂由 `internal/bootstrap/channels` 显式组合，Discord、QQ、微信等平台 adapter 只导出注册函数；禁止通过 `init()`、空白 import 或 channel 包级全局工厂表装配平台通道。
+
 ## 状态与存储
 
 状态能力按用途拆分，不在入口层散落读写：

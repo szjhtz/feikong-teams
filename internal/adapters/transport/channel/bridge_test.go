@@ -65,7 +65,7 @@ func TestWithChannelNameStoresName(t *testing.T) {
 
 func TestReplyCollectorFlushesTextOnAgentTransfer(t *testing.T) {
 	channel := &fakeChannel{name: "reply_text"}
-	manager := NewManager(nil)
+	manager := NewManager(nil, NewFactoryRegistry())
 	manager.channels[channel.name] = channel
 	rc := newReplyCollector(manager, channel.name, "chat-1")
 
@@ -113,7 +113,7 @@ func TestReplyCollectorFlushesTextOnAgentTransfer(t *testing.T) {
 
 func TestReplyCollectorSendsToolSummaryFromEnd(t *testing.T) {
 	channel := &fakeChannel{name: "reply_tool_end"}
-	manager := NewManager(nil)
+	manager := NewManager(nil, NewFactoryRegistry())
 	manager.channels[channel.name] = channel
 	rc := newReplyCollector(manager, channel.name, "chat-1")
 
@@ -149,7 +149,7 @@ func TestReplyCollectorSendsToolSummaryFromEnd(t *testing.T) {
 
 func TestReplyCollectorFlushesToolUpdateChunksBeforeText(t *testing.T) {
 	channel := &fakeChannel{name: "reply_tool_update"}
-	manager := NewManager(nil)
+	manager := NewManager(nil, NewFactoryRegistry())
 	manager.channels[channel.name] = channel
 	rc := newReplyCollector(manager, channel.name, "chat-1")
 

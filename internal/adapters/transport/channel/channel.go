@@ -78,38 +78,52 @@ type ChannelConfig struct {
 	Extra   map[string]string `toml:"extra"` // 平台特定配置（如 app_id、app_secret 等）
 }
 
-var (
-	factoryMu sync.RWMutex
-	factories = make(map[string]Factory)
-)
-
-// RegisterFactory 注册通道工厂（通常在 init() 中调用）
-func RegisterFactory(name string, factory Factory) {
-	factoryMu.Lock()
-	defer factoryMu.Unlock()
-	factories[name] = factory
+// FactoryRegistry 保存消息通道工厂。
+type FactoryRegistry struct {
+	mu        sync.RWMutex
+	factories map[string]Factory
 }
 
-// GetFactory 获取已注册的工厂
-func GetFactory(name string) (Factory, bool) {
-	factoryMu.RLock()
-	defer factoryMu.RUnlock()
-	f, ok := factories[name]
+// NewFactoryRegistry 创建空通道工厂注册表。
+func NewFactoryRegistry() *FactoryRegistry {
+	return &FactoryRegistry{factories: make(map[string]Factory)}
+}
+
+// Register 注册通道工厂。
+func (r *FactoryRegistry) Register(name string, factory Factory) {
+	if r == nil || name == "" || factory == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.factories[name] = factory
+}
+
+// Get 获取已注册的工厂。
+func (r *FactoryRegistry) Get(name string) (Factory, bool) {
+	if r == nil {
+		return nil, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	f, ok := r.factories[name]
 	return f, ok
 }
 
 // Manager 通道管理器，管理所有通道的生命周期和消息路由
 type Manager struct {
-	channels map[string]Channel
-	handler  MessageHandler
-	mu       sync.RWMutex
+	factories *FactoryRegistry
+	channels  map[string]Channel
+	handler   MessageHandler
+	mu        sync.RWMutex
 }
 
-// NewManager 创建通道管理器
-func NewManager(handler MessageHandler) *Manager {
+// NewManager 创建通道管理器。
+func NewManager(handler MessageHandler, factoryRegistry *FactoryRegistry) *Manager {
 	return &Manager{
-		channels: make(map[string]Channel),
-		handler:  handler,
+		factories: factoryRegistry,
+		channels:  make(map[string]Channel),
+		handler:   handler,
 	}
 }
 
@@ -125,7 +139,7 @@ func (m *Manager) Register(name string, cfg ChannelConfig) error {
 	if !cfg.Enabled {
 		return nil
 	}
-	factory, ok := GetFactory(name)
+	factory, ok := m.factories.Get(name)
 	if !ok {
 		return fmt.Errorf("unknown channel: %s", name)
 	}

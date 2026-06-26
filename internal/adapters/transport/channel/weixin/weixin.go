@@ -15,8 +15,9 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-func init() {
-	channel.RegisterFactory("weixin", NewChannel)
+// Register 注册微信通道工厂。
+func Register(registry *channel.FactoryRegistry) {
+	registry.Register("weixin", NewChannel)
 }
 
 // Channel 微信机器人通道

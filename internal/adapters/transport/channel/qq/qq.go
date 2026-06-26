@@ -16,8 +16,9 @@ import (
 	"github.com/tencent-connect/botgo/token"
 )
 
-func init() {
-	channel.RegisterFactory("qq", NewChannel)
+// Register 注册 QQ 通道工厂。
+func Register(registry *channel.FactoryRegistry) {
+	registry.Register("qq", NewChannel)
 }
 
 // chatState 保存每个会话的最近消息 ID 和序号（用于被动回复）

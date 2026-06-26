@@ -946,6 +946,39 @@ func TestChannelServiceDoesNotExposeGlobalBridgeRegistry(t *testing.T) {
 	}
 }
 
+func TestChannelFactoriesAreExplicitlyComposed(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/adapters/transport/channel/channel.go",
+		"internal/adapters/transport/channel/discord/discord.go",
+		"internal/adapters/transport/channel/qq/qq.go",
+		"internal/adapters/transport/channel/weixin/weixin.go",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		for _, forbidden := range []string{"func init()", "RegisterFactory(", "GetFactory(", "factories = make(map[string]Factory)"} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s exposes process-global channel factory registration through %q", rel, forbidden)
+			}
+		}
+	}
+
+	path := filepath.Join(root, "internal", "adapters", "transport", "http", "server.go")
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range file.Imports {
+		if spec.Name != nil && spec.Name.Name == "_" && strings.Contains(spec.Path.Value, "transport/channel") {
+			t.Fatal("http server imports channel adapters for side effects; channel factories must be composed explicitly")
+		}
+	}
+}
+
 func TestHTTPChunkUploadsAreRuntimeOwned(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "adapters", "transport", "http", "handler", "files.go")
