@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
-	"sync"
 )
 
 type interruptMetadataContextKey struct{}
@@ -31,29 +30,11 @@ type InterruptPayload struct {
 	Metadata InterruptMetadata
 }
 
-var interruptRuntimeRegistry = struct {
-	sync.RWMutex
-	runtime InterruptRuntime
-}{}
-
 func init() {
 	gob.Register(InterruptPayload{})
 }
 
-// RegisterInterruptRuntime 注册进程默认中断 runtime，并返回恢复函数。
-func RegisterInterruptRuntime(runtime InterruptRuntime) func() {
-	interruptRuntimeRegistry.Lock()
-	previous := interruptRuntimeRegistry.runtime
-	interruptRuntimeRegistry.runtime = runtime
-	interruptRuntimeRegistry.Unlock()
-	return func() {
-		interruptRuntimeRegistry.Lock()
-		interruptRuntimeRegistry.runtime = previous
-		interruptRuntimeRegistry.Unlock()
-	}
-}
-
-// WithInterruptRuntime 为当前 context 覆盖默认中断 runtime。
+// WithInterruptRuntime 为当前 context 注入中断 runtime。
 func WithInterruptRuntime(ctx context.Context, runtime InterruptRuntime) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -62,6 +43,15 @@ func WithInterruptRuntime(ctx context.Context, runtime InterruptRuntime) context
 		return ctx
 	}
 	return context.WithValue(ctx, interruptRuntimeContextKey{}, runtime)
+}
+
+// InterruptRuntimeFromContext 从 context 读取中断 runtime。
+func InterruptRuntimeFromContext(ctx context.Context) (InterruptRuntime, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	runtime, ok := ctx.Value(interruptRuntimeContextKey{}).(InterruptRuntime)
+	return runtime, ok && runtime != nil
 }
 
 // WithInterruptMetadata 将成员中断身份写入 context。
@@ -111,12 +101,6 @@ func GetResumeContext[T any](ctx context.Context) (bool, bool, T) {
 }
 
 func interruptRuntimeFromContext(ctx context.Context) InterruptRuntime {
-	if ctx != nil {
-		if runtime, ok := ctx.Value(interruptRuntimeContextKey{}).(InterruptRuntime); ok && runtime != nil {
-			return runtime
-		}
-	}
-	interruptRuntimeRegistry.RLock()
-	defer interruptRuntimeRegistry.RUnlock()
-	return interruptRuntimeRegistry.runtime
+	runtime, _ := InterruptRuntimeFromContext(ctx)
+	return runtime
 }

@@ -23,6 +23,7 @@ type Runtime struct {
 	RunnerCache *appagent.Cache
 	Connections *WebSocketHub
 	Engine      runtimeport.Engine
+	Interrupt   runtimeport.InterruptRuntime
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
@@ -33,6 +34,7 @@ type RuntimeOptions struct {
 	RunnerCache *appagent.Cache
 	Connections *WebSocketHub
 	Engine      runtimeport.Engine
+	Interrupt   runtimeport.InterruptRuntime
 }
 
 // NewRuntime 创建一个独立的 HTTP runtime 实例。
@@ -52,6 +54,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		RunnerCache: opt.RunnerCache,
 		Connections: opt.Connections,
 		Engine:      opt.Engine,
+		Interrupt:   opt.Interrupt,
 	}
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()
@@ -92,8 +95,13 @@ func (rt *Runtime) clearRunnerCache() {
 }
 
 func (rt *Runtime) resolveRunner(ctx context.Context, mode, agentName string) (runtimeport.Runner, error) {
-	ctx = runtimeport.WithEngine(ctx, rt.Engine)
+	ctx = rt.withRuntimeContext(ctx)
 	return rt.RunnerCache.ResolveWithTeamFallback(ctx, mode, agentName)
+}
+
+func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
+	ctx = runtimeport.WithEngine(ctx, rt.Engine)
+	return runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
 }
 
 func (rt *Runtime) chatLifecycle() *appchat.SessionLifecycle {

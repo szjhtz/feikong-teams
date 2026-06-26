@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"sync"
@@ -73,17 +74,22 @@ func SetupWithState(entries []config.ChannelEntry, state *appstate.State) (*Serv
 		log.Printf("[channels] registered channel: %s (mode=%s)", entry.Name, entry.Mode)
 	}
 
-	return NewService(mgr), nil
+	bridgeList := make([]*Bridge, 0, len(bridges))
+	for _, b := range bridges {
+		bridgeList = append(bridgeList, b)
+	}
+	return NewService(mgr, bridgeList...), nil
 }
 
 // Service 实现 lifecycle.Service 接口，管理所有通道的生命周期
 type Service struct {
 	manager *Manager
+	bridges []*Bridge
 }
 
 // NewService 创建通道服务
-func NewService(manager *Manager) *Service {
-	return &Service{manager: manager}
+func NewService(manager *Manager, bridges ...*Bridge) *Service {
+	return &Service{manager: manager, bridges: bridges}
 }
 
 // Name 返回服务名称
@@ -91,6 +97,11 @@ func (s *Service) Name() string { return "channels" }
 
 // Start 启动所有通道
 func (s *Service) Start(ctx context.Context) error {
+	engine, _ := runtimeport.EngineFromContext(ctx)
+	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
+	for _, bridge := range s.bridges {
+		bridge.SetRuntimeDependencies(engine, interrupt)
+	}
 	log.Printf("[channels] starting all channels...")
 	return s.manager.StartAll(ctx)
 }

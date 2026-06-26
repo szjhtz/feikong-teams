@@ -29,7 +29,7 @@ func serveCommand() *ucli.Command {
 			if err := config.Init(); err != nil {
 				return err
 			}
-			return httpserver.RunServe(httpserver.ServeOptions{
+			return httpserver.RunServeContext(ctx, httpserver.ServeOptions{
 				Host: cmd.String("host"),
 				Port: int(cmd.Int("port")),
 			})

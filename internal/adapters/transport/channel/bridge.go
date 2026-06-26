@@ -60,6 +60,10 @@ type Bridge struct {
 	runner    runtimeport.Runner
 	runnerErr error
 
+	runtimeMu sync.RWMutex
+	engine    runtimeport.Engine
+	interrupt runtimeport.InterruptRuntime
+
 	queueMu sync.Mutex
 	queues  map[string]*sessionQueue // per-session 消息队列
 }
@@ -88,6 +92,24 @@ func (b *Bridge) ResetRunner() {
 	defer b.runnerMu.Unlock()
 	b.runner = nil
 	b.runnerErr = nil
+}
+
+// SetRuntimeDependencies 设置当前通道服务实例使用的 runtime 依赖。
+func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime) {
+	b.runtimeMu.Lock()
+	b.engine = engine
+	b.interrupt = interrupt
+	b.runtimeMu.Unlock()
+	b.ResetRunner()
+}
+
+func (b *Bridge) withRuntimeContext(ctx context.Context) context.Context {
+	b.runtimeMu.RLock()
+	engine := b.engine
+	interrupt := b.interrupt
+	b.runtimeMu.RUnlock()
+	ctx = runtimeport.WithEngine(ctx, engine)
+	return runtimeport.WithInterruptRuntime(ctx, interrupt)
 }
 
 // getRunner 惰性创建 runner（线程安全）
@@ -214,6 +236,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	// 使用独立 context：入队消息的原始 ctx 可能已被取消（如 typing ctx）
 	ctx := WithChannelName(context.Background(), channelName)
 	ctx = appstate.WithState(ctx, b.state)
+	ctx = b.withRuntimeContext(ctx)
 
 	r, err := b.getRunner(ctx)
 	if err != nil {

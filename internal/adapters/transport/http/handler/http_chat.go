@@ -94,6 +94,7 @@ func (rt *Runtime) handleStreamChat(c *gin.Context, ctx context.Context, r runti
 
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
+	taskCtx = rt.withRuntimeContext(taskCtx)
 
 	_, runErr := appchat.NewService().RunTurn(taskCtx, appchat.TurnRequest{
 		SessionID: sessionID,
@@ -137,6 +138,7 @@ func (rt *Runtime) handleStreamChat(c *gin.Context, ctx context.Context, r runti
 func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
+	taskCtx = rt.withRuntimeContext(taskCtx)
 
 	var collectedEvents []events.Event
 

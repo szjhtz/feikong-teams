@@ -37,12 +37,16 @@ func DefaultEngine() (runtimeport.Engine, error) {
 	return runtimeregistry.Engine()
 }
 
+// DefaultInterruptRuntime 返回默认 HITL 中断 runtime。
+func DefaultInterruptRuntime() runtimeport.InterruptRuntime {
+	return einoruntime.NewInterruptRuntime()
+}
+
 func registerDefaults() error {
 	engine := einoengine.NewEngine()
 	if err := runtimeregistry.Register(runtimeregistry.DefaultRuntimeName, engine); err != nil {
 		return err
 	}
 	toolmcp.RegisterToolProvider(engine.MCPTools)
-	runtimeport.RegisterInterruptRuntime(einoruntime.NewInterruptRuntime())
 	return nil
 }

@@ -227,7 +227,7 @@ func TestAgentToolWrapperKeepsResumeCapability(t *testing.T) {
 }
 
 func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
-	ctx := context.Background()
+	ctx := runtimeport.WithInterruptRuntime(context.Background(), NewInterruptRuntime())
 	askTools, err := ask.GetTools()
 	if err != nil {
 		t.Fatalf("create ask tools: %v", err)

@@ -725,6 +725,25 @@ func TestRuntimeAdaptersDoNotRegisterInterruptRuntimeInInit(t *testing.T) {
 	}
 }
 
+func TestInterruptRuntimeDoesNotExposeProcessDefault(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "ports", "runtime", "interrupt.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{
+		"RegisterInterruptRuntime",
+		"interruptRuntimeRegistry",
+		"sync.RWMutex",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("internal/ports/runtime/interrupt.go exposes process-default interrupt runtime via %q", forbidden)
+		}
+	}
+}
+
 func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{

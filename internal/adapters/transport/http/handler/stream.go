@@ -358,6 +358,7 @@ func (rt *Runtime) streamForQueueRequest(c *gin.Context, sessionID string) *task
 
 // runStreamTask 后台执行流式任务
 func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
+	ctx = rt.withRuntimeContext(ctx)
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)

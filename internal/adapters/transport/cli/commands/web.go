@@ -17,7 +17,7 @@ func webCommand() *ucli.Command {
 			if err := config.Init(); err != nil {
 				return err
 			}
-			return httpserver.Run()
+			return httpserver.RunContext(ctx)
 		},
 	}
 }

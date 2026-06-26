@@ -62,7 +62,8 @@ func (s *httpService) Start(ctx context.Context) error {
 		err error
 	)
 	engine, _ := runtimeport.EngineFromContext(ctx)
-	s.runtime = handler.NewRuntime(handler.RuntimeOptions{Engine: engine})
+	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
+	s.runtime = handler.NewRuntime(handler.RuntimeOptions{Engine: engine, Interrupt: interrupt})
 	if s.mode == ModeAPI {
 		h, err = router.InitAPIWithRuntime(s.state, s.runtime)
 	} else {
@@ -122,8 +123,11 @@ type ServeOptions struct {
 	Port int
 }
 
-// run 启动服务的公共逻辑
-func run(mode serverMode, opts *ServeOptions) error {
+// run 启动服务的公共逻辑。
+func run(ctx context.Context, mode serverMode, opts *ServeOptions) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cfg := config.Get()
 
 	app := lifecycle.New()
@@ -198,7 +202,7 @@ func run(mode serverMode, opts *ServeOptions) error {
 		return nil
 	})
 
-	if err := app.Run(context.Background()); err != nil {
+	if err := app.Run(ctx); err != nil {
 		return fmt.Errorf("application error: %w", err)
 	}
 	return nil
@@ -206,10 +210,20 @@ func run(mode serverMode, opts *ServeOptions) error {
 
 // Run 启动 Web 服务器模式
 func Run() error {
-	return run(ModeWeb, nil)
+	return RunContext(context.Background())
+}
+
+// RunContext 使用显式 context 启动 Web 服务器模式。
+func RunContext(ctx context.Context) error {
+	return run(ctx, ModeWeb, nil)
 }
 
 // RunServe 启动纯 API 服务（无 Web 界面）
 func RunServe(opts ServeOptions) error {
-	return run(ModeAPI, &opts)
+	return RunServeContext(context.Background(), opts)
+}
+
+// RunServeContext 使用显式 context 启动纯 API 服务（无 Web 界面）。
+func RunServeContext(ctx context.Context, opts ServeOptions) error {
+	return run(ctx, ModeAPI, &opts)
 }

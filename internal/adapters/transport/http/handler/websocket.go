@@ -307,6 +307,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	// 任务 context 独立于连接——断连不会自动取消任务
 	taskCtx, taskCancel := context.WithCancel(appstate.WithState(context.Background(), state))
 	defer taskCancel()
+	taskCtx = rt.withRuntimeContext(taskCtx)
 
 	// 注册到统一 TaskStream（支持断线重连 + Push/Pull 消费）
 	stream := rt.Streams.Register(taskstream.StreamConfig{

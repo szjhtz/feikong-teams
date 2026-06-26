@@ -20,6 +20,7 @@ type BackgroundExecutor struct {
 	createRunner RunnerCreator
 	resultsDir   string
 	chat         *appchat.Service
+	contextHook  func(context.Context) context.Context
 }
 
 // NewBackgroundExecutor 创建后台任务执行器。
@@ -32,6 +33,12 @@ func NewBackgroundExecutor(createRunner RunnerCreator, resultsDir string) *Backg
 	}
 }
 
+// WithContextHook 设置每次执行前的上下文装配逻辑。
+func (e *BackgroundExecutor) WithContextHook(hook func(context.Context) context.Context) *BackgroundExecutor {
+	e.contextHook = hook
+	return e
+}
+
 func (e *BackgroundExecutor) taskDir(taskID string) string {
 	return filepath.Join(e.resultsDir, taskID)
 }
@@ -42,6 +49,9 @@ func (e *BackgroundExecutor) taskResultPath(taskID string) string {
 
 // Execute 执行调度任务并写入当前结果和历史快照。
 func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task string) (string, error) {
+	if e.contextHook != nil {
+		ctx = e.contextHook(ctx)
+	}
 	if err := os.MkdirAll(e.taskDir(taskID), 0755); err != nil {
 		return "", fmt.Errorf("create task dir: %w", err)
 	}
