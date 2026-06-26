@@ -1,0 +1,132 @@
+package tools
+
+import (
+	"fmt"
+	"sync"
+
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/resources"
+)
+
+type ToolGroupFactory func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error)
+
+type ToolGroupRegistration struct {
+	Info    ToolGroupInfo
+	Factory ToolGroupFactory
+}
+
+type ToolGroupRegistry struct {
+	mu     sync.RWMutex
+	order  []string
+	groups map[string]toolGroupEntry
+	frozen bool
+}
+
+type toolGroupEntry struct {
+	info    ToolGroupInfo
+	factory ToolGroupFactory
+}
+
+func NewToolGroupRegistry() *ToolGroupRegistry {
+	return &ToolGroupRegistry{groups: make(map[string]toolGroupEntry)}
+}
+
+func (r *ToolGroupRegistry) Register(reg ToolGroupRegistration) error {
+	if r == nil {
+		return fmt.Errorf("tool group registry is nil")
+	}
+	info := cloneToolGroupInfo(reg.Info)
+	if info.Name == "" {
+		return fmt.Errorf("tool group name is empty")
+	}
+	if reg.Factory == nil {
+		return fmt.Errorf("tool group %s factory is nil", info.Name)
+	}
+	if info.DisplayName == "" {
+		return fmt.Errorf("tool group %s display name is empty", info.Name)
+	}
+	if info.Description == "" {
+		return fmt.Errorf("tool group %s description is empty", info.Name)
+	}
+	if info.Category == "" {
+		return fmt.Errorf("tool group %s category is empty", info.Name)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.frozen {
+		return fmt.Errorf("tool group registry is frozen")
+	}
+	if _, exists := r.groups[info.Name]; exists {
+		return fmt.Errorf("tool group %s already registered", info.Name)
+	}
+	r.groups[info.Name] = toolGroupEntry{info: info, factory: reg.Factory}
+	r.order = append(r.order, info.Name)
+	return nil
+}
+
+func (r *ToolGroupRegistry) Resolve(name string, cleaner *resources.Cleaner) ([]runtimeport.Tool, bool, error) {
+	if r == nil {
+		return nil, false, fmt.Errorf("tool group registry is nil")
+	}
+	r.mu.RLock()
+	entry, ok := r.groups[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	tools, err := entry.factory(cleaner)
+	if err != nil {
+		return nil, true, err
+	}
+	return tools, true, nil
+}
+
+func (r *ToolGroupRegistry) Names() []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.order))
+	for _, name := range r.order {
+		entry, ok := r.groups[name]
+		if !ok || entry.info.Hidden {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+func (r *ToolGroupRegistry) Infos() []ToolGroupInfo {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	infos := make([]ToolGroupInfo, 0, len(r.order))
+	for _, name := range r.order {
+		entry, ok := r.groups[name]
+		if !ok || entry.info.Hidden {
+			continue
+		}
+		infos = append(infos, cloneToolGroupInfo(entry.info))
+	}
+	return infos
+}
+
+func (r *ToolGroupRegistry) Freeze() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.frozen = true
+}
+
+var defaultRegistry = NewToolGroupRegistry()
+
+func RegisterToolGroup(reg ToolGroupRegistration) error {
+	return defaultRegistry.Register(reg)
+}

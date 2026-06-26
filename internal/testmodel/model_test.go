@@ -5,13 +5,14 @@ import (
 	"errors"
 	"testing"
 
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 func TestGenerateDequeuesResponsesAndRecordsCalls(t *testing.T) {
 	m := New(AssistantMessage("first"), AssistantMessage("second"))
 
-	resp, err := m.Generate(context.Background(), []agentcore.Message{UserMessage("hello")})
+	resp, err := m.Generate(context.Background(), []domainmessage.Message{UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("generate first: %v", err)
 	}
@@ -19,7 +20,7 @@ func TestGenerateDequeuesResponsesAndRecordsCalls(t *testing.T) {
 		t.Fatalf("unexpected first response: %q", resp.Content)
 	}
 
-	resp, err = m.Generate(context.Background(), []agentcore.Message{UserMessage("again")})
+	resp, err = m.Generate(context.Background(), []domainmessage.Message{UserMessage("again")})
 	if err != nil {
 		t.Fatalf("generate second: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestStreamDequeuesChunks(t *testing.T) {
 		AssistantMessage("b"),
 	)
 
-	sr, err := m.Stream(context.Background(), []agentcore.Message{UserMessage("hello")})
+	sr, err := m.Stream(context.Background(), []domainmessage.Message{UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -60,12 +61,12 @@ func TestStreamDequeuesChunks(t *testing.T) {
 
 func TestWithToolsReturnsToolBoundModel(t *testing.T) {
 	m := New(AssistantMessage("ok"))
-	bound, err := m.WithTools([]agentcore.ToolInfo{{Name: "test_tool"}})
+	bound, err := m.WithTools([]runtimeport.ToolInfo{{Name: "test_tool"}})
 	if err != nil {
 		t.Fatalf("with tools: %v", err)
 	}
 
-	if _, err := bound.Generate(context.Background(), []agentcore.Message{UserMessage("hello")}); err != nil {
+	if _, err := bound.Generate(context.Background(), []domainmessage.Message{UserMessage("hello")}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
 
@@ -80,7 +81,7 @@ func TestWithToolsReturnsToolBoundModel(t *testing.T) {
 
 func TestGenerateReturnsQueuedError(t *testing.T) {
 	want := errors.New("model failed")
-	m := New().EnqueueGenerate(agentcore.Message{}, want)
+	m := New().EnqueueGenerate(domainmessage.Message{}, want)
 
 	if _, err := m.Generate(context.Background(), nil); !errors.Is(err, want) {
 		t.Fatalf("expected queued error, got %v", err)

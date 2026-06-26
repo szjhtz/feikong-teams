@@ -1,0 +1,237 @@
+package update
+
+import (
+	"encoding/json"
+	"fkteams/internal/runtime/env"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"github.com/Masterminds/semver/v3"
+	"github.com/wsshow/dl"
+	"github.com/wsshow/selfupdate"
+)
+
+// Release 表示软件版本发布信息。
+type Release struct {
+	TagName string  `json:"tag_name"`
+	Assets  []Asset `json:"assets"`
+}
+
+// Asset 表示发布中的可下载资源。
+type Asset struct {
+	Name               string `json:"name"`
+	ContentType        string `json:"content_type"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+// IsCompressedFile 判断资源是否为压缩文件。
+func (a Asset) IsCompressedFile() bool {
+	return a.ContentType == "application/zip" || a.ContentType == "application/x-gzip"
+}
+
+type Updater struct {
+	name string // 可执行文件名称（不含扩展名）
+}
+
+// NewUpdater 创建 Updater 实例。
+func NewUpdater(name string) *Updater {
+	return &Updater{name: name}
+}
+
+// CheckForUpdates 检查是否存在新版本。
+func (up Updater) CheckForUpdates(current *semver.Version, owner, repo string) (rel *Release, yes bool, err error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+
+	if !IsHttpSuccess(resp.StatusCode) {
+		return nil, false, fmt.Errorf("URL %q is unreachable", url)
+	}
+
+	var latest Release
+	if err = json.NewDecoder(resp.Body).Decode(&latest); err != nil {
+		return nil, false, err
+	}
+
+	latestVersion, err := semver.NewVersion(latest.TagName)
+	if err != nil {
+		return nil, false, err
+	}
+	if latestVersion.GreaterThan(current) {
+		return &latest, true, nil
+	}
+	return nil, false, nil
+}
+
+// Apply 应用指定发布版本的更新。
+func (up Updater) Apply(rel *Release,
+	findAsset func([]Asset) (idx int),
+	findChecksum func([]Asset) (algo Algorithm, expectedChecksum string, err error),
+) error {
+	idx := findAsset(rel.Assets)
+	if idx < 0 {
+		return ErrAssetNotFound
+	}
+
+	algo, expectedChecksum, err := findChecksum(rel.Assets)
+	if err != nil {
+		return err
+	}
+
+	tmpDir, err := os.MkdirTemp("", strconv.FormatInt(time.Now().UnixNano(), 10))
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	downloadURL := rel.Assets[idx].BrowserDownloadURL
+	fkDir := filepath.Join(tmpDir, "fkteams_update")
+	srcFilename := filepath.Join(fkDir, filepath.Base(downloadURL))
+	dstFilename := srcFilename
+
+	// 配置HTTP客户端
+	proxyStr := env.Get(env.ProxyURL)
+	var proxyFunc func(*http.Request) (*url.URL, error)
+	if proxyStr != "" {
+		proxyURL, err := url.Parse(proxyStr)
+		if err != nil {
+			return fmt.Errorf("invalid proxy URL %q: %w", proxyStr, err)
+		}
+		proxyFunc = http.ProxyURL(proxyURL)
+	} else {
+		proxyFunc = http.ProxyFromEnvironment
+	}
+	transport := &http.Transport{
+		Proxy:                 proxyFunc,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   time.Second * 30,
+	}
+
+	// 创建下载器
+	downloader := dl.NewDownloader(downloadURL,
+		dl.WithFileName(dstFilename),
+		dl.WithHTTPClient(httpClient),
+		dl.WithBaseDir(filepath.Join(fkDir, "parts")),
+	)
+
+	// 设置进度回调
+	var lastProgress float64
+	downloader.OnProgress(func(loaded, total int64, rate string) {
+		progress := float64(loaded) / float64(total) * 100
+		// 只在进度变化超过0.5%时更新显示
+		if progress-lastProgress >= 0.5 || progress >= 100 {
+			lastProgress = progress
+
+			// 生成进度条
+			barWidth := 40
+			filledWidth := int(progress / 100 * float64(barWidth))
+			bar := ""
+			for i := range barWidth {
+				if i < filledWidth {
+					bar += "█"
+				} else {
+					bar += "░"
+				}
+			}
+
+			// 显示进度
+			fmt.Printf("\r[%s] %.2f%% | %s/%s | %s    ",
+				bar, progress, formatFileSize(float64(loaded)), formatFileSize(float64(total)), rate)
+		}
+	})
+
+	// 开始下载
+	if err := downloader.Start(); err != nil {
+		fmt.Printf("下载失败: %v\n", err)
+		return err
+	}
+
+	// 校验文件完整性
+	fmt.Printf("\n基于 %s 校验文件完整性...\n", algo)
+	if err = VerifyFile(algo, expectedChecksum, srcFilename); err != nil {
+		return err
+	}
+	fmt.Printf("文件完整性校验通过\n")
+
+	// 解压缩文件（如果需要）
+	if rel.Assets[idx].IsCompressedFile() {
+		if dstFilename, err = up.unarchive(srcFilename, tmpDir); err != nil {
+			return err
+		}
+	}
+
+	// 应用更新
+	dstFile, err := os.Open(dstFilename)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+	return selfupdate.Apply(dstFile, selfupdate.Options{})
+}
+
+// unarchive 解压文件并返回目标可执行文件路径。
+func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) {
+	if err = Unzip(srcFile, dstDir, func(processed, total int, fileName string, isDir bool) {
+		fmt.Printf("解压中... %d/%d 文件: %s\n", processed, total, fileName)
+	}); err != nil {
+		return "", err
+	}
+	// locateTargetFile 在解压目录中查找可执行文件
+	fis, _ := os.ReadDir(dstDir)
+	for _, fi := range fis {
+		if fi.IsDir() {
+			continue
+		}
+		name := fi.Name()
+		if name == up.name || name == up.name+".exe" {
+			return filepath.Join(dstDir, name), nil
+		}
+	}
+	return "", fmt.Errorf("未在解压目录中找到可执行文件: %s", up.name)
+}
+
+// IsHttpSuccess 判断 HTTP 状态码是否表示成功。
+func IsHttpSuccess(statusCode int) bool {
+	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
+}
+
+// formatFileSize 将字节数格式化为可读字符串。
+func formatFileSize(fileSize float64) string {
+	const (
+		KB = 1024.0
+		MB = KB * 1024.0
+		GB = MB * 1024.0
+	)
+
+	switch {
+	case fileSize >= GB:
+		return fmt.Sprintf("%.2f GB", fileSize/GB)
+	case fileSize >= MB:
+		return fmt.Sprintf("%.2f MB", fileSize/MB)
+	case fileSize >= KB:
+		return fmt.Sprintf("%.2f KB", fileSize/KB)
+	default:
+		return fmt.Sprintf("%.2f B", fileSize)
+	}
+}

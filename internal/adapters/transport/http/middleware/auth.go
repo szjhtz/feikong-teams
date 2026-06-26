@@ -1,0 +1,98 @@
+package middleware
+
+import (
+	"fkteams/internal/adapters/transport/http/handler"
+	"fkteams/web"
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Auth 验证请求的 token，未登录时重定向到登录页
+func Auth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+
+		// 登录页和登录接口不需要验证
+		if path == "/login" || path == "/favicon.ico" || path == "/api/fkteams/login" {
+			c.Next()
+			return
+		}
+
+		// 静态资源不需要验证（CSS/JS/字体等）
+		if strings.HasPrefix(path, "/static/") {
+			c.Next()
+			return
+		}
+		if path == "/api/fkteams/favicon" {
+			c.Next()
+			return
+		}
+
+		// 文件预览/分享链接不需要验证（有独立的密码校验机制）
+		if strings.HasPrefix(path, "/p/") || strings.HasPrefix(path, "/s/") {
+			c.Next()
+			return
+		}
+
+		// OpenAI 兼容 API 使用独立的 API Key 认证
+		if strings.HasPrefix(path, "/v1/") {
+			c.Next()
+			return
+		}
+		if (c.Request.Method == "GET" || c.Request.Method == "HEAD") && strings.HasPrefix(path, "/api/fkteams/preview/") {
+			c.Next()
+			return
+		}
+		if strings.HasPrefix(path, "/api/fkteams/public/session-shares/") {
+			c.Next()
+			return
+		}
+
+		// 从 Authorization header、query 参数或 cookie 获取 token
+		token := ""
+		authHeader := c.GetHeader("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = authHeader[7:]
+		}
+		if token == "" {
+			token = c.Query("token")
+		}
+		if token == "" {
+			if cookie, err := c.Cookie("fk_token"); err == nil {
+				token = cookie
+			}
+		}
+
+		if token == "" || !handler.ValidateToken(token) {
+			log.Printf("auth failed: ip=%s, path=%s", c.ClientIP(), path)
+			// API 请求返回 401
+			if strings.HasPrefix(path, "/api/") || path == "/ws" {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"code":    1,
+					"message": "未登录或登录已过期",
+				})
+				return
+			}
+			// 页面请求返回登录页
+			serveLoginPage(c)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+func serveLoginPage(c *gin.Context) {
+	webFS := web.GetFS()
+	data, err := webFS.Open("login.html")
+	if err != nil {
+		c.String(http.StatusInternalServerError, "login page not found")
+		return
+	}
+	defer data.Close()
+	c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+}

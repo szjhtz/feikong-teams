@@ -1,0 +1,37 @@
+package eventlog
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+
+	domainhistory "fkteams/internal/domain/history"
+)
+
+// SessionMessageReader 将文件历史记录适配为存储读取端口。
+type SessionMessageReader struct {
+	sessionsDir string
+	manager     *SessionHistoryManager
+}
+
+func NewSessionMessageReader(sessionsDir string, manager *SessionHistoryManager) *SessionMessageReader {
+	if manager == nil {
+		manager = GlobalSessionManager
+	}
+	return &SessionMessageReader{sessionsDir: sessionsDir, manager: manager}
+}
+
+func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID string) ([]domainhistory.AgentMessage, error) {
+	if r == nil {
+		return nil, fmt.Errorf("session message reader is not initialized")
+	}
+	if recorder := r.manager.Get(sessionID); recorder != nil {
+		return recorder.GetMessages(), nil
+	}
+	recorder := NewHistoryRecorder()
+	historyFile := filepath.Join(r.sessionsDir, filepath.Base(sessionID), HistoryFileName)
+	if err := recorder.LoadFromFile(historyFile); err != nil {
+		return nil, fmt.Errorf("read session history: %w", err)
+	}
+	return recorder.GetMessages(), nil
+}

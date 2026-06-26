@@ -2,29 +2,30 @@ package testmodel
 
 import (
 	"context"
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"sync"
 )
 
 type GenerateResult struct {
-	Message agentcore.Message
+	Message domainmessage.Message
 	Err     error
 }
 
 type StreamResult struct {
-	Chunks []agentcore.Message
+	Chunks []domainmessage.Message
 	Err    error
 }
 
 type Call struct {
-	Input []agentcore.Message
-	Tools []agentcore.ToolInfo
+	Input []domainmessage.Message
+	Tools []runtimeport.ToolInfo
 }
 
 type Model struct {
 	state *state
-	tools []agentcore.ToolInfo
+	tools []runtimeport.ToolInfo
 }
 
 type state struct {
@@ -33,12 +34,12 @@ type state struct {
 	streamQueue    []StreamResult
 	generateCalls  []Call
 	streamCalls    []Call
-	withToolsCalls [][]agentcore.ToolInfo
+	withToolsCalls [][]runtimeport.ToolInfo
 }
 
-var _ agentcore.ChatModel = (*Model)(nil)
+var _ runtimeport.ChatModel = (*Model)(nil)
 
-func New(responses ...agentcore.Message) *Model {
+func New(responses ...domainmessage.Message) *Model {
 	m := &Model{state: &state{}}
 	for _, resp := range responses {
 		m.EnqueueGenerate(resp, nil)
@@ -46,27 +47,27 @@ func New(responses ...agentcore.Message) *Model {
 	return m
 }
 
-func AssistantMessage(content string) agentcore.Message {
-	return agentcore.Message{Role: agentcore.RoleAssistant, Content: content}
+func AssistantMessage(content string) domainmessage.Message {
+	return domainmessage.Message{Role: domainmessage.RoleAssistant, Content: content}
 }
 
-func UserMessage(content string) agentcore.Message {
-	return agentcore.Message{Role: agentcore.RoleUser, Content: content}
+func UserMessage(content string) domainmessage.Message {
+	return domainmessage.Message{Role: domainmessage.RoleUser, Content: content}
 }
 
-func (m *Model) EnqueueGenerate(message agentcore.Message, err error) *Model {
+func (m *Model) EnqueueGenerate(message domainmessage.Message, err error) *Model {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 	m.state.generateQueue = append(m.state.generateQueue, GenerateResult{Message: message, Err: err})
 	return m
 }
 
-func (m *Model) EnqueueStream(chunks ...agentcore.Message) *Model {
+func (m *Model) EnqueueStream(chunks ...domainmessage.Message) *Model {
 	m.EnqueueStreamResult(chunks, nil)
 	return m
 }
 
-func (m *Model) EnqueueStreamResult(chunks []agentcore.Message, err error) *Model {
+func (m *Model) EnqueueStreamResult(chunks []domainmessage.Message, err error) *Model {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 	copied := copyMessages(chunks)
@@ -74,7 +75,7 @@ func (m *Model) EnqueueStreamResult(chunks []agentcore.Message, err error) *Mode
 	return m
 }
 
-func (m *Model) Generate(_ context.Context, input []agentcore.Message) (agentcore.Message, error) {
+func (m *Model) Generate(_ context.Context, input []domainmessage.Message) (domainmessage.Message, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 
@@ -83,7 +84,7 @@ func (m *Model) Generate(_ context.Context, input []agentcore.Message) (agentcor
 		Tools: copyTools(m.tools),
 	})
 	if len(m.state.generateQueue) == 0 {
-		return agentcore.Message{}, fmt.Errorf("testmodel: no queued generate response")
+		return domainmessage.Message{}, fmt.Errorf("testmodel: no queued generate response")
 	}
 
 	resp := m.state.generateQueue[0]
@@ -91,7 +92,7 @@ func (m *Model) Generate(_ context.Context, input []agentcore.Message) (agentcor
 	return resp.Message, resp.Err
 }
 
-func (m *Model) Stream(_ context.Context, input []agentcore.Message) (agentcore.MessageStream, error) {
+func (m *Model) Stream(_ context.Context, input []domainmessage.Message) (runtimeport.MessageStream, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 
@@ -108,10 +109,10 @@ func (m *Model) Stream(_ context.Context, input []agentcore.Message) (agentcore.
 	if resp.Err != nil {
 		return nil, resp.Err
 	}
-	return agentcore.NewMessageStream(resp.Chunks), nil
+	return runtimeport.NewMessageStream(resp.Chunks), nil
 }
 
-func (m *Model) WithTools(tools []agentcore.ToolInfo) (agentcore.ChatModel, error) {
+func (m *Model) WithTools(tools []runtimeport.ToolInfo) (runtimeport.ChatModel, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 	copied := copyTools(tools)
@@ -131,24 +132,24 @@ func (m *Model) StreamCalls() []Call {
 	return copyCalls(m.state.streamCalls)
 }
 
-func (m *Model) WithToolsCalls() [][]agentcore.ToolInfo {
+func (m *Model) WithToolsCalls() [][]runtimeport.ToolInfo {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
-	calls := make([][]agentcore.ToolInfo, len(m.state.withToolsCalls))
+	calls := make([][]runtimeport.ToolInfo, len(m.state.withToolsCalls))
 	for i, call := range m.state.withToolsCalls {
 		calls[i] = copyTools(call)
 	}
 	return calls
 }
 
-func copyMessages(in []agentcore.Message) []agentcore.Message {
-	out := make([]agentcore.Message, len(in))
+func copyMessages(in []domainmessage.Message) []domainmessage.Message {
+	out := make([]domainmessage.Message, len(in))
 	copy(out, in)
 	return out
 }
 
-func copyTools(in []agentcore.ToolInfo) []agentcore.ToolInfo {
-	out := make([]agentcore.ToolInfo, len(in))
+func copyTools(in []runtimeport.ToolInfo) []runtimeport.ToolInfo {
+	out := make([]runtimeport.ToolInfo, len(in))
 	copy(out, in)
 	return out
 }

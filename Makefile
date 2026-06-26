@@ -6,7 +6,7 @@ BuildTime = $(shell date +'%Y-%m-%d %H:%M:%S')
 CURRENT_OS = $(shell go env GOOS)
 CURRENT_ARCH = $(shell go env GOARCH)
 
-LDFlags = -ldflags "-s -w -X '${Name}/version.version=$(Version)' -X '${Name}/version.buildTime=${BuildTime}'"
+LDFlags = -ldflags "-s -w -X '${Name}/internal/app/version.version=$(Version)' -X '${Name}/internal/app/version.buildTime=${BuildTime}'"
 
 # 默认全量编译的目标列表
 targets ?= darwin:arm64 windows:amd64 linux:amd64
@@ -34,7 +34,7 @@ build:
 		if [ "$${os}" = "windows" ]; then suffix=".exe"; fi; \
 		output_name="./release/${Name}_$${os}_$${arch}$${suffix}"; \
 		echo "正在编译: $${os}/$${arch}..."; \
-		env CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} go build -trimpath $(LDFlags) -o $${output_name} ./main.go || exit $$?;\
+		env CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} go build -trimpath $(LDFlags) -o $${output_name} ./cmd/fkteams || exit $$?;\
 		echo "编译完成: $${output_name}";\
 	)
 

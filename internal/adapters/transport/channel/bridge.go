@@ -1,0 +1,522 @@
+package channel
+
+import (
+	"context"
+	"fmt"
+
+	"fkteams/internal/adapters/storage/file/history"
+	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/appdata"
+	"fkteams/internal/app/appstate"
+	appchat "fkteams/internal/app/chat"
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
+	"fkteams/internal/runtime/events"
+	"fkteams/internal/runtime/log"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// queuedMessage 队列中的待处理消息
+type queuedMessage struct {
+	ctx         context.Context
+	channelName string
+	chatID      string
+	senderID    string
+	msg         Message
+	isGroup     bool
+	userInput   string // 预处理后的用户输入文本
+}
+
+// sessionQueue 每个会话的消息队列，确保同一会话的消息串行处理
+type sessionQueue struct {
+	ch      chan queuedMessage
+	pending atomic.Int32 // 队列中待处理的消息数（含正在执行的）
+}
+
+const (
+	// batchWaitDuration 收到首条消息后等待批量收集的时间窗口
+	batchWaitDuration = 500 * time.Millisecond
+	// maxBatchSize 单次批量处理的最大消息数
+	maxBatchSize = 10
+	// sessionQueueBuffer 每个会话队列的缓冲区大小
+	sessionQueueBuffer = 50
+	// sessionIdleTimeout 会话队列空闲超时，超时后 worker 自动退出
+	sessionIdleTimeout = 10 * time.Minute
+)
+
+// channelHistoryDir 通道会话历史存储目录，与 Web/CLI 共用
+var channelHistoryDir = appdata.SessionsDir()
+
+// Bridge 连接通道消息与智能体执行引擎
+type Bridge struct {
+	manager *Manager
+	mode    string // 运行模式: team, deep, roundtable, custom 或智能体名称
+	state   *appstate.State
+
+	runnerMu  sync.Mutex
+	runner    runtimeport.Runner
+	runnerErr error
+
+	queueMu sync.Mutex
+	queues  map[string]*sessionQueue // per-session 消息队列
+}
+
+// NewBridge 创建消息桥接器
+func NewBridge(manager *Manager, mode string) *Bridge {
+	return NewBridgeWithState(manager, mode, nil)
+}
+
+// NewBridgeWithState 创建带应用状态的消息桥接器。
+func NewBridgeWithState(manager *Manager, mode string, state *appstate.State) *Bridge {
+	if mode == "" {
+		mode = "team"
+	}
+	return &Bridge{
+		manager: manager,
+		mode:    mode,
+		state:   state,
+		queues:  make(map[string]*sessionQueue),
+	}
+}
+
+// ResetRunner 重置 runner，下次请求时会使用新配置重建（配置变更后调用）
+func (b *Bridge) ResetRunner() {
+	b.runnerMu.Lock()
+	defer b.runnerMu.Unlock()
+	b.runner = nil
+	b.runnerErr = nil
+}
+
+// getRunner 惰性创建 runner（线程安全）
+func (b *Bridge) getRunner(ctx context.Context) (runtimeport.Runner, error) {
+	b.runnerMu.Lock()
+	defer b.runnerMu.Unlock()
+
+	if b.runner != nil || b.runnerErr != nil {
+		return b.runner, b.runnerErr
+	}
+
+	b.runner, b.runnerErr = appagent.Resolve(ctx, b.mode, "")
+	return b.runner, b.runnerErr
+}
+
+// HandleMessage 处理来自通道的消息，入队后由 per-session worker 串行执行
+func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg Message, isGroup bool) {
+	channelName := "unknown"
+	if name, ok := ctx.Value(channelNameKey{}).(string); ok {
+		channelName = name
+	}
+
+	userInput := buildUserInput(msg)
+	if userInput == "" {
+		return
+	}
+
+	sessionID := fmt.Sprintf("channel_%s_%s", channelName, chatID)
+
+	qm := queuedMessage{
+		ctx:         ctx,
+		channelName: channelName,
+		chatID:      chatID,
+		senderID:    senderID,
+		msg:         msg,
+		isGroup:     isGroup,
+		userInput:   userInput,
+	}
+
+	b.queueMu.Lock()
+	q, exists := b.queues[sessionID]
+	if !exists {
+		q = &sessionQueue{ch: make(chan queuedMessage, sessionQueueBuffer)}
+		b.queues[sessionID] = q
+		go b.sessionWorker(sessionID, q)
+	}
+	b.queueMu.Unlock()
+
+	select {
+	case q.ch <- qm:
+		pos := int(q.pending.Add(1))
+		// 队列中有其他消息排队时通知用户位置和批次
+		if pos > 1 {
+			batchNum := (pos-1)/maxBatchSize + 1
+			notice := fmt.Sprintf("消息已加入队列（第 %d 位），预计在第 %d 批执行，前面还有 %d 条消息在处理中", pos, batchNum, pos-1)
+			_ = b.manager.SendText(ctx, channelName, chatID, notice)
+		}
+	default:
+		log.Printf("[bridge] session queue full, dropping message: session=%s", sessionID)
+		_ = b.manager.SendText(ctx, channelName, chatID, "消息队列已满，请稍后再试")
+	}
+}
+
+// sessionWorker 每个会话的消息处理协程，批量取出消息后串行执行
+// 空闲超时后自动退出并清理队列
+func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
+	for {
+		// 阻塞等待第一条消息，带空闲超时
+		var first queuedMessage
+		var ok bool
+		idleTimer := time.NewTimer(sessionIdleTimeout)
+		select {
+		case first, ok = <-q.ch:
+			idleTimer.Stop()
+			if !ok {
+				return
+			}
+		case <-idleTimer.C:
+			// 空闲超时：加锁后再次检查是否有新消息，避免竞态丢消息
+			b.queueMu.Lock()
+			select {
+			case first, ok = <-q.ch:
+				b.queueMu.Unlock()
+				if !ok {
+					return
+				}
+				// 有新消息，继续处理
+			default:
+				// 确认无消息，安全退出
+				delete(b.queues, sessionID)
+				b.queueMu.Unlock()
+				return
+			}
+		}
+
+		// 收到首条消息后短暂等待，收集同一时间段内的更多消息
+		batch := []queuedMessage{first}
+		timer := time.NewTimer(batchWaitDuration)
+	collect:
+		for len(batch) < maxBatchSize {
+			select {
+			case msg, ok := <-q.ch:
+				if !ok {
+					break collect
+				}
+				batch = append(batch, msg)
+			case <-timer.C:
+				break collect
+			}
+		}
+		timer.Stop()
+
+		b.processBatch(sessionID, batch)
+		q.pending.Add(-int32(len(batch)))
+	}
+}
+
+// processBatch 处理一批消息：合并用户输入，通知用户，执行引擎
+func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
+	first := batch[0]
+	channelName := first.channelName
+	chatID := first.chatID
+
+	// 使用独立 context：入队消息的原始 ctx 可能已被取消（如 typing ctx）
+	ctx := WithChannelName(context.Background(), channelName)
+	ctx = appstate.WithState(ctx, b.state)
+
+	r, err := b.getRunner(ctx)
+	if err != nil {
+		log.Printf("[bridge] create runner failed: %v", err)
+		_ = b.manager.SendText(ctx, channelName, chatID, "internal error: "+err.Error())
+		return
+	}
+
+	// 合并所有消息为一次输入
+	var combinedInput string
+	if len(batch) == 1 {
+		combinedInput = first.userInput
+	} else {
+		// 多条消息：通知用户将要执行的任务列表
+		var preview strings.Builder
+		fmt.Fprintf(&preview, "收到 %d 条消息，将依次处理：", len(batch))
+		for i, m := range batch {
+			line := m.userInput
+			if len([]rune(line)) > 50 {
+				line = string([]rune(line)[:50]) + "..."
+			}
+			fmt.Fprintf(&preview, "\n%d. %s", i+1, line)
+		}
+		_ = b.manager.SendText(ctx, channelName, chatID, preview.String())
+
+		// 合并为带编号的用户输入
+		var merged strings.Builder
+		merged.WriteString("以下是用户连续发送的多条消息，请依次处理每一条：\n\n")
+		for i, m := range batch {
+			fmt.Fprintf(&merged, "--- 消息 %d ---\n%s\n\n", i+1, m.userInput)
+		}
+		combinedInput = merged.String()
+	}
+
+	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
+	turnInput := appchat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
+
+	rc := newReplyCollector(b.manager, channelName, chatID)
+
+	_, runErr := appchat.NewService().RunTurn(ctx, appchat.TurnRequest{
+		SessionID: sessionID,
+		Runner:    r,
+		Input:     turnInput,
+	},
+		appchat.NonInteractive(),
+		appchat.OnEvent(func(event events.Event) error {
+			return rc.handleEvent(event)
+		}),
+		appchat.WithEventRecorder(recorder),
+		appchat.WithHistory(recorder),
+		appchat.WithApprovalRegistry(approval.NewAutoApproveRegistry()),
+		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
+			if err != nil {
+				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
+				recorder.RecordEvent(events.Event{
+					Type:    events.EventError,
+					Content: err.Error(),
+					Error:   err.Error(),
+				})
+			}
+			recorder.FinalizeCurrent()
+			rc.flush()
+			status := "completed"
+			if err != nil {
+				status = "error"
+			}
+			store := eventlog.NewChatSessionStore(channelHistoryDir)
+			lifecycleErr := appchat.NewSessionLifecycle(store, store).Finish(ctx, appchat.FinishRequest{
+				SessionID:      sessionID,
+				TitleSource:    combinedInput,
+				DefaultTitle:   "通道会话",
+				Status:         status,
+				History:        recorder,
+				Memory:         b.memoryManager(),
+				MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
+			})
+			appchat.LogLifecycleError("channel", sessionID, lifecycleErr)
+			if !rc.replied {
+				_ = b.manager.SendText(ctx, channelName, chatID, "...")
+			}
+		}),
+	)
+	if runErr != nil {
+		log.Printf("[bridge] task failed: session=%s, err=%v", sessionID, runErr)
+	}
+}
+
+func (b *Bridge) memoryManager() appstate.MemoryManager {
+	if b == nil || b.state == nil {
+		return nil
+	}
+	return b.state.Memory()
+}
+
+// buildUserInput 将消息内容和附件构建为用户输入文本
+func buildUserInput(msg Message) string {
+	userInput := msg.Content
+	for _, att := range msg.Attachments {
+		desc := att.TypeName() + ": " + att.URL
+		if att.FileName != "" {
+			desc = att.TypeName() + " (" + att.FileName + "): " + att.URL
+		}
+		if userInput != "" {
+			userInput += "\n"
+		}
+		userInput += "[" + desc + "]"
+	}
+	return userInput
+}
+
+// replyCollector 收集并发送助手回复（支持流式和非流式）
+type replyCollector struct {
+	manager     *Manager
+	channelName string
+	chatID      string
+
+	mu           sync.Mutex
+	pendingParts []string                   // 当前智能体的累积流式文本
+	pendingCalls map[string]pendingToolCall // 待匹配结果的工具调用（按 ID 索引）
+	resultChunks map[string]string          // 待合并的流式工具结果
+	currentAgent string                     // 当前流式响应的智能体
+	replied      bool                       // 是否已发送过任何回复
+}
+
+// pendingToolCall 等待结果的工具调用
+type pendingToolCall struct {
+	name string
+	args string
+}
+
+func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector {
+	return &replyCollector{
+		manager:      mgr,
+		channelName:  channelName,
+		chatID:       chatID,
+		pendingCalls: make(map[string]pendingToolCall),
+		resultChunks: make(map[string]string),
+	}
+}
+
+// handleEvent 处理引擎产生的各类事件
+func (rc *replyCollector) handleEvent(event events.Event) error {
+	switch event.Type {
+	case events.EventMessageDelta:
+		if event.DeltaKind != "" && event.DeltaKind != events.DeltaOutput {
+			return nil
+		}
+		// 流式文本块：累积，检测到 agent 切换时 flush
+		rc.flushToolResultChunks()
+		rc.mu.Lock()
+		if event.AgentName != rc.currentAgent && rc.currentAgent != "" {
+			rc.mu.Unlock()
+			rc.flush()
+			rc.mu.Lock()
+		}
+		rc.currentAgent = event.AgentName
+		if event.Content != "" {
+			rc.pendingParts = append(rc.pendingParts, event.Content)
+		}
+		rc.mu.Unlock()
+	case events.EventAction:
+		// 智能体切换时 flush
+		if event.ActionType == events.ActionTransfer {
+			rc.flush()
+		}
+	case events.EventToolStart:
+		// 工具调用：flush 之前的文本，按 ToolCall.ID 记录所有工具调用
+		rc.flush()
+		rc.mu.Lock()
+		for _, tc := range events.ToolCallsFromEvent(event) {
+			rc.pendingCalls[tc.ID] = pendingToolCall{
+				name: tc.Function.Name,
+				args: truncateText(tc.Function.Arguments, 200),
+			}
+		}
+		rc.mu.Unlock()
+	case events.EventToolEnd:
+		// 工具调用完成：按 ToolCallID 匹配调用，发送摘要
+		rc.mu.Lock()
+		call, found := rc.pendingCalls[event.ToolCallID]
+		if found {
+			delete(rc.pendingCalls, event.ToolCallID)
+		}
+		content := event.Content
+		if chunked := rc.resultChunks[event.ToolCallID]; chunked != "" {
+			if content == "" || strings.Contains(chunked, content) {
+				content = chunked
+			} else {
+				content = chunked + content
+			}
+			delete(rc.resultChunks, event.ToolCallID)
+		}
+		rc.mu.Unlock()
+		if found {
+			result := truncateText(content, 200)
+			summary := "[" + call.name + "] " + call.args + "\n-> " + result
+			rc.send(summary)
+		}
+	case events.EventToolUpdate:
+		rc.mu.Lock()
+		if event.ToolCallID != "" {
+			rc.resultChunks[event.ToolCallID] += event.Content
+		}
+		rc.mu.Unlock()
+	}
+	return nil
+}
+
+func (rc *replyCollector) flushToolResultChunks() {
+	rc.mu.Lock()
+	items := make([]struct {
+		call   pendingToolCall
+		result string
+	}, 0)
+	for callID, content := range rc.resultChunks {
+		call, found := rc.pendingCalls[callID]
+		delete(rc.resultChunks, callID)
+		if found {
+			delete(rc.pendingCalls, callID)
+			items = append(items, struct {
+				call   pendingToolCall
+				result string
+			}{call: call, result: content})
+		}
+	}
+	rc.mu.Unlock()
+	for _, item := range items {
+		result := truncateText(item.result, 200)
+		summary := "[" + item.call.name + "] " + item.call.args + "\n-> " + result
+		rc.send(summary)
+	}
+}
+
+// flush 发送累积的流式文本
+func (rc *replyCollector) flush() {
+	rc.mu.Lock()
+	text := strings.TrimSpace(strings.Join(rc.pendingParts, ""))
+	rc.pendingParts = rc.pendingParts[:0]
+	rc.mu.Unlock()
+	rc.send(text)
+}
+
+// truncateText 截断文本，保留前 maxLen 个字符
+func truncateText(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
+}
+
+// send 发送文本消息（自动分片）
+func (rc *replyCollector) send(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	rc.replied = true
+	ctx := context.Background()
+	for _, chunk := range splitMessage(text, 2000) {
+		if err := rc.manager.SendText(ctx, rc.channelName, rc.chatID, chunk); err != nil {
+			log.Printf("[bridge] send reply failed: channel=%s, chat=%s, err=%v", rc.channelName, rc.chatID, err)
+			break
+		}
+	}
+}
+
+// channelNameKey 是通道名称的 context key。
+type channelNameKey struct{}
+
+// WithChannelName 将通道名称注入 context
+func WithChannelName(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, channelNameKey{}, name)
+}
+
+// splitMessage 按最大长度分割消息，优先在换行处分割以保持语义完整
+func splitMessage(text string, maxLen int) []string {
+	runes := []rune(text)
+	if len(runes) <= maxLen {
+		return []string{text}
+	}
+	var chunks []string
+	for len(runes) > 0 {
+		end := maxLen
+		if end > len(runes) {
+			end = len(runes)
+		}
+		// 在 maxLen 范围内查找最后一个换行，优先在换行处分割
+		if end < len(runes) {
+			best := -1
+			for i := end - 1; i >= end/2; i-- {
+				if runes[i] == '\n' {
+					best = i + 1 // 包含换行符
+					break
+				}
+			}
+			if best > 0 {
+				end = best
+			}
+		}
+		chunks = append(chunks, string(runes[:end]))
+		runes = runes[end:]
+	}
+	return chunks
+}

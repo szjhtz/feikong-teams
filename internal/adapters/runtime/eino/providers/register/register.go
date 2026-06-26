@@ -1,0 +1,52 @@
+package register
+
+import (
+	"context"
+	modelproviders "fkteams/internal/adapters/model/providers"
+	"fkteams/internal/adapters/model/providers/providerkit"
+	"fkteams/internal/adapters/runtime/eino/providers/ark"
+	"fkteams/internal/adapters/runtime/eino/providers/claude"
+	"fkteams/internal/adapters/runtime/eino/providers/copilot"
+	"fkteams/internal/adapters/runtime/eino/providers/deepseek"
+	"fkteams/internal/adapters/runtime/eino/providers/gemini"
+	"fkteams/internal/adapters/runtime/eino/providers/ollama"
+	"fkteams/internal/adapters/runtime/eino/providers/openai"
+	"fkteams/internal/adapters/runtime/eino/providers/openrouter"
+	"fkteams/internal/adapters/runtime/eino/providers/qwen"
+	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
+)
+
+func init() {
+	modelproviders.Register(modelproviders.OpenAI, openai.New)
+	modelproviders.Register(modelproviders.DeepSeek, deepseek.New)
+	modelproviders.Register(modelproviders.Claude, claude.New)
+	modelproviders.Register(modelproviders.Ollama, ollama.New)
+	modelproviders.Register(modelproviders.Ark, ark.New)
+	modelproviders.Register(modelproviders.Gemini, gemini.New)
+	modelproviders.Register(modelproviders.Qwen, qwen.New)
+	modelproviders.Register(modelproviders.OpenRouter, openrouter.New)
+	modelproviders.Register(modelproviders.Copilot, copilot.New)
+
+	registerRuntimeModel(modelregistry.OpenAI, openai.New)
+	registerRuntimeModel(modelregistry.DeepSeek, deepseek.New)
+	registerRuntimeModel(modelregistry.Claude, claude.New)
+	registerRuntimeModel(modelregistry.Ollama, ollama.New)
+	registerRuntimeModel(modelregistry.Ark, ark.New)
+	registerRuntimeModel(modelregistry.Gemini, gemini.New)
+	registerRuntimeModel(modelregistry.Qwen, qwen.New)
+	registerRuntimeModel(modelregistry.OpenRouter, openrouter.New)
+	registerRuntimeModel(modelregistry.Copilot, copilot.New)
+}
+
+func registerRuntimeModel(t modelregistry.Type, f func(context.Context, *providerkit.Config) (runtimeport.ChatModel, error)) {
+	modelregistry.Register(t, func(ctx context.Context, cfg *modelregistry.Config) (runtimeport.ChatModel, error) {
+		return f(ctx, &providerkit.Config{
+			Provider:     string(cfg.Provider),
+			APIKey:       cfg.APIKey,
+			BaseURL:      cfg.BaseURL,
+			Model:        cfg.Model,
+			ExtraHeaders: cfg.ExtraHeaders,
+		})
+	})
+}

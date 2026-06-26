@@ -1,0 +1,57 @@
+// Package common 提供智能体共用的模型创建和重试判断等基础功能
+package common
+
+import (
+	"context"
+	"fkteams/internal/app/config"
+	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
+	retry "fkteams/internal/runtime/retry"
+	"fmt"
+)
+
+// MaxIterations 返回智能体最大迭代次数
+func MaxIterations() int {
+	return retry.MaxIterations()
+}
+
+const (
+	// MaxRetries 最大重试次数
+	MaxRetries = retry.MaxRetries
+)
+
+// WorkspaceDir 返回工作目录
+func WorkspaceDir() string {
+	return config.Get().WorkspaceDir()
+}
+
+// NewChatModel 使用配置文件的 default 模型创建聊天模型
+func NewChatModel() (runtimeport.ChatModel, error) {
+	cfg := config.Get()
+	modelCfg := cfg.ResolveModel("default")
+	if modelCfg != nil && (modelCfg.APIKey != "" || modelCfg.Provider != "") {
+		return NewChatModelWithModelConfig(modelCfg)
+	}
+	return nil, fmt.Errorf("未配置默认模型，请运行 fkteams generate config 生成配置文件")
+}
+
+// NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
+func NewChatModelWithModelConfig(mc *config.ModelConfig) (runtimeport.ChatModel, error) {
+	return NewChatModelWithConfig(&modelregistry.Config{
+		Provider:     modelregistry.Type(mc.Provider),
+		APIKey:       mc.APIKey,
+		BaseURL:      mc.BaseURL,
+		Model:        mc.Model,
+		ExtraHeaders: mc.ParseExtraHeaders(),
+	})
+}
+
+// NewChatModelWithConfig 使用指定配置创建聊天模型
+func NewChatModelWithConfig(cfg *modelregistry.Config) (runtimeport.ChatModel, error) {
+	return modelregistry.NewChatModel(context.Background(), cfg)
+}
+
+// IsRetryAble 判断错误是否可重试（转发到 common 包）
+func IsRetryAble(ctx context.Context, err error) bool {
+	return retry.IsRetryable(ctx, err)
+}
