@@ -116,8 +116,11 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
 	}
-	engine := runtimeregistry.Engine()
-	coreModel, err := decorateChatModel(ctx, engine, coreModel)
+	engine, err := runtimeregistry.Engine()
+	if err != nil {
+		return nil, err
+	}
+	coreModel, err = decorateChatModel(ctx, engine, coreModel)
 	if err != nil {
 		return nil, fmt.Errorf("decorate chat model: %w", err)
 	}
@@ -258,7 +261,7 @@ func unknownToolsHandler(_ context.Context, name, _ string) (string, error) {
 	return fmt.Sprintf("Tool '%s' does not exist. Please check the available tools and try again.", name), nil
 }
 
-func decorateChatModel(ctx context.Context, engine runtimeport.Engine, model runtimeport.ChatModel) (runtimeport.ChatModel, error) {
+func decorateChatModel(ctx context.Context, engine any, model runtimeport.ChatModel) (runtimeport.ChatModel, error) {
 	decorator, ok := engine.(runtimeport.ModelDecorator)
 	if !ok {
 		return model, nil
@@ -266,7 +269,7 @@ func decorateChatModel(ctx context.Context, engine runtimeport.Engine, model run
 	return decorator.DecorateChatModel(ctx, model)
 }
 
-func defaultToolMiddlewares(engine runtimeport.Engine) []runtimeport.ToolMiddleware {
+func defaultToolMiddlewares(engine any) []runtimeport.ToolMiddleware {
 	provider, ok := engine.(runtimeport.ToolPipelineProvider)
 	if !ok {
 		return nil

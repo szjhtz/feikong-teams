@@ -34,7 +34,10 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 
-	engine := runtimeregistry.Engine()
+	engine, err := runtimeregistry.Engine()
+	if err != nil {
+		return nil, err
+	}
 	middlewareProvider, ok := engine.(runtimeport.AgentPipelineProvider)
 	if !ok {
 		return nil, fmt.Errorf("runtime does not support deep agent middlewares")

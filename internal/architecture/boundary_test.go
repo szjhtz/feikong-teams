@@ -283,6 +283,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"fkteams/internal/app",
 			"fkteams/internal/adapters",
 			"fkteams/internal/adapters/runtime/eino",
+			"fkteams/internal/runtime",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 		}
@@ -539,6 +540,26 @@ func TestRuntimeRegistryUsesInternalPackage(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBootstrapAndRuntimeRegistryDoNotPanic(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	files := []string{
+		filepath.Join(root, "internal", "bootstrap", "runtimes", "runtimes.go"),
+		filepath.Join(root, "internal", "bootstrap", "tools", "tools.go"),
+		filepath.Join(root, "internal", "runtime", "registry", "runtime.go"),
+		filepath.Join(root, "internal", "app", "tools", "registry.go"),
+	}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "panic(") {
+			rel, _ := filepath.Rel(root, path)
+			t.Errorf("%s contains panic; registration paths should return errors", filepath.ToSlash(rel))
+		}
 	}
 }
 

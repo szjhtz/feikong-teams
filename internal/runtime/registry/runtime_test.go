@@ -16,14 +16,20 @@ func TestRegisterAndUseRuntime(t *testing.T) {
 	})
 
 	engine := testEngine{}
-	Register("test-runtime", engine)
+	if err := Register("test-runtime", engine); err != nil {
+		t.Fatalf("register runtime: %v", err)
+	}
 	if err := Use("test-runtime"); err != nil {
 		t.Fatalf("use runtime: %v", err)
 	}
 	if DefaultName() != "test-runtime" {
 		t.Fatalf("default runtime = %q, want test-runtime", DefaultName())
 	}
-	if got := Engine(); got != engine {
+	got, err := Engine()
+	if err != nil {
+		t.Fatalf("default engine: %v", err)
+	}
+	if got != engine {
 		t.Fatal("Engine did not return registered runtime")
 	}
 }
@@ -41,8 +47,12 @@ func TestUseUnknownRuntimeReturnsError(t *testing.T) {
 }
 
 func TestRegisteredNamesAreSorted(t *testing.T) {
-	Register("z-runtime", testEngine{})
-	Register("a-runtime", testEngine{})
+	if err := Register("z-runtime", testEngine{}); err != nil {
+		t.Fatalf("register z runtime: %v", err)
+	}
+	if err := Register("a-runtime", testEngine{}); err != nil {
+		t.Fatalf("register a runtime: %v", err)
+	}
 
 	names := RegisteredNames()
 	if !sort.StringsAreSorted(names) {

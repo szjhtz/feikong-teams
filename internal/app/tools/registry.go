@@ -7,13 +7,9 @@ import (
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/app/tools/command"
-	"fkteams/internal/app/tools/doc"
-	"fkteams/internal/app/tools/excel"
-	"fkteams/internal/app/tools/fetch"
 	"fkteams/internal/app/tools/file"
 	"fkteams/internal/app/tools/script/bun"
 	"fkteams/internal/app/tools/script/uv"
-	"fkteams/internal/app/tools/search"
 	"fkteams/internal/app/tools/todo"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
@@ -128,14 +124,14 @@ func (r *ToolGroupRegistry) Freeze() {
 	r.frozen = true
 }
 
-func defaultToolGroupRegistry() *ToolGroupRegistry {
+func defaultToolGroupRegistry() (*ToolGroupRegistry, error) {
 	registry := NewToolGroupRegistry()
 	for _, reg := range builtinToolGroups() {
 		if err := registry.Register(reg); err != nil {
-			panic(err)
+			return nil, err
 		}
 	}
-	return registry
+	return registry, nil
 }
 
 func builtinToolGroups() []ToolGroupRegistration {
@@ -148,14 +144,6 @@ func builtinToolGroups() []ToolGroupRegistration {
 			Builtin:       true,
 			IncludedTools: []string{"file_read", "file_write", "file_search", "file_list"},
 		}, Factory: fileToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "excel",
-			DisplayName:   "Excel",
-			Description:   "创建、读取和编辑 Excel 工作簿，处理表格数据、公式、样式和工作表。",
-			Category:      "数据",
-			Builtin:       true,
-			IncludedTools: []string{"excel_create", "excel_read", "excel_write", "excel_style"},
-		}, Factory: excelToolGroup},
 		{Info: ToolGroupInfo{
 			Name:          "todo",
 			DisplayName:   "待办事项",
@@ -172,30 +160,6 @@ func builtinToolGroups() []ToolGroupRegistration {
 			Builtin:       true,
 			IncludedTools: []string{"execute"},
 		}, Factory: commandToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "search",
-			DisplayName:   "网络搜索",
-			Description:   "检索互联网信息，适合需要时效性、外部资料或交叉验证的问题。",
-			Category:      "研究",
-			Builtin:       true,
-			IncludedTools: []string{"search"},
-		}, Factory: searchToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "fetch",
-			DisplayName:   "网页抓取",
-			Description:   "读取指定 URL 的网页内容，适合打开搜索结果、文档页面和公开资料。",
-			Category:      "研究",
-			Builtin:       true,
-			IncludedTools: []string{"fetch"},
-		}, Factory: fetchToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "doc",
-			DisplayName:   "文档",
-			Description:   "读取和分析文档文件，支持文档信息、智能读取、按页和按行读取。",
-			Category:      "文档",
-			Builtin:       true,
-			IncludedTools: []string{"doc_info", "doc_smart_read", "doc_read_pages", "doc_read_lines"},
-		}, Factory: docToolGroup},
 		{Info: ToolGroupInfo{
 			Name:          "ask",
 			DisplayName:   "向用户提问",
@@ -223,9 +187,12 @@ func builtinToolGroups() []ToolGroupRegistration {
 	}
 }
 
-var defaultRegistry = defaultToolGroupRegistry()
+var defaultRegistry, defaultRegistryErr = defaultToolGroupRegistry()
 
 func RegisterToolGroup(reg ToolGroupRegistration) error {
+	if defaultRegistryErr != nil {
+		return defaultRegistryErr
+	}
 	return defaultRegistry.Register(reg)
 }
 
@@ -235,14 +202,6 @@ func fileToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 		return nil, fmt.Errorf("初始化文件工具失败: %w", err)
 	}
 	return fileTools.GetTools()
-}
-
-func excelToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	excelTools, err := excel.NewExcelTools(workspacePath())
-	if err != nil {
-		return nil, fmt.Errorf("初始化Excel工具失败: %w", err)
-	}
-	return excelTools.GetTools()
 }
 
 func todoToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
@@ -262,18 +221,6 @@ func commandToolGroup(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 		})
 	}
 	return command.NewCommandTools(workspacePath()).GetTools()
-}
-
-func searchToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	return search.GetTools()
-}
-
-func fetchToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	return fetch.GetTools()
-}
-
-func docToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	return doc.GetTools()
 }
 
 func askToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {

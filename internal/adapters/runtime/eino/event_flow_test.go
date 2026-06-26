@@ -509,7 +509,7 @@ func runAgentForTestResult(t *testing.T, ctx context.Context, agent runtimeport.
 	runner, err := NewRunnerFromConfig(ctx, runtimeport.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: streaming,
-		CheckPointStore: checkpointmemory.NewStore(),
+		CheckpointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)

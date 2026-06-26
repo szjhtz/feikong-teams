@@ -28,10 +28,14 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	runner, err := runtimeregistry.Engine().NewRunner(ctx, runtimeport.RunnerConfig{
+	engine, err := runtimeregistry.Engine()
+	if err != nil {
+		t.Fatalf("runtime engine: %v", err)
+	}
+	runner, err := engine.NewRunner(ctx, runtimeport.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
-		CheckPointStore: checkpointmemory.NewStore(),
+		CheckpointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)

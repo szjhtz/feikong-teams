@@ -3,7 +3,7 @@ package eino
 import (
 	"context"
 	runtimeport "fkteams/internal/ports/runtime"
-	checkpointstore "fkteams/internal/runtime/checkpoint"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -11,8 +11,8 @@ import (
 )
 
 func NewChatModelAgent(ctx context.Context, cfg *runtimeport.ChatAgentConfig) (runtimeport.Agent, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("agent config is nil")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	chatModel, err := AdaptChatModelForRunner(cfg.Model)
 	if err != nil {
@@ -57,8 +57,8 @@ func NewChatModelAgent(ctx context.Context, cfg *runtimeport.ChatAgentConfig) (r
 }
 
 func NewLoopAgent(ctx context.Context, cfg *runtimeport.LoopAgentConfig) (runtimeport.Agent, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("loop agent config is nil")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	subAgents, err := AdaptAgentsForRunner(cfg.SubAgents)
 	if err != nil {
@@ -77,6 +77,9 @@ func NewLoopAgent(ctx context.Context, cfg *runtimeport.LoopAgentConfig) (runtim
 }
 
 func NewRunnerFromConfig(ctx context.Context, cfg runtimeport.RunnerConfig) (runtimeport.Runner, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	runnerAgent, err := AdaptAgentForRunner(cfg.Agent)
 	if err != nil {
 		return nil, err
@@ -84,7 +87,7 @@ func NewRunnerFromConfig(ctx context.Context, cfg runtimeport.RunnerConfig) (run
 	return NewRunner(adk.NewRunner(ctx, adk.RunnerConfig{
 		Agent:           runnerAgent,
 		EnableStreaming: cfg.EnableStreaming,
-		CheckPointStore: adaptCheckPointStoreForRunner(cfg.CheckPointStore),
+		CheckPointStore: adaptCheckPointStoreForRunner(cfg.CheckpointStore),
 	})), nil
 }
 
@@ -145,10 +148,10 @@ func AdaptModelRetryConfigForRunner(cfg *runtimeport.ModelRetryConfig) *adk.Mode
 }
 
 type checkPointStoreAdapter struct {
-	inner checkpointstore.Store
+	inner storageport.CheckpointStore
 }
 
-func adaptCheckPointStoreForRunner(store checkpointstore.Store) compose.CheckPointStore {
+func adaptCheckPointStoreForRunner(store storageport.CheckpointStore) compose.CheckPointStore {
 	if store == nil {
 		return nil
 	}

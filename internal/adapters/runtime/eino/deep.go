@@ -11,8 +11,8 @@ import (
 )
 
 func NewDeepAgent(ctx context.Context, cfg *runtimeport.DeepAgentConfig) (runtimeport.Agent, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("deep agent config is nil")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	chatModel, err := AdaptChatModelForRunner(cfg.Model)
 	if err != nil {

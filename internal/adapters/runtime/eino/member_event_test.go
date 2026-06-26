@@ -289,7 +289,7 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 	runner, err := NewRunnerFromConfig(ctx, runtimeport.RunnerConfig{
 		Agent:           parentAgent,
 		EnableStreaming: true,
-		CheckPointStore: checkpointmemory.NewStore(),
+		CheckpointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)
@@ -434,7 +434,7 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 	runner, err := NewRunnerFromConfig(ctx, runtimeport.RunnerConfig{
 		Agent:           parentAgent,
 		EnableStreaming: true,
-		CheckPointStore: checkpointmemory.NewStore(),
+		CheckpointStore: checkpointmemory.NewStore(),
 	})
 	if err != nil {
 		t.Fatalf("create runner: %v", err)

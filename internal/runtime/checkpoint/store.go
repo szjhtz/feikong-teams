@@ -1,9 +1,6 @@
 package checkpoint
 
-import "context"
+import storageport "fkteams/internal/ports/storage"
 
-// Store 定义运行时 checkpoint 的最小持久化接口。
-type Store interface {
-	Set(ctx context.Context, key string, value []byte) error
-	Get(ctx context.Context, key string) ([]byte, bool, error)
-}
+// Store 是 checkpoint 实现包内对端口层契约的别名。
+type Store = storageport.CheckpointStore

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fkteams/internal/app/tools/approval"
-	"fkteams/internal/app/tools/search"
 	runtimeport "fkteams/internal/ports/runtime"
 	"testing"
 )
@@ -106,26 +105,6 @@ func TestSearchAskAndAttachmentToolNamesUsePolicy(t *testing.T) {
 	}
 	if _, ok := PolicyForTool("duckduckgo_text_search"); ok {
 		t.Fatal("unregistered search constructor default should not be classified as a builtin policy")
-	}
-}
-
-func TestSearchPolicyMatchesActualBuiltinToolName(t *testing.T) {
-	searchTools, err := search.GetTools()
-	if err != nil {
-		t.Fatalf("get search tools: %v", err)
-	}
-	if len(searchTools) != 1 {
-		t.Fatalf("expected one search tool, got %d", len(searchTools))
-	}
-	info, err := searchTools[0].Info(context.Background())
-	if err != nil {
-		t.Fatalf("get search tool info: %v", err)
-	}
-	if info.Name != "search" {
-		t.Fatalf("unexpected search tool name: %s", info.Name)
-	}
-	if _, ok := PolicyForTool(info.Name); !ok {
-		t.Fatalf("missing policy for actual search tool name: %s", info.Name)
 	}
 }
 

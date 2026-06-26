@@ -18,24 +18,21 @@ var registry = struct {
 	engines:     make(map[string]runtimeport.Engine),
 }
 
-func Engine() runtimeport.Engine {
-	engine, err := EngineByName(DefaultName())
-	if err != nil {
-		panic(err)
-	}
-	return engine
+func Engine() (runtimeport.Engine, error) {
+	return EngineByName(DefaultName())
 }
 
-func Register(name string, engine runtimeport.Engine) {
+func Register(name string, engine runtimeport.Engine) error {
 	if name == "" {
-		panic("runtime name is empty")
+		return fmt.Errorf("runtime name is empty")
 	}
 	if engine == nil {
-		panic("runtime engine is nil")
+		return fmt.Errorf("runtime engine is nil")
 	}
 	registry.Lock()
 	registry.engines[name] = engine
 	registry.Unlock()
+	return nil
 }
 
 func Use(name string) error {

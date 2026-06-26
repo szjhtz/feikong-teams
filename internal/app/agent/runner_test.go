@@ -75,7 +75,7 @@ func TestCreateAgentRunnerUsesRuntimeRunnerConfig(t *testing.T) {
 	if !engine.runnerCfg.EnableStreaming {
 		t.Fatal("runner should enable streaming")
 	}
-	if engine.runnerCfg.CheckPointStore == nil {
+	if engine.runnerCfg.CheckpointStore == nil {
 		t.Fatal("runner should configure checkpoint store")
 	}
 }
@@ -125,7 +125,9 @@ func TestCustomModeratorPromptUsesDefaultAndAppendsToolSection(t *testing.T) {
 func restoreRuntime(t *testing.T, name string, engine runtimeport.Engine) {
 	t.Helper()
 	original := runtimeregistry.DefaultName()
-	runtimeregistry.Register(name, engine)
+	if err := runtimeregistry.Register(name, engine); err != nil {
+		t.Fatalf("register runtime: %v", err)
+	}
 	if err := runtimeregistry.Use(name); err != nil {
 		t.Fatalf("use runtime: %v", err)
 	}
