@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	memorymodel "fkteams/internal/adapters/model/memory"
 	"fkteams/internal/app/agent/catalog"
 	agentcommon "fkteams/internal/app/agent/catalog/common"
@@ -161,19 +162,19 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		if rt.ResetChannels != nil {
 			rt.ResetChannels()
 		}
-		resetMemoryLLM(state)
+		resetMemoryLLM(rt.withRuntimeContext(c.Request.Context()), state)
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
 }
 
 // resetMemoryLLM 使用当前配置重建 MemoryManager 的 LLM 客户端
-func resetMemoryLLM(state *appstate.State) {
+func resetMemoryLLM(ctx context.Context, state *appstate.State) {
 	manager := memoryFromState(state)
 	if manager == nil {
 		return
 	}
-	chatModel, err := agentcommon.NewChatModel()
+	chatModel, err := agentcommon.NewChatModel(ctx)
 	if err != nil {
 		log.Printf("[memory] 重建模型失败，记忆服务继续使用旧模型: %v", err)
 		return

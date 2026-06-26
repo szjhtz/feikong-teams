@@ -10,6 +10,7 @@ import (
 	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
+	modelregistry "fkteams/internal/runtime/model"
 )
 
 // SchedulerService 定时任务调度服务
@@ -54,10 +55,12 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	appService := appschedule.NewService(sched)
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
+	models, _ := modelregistry.RegistryFromContext(ctx)
 	executor := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks")).
 		WithContextHook(func(ctx context.Context) context.Context {
 			ctx = runtimeport.WithEngine(ctx, engine)
 			ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
+			ctx = modelregistry.WithRegistry(ctx, models)
 			return appschedule.WithService(ctx, appService)
 		})
 	sched.SetExecutor(executor)

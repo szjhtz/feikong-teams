@@ -175,7 +175,7 @@ type ToolRegistry interface {
 当前已经明确隔离的工具实现：
 
 - `internal/app/tools` 只保留工具组注册表、目录查询、MCP provider 门面、审批策略和无需外部 IO 生命周期的应用级能力；默认工具组不在 app 层内建。
-- `internal/bootstrap/runtimes` 显式注册 runtime engine、MCP tool provider 桥接和模型 provider；禁止用空白 import 或 `init()` 完成 provider 装配。
+- `internal/bootstrap/runtimes` 显式注册 runtime engine、MCP tool provider 桥接和模型 provider；模型工厂注册表由组合根创建并注入入口上下文，`internal/runtime/model` 不提供可变的进程级默认注册表；禁止用空白 import 或 `init()` 完成 provider 装配。
 - `internal/bootstrap/tools` 是唯一默认工具组组合入口，负责注册 file、todo、ask、command、uv、bun、excel、doc、fetch、search、git、ssh、scheduler 等工具组。
 - `tools/mcp`：MCP client、缓存和工具组 provider 位于 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`。MCP client 转 runtime tool 的桥接由 `internal/bootstrap/runtimes` 连接具体 runtime adapter，不进入 ports 契约。
 - `tools/command`、`tools/script/uv`、`tools/script/bun`：进程执行和脚本运行时实现位于 `internal/adapters/tools/builtin/*`；后台 tasker 通过隐藏工具组 `command_reject` 使用自动拒绝危险操作的命令策略。
@@ -211,7 +211,7 @@ Hooks 是用例和运行时之间的稳定扩展边界：
 
 hook payload 使用 `internal/ports/hooks` 中的明确结构体，并统一实现 `hooks.Payload` 契约；`Invocation` 和 `Result` 只能携带 `hooks.Payload`，不能退回裸 `any`。`internal/runtime/hooks` 负责总线实现、payload 与 hook point 匹配校验、超时/错误策略、context 绑定和便捷调用。HookBus 必须由用例或组合根显式传入；未传入时不执行 hook，不提供可注册的全局默认实例。
 
-中断 runtime 必须通过 context 或运行服务依赖显式传入；`internal/ports/runtime` 不提供进程级默认实例、全局注册函数或兜底注册表。HTTP、CLI、channel 和 scheduler 等入口由组合根注入默认 Eino interrupt runtime，测试通过 `runtime.WithInterruptRuntime` 注入假实现，避免跨用例污染。
+中断 runtime 和模型工厂注册表必须通过 context 或运行服务依赖显式传入；`internal/ports/runtime` 不提供进程级默认实例、全局注册函数或兜底注册表，`internal/runtime/model` 只提供实例化注册表和 context 绑定。HTTP、CLI、channel 和 scheduler 等入口由组合根注入默认 Eino interrupt runtime 与模型注册表，测试通过 `runtime.WithInterruptRuntime` / `model.WithRegistry` 注入假实现，避免跨用例污染。
 
 调度用例服务必须由 `internal/bootstrap/services.SchedulerService` 创建并显式注入 HTTP runtime、CLI session、channel bridge 和后台 tasker context；`internal/app/schedule` 只提供用例服务和 context 绑定函数，不提供 `Default` / `SetDefault` 形式的进程级服务实例。
 

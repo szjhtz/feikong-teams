@@ -12,13 +12,14 @@ type fakeChatModel struct {
 }
 
 func TestNewChatModelUsesRegisteredFactoryAndDetectsProvider(t *testing.T) {
-	Register(DeepSeek, func(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error) {
+	registry := NewRegistry()
+	registry.Register(DeepSeek, func(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error) {
 		if cfg.Model != "deepseek-chat" {
 			t.Fatalf("model = %q, want deepseek-chat", cfg.Model)
 		}
 		return fakeChatModel{}, nil
 	})
-	got, err := NewChatModel(context.Background(), &Config{Model: "deepseek-chat"})
+	got, err := registry.NewChatModel(context.Background(), &Config{Model: "deepseek-chat"})
 	if err != nil {
 		t.Fatalf("NewChatModel: %v", err)
 	}
@@ -28,8 +29,21 @@ func TestNewChatModelUsesRegisteredFactoryAndDetectsProvider(t *testing.T) {
 }
 
 func TestNewChatModelReportsMissingFactory(t *testing.T) {
-	_, err := NewChatModel(context.Background(), &Config{Provider: Type("missing")})
+	registry := NewRegistry()
+	_, err := registry.NewChatModel(context.Background(), &Config{Provider: Type("missing")})
 	if err == nil || !strings.Contains(err.Error(), "未知的模型提供者") {
 		t.Fatalf("error = %v, want missing provider error", err)
+	}
+}
+
+func TestRegistryContext(t *testing.T) {
+	registry := NewRegistry()
+	ctx := WithRegistry(context.Background(), registry)
+	got, err := RequireRegistry(ctx)
+	if err != nil {
+		t.Fatalf("RequireRegistry: %v", err)
+	}
+	if got != registry {
+		t.Fatal("registry from context mismatch")
 	}
 }

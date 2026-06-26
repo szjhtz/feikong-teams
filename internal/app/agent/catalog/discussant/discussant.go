@@ -16,7 +16,7 @@ func NewAgent(ctx context.Context, member config.TeamMember) (runtimeport.Agent,
 		return nil, fmt.Errorf("模型 %q 未在配置文件中定义", member.Model)
 	}
 
-	chatModel, err := common.NewChatModelWithModelConfig(modelCfg)
+	chatModel, err := common.NewChatModelWithModelConfig(ctx, modelCfg)
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}

@@ -33,7 +33,7 @@ func NewAgent(ctx context.Context, cfg Config) (runtimeport.Agent, error) {
 		WithSkills()
 
 	if cfg.Model.Name != "" || cfg.Model.BaseURL != "" {
-		chatModel, err := common.NewChatModelWithConfig(&modelregistry.Config{
+		chatModel, err := common.NewChatModelWithConfig(ctx, &modelregistry.Config{
 			Provider: modelregistry.Type(cfg.Model.Provider),
 			APIKey:   cfg.Model.APIKey,
 			BaseURL:  cfg.Model.BaseURL,

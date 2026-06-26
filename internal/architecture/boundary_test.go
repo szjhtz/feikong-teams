@@ -749,6 +749,38 @@ func TestModelProvidersRegisterExplicitly(t *testing.T) {
 	}
 }
 
+func TestRuntimeModelRegistryIsInstanceOwned(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "runtime", "model", "model.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{
+		"factories = map[Type]Factory",
+		"func Register(",
+		"func NewChatModel(",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("internal/runtime/model exposes process-global model registry through %q", forbidden)
+		}
+	}
+
+	path = filepath.Join(root, "internal", "app", "agent", "catalog", "common", "common.go")
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text = string(data)
+	if strings.Contains(text, "context.Background()") {
+		t.Fatal("agent common creates models with context.Background; model registry must be injected by composition root")
+	}
+	if !strings.Contains(text, "RequireRegistry(ctx)") {
+		t.Fatal("agent common must require an injected runtime model registry")
+	}
+}
+
 func TestHooksDoNotExposeGlobalBus(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "runtime", "hooks")

@@ -1,6 +1,7 @@
 package runtimes
 
 import (
+	"fmt"
 	"sync"
 
 	einoruntime "fkteams/internal/adapters/runtime/eino"
@@ -8,12 +9,14 @@ import (
 	einoproviders "fkteams/internal/adapters/runtime/eino/providers/register"
 	toolmcp "fkteams/internal/adapters/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
 	runtimeregistry "fkteams/internal/runtime/registry"
 )
 
 var (
 	registerOnce sync.Once
 	registerErr  error
+	modelReg     *modelregistry.Registry
 )
 
 // RegisterDefaults 注册默认 runtime adapter 和关联桥接能力。
@@ -32,13 +35,25 @@ func DefaultEngine() (runtimeport.Engine, error) {
 	return runtimeregistry.Engine()
 }
 
+// DefaultModelRegistry 返回组合根注册的模型工厂注册表。
+func DefaultModelRegistry() (*modelregistry.Registry, error) {
+	if err := RegisterDefaults(); err != nil {
+		return nil, err
+	}
+	if modelReg == nil {
+		return nil, fmt.Errorf("model registry is not registered")
+	}
+	return modelReg, nil
+}
+
 // DefaultInterruptRuntime 返回默认 HITL 中断 runtime。
 func DefaultInterruptRuntime() runtimeport.InterruptRuntime {
 	return einoruntime.NewInterruptRuntime()
 }
 
 func registerDefaults() error {
-	einoproviders.RegisterDefaults()
+	modelReg = modelregistry.NewRegistry()
+	einoproviders.RegisterDefaults(modelReg)
 	engine := einoengine.NewEngine()
 	if err := runtimeregistry.Register(runtimeregistry.DefaultRuntimeName, engine); err != nil {
 		return err

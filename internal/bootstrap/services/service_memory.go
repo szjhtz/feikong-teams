@@ -28,7 +28,7 @@ func (s *MemoryService) Name() string { return "memory" }
 
 // Start 初始化并启动长期记忆服务
 func (s *MemoryService) Start(ctx context.Context) error {
-	chatModel, err := common.NewChatModel()
+	chatModel, err := common.NewChatModel(ctx)
 	if err != nil {
 		log.Printf("[memory] 创建模型失败，记忆服务未启动: %v", err)
 		return nil

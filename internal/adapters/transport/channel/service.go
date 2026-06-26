@@ -9,6 +9,7 @@ import (
 	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
+	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
 )
 
@@ -107,8 +108,9 @@ func (s *Service) Name() string { return "channels" }
 func (s *Service) Start(ctx context.Context) error {
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
+	models, _ := modelregistry.RegistryFromContext(ctx)
 	for _, bridge := range s.bridges {
-		bridge.SetRuntimeDependencies(engine, interrupt)
+		bridge.SetRuntimeDependencies(engine, interrupt, models)
 	}
 	log.Printf("[channels] starting all channels...")
 	return s.manager.StartAll(ctx)

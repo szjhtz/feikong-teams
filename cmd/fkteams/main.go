@@ -6,6 +6,7 @@ import (
 	bootstrapruntimes "fkteams/internal/bootstrap/runtimes"
 	bootstraptools "fkteams/internal/bootstrap/tools"
 	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
 	"log"
 	"os"
 
@@ -30,8 +31,14 @@ func main() {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
+	modelRegistry, err := bootstrapruntimes.DefaultModelRegistry()
+	if err != nil {
+		pterm.Error.Println(err)
+		os.Exit(1)
+	}
 	ctx := runtimeport.WithEngine(context.Background(), engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, bootstrapruntimes.DefaultInterruptRuntime())
+	ctx = modelregistry.WithRegistry(ctx, modelRegistry)
 	if err := clicommands.Root().Run(ctx, os.Args); err != nil {
 		pterm.Error.Println(err)
 	}

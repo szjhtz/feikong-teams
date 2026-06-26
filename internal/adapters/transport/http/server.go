@@ -21,6 +21,7 @@ import (
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
+	modelregistry "fkteams/internal/runtime/model"
 
 	"github.com/gin-gonic/gin"
 )
@@ -66,9 +67,11 @@ func (s *httpService) Start(ctx context.Context) error {
 	)
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
+	modelRegistry, _ := modelregistry.RegistryFromContext(ctx)
 	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
 		Engine:        engine,
 		Interrupt:     interrupt,
+		ModelRegistry: modelRegistry,
 		ResetChannels: s.resetChannels,
 	})
 	if s.scheduler != nil {

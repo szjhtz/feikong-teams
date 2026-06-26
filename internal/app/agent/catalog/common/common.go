@@ -26,18 +26,18 @@ func WorkspaceDir() string {
 }
 
 // NewChatModel 使用配置文件的 default 模型创建聊天模型
-func NewChatModel() (runtimeport.ChatModel, error) {
+func NewChatModel(ctx context.Context) (runtimeport.ChatModel, error) {
 	cfg := config.Get()
 	modelCfg := cfg.ResolveModel("default")
 	if modelCfg != nil && (modelCfg.APIKey != "" || modelCfg.Provider != "") {
-		return NewChatModelWithModelConfig(modelCfg)
+		return NewChatModelWithModelConfig(ctx, modelCfg)
 	}
 	return nil, fmt.Errorf("未配置默认模型，请运行 fkteams generate config 生成配置文件")
 }
 
 // NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
-func NewChatModelWithModelConfig(mc *config.ModelConfig) (runtimeport.ChatModel, error) {
-	return NewChatModelWithConfig(&modelregistry.Config{
+func NewChatModelWithModelConfig(ctx context.Context, mc *config.ModelConfig) (runtimeport.ChatModel, error) {
+	return NewChatModelWithConfig(ctx, &modelregistry.Config{
 		Provider:     modelregistry.Type(mc.Provider),
 		APIKey:       mc.APIKey,
 		BaseURL:      mc.BaseURL,
@@ -47,8 +47,12 @@ func NewChatModelWithModelConfig(mc *config.ModelConfig) (runtimeport.ChatModel,
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型
-func NewChatModelWithConfig(cfg *modelregistry.Config) (runtimeport.ChatModel, error) {
-	return modelregistry.NewChatModel(context.Background(), cfg)
+func NewChatModelWithConfig(ctx context.Context, cfg *modelregistry.Config) (runtimeport.ChatModel, error) {
+	registry, err := modelregistry.RequireRegistry(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return registry.NewChatModel(ctx, cfg)
 }
 
 // IsRetryAble 判断错误是否可重试（转发到 common 包）

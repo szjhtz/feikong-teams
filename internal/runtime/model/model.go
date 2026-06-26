@@ -36,20 +36,34 @@ type Config struct {
 // Factory 创建运行时聊天模型。
 type Factory func(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error)
 
-var (
+type registryContextKey struct{}
+
+// Registry 保存一组运行时无关的模型工厂。
+type Registry struct {
 	mu        sync.RWMutex
-	factories = map[Type]Factory{}
-)
+	factories map[Type]Factory
+}
+
+// NewRegistry 创建空模型工厂注册表。
+func NewRegistry() *Registry {
+	return &Registry{factories: make(map[Type]Factory)}
+}
 
 // Register 注册模型提供者工厂。
-func Register(t Type, f Factory) {
-	mu.Lock()
-	defer mu.Unlock()
-	factories[t] = f
+func (r *Registry) Register(t Type, f Factory) {
+	if r == nil || f == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.factories[t] = f
 }
 
 // NewChatModel 根据配置创建聊天模型。
-func NewChatModel(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error) {
+func (r *Registry) NewChatModel(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error) {
+	if r == nil {
+		return nil, fmt.Errorf("model registry is nil")
+	}
 	if cfg == nil {
 		return nil, fmt.Errorf("model config is nil")
 	}
@@ -58,13 +72,41 @@ func NewChatModel(ctx context.Context, cfg *Config) (runtimeport.ChatModel, erro
 		t = Detect(cfg.BaseURL, cfg.Model)
 	}
 
-	mu.RLock()
-	f := factories[t]
-	mu.RUnlock()
+	r.mu.RLock()
+	f := r.factories[t]
+	r.mu.RUnlock()
 	if f == nil {
 		return nil, fmt.Errorf("未知的模型提供者: %s", t)
 	}
 	return f(ctx, cfg)
+}
+
+// WithRegistry 将模型工厂注册表注入当前上下文。
+func WithRegistry(ctx context.Context, registry *Registry) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if registry == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, registryContextKey{}, registry)
+}
+
+// RegistryFromContext 从上下文读取模型工厂注册表。
+func RegistryFromContext(ctx context.Context) (*Registry, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	registry, ok := ctx.Value(registryContextKey{}).(*Registry)
+	return registry, ok && registry != nil
+}
+
+// RequireRegistry 从上下文读取模型工厂注册表，缺失时返回明确错误。
+func RequireRegistry(ctx context.Context) (*Registry, error) {
+	if registry, ok := RegistryFromContext(ctx); ok {
+		return registry, nil
+	}
+	return nil, fmt.Errorf("model registry is not configured")
 }
 
 // Detect 从 BaseURL 或模型名称自动检测提供者类型。

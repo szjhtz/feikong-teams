@@ -32,7 +32,7 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 	if err := toolpolicy.ClassifyTools(toolList); err != nil {
 		return nil, fmt.Errorf("classify tools: %w", err)
 	}
-	chatModel, err := common.NewChatModel()
+	chatModel, err := common.NewChatModel(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}

@@ -111,7 +111,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	coreModel := b.chatModel
 	if coreModel == nil {
 		var err error
-		coreModel, err = NewChatModel()
+		coreModel, err = NewChatModel(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}

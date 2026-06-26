@@ -14,6 +14,7 @@ import (
 	"fkteams/internal/app/chat/taskstream"
 	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
 )
 
 // Runtime 持有单个 HTTP server 实例的运行态依赖。
@@ -28,6 +29,7 @@ type Runtime struct {
 	SessionShares *SessionShareStore
 	Favicons      *FaviconProxy
 	Scheduler     *appschedule.Service
+	ModelRegistry *modelregistry.Registry
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -45,6 +47,7 @@ type RuntimeOptions struct {
 	SessionShares *SessionShareStore
 	Favicons      *FaviconProxy
 	Scheduler     *appschedule.Service
+	ModelRegistry *modelregistry.Registry
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -71,6 +74,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		SessionShares: opt.SessionShares,
 		Favicons:      opt.Favicons,
 		Scheduler:     opt.Scheduler,
+		ModelRegistry: opt.ModelRegistry,
 		Engine:        opt.Engine,
 		Interrupt:     opt.Interrupt,
 		ResetChannels: opt.ResetChannels,
@@ -133,6 +137,7 @@ func (rt *Runtime) resolveRunner(ctx context.Context, mode, agentName string) (r
 func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
 	ctx = runtimeport.WithEngine(ctx, rt.Engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
+	ctx = modelregistry.WithRegistry(ctx, rt.ModelRegistry)
 	return appschedule.WithService(ctx, rt.Scheduler)
 }
 
