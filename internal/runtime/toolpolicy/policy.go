@@ -8,15 +8,6 @@ import (
 	"fkteams/internal/runtime/approval"
 )
 
-const (
-	metaReadOnly       = "fkteams:readOnly"
-	metaDestructive    = "fkteams:destructive"
-	metaSerialize      = "fkteams:serialize"
-	metaApprovalStore  = "fkteams:approvalStore"
-	metaExternalPath   = "fkteams:externalPath"
-	metaPolicyRequired = "fkteams:policyRequired"
-)
-
 type ToolPolicy struct {
 	ReadOnly      bool
 	Destructive   bool
@@ -183,11 +174,10 @@ func ShouldSerializeTool(toolName string) bool {
 }
 
 func IsPolicyRequired(info *runtimeport.ToolInfo) bool {
-	if info == nil || info.Extra == nil {
+	if info == nil {
 		return false
 	}
-	required, _ := info.Extra[metaPolicyRequired].(bool)
-	return required
+	return info.Policy.Required
 }
 
 // MarkPolicyRequired 标记工具必须在策略表中声明安全策略。
@@ -197,10 +187,7 @@ func MarkPolicyRequired(tools []runtimeport.Tool) error {
 		if err != nil {
 			return err
 		}
-		if info.Extra == nil {
-			info.Extra = make(map[string]any)
-		}
-		info.Extra[metaPolicyRequired] = true
+		info.Policy.Required = true
 	}
 	return nil
 }
@@ -211,34 +198,20 @@ func ClassifyTool(t runtimeport.Tool) error {
 	if err != nil {
 		return err
 	}
-	if info.Extra == nil {
-		info.Extra = make(map[string]any)
-	}
-	policyRequired, _ := info.Extra[metaPolicyRequired].(bool)
-
 	policy, ok := PolicyForTool(info.Name)
 	if !ok {
-		if policyRequired {
+		if info.Policy.Required {
 			return fmt.Errorf("missing tool policy: %s", info.Name)
 		}
 		return nil
 	}
-	if policy.ReadOnly {
-		info.Extra[metaReadOnly] = true
+	info.Policy = runtimeport.ToolPolicyMetadata{
+		ReadOnly:      policy.ReadOnly,
+		Destructive:   policy.Destructive,
+		Serialize:     policy.Serialize,
+		ApprovalStore: policy.ApprovalStore,
+		ExternalPath:  policy.ExternalPath,
 	}
-	if policy.Destructive {
-		info.Extra[metaDestructive] = true
-	}
-	if policy.Serialize {
-		info.Extra[metaSerialize] = true
-	}
-	if policy.ApprovalStore != "" {
-		info.Extra[metaApprovalStore] = policy.ApprovalStore
-	}
-	if policy.ExternalPath {
-		info.Extra[metaExternalPath] = true
-	}
-	delete(info.Extra, metaPolicyRequired)
 	return nil
 }
 

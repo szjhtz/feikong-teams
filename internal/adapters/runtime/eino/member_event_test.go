@@ -306,8 +306,8 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 			got = append(got, event)
 			return nil
 		},
-		InterruptHandler: func(_ context.Context, interrupts []runtimeport.Interrupt) (map[string]any, error) {
-			result := make(map[string]any, len(interrupts))
+		InterruptHandler: func(_ context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
+			result := make(runtimeport.InterruptDecisions, len(interrupts))
 			for _, ic := range interrupts {
 				if ic.MemberCallID == "parent-member-call" && ic.MemberToolName == "ask_fkagent_member" {
 					seenMemberInterrupt = true
@@ -467,7 +467,7 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 				}
 				return nil
 			},
-			InterruptHandler: func(context.Context, []runtimeport.Interrupt) (map[string]any, error) {
+			InterruptHandler: func(context.Context, []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
 				return nil, fmt.Errorf("member runtime ask reached parent interrupt handler")
 			},
 		})

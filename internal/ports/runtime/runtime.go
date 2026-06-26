@@ -256,8 +256,11 @@ type Interrupt struct {
 	MemberOrder    *int
 }
 
+// InterruptDecisions 描述一次 HITL 恢复的目标决策映射，key 为 interrupt ID。
+type InterruptDecisions map[string]any
+
 // InterruptHandler 决定如何恢复一组运行中断。
-type InterruptHandler func(ctx context.Context, interrupts []Interrupt) (map[string]any, error)
+type InterruptHandler func(ctx context.Context, interrupts []Interrupt) (InterruptDecisions, error)
 
 // EventSink 接收 runtime 产生的领域事件。
 type EventSink func(event.Event) error

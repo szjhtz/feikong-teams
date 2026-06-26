@@ -201,7 +201,7 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
 func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, publish func(taskstream.Event) error, stream *taskstream.Stream) turn.InterruptHandler {
 	channelHandler := turn.ChannelHandler(stream.InterruptCh())
-	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (map[string]any, error) {
+	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
 		// 检查是否为 ask_questions 中断
 		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
 			stream.BeginInterruptWithID(taskstream.InterruptAsk, askInterrupt.ID)

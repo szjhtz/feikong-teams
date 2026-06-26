@@ -130,10 +130,10 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 	if err := ClassifyTool(readTool); err != nil {
 		t.Fatalf("classify read tool: %v", err)
 	}
-	if readTool.info.Extra[metaReadOnly] != true {
+	if !readTool.info.Policy.ReadOnly {
 		t.Fatalf("expected read-only metadata for git_status")
 	}
-	if readTool.info.Extra[metaDestructive] == true {
+	if readTool.info.Policy.Destructive {
 		t.Fatalf("did not expect destructive metadata for git_status")
 	}
 
@@ -141,10 +141,10 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 	if err := ClassifyTool(writeTool); err != nil {
 		t.Fatalf("classify write tool: %v", err)
 	}
-	if writeTool.info.Extra[metaReadOnly] == true {
+	if writeTool.info.Policy.ReadOnly {
 		t.Fatalf("did not expect read-only metadata for git_clean")
 	}
-	if writeTool.info.Extra[metaDestructive] != true {
+	if !writeTool.info.Policy.Destructive {
 		t.Fatalf("expected destructive metadata for git_clean")
 	}
 }
@@ -154,13 +154,13 @@ func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
 	if err := ClassifyTool(fileTool); err != nil {
 		t.Fatalf("classify file tool: %v", err)
 	}
-	if fileTool.info.Extra[metaReadOnly] != true {
+	if !fileTool.info.Policy.ReadOnly {
 		t.Fatal("expected read-only metadata")
 	}
-	if fileTool.info.Extra[metaApprovalStore] != approval.StoreFile {
-		t.Fatalf("expected file approval metadata, got %v", fileTool.info.Extra[metaApprovalStore])
+	if fileTool.info.Policy.ApprovalStore != approval.StoreFile {
+		t.Fatalf("expected file approval metadata, got %v", fileTool.info.Policy.ApprovalStore)
 	}
-	if fileTool.info.Extra[metaExternalPath] != true {
+	if !fileTool.info.Policy.ExternalPath {
 		t.Fatal("expected external path metadata")
 	}
 
@@ -168,10 +168,10 @@ func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
 	if err := ClassifyTool(scriptTool); err != nil {
 		t.Fatalf("classify script tool: %v", err)
 	}
-	if scriptTool.info.Extra[metaDestructive] != true {
+	if !scriptTool.info.Policy.Destructive {
 		t.Fatal("expected destructive metadata")
 	}
-	if scriptTool.info.Extra[metaSerialize] != true {
+	if !scriptTool.info.Policy.Serialize {
 		t.Fatal("expected serialize metadata")
 	}
 }

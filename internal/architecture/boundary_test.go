@@ -319,6 +319,33 @@ func TestEinoRuntimeAdapterDoesNotResolveAppTools(t *testing.T) {
 	}
 }
 
+func TestToolPolicyUsesTypedMetadata(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	toolPort, err := os.ReadFile(filepath.Join(root, "internal", "ports", "runtime", "tool.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(toolPort), "Policy ToolPolicyMetadata") {
+		t.Fatal("runtime ToolInfo must expose typed Policy metadata")
+	}
+	policyFiles := []string{
+		filepath.Join(root, "internal", "runtime", "toolpolicy", "policy.go"),
+		filepath.Join(root, "internal", "runtime", "toolpolicy", "policy_test.go"),
+	}
+	for _, path := range policyFiles {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"fkteams:readOnly", "fkteams:destructive", "fkteams:serialize", "fkteams:approvalStore", "fkteams:externalPath", "fkteams:policyRequired"} {
+			if strings.Contains(string(data), forbidden) {
+				rel, _ := filepath.Rel(root, path)
+				t.Fatalf("%s contains %q; tool policy metadata belongs in runtime.ToolInfo.Policy", filepath.ToSlash(rel), forbidden)
+			}
+		}
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):

@@ -9,9 +9,19 @@ import (
 )
 
 type ToolInfo struct {
-	Name  string
-	Desc  string
-	Extra map[string]any
+	Name   string
+	Desc   string
+	Policy ToolPolicyMetadata
+	Extra  map[string]any
+}
+
+type ToolPolicyMetadata struct {
+	Required      bool
+	ReadOnly      bool
+	Destructive   bool
+	Serialize     bool
+	ApprovalStore string
+	ExternalPath  bool
 }
 
 type ToolInvocation struct {
@@ -75,11 +85,6 @@ func NewTool(info ToolInfo, handler any) (Tool, error) {
 }
 
 func (t *functionTool) Info(context.Context) (*ToolInfo, error) {
-	info := t.info
-	if info.Extra == nil {
-		info.Extra = make(map[string]any)
-	}
-	t.info = info
 	return &t.info, nil
 }
 

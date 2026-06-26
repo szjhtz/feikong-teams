@@ -655,7 +655,7 @@ func StreamEventsHandler() gin.HandlerFunc {
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
 func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) turn.InterruptHandler {
 	channelHandler := turn.ChannelHandler(stream.InterruptCh())
-	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (map[string]any, error) {
+	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
 		// 检查是否为 ask_questions 中断
 		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
 			stream.BeginInterruptWithID(taskstream.InterruptAsk, askInterrupt.ID)

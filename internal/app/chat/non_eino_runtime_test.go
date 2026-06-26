@@ -61,11 +61,11 @@ func TestServiceRunsThroughNonEinoRuntime(t *testing.T) {
 			published = append(published, event)
 			return nil
 		}),
-		OnInterrupt(func(ctx context.Context, interrupts []runtimeport.Interrupt) (map[string]any, error) {
+		OnInterrupt(func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
 			if len(interrupts) != 1 || interrupts[0].ID != "approval-1" {
 				t.Fatalf("interrupts = %#v, want approval-1", interrupts)
 			}
-			return map[string]any{"approval-1": "approved"}, nil
+			return runtimeport.InterruptDecisions{"approval-1": "approved"}, nil
 		}),
 	)
 	if err != nil {

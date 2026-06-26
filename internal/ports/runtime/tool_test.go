@@ -61,7 +61,7 @@ func TestFunctionToolInfoAndInputType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tool info: %v", err)
 	}
-	if info.Name != "echo" || info.Desc != "echo desc" || info.Extra == nil {
+	if info.Name != "echo" || info.Desc != "echo desc" || info.Extra != nil {
 		t.Fatalf("unexpected tool info: %#v", info)
 	}
 	typed, ok := tool.(ToolInputTypeProvider)
