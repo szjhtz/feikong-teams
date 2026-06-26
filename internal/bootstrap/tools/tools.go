@@ -10,16 +10,19 @@ import (
 	doctool "fkteams/internal/adapters/tools/builtin/doc"
 	exceltool "fkteams/internal/adapters/tools/builtin/excel"
 	fetchtool "fkteams/internal/adapters/tools/builtin/fetch"
+	filetool "fkteams/internal/adapters/tools/builtin/file"
 	gittool "fkteams/internal/adapters/tools/builtin/git"
 	schedulertool "fkteams/internal/adapters/tools/builtin/scheduler"
 	buntool "fkteams/internal/adapters/tools/builtin/script/bun"
 	uvtool "fkteams/internal/adapters/tools/builtin/script/uv"
 	searchtool "fkteams/internal/adapters/tools/builtin/search"
 	sshtool "fkteams/internal/adapters/tools/builtin/ssh"
+	todotool "fkteams/internal/adapters/tools/builtin/todo"
 	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/config"
 	apptools "fkteams/internal/app/tools"
+	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/app/tools/attachment"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
@@ -43,6 +46,62 @@ func RegisterDefaults() error {
 	registerOnce.Do(func() {
 		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.GlobalSessionManager))
 		apptools.RegisterMCPProvider(mcpadapter.DefaultProvider())
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "file",
+				DisplayName:   "文件",
+				Description:   "读取、搜索、创建和修改工作区文件，适合代码编辑、项目检查和文档整理。",
+				Category:      "文件",
+				Builtin:       true,
+				IncludedTools: []string{"file_read", "file_write", "file_search", "file_list"},
+			},
+			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+				fileTools, err := filetool.NewFileTools(appdata.WorkspaceDir())
+				if err != nil {
+					return nil, fmt.Errorf("初始化文件工具失败: %w", err)
+				}
+				return fileTools.GetTools()
+			},
+		}); err != nil {
+			registerErr = err
+			return
+		}
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "todo",
+				DisplayName:   "待办事项",
+				Description:   "管理任务清单和执行进度，适合长任务拆解、跟踪和复盘。",
+				Category:      "协作",
+				Builtin:       true,
+				IncludedTools: []string{"todo_add", "todo_update", "todo_list"},
+			},
+			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+				todoTools, err := todotool.NewTodoTools(appdata.SessionsDir())
+				if err != nil {
+					return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
+				}
+				return todoTools.GetTools()
+			},
+		}); err != nil {
+			registerErr = err
+			return
+		}
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "ask",
+				DisplayName:   "向用户提问",
+				Description:   "允许智能体在信息不足或需要选择时向用户提问，并等待用户回答后继续。",
+				Category:      "协作",
+				Builtin:       true,
+				IncludedTools: []string{"ask_questions"},
+			},
+			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+				return ask.GetTools()
+			},
+		}); err != nil {
+			registerErr = err
+			return
+		}
 		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "command",

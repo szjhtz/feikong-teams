@@ -638,6 +638,43 @@ func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
 	}
 }
 
+func TestStatefulBuiltinToolsLiveInAdapters(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/app/tools/file",
+		"internal/app/tools/todo",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+			t.Fatalf("%s exists; IO-backed tool implementations belong under internal/adapters/tools/builtin", rel)
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []string{
+		"internal/adapters/tools/builtin/file",
+		"internal/adapters/tools/builtin/todo",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("%s is required: %v", rel, err)
+		}
+	}
+}
+
+func TestAppToolRegistryDoesNotOwnBuiltinImplementations(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "app", "tools", "registry.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"builtinToolGroups", "NewFileTools", "NewTodoTools", "ask.GetTools"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("internal/app/tools/registry.go contains %q; bootstrap must own default tool composition", forbidden)
+		}
+	}
+}
+
 func TestHooksUseInternalPackages(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {

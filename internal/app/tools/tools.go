@@ -4,15 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"fkteams/internal/app/appdata"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
 )
-
-// workspacePath 返回工作区目录路径
-func workspacePath() string {
-	return appdata.WorkspaceDir()
-}
 
 func GetToolsByName(name string) ([]runtimeport.Tool, error) {
 	return GetToolsByNameWithCleaner(name, nil)

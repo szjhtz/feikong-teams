@@ -4,10 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"fkteams/internal/app/appdata"
-	"fkteams/internal/app/tools/ask"
-	"fkteams/internal/app/tools/file"
-	"fkteams/internal/app/tools/todo"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
 )
@@ -130,42 +126,7 @@ func (r *ToolGroupRegistry) Freeze() {
 }
 
 func defaultToolGroupRegistry() (*ToolGroupRegistry, error) {
-	registry := NewToolGroupRegistry()
-	for _, reg := range builtinToolGroups() {
-		if err := registry.Register(reg); err != nil {
-			return nil, err
-		}
-	}
-	return registry, nil
-}
-
-func builtinToolGroups() []ToolGroupRegistration {
-	return []ToolGroupRegistration{
-		{Info: ToolGroupInfo{
-			Name:          "file",
-			DisplayName:   "文件",
-			Description:   "读取、搜索、创建和修改工作区文件，适合代码编辑、项目检查和文档整理。",
-			Category:      "文件",
-			Builtin:       true,
-			IncludedTools: []string{"file_read", "file_write", "file_search", "file_list"},
-		}, Factory: fileToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "todo",
-			DisplayName:   "待办事项",
-			Description:   "管理任务清单和执行进度，适合长任务拆解、跟踪和复盘。",
-			Category:      "协作",
-			Builtin:       true,
-			IncludedTools: []string{"todo_create", "todo_update", "todo_list"},
-		}, Factory: todoToolGroup},
-		{Info: ToolGroupInfo{
-			Name:          "ask",
-			DisplayName:   "向用户提问",
-			Description:   "允许智能体在信息不足或需要选择时向用户提问，并等待用户回答后继续。",
-			Category:      "协作",
-			Builtin:       true,
-			IncludedTools: []string{"ask_questions"},
-		}, Factory: askToolGroup},
-	}
+	return NewToolGroupRegistry(), nil
 }
 
 var defaultRegistry, defaultRegistryErr = defaultToolGroupRegistry()
@@ -175,24 +136,4 @@ func RegisterToolGroup(reg ToolGroupRegistration) error {
 		return defaultRegistryErr
 	}
 	return defaultRegistry.Register(reg)
-}
-
-func fileToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	fileTools, err := file.NewFileTools(workspacePath())
-	if err != nil {
-		return nil, fmt.Errorf("初始化文件工具失败: %w", err)
-	}
-	return fileTools.GetTools()
-}
-
-func todoToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	todoTools, err := todo.NewTodoTools(appdata.SessionsDir())
-	if err != nil {
-		return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
-	}
-	return todoTools.GetTools()
-}
-
-func askToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	return ask.GetTools()
 }
