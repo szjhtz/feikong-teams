@@ -4,6 +4,7 @@ import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
 import { cn } from "@/lib/cn";
+import { pushAppPath } from "@/lib/navigation";
 import { chatMessageElementID, MessageList } from "./MessageList";
 import { QueuePanel } from "./QueuePanel";
 import { ChatInput } from "./ChatInput";
@@ -17,19 +18,56 @@ export function ChatPage() {
   const events = useAppSelector((state) => state.chat.events);
   const queue = useAppSelector((state) => state.chat.queue);
   const error = useAppSelector((state) => state.chat.error);
+  const [loadedSessionID, setLoadedSessionID] = useState("");
+  const [failedSessionID, setFailedSessionID] = useState("");
   const hasConversation = messages.length > 0 || events.length > 0 || queue.length > 0 || isProcessing || Boolean(error);
+  const currentSessionIsRunning = Boolean(isProcessing && runningSessionID === activeSessionID);
+  const isLoadingSession = Boolean(
+    activeSessionID &&
+      activeSessionID !== loadedSessionID &&
+      failedSessionID !== activeSessionID &&
+      !currentSessionIsRunning,
+  );
 
   useEffect(() => {
-    if (activeSessionID && !(isProcessing && runningSessionID === activeSessionID)) {
-      void dispatch(loadSessionDetail(activeSessionID));
+    if (!activeSessionID) {
+      setLoadedSessionID("");
+      setFailedSessionID("");
+      return;
     }
-  }, [activeSessionID, runningSessionID, isProcessing, dispatch]);
+    if (currentSessionIsRunning) {
+      setLoadedSessionID(activeSessionID);
+      return;
+    }
+    if (activeSessionID === loadedSessionID) return;
+
+    let cancelled = false;
+    setFailedSessionID("");
+    void dispatch(loadSessionDetail(activeSessionID))
+      .unwrap()
+      .then(() => {
+        if (!cancelled) setLoadedSessionID(activeSessionID);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setFailedSessionID(activeSessionID);
+        dispatch(chatActions.setError(loadError instanceof Error ? loadError.message : String(loadError)));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionID, loadedSessionID, currentSessionIsRunning, dispatch]);
 
   useEffect(() => {
     dispatch(chatActions.setConnectionState("connected"));
   }, [dispatch]);
 
-  if (!hasConversation) {
+  if (isLoadingSession) {
+    return <ChatSessionLoading />;
+  }
+
+  if (!activeSessionID && !hasConversation) {
     return <ChatHome />;
   }
 
@@ -39,6 +77,21 @@ export function ChatPage() {
       <QuestionNavigator />
       <QueuePanel />
       <ChatInput />
+    </div>
+  );
+}
+
+function ChatSessionLoading() {
+  return (
+    <div className="flex h-full items-center justify-center px-6">
+      <div className="sketch-surface flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl px-8 py-9 text-center">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-primary/70 [animation-delay:120ms]" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-primary/45 [animation-delay:240ms]" />
+        </div>
+        <div className="text-base text-muted-foreground">正在打开会话</div>
+      </div>
     </div>
   );
 }
@@ -145,7 +198,7 @@ function ChatHome() {
 
   function openPanel(panel: AppPanel, path: string) {
     dispatch(appActions.setActivePanel(panel));
-    if (location.pathname !== path) history.pushState(null, "", path);
+    pushAppPath(path);
   }
 
   return (

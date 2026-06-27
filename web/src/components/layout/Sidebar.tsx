@@ -22,14 +22,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { shortID, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { chatPath, panelPath, pushAppPath } from "@/lib/navigation";
 import { deleteSession, favoriteSession, renameSession } from "@/api/sessions";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 
-const panels: Array<{ key: AppPanel; label: string; path: string; icon: LucideIcon }> = [
-  { key: "files", label: "文件", path: "/files", icon: FolderOpen },
-  { key: "schedules", label: "任务", path: "/schedules", icon: CalendarClock },
-  { key: "skills", label: "技能", path: "/skills", icon: Sparkles },
-  { key: "config", label: "配置", path: "/config", icon: Settings },
+const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
+  { key: "files", label: "文件", icon: FolderOpen },
+  { key: "schedules", label: "任务", icon: CalendarClock },
+  { key: "skills", label: "技能", icon: Sparkles },
+  { key: "config", label: "配置", icon: Settings },
 ] as const;
 
 export function Sidebar() {
@@ -55,19 +56,19 @@ export function Sidebar() {
     dispatch(appActions.setActivePanel("chat"));
     dispatch(chatActions.setActiveSession(""));
     dispatch(chatActions.clearMessages());
-    if (location.pathname !== "/chat") history.pushState(null, "", "/chat");
+    pushAppPath(chatPath());
   }
 
   function switchPanel(panel: (typeof panels)[number]) {
     dispatch(appActions.setActivePanel(panel.key));
-    if (location.pathname !== panel.path) history.pushState(null, "", panel.path);
+    pushAppPath(panelPath(panel.key));
   }
 
   function openSession(sessionID: string) {
     setOpenMenuID("");
     dispatch(appActions.setActivePanel("chat"));
     dispatch(chatActions.setActiveSession(sessionID));
-    if (location.pathname !== "/chat") history.pushState(null, "", "/chat");
+    pushAppPath(chatPath(sessionID));
   }
 
   async function toggleFavorite(session: { session_id: string; favorite?: boolean }) {
@@ -93,6 +94,7 @@ export function Sidebar() {
     if (activeSessionID === sessionID) {
       dispatch(chatActions.setActiveSession(""));
       dispatch(chatActions.clearMessages());
+      pushAppPath(chatPath());
     }
     dispatch(loadSessions());
   }

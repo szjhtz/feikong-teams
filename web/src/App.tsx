@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Provider } from "react-redux";
 import { get } from "@/api/client";
 import { listAgents } from "@/api/agents";
-import { appActions } from "@/app/store";
+import { appActions, chatActions } from "@/app/store";
 import { store } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { AppShell } from "@/components/layout/AppShell";
@@ -15,6 +15,7 @@ import { SchedulePanel } from "@/features/schedules/SchedulePanel";
 import { SharePage } from "@/features/share/SharePage";
 import { SkillPanel } from "@/features/skills/SkillPanel";
 import { loadSessions } from "@/features/sessions/sessionThunks";
+import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import type { AgentInfo, VersionInfo } from "@/types/api";
 
 export function App() {
@@ -42,6 +43,17 @@ function Workspace() {
   const activePanel = useAppSelector((state) => state.app.activePanel);
 
   useEffect(() => {
+    const syncRoute = () => {
+      const panel = panelFromPath(location.pathname);
+      dispatch(appActions.setActivePanel(panel));
+      if (panel === "chat") {
+        const sessionID = chatSessionIDFromPath(location.pathname);
+        dispatch(chatActions.setActiveSession(sessionID));
+        if (!sessionID) dispatch(chatActions.clearMessages());
+      }
+    };
+
+    syncRoute();
     void dispatch(loadSessions());
     void get<VersionInfo>("/api/fkteams/version").then((version) => dispatch(appActions.setVersion(version))).catch(() => undefined);
     void listAgents()
@@ -51,8 +63,12 @@ function Workspace() {
       })
       .catch(() => undefined);
     const onAuthExpired = () => dispatch(appActions.setAuthExpired(true));
+    window.addEventListener("popstate", syncRoute);
     window.addEventListener("fkteams:auth-expired", onAuthExpired);
-    return () => window.removeEventListener("fkteams:auth-expired", onAuthExpired);
+    return () => {
+      window.removeEventListener("popstate", syncRoute);
+      window.removeEventListener("fkteams:auth-expired", onAuthExpired);
+    };
   }, [dispatch]);
 
   switch (activePanel) {

@@ -7,26 +7,12 @@ import type { FileEntry } from "@/types/files";
 import type { ScheduleTask } from "@/types/schedules";
 import type { SkillInfo } from "@/types/skills";
 import { storageKeys } from "@/lib/storage";
+import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 
 export type AppPanel = "chat" | "config" | "files" | "schedules" | "skills";
 
-function panelFromPath(path: string): AppPanel {
-  switch (path) {
-    case "/config":
-      return "config";
-    case "/files":
-      return "files";
-    case "/schedules":
-      return "schedules";
-    case "/skills":
-      return "skills";
-    default:
-      return "chat";
-  }
-}
-
 const initialChatState: ChatState = {
-  activeSessionID: localStorage.getItem(storageKeys.sessionID) || "",
+  activeSessionID: chatSessionIDFromPath(location.pathname),
   runningSessionID: "",
   currentAgent: "",
   mode: "team",

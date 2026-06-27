@@ -5,6 +5,7 @@ import { startStream, stopStream } from "@/api/chat";
 import { subscribeStream } from "@/api/stream";
 import { readJSON, storageKeys, writeJSON } from "@/lib/storage";
 import { cn } from "@/lib/cn";
+import { chatPath, pushAppPath } from "@/lib/navigation";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 import { ChatComposer } from "./ChatComposer";
 
@@ -33,6 +34,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
       });
       dispatch(chatActions.setActiveSession(result.session_id));
       dispatch(chatActions.setRunningSession(result.session_id));
+      pushAppPath(chatPath(result.session_id));
       dispatch(loadSessions());
       resetOffset(result.session_id);
       void subscribe(result.session_id, 0);
