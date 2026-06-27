@@ -141,6 +141,9 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		schedules := apiV1.Group("/schedules")
 		{
 			schedules.GET("", runtime.GetScheduleTasksHandler())
+			schedules.POST("", runtime.CreateScheduleTaskHandler())
+			schedules.PUT("/:id", runtime.UpdateScheduleTaskHandler())
+			schedules.DELETE("/:id", runtime.DeleteScheduleTaskHandler())
 			schedules.POST("/:id/cancel", runtime.CancelScheduleTaskHandler())
 			schedules.GET("/:id/result", runtime.GetTaskResultHandler())
 			schedules.GET("/:id/history", runtime.GetTaskHistoryHandler())

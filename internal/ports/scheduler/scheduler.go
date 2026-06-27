@@ -25,6 +25,7 @@ type Scheduler interface {
 	Start()
 	Stop()
 	AddTask(ctx context.Context, req AddTaskRequest) (*domainschedule.Task, error)
+	UpdateTask(ctx context.Context, taskID string, req AddTaskRequest) (*domainschedule.Task, error)
 	ListTasks(ctx context.Context, statusFilter domainschedule.Status) ([]domainschedule.Task, error)
 	CancelTask(ctx context.Context, taskID string) error
 	DeleteTask(ctx context.Context, taskID string) error

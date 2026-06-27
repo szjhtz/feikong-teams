@@ -67,6 +67,38 @@ func TestAddListCancelDeleteTask(t *testing.T) {
 	}
 }
 
+func TestUpdateTask(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+
+	task, err := s.AddTask(ctx, schedulerport.AddTaskRequest{
+		Task:      "生成日报",
+		ExecuteAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+
+	updated, err := s.UpdateTask(ctx, task.ID, schedulerport.AddTaskRequest{
+		Task:      "生成周报",
+		ExecuteAt: time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask: %v", err)
+	}
+	if updated.ID != task.ID || updated.Task != "生成周报" || updated.Status != domainschedule.StatusPending || !updated.OneTime {
+		t.Fatalf("updated task = %#v", updated)
+	}
+
+	tasks, err := s.ListTasks(ctx, "")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Task != "生成周报" {
+		t.Fatalf("tasks = %#v", tasks)
+	}
+}
+
 func TestAddTaskValidation(t *testing.T) {
 	s := newTestScheduler(t)
 	ctx := context.Background()

@@ -63,6 +63,18 @@ func (s *Service) AddTask(ctx context.Context, req schedulerport.AddTaskRequest)
 	return scheduler.AddTask(ctx, req)
 }
 
+// UpdateTask 更新非运行中的调度任务。
+func (s *Service) UpdateTask(ctx context.Context, taskID string, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
+	scheduler, err := s.requireScheduler()
+	if err != nil {
+		return nil, err
+	}
+	if taskID == "" {
+		return nil, fmt.Errorf("task ID is required")
+	}
+	return scheduler.UpdateTask(ctx, taskID, req)
+}
+
 // ListTasks 列出调度任务。
 func (s *Service) ListTasks(ctx context.Context, statusFilter domainschedule.Status) ([]domainschedule.Task, error) {
 	scheduler, err := s.requireScheduler()

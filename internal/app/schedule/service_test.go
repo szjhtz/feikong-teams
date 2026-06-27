@@ -22,6 +22,14 @@ func TestServiceDelegatesToSchedulerPort(t *testing.T) {
 		t.Fatalf("task = %#v, addReq = %#v", task, fake.addReq)
 	}
 
+	updated, err := service.UpdateTask(context.Background(), "task-1", schedulerport.AddTaskRequest{Task: "更新日报"})
+	if err != nil {
+		t.Fatalf("UpdateTask: %v", err)
+	}
+	if updated.Task != "更新日报" || fake.updateID != "task-1" {
+		t.Fatalf("updated = %#v, updateID = %s", updated, fake.updateID)
+	}
+
 	tasks, err := service.ListTasks(context.Background(), domainschedule.StatusPending)
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
@@ -52,6 +60,8 @@ func TestServiceRequiresScheduler(t *testing.T) {
 
 type fakeScheduler struct {
 	addReq     schedulerport.AddTaskRequest
+	updateReq  schedulerport.AddTaskRequest
+	updateID   string
 	listStatus domainschedule.Status
 	cancelID   string
 }
@@ -63,6 +73,12 @@ func (s *fakeScheduler) Stop()                                  {}
 func (s *fakeScheduler) AddTask(ctx context.Context, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
 	s.addReq = req
 	return &domainschedule.Task{ID: "task-1", Task: req.Task, Status: domainschedule.StatusPending}, nil
+}
+
+func (s *fakeScheduler) UpdateTask(ctx context.Context, taskID string, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
+	s.updateID = taskID
+	s.updateReq = req
+	return &domainschedule.Task{ID: taskID, Task: req.Task, Status: domainschedule.StatusPending}, nil
 }
 
 func (s *fakeScheduler) ListTasks(ctx context.Context, statusFilter domainschedule.Status) ([]domainschedule.Task, error) {

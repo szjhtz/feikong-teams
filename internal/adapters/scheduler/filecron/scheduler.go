@@ -111,41 +111,13 @@ func (s *Scheduler) ComputeNextRun(expr string, after time.Time) (time.Time, err
 
 // AddTask 创建调度任务。
 func (s *Scheduler) AddTask(ctx context.Context, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
-	if strings.TrimSpace(req.Task) == "" {
-		return nil, fmt.Errorf("task description is required")
-	}
-	if req.CronExpr == "" && req.ExecuteAt == "" {
-		return nil, fmt.Errorf("must provide cron_expr (recurring) or execute_at (one-time)")
-	}
-	if req.CronExpr != "" && req.ExecuteAt != "" {
-		return nil, fmt.Errorf("cron_expr and execute_at are mutually exclusive")
-	}
-
 	task := domainschedule.Task{
 		ID:        generateTaskID(),
-		Task:      strings.TrimSpace(req.Task),
 		CreatedAt: time.Now(),
 		Status:    domainschedule.StatusPending,
 	}
-
-	if req.CronExpr != "" {
-		expr := strings.TrimSpace(req.CronExpr)
-		nextRun, err := s.ParseCronExpr(expr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid cron expression: %w", err)
-		}
-		task.CronExpr = expr
-		task.NextRunAt = nextRun
-	} else {
-		executeAt, err := time.Parse(time.RFC3339, req.ExecuteAt)
-		if err != nil {
-			return nil, fmt.Errorf("invalid time format, use ISO 8601: %w", err)
-		}
-		if executeAt.Before(time.Now()) {
-			return nil, fmt.Errorf("execute_at must be in the future")
-		}
-		task.OneTime = true
-		task.NextRunAt = executeAt
+	if err := s.applyTaskSchedule(&task, req); err != nil {
+		return nil, err
 	}
 
 	s.mu.Lock()
@@ -160,6 +132,78 @@ func (s *Scheduler) AddTask(ctx context.Context, req schedulerport.AddTaskReques
 		return nil, fmt.Errorf("save task list: %w", err)
 	}
 	return &task, nil
+}
+
+// UpdateTask 更新非运行中的调度任务，并重新计算下次执行时间。
+func (s *Scheduler) UpdateTask(ctx context.Context, taskID string, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
+	if taskID == "" {
+		return nil, fmt.Errorf("task ID is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tasks, err := s.loadTasks()
+	if err != nil {
+		return nil, fmt.Errorf("load task list: %w", err)
+	}
+	for i := range tasks.Tasks {
+		if tasks.Tasks[i].ID != taskID {
+			continue
+		}
+		if tasks.Tasks[i].Status == domainschedule.StatusRunning {
+			return nil, fmt.Errorf("cannot update a running task")
+		}
+		next := tasks.Tasks[i]
+		next.Status = domainschedule.StatusPending
+		next.LastRunAt = nil
+		if err := s.applyTaskSchedule(&next, req); err != nil {
+			return nil, err
+		}
+		tasks.Tasks[i] = next
+		if err := s.saveTasks(tasks); err != nil {
+			return nil, fmt.Errorf("save task list: %w", err)
+		}
+		return &next, nil
+	}
+	return nil, fmt.Errorf("task not found")
+}
+
+func (s *Scheduler) applyTaskSchedule(task *domainschedule.Task, req schedulerport.AddTaskRequest) error {
+	if strings.TrimSpace(req.Task) == "" {
+		return fmt.Errorf("task description is required")
+	}
+	if req.CronExpr == "" && req.ExecuteAt == "" {
+		return fmt.Errorf("must provide cron_expr (recurring) or execute_at (one-time)")
+	}
+	if req.CronExpr != "" && req.ExecuteAt != "" {
+		return fmt.Errorf("cron_expr and execute_at are mutually exclusive")
+	}
+
+	task.Task = strings.TrimSpace(req.Task)
+	task.CronExpr = ""
+	task.OneTime = false
+	if req.CronExpr != "" {
+		expr := strings.TrimSpace(req.CronExpr)
+		nextRun, err := s.ParseCronExpr(expr)
+		if err != nil {
+			return fmt.Errorf("invalid cron expression: %w", err)
+		}
+		task.CronExpr = expr
+		task.NextRunAt = nextRun
+		return nil
+	}
+
+	executeAt, err := time.Parse(time.RFC3339, req.ExecuteAt)
+	if err != nil {
+		return fmt.Errorf("invalid time format, use ISO 8601: %w", err)
+	}
+	if executeAt.Before(time.Now()) {
+		return fmt.Errorf("execute_at must be in the future")
+	}
+	task.OneTime = true
+	task.NextRunAt = executeAt
+	return nil
 }
 
 // ListTasks 列出调度任务。

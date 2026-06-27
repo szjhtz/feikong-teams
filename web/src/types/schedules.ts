@@ -8,9 +8,16 @@ export interface ScheduleTask {
   created_at?: string;
 }
 
+export interface ScheduleTaskPayload {
+  task: string;
+  cron_expr?: string;
+  execute_at?: string;
+}
+
 export interface ScheduleHistoryEntry {
-  filename?: string;
-  created_at?: string;
-  status?: string;
-  content?: string;
+	filename?: string;
+	time?: string;
+	created_at?: string;
+	status?: string;
+	content?: string;
 }

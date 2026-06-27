@@ -104,6 +104,8 @@ func TestFormatTasksForDisplay(t *testing.T) {
 
 type fakeScheduler struct {
 	addReq     schedulerport.AddTaskRequest
+	updateReq  schedulerport.AddTaskRequest
+	updateID   string
 	listStatus domainschedule.Status
 	cancelID   string
 	deleteID   string
@@ -116,6 +118,12 @@ func (s *fakeScheduler) Stop()                                  {}
 func (s *fakeScheduler) AddTask(ctx context.Context, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
 	s.addReq = req
 	return &domainschedule.Task{ID: "task-1", Task: req.Task, Status: domainschedule.StatusPending}, nil
+}
+
+func (s *fakeScheduler) UpdateTask(ctx context.Context, taskID string, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
+	s.updateID = taskID
+	s.updateReq = req
+	return &domainschedule.Task{ID: taskID, Task: req.Task, Status: domainschedule.StatusPending}, nil
 }
 
 func (s *fakeScheduler) ListTasks(ctx context.Context, statusFilter domainschedule.Status) ([]domainschedule.Task, error) {
