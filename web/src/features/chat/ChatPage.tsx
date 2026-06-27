@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarClock, FolderOpen, Settings, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
+import { cn } from "@/lib/cn";
 import { chatMessageElementID, MessageList } from "./MessageList";
 import { QueuePanel } from "./QueuePanel";
 import { ChatInput } from "./ChatInput";
@@ -44,11 +45,25 @@ export function ChatPage() {
 
 function QuestionNavigator() {
   const messages = useAppSelector((state) => state.chat.messages);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [activeQuestionID, setActiveQuestionID] = useState("");
   const questions = messages.filter((message) => message.role === "user" && message.content.trim());
-  const orderedQuestions = questions.map((question, index) => ({ question, index: index + 1 })).reverse();
-  const visibleQuestions = orderedQuestions.slice(0, 8);
+  const orderedQuestions = questions.map((question, index) => ({ question, index: index + 1 }));
+  const latestQuestionID = orderedQuestions[orderedQuestions.length - 1]?.question.id || "";
+  const visibleQuestions = orderedQuestions.slice(-8);
+
+  useEffect(() => {
+    if (!latestQuestionID) return;
+    setActiveQuestionID(latestQuestionID);
+    window.requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      panel.scrollTo({ top: panel.scrollHeight });
+    });
+  }, [latestQuestionID]);
 
   function jumpTo(messageID: string) {
+    setActiveQuestionID(messageID);
     document.getElementById(chatMessageElementID(messageID))?.scrollIntoView({
       behavior: "smooth",
       block: "center",
@@ -67,7 +82,10 @@ function QuestionNavigator() {
           {visibleQuestions.map(({ question, index }) => (
             <button
               key={question.id}
-              className="block h-[2px] w-3.5 rounded-full bg-muted-foreground/35 transition-all hover:w-5 hover:bg-primary"
+              className={cn(
+                "block h-[2px] rounded-full transition-all hover:w-5 hover:bg-primary",
+                activeQuestionID === question.id ? "w-5 bg-primary" : "w-3.5 bg-muted-foreground/35",
+              )}
               onClick={() => jumpTo(question.id)}
               aria-label={`跳转到问题 ${index}`}
               title={question.content}
@@ -75,20 +93,39 @@ function QuestionNavigator() {
           ))}
         </div>
       </div>
-      <div className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-80 w-72 -translate-y-1/2 overflow-y-auto rounded-2xl bg-card/95 p-4 opacity-0 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+      <div
+        ref={panelRef}
+        className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-80 w-72 -translate-y-1/2 overflow-y-auto rounded-2xl bg-card/95 p-4 opacity-0 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+      >
         <div className="space-y-1.5">
           {orderedQuestions.map(({ question, index }) => (
             <button
               key={question.id}
-              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-muted"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-muted",
+                activeQuestionID === question.id && "bg-muted text-primary",
+              )}
               onClick={() => jumpTo(question.id)}
               title={question.content}
             >
-              <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/55 text-[11px] text-muted-foreground">
+              <span
+                className={cn(
+                  "flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border text-[11px]",
+                  activeQuestionID === question.id
+                    ? "border-primary/60 bg-primary/10 text-primary"
+                    : "border-border/70 bg-muted/55 text-muted-foreground",
+                )}
+              >
                 {index}
               </span>
               <span className="min-w-0 flex-1 truncate text-foreground/90">{question.content}</span>
-              <span className="h-[2px] w-3.5 shrink-0 rounded-full bg-muted-foreground/35" aria-hidden="true" />
+              <span
+                className={cn(
+                  "h-[2px] shrink-0 rounded-full",
+                  activeQuestionID === question.id ? "w-5 bg-primary" : "w-3.5 bg-muted-foreground/35",
+                )}
+                aria-hidden="true"
+              />
             </button>
           ))}
         </div>
