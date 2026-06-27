@@ -12,6 +12,7 @@ export interface SessionSummary {
 
 export interface MessageEvent {
   type: string;
+  sequence?: number;
   content?: string;
   tool_call?: ToolCallDTO;
   action?: {
@@ -22,6 +23,10 @@ export interface MessageEvent {
 
 export interface AgentMessage {
   agent_name?: string;
+  run_path?: string;
+  member_call_id?: string;
+  member_tool_name?: string;
+  member_name?: string;
   role?: string;
   content?: string;
   start_time?: string;
@@ -45,6 +50,7 @@ export interface ChatViewMessage {
   reasoningContent?: string;
   createdAt?: string;
   events: ChatEvent[];
+  hidden?: boolean;
 }
 
 export interface ChatState {

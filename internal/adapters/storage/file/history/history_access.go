@@ -37,7 +37,7 @@ func (h *HistoryRecorder) RecordUserMessage(msg message.Message) {
 
 }
 
-// RecordCancelled 记录用户取消任务事件，并标记当前仍活跃的消息。
+// RecordCancelled 收束当前活跃消息，并在历史末尾追加用户取消提示。
 func (h *HistoryRecorder) RecordCancelled(message string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -46,25 +46,22 @@ func (h *HistoryRecorder) RecordCancelled(message string) {
 		message = "任务已取消"
 	}
 	cancelEvent := MessageEvent{Type: MsgTypeCancelled, Content: message}
-	for _, key := range h.sortedActiveKeysLocked() {
-		ctx := h.activeMessages[key]
-		if ctx == nil || messageHasEventType(ctx.msg.Events, MsgTypeCancelled) {
-			continue
-		}
-		ctx.msg.Events = append(ctx.msg.Events, cancelEvent)
-	}
 	h.finalizeAllActiveMessages()
-	if len(h.messages) > 0 && h.messages[len(h.messages)-1].AgentName == "系统" && messageHasEventType(h.messages[len(h.messages)-1].Events, MsgTypeCancelled) {
+	if len(h.messages) > 0 && isSystemAgentName(h.messages[len(h.messages)-1].AgentName) && messageHasEventType(h.messages[len(h.messages)-1].Events, MsgTypeCancelled) {
 		return
 	}
 	h.messages = append(h.messages, AgentMessage{
-		AgentName: "系统",
+		AgentName: "system",
 		StartTime: time.Now(),
 		EndTime:   time.Now(),
 		Events: []MessageEvent{
 			cancelEvent,
 		},
 	})
+}
+
+func isSystemAgentName(agentName string) bool {
+	return agentName == "system" || agentName == "系统"
 }
 
 func messageHasEventType(events []MessageEvent, typ MsgEventType) bool {

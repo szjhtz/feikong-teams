@@ -1,37 +1,46 @@
-import { CheckCircle2, Cpu, Loader2, UserRoundCheck } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import type { ToolCallDTO } from "@/types/events";
-import { Badge } from "@/components/ui/badge";
-import { Panel, PanelBody } from "@/components/ui/panel";
+import { cn } from "@/lib/cn";
 
-export function ToolCallCard({ tool }: { tool: ToolCallDTO }) {
-  const isAgent = tool.kind === "agent";
-  const isDone = tool.status === "completed";
+export function ToolCallCard({ tool, children }: { tool: ToolCallDTO; children?: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const isRunning = tool.status === "running" || tool.status === "pending";
+  const isError = tool.status === "error";
+  const title = (tool.display_name || tool.name || "tool").toUpperCase();
   return (
-    <Panel className={isAgent ? "border-emerald-200 bg-emerald-50/45" : "bg-muted/25"}>
-      <PanelBody className="space-y-2 p-3">
-        <div className="flex items-center gap-2 text-sm">
-          {isAgent ? <UserRoundCheck className="h-4 w-4 text-emerald-600" /> : <Cpu className="h-4 w-4 text-muted-foreground" />}
-          <span className="font-medium">{isAgent ? "子智能体" : "工具调用"}</span>
-          <code className="rounded bg-background px-1.5 py-0.5 text-xs">{tool.display_name || tool.name}</code>
-          <Badge>{tool.kind || "tool"}</Badge>
-          {tool.member_name || tool.target ? <Badge>{tool.member_name || tool.target}</Badge> : null}
-          <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-            {isDone ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {isDone ? "完成" : "运行中"}
-          </span>
+    <div className="text-sm">
+      <button
+        className={cn(
+          "flex items-center gap-3 rounded-lg px-2 py-2 text-left tracking-[0.12em] transition-colors hover:bg-muted/70",
+          isError ? "text-destructive" : isRunning ? "text-amber-600" : "text-muted-foreground",
+        )}
+        onClick={() => setOpen(!open)}
+        type="button"
+      >
+        <span
+          className={cn("h-2 w-2 rounded-full", isError ? "bg-destructive" : isRunning ? "bg-amber-400" : "bg-muted-foreground/35")}
+        />
+        <span className="font-semibold">{title}</span>
+        <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
+      </button>
+      {open ? (
+        <div className="ml-7 space-y-2 border-l border-border/60 pl-4 pt-2">
+          {tool.member_name || tool.target ? <div className="text-xs text-muted-foreground">{tool.member_name || tool.target}</div> : null}
+          {tool.arguments ? (
+            <pre className="max-h-40 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-lg bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
+              {formatArgs(tool.arguments)}
+            </pre>
+          ) : null}
+          {tool.result ? (
+            <pre className="max-h-56 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-lg bg-muted/45 p-3 text-xs leading-5 text-foreground">
+              {formatResult(tool.result)}
+            </pre>
+          ) : null}
+          {children}
         </div>
-        {tool.arguments ? (
-          <pre className="sketch-inset max-h-40 overflow-auto rounded-md p-2 text-xs text-muted-foreground">
-            {formatArgs(tool.arguments)}
-          </pre>
-        ) : null}
-        {tool.result ? (
-          <pre className="sketch-inset max-h-56 overflow-auto rounded-md p-2 text-xs">
-            {formatResult(tool.result)}
-          </pre>
-        ) : null}
-      </PanelBody>
-    </Panel>
+      ) : null}
+    </div>
   );
 }
 
@@ -46,6 +55,15 @@ function formatArgs(value: string) {
 function formatResult(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (trimmed.length > 5000) return `${trimmed.slice(0, 5000)}\n...`;
-  return trimmed;
+  const formatted = formatJSON(trimmed);
+  if (formatted.length > 5000) return `${formatted.slice(0, 5000)}\n...`;
+  return formatted;
+}
+
+function formatJSON(value: string) {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
 }

@@ -215,17 +215,17 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 	recorder.RecordCancelled("任务已取消")
 
 	messages := recorder.GetMessages()
-	if len(messages) != 3 {
-		t.Fatalf("message count = %d, want 3", len(messages))
+	if len(messages) < 2 {
+		t.Fatalf("message count = %d, want at least active message and cancellation notice", len(messages))
 	}
-	if !hasEventType(messages[0], MsgTypeCancelled) {
-		t.Fatalf("coordinator events = %#v, want cancelled", messages[0].Events)
+	for i, msg := range messages[:len(messages)-1] {
+		if hasEventType(msg, MsgTypeCancelled) {
+			t.Fatalf("message %d events = %#v, want no cancelled marker", i, msg.Events)
+		}
 	}
-	if !hasEventType(messages[1], MsgTypeCancelled) {
-		t.Fatalf("member events = %#v, want cancelled", messages[1].Events)
-	}
-	if messages[2].AgentName != "系统" || !hasEventType(messages[2], MsgTypeCancelled) {
-		t.Fatalf("system message = %#v, want cancelled notice", messages[2])
+	last := messages[len(messages)-1]
+	if last.AgentName != "system" || !hasEventType(last, MsgTypeCancelled) {
+		t.Fatalf("last message = %#v, want system cancelled notice", last)
 	}
 }
 

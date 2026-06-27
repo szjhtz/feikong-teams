@@ -111,8 +111,27 @@ const chatSlice = createSlice({
           });
         }
       }
-      if (isRenderableMessageEvent(event)) {
-        const key = `${event.message_id || event.stream_id || event.agent_name || "assistant"}`;
+      if (isMemberActivityEvent(event)) {
+        const key = event.message_id || event.member_call_id || event.member_name || event.agent_name || "member";
+        const id = event.message_id || `member-${key}`;
+        let message = state.messages.find((item) => item.id === id);
+        if (!message) {
+          message = {
+            id,
+            role: "assistant",
+            agent: event.member_name || event.agent_name,
+            content: "",
+            events: [],
+            hidden: true,
+          };
+          const parentIndex = findParentToolMessageIndex(state.messages, event);
+          if (parentIndex >= 0) state.messages.splice(parentIndex + 1, 0, message);
+          else state.messages.push(message);
+        }
+        message.events.push(event);
+      }
+      if (shouldAttachAssistantMessage(event)) {
+        const key = assistantMessageKey(event);
         let message = state.messages.find((item) => item.id === key);
         if (!message) {
           message = {
@@ -125,7 +144,7 @@ const chatSlice = createSlice({
           state.messages.push(message);
         }
         const content = eventText(event);
-        if (event.type === "message_delta" && content) {
+        if (event.type === "message_delta" && isOutputDelta(event) && content) {
           message.content += content;
         }
         message.events.push(event);
@@ -144,6 +163,19 @@ const chatSlice = createSlice({
         state.runningSessionID = "";
         state.statusText = String(event.message || event.content || "");
       }
+      if (event.type === "cancelled") {
+        const content = eventText(event) || "任务已取消";
+        const exists = state.messages.some((message) => message.role === "system" && message.events.some((item) => sameEventIdentity(item, event)));
+        if (!exists) {
+          state.messages.push({
+            id: `cancelled-${event.stream_event_id ?? event.sequence ?? Date.now()}`,
+            role: "system",
+            content,
+            createdAt: event.created_at,
+            events: [event],
+          });
+        }
+      }
     },
     setQueue(state, action: PayloadAction<QueueItem[]>) {
       state.queue = action.payload;
@@ -158,17 +190,79 @@ function eventText(event: ChatEvent) {
   return String(event.content || event.delta || event.message || "");
 }
 
-function isRenderableMessageEvent(event: ChatEvent) {
+function sameEventIdentity(left: ChatEvent, right: ChatEvent) {
+  if (left.event_id && right.event_id) return left.event_id === right.event_id;
+  if (left.run_id && right.run_id && left.sequence && right.sequence) return left.run_id === right.run_id && left.sequence === right.sequence;
+  return false;
+}
+
+function shouldAttachAssistantMessage(event: ChatEvent) {
+  if (isMemberActivityEvent(event)) {
+    return false;
+  }
   if (event.type === "message_start") {
     return event.role !== "tool";
   }
-  if (event.type !== "message_delta") {
-    return false;
+  if (event.type === "message_delta") {
+    return event.role !== "tool" && event.delta_kind !== "tool_args" && event.delta_kind !== "tool_result";
   }
-  if (event.role === "tool") {
-    return false;
+  if (hasToolActivity(event)) {
+    return true;
   }
-  return event.delta_kind !== "reasoning" && event.delta_kind !== "tool_args" && event.delta_kind !== "tool_result";
+  return false;
+}
+
+function assistantMessageKey(event: ChatEvent) {
+  if (event.message_id) return event.message_id;
+  if (event.stream_id && event.delta_kind) {
+    const suffix = `:${event.delta_kind}`;
+    if (event.stream_id.endsWith(suffix)) return event.stream_id.slice(0, -suffix.length);
+  }
+  return event.stream_id || event.agent_name || "assistant";
+}
+
+function isOutputDelta(event: ChatEvent) {
+  return event.delta_kind === "output" || event.delta_kind === "";
+}
+
+function hasToolActivity(event: ChatEvent) {
+  return Boolean(event.tool_calls?.length || event.tool_call || event.tool_name || event.tool_call_ref || event.tool_call_id);
+}
+
+function isMemberActivityEvent(event: ChatEvent) {
+  return Boolean(event.is_member_event || event.member_call_id || event.member_name || event.member_tool_name || event.parent_tool_call_id);
+}
+
+function findParentToolMessageIndex(messages: ChatViewMessage[], event: ChatEvent) {
+  const refs = new Set(
+    [event.parent_tool_call_id, event.member_call_id, event.tool_call_id, event.tool_call_ref]
+      .filter(Boolean)
+      .flatMap((value) => {
+        const ref = String(value);
+        return ref.startsWith("tool_call:") ? [ref, ref.slice("tool_call:".length)] : [ref, `tool_call:${ref}`];
+      }),
+  );
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messageHasToolRef(messages[i], refs, event.member_tool_name)) return i;
+  }
+  return -1;
+}
+
+function messageHasToolRef(message: ChatViewMessage, refs: Set<string>, memberToolName?: string) {
+  for (const event of message.events || []) {
+    for (const tool of event.tool_calls || []) {
+      if (toolMatchesParent(tool, refs, memberToolName)) return true;
+    }
+    if (event.tool_call && toolMatchesParent(event.tool_call, refs, memberToolName)) return true;
+    if (event.tool_call_id && refs.has(event.tool_call_id)) return true;
+    if (event.tool_call_ref && refs.has(event.tool_call_ref)) return true;
+    if (memberToolName && event.tool_name === memberToolName) return true;
+  }
+  return false;
+}
+
+function toolMatchesParent(tool: { id?: string; ref?: string; name?: string }, refs: Set<string>, memberToolName?: string) {
+  return Boolean((tool.id && refs.has(tool.id)) || (tool.ref && refs.has(tool.ref)) || (memberToolName && tool.name === memberToolName));
 }
 
 const sessionsSlice = createSlice({
