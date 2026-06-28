@@ -378,9 +378,20 @@ function ModePicker({
 }) {
   const selected = modeOptions.find((option) => option.value === mode) || modeOptions[0];
   const label = selectedAgent ? `智能体 · ${selectedAgent}` : `${selected.label} · ${selected.value}`;
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeMenuOnOutsidePointer(event: PointerEvent) {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      onOpenChange(false);
+    }
+    document.addEventListener("pointerdown", closeMenuOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeMenuOnOutsidePointer);
+  }, [onOpenChange, open]);
 
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <button
         className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-0"
         type="button"

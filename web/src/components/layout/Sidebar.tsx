@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
@@ -36,6 +36,7 @@ const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
 export function Sidebar() {
   const dispatch = useAppDispatch();
   const [openMenuID, setOpenMenuID] = useState("");
+  const sessionMenuRef = useRef<HTMLDivElement | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const sidebarOpen = useAppSelector((state) => state.app.sidebarOpen);
@@ -50,6 +51,16 @@ export function Sidebar() {
     return text.includes(searchQuery.toLowerCase());
   });
   const groups = groupSessions(sortedSessions);
+
+  useEffect(() => {
+    if (!openMenuID) return;
+    function closeMenuOnOutsidePointer(event: PointerEvent) {
+      if (sessionMenuRef.current?.contains(event.target as Node)) return;
+      setOpenMenuID("");
+    }
+    document.addEventListener("pointerdown", closeMenuOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeMenuOnOutsidePointer);
+  }, [openMenuID]);
 
   function handleNewSession() {
     setOpenMenuID("");
@@ -172,6 +183,7 @@ export function Sidebar() {
                   {group.sessions.map((session) => (
                     <div
                       key={session.session_id}
+                      ref={openMenuID === session.session_id ? sessionMenuRef : undefined}
                       className={cn(
                         "group relative mb-1 flex w-full items-start gap-1 rounded-xl py-2 pl-2.5 pr-1.5 text-base transition-colors hover:bg-card/70",
                         activeSessionID === session.session_id && "bg-card/80 text-accent-foreground",
