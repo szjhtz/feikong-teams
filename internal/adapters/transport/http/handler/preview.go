@@ -24,12 +24,12 @@ import (
 
 // PreviewLink 预览链接信息
 type PreviewLink struct {
-	ID        string   `json:"id"`
-	FilePath  string   `json:"file_path"`
-	FilePaths []string `json:"file_paths,omitempty"`
-	Password  string   `json:"password,omitempty"`
-	ExpiresAt int64    `json:"expires_at"`
-	CreatedAt int64    `json:"created_at"`
+	ID          string   `json:"id"`
+	FilePath    string   `json:"file_path"`
+	FilePaths   []string `json:"file_paths,omitempty"`
+	HasPassword bool     `json:"has_password"`
+	ExpiresAt   int64    `json:"expires_at"`
+	CreatedAt   int64    `json:"created_at"`
 }
 
 // PreviewLinkStore 保存单个 HTTP runtime 的预览分享链接。
@@ -256,11 +256,12 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 		}
 
 		OK(c, PreviewLink{
-			ID:        linkID,
-			FilePath:  filePath,
-			FilePaths: cleanPaths,
-			ExpiresAt: expiresAtUnix(entry.ExpiresAt),
-			CreatedAt: entry.CreatedAt.Unix(),
+			ID:          linkID,
+			FilePath:    filePath,
+			FilePaths:   cleanPaths,
+			HasPassword: entry.PasswordHash != "",
+			ExpiresAt:   expiresAtUnix(entry.ExpiresAt),
+			CreatedAt:   entry.CreatedAt.Unix(),
 		})
 	}
 }
@@ -548,11 +549,12 @@ func (rt *Runtime) ListPreviewLinksHandler() gin.HandlerFunc {
 				filePath = fmt.Sprintf("%d 个文件", len(entry.FilePaths))
 			}
 			links = append(links, PreviewLink{
-				ID:        id,
-				FilePath:  filePath,
-				FilePaths: entry.FilePaths,
-				ExpiresAt: expiresAtUnix(entry.ExpiresAt),
-				CreatedAt: entry.CreatedAt.Unix(),
+				ID:          id,
+				FilePath:    filePath,
+				FilePaths:   entry.FilePaths,
+				HasPassword: entry.PasswordHash != "",
+				ExpiresAt:   expiresAtUnix(entry.ExpiresAt),
+				CreatedAt:   entry.CreatedAt.Unix(),
 			})
 		}
 

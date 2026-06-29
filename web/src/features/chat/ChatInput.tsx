@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
-import { startStream, stopStream } from "@/api/chat";
+import { sendSteering, startStream, stopStream } from "@/api/chat";
 import { listFiles, searchFiles } from "@/api/files";
 import { subscribeStream } from "@/api/stream";
 import { readJSON, storageKeys, writeJSON } from "@/lib/storage";
@@ -26,18 +26,27 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
 
   async function submit() {
     const message = value.trim();
-    if (!message || isProcessing) return;
+    if (!message) return;
+    const targetSessionID = runningSessionID || sessionID;
+    const queueing = Boolean(isProcessing && targetSessionID);
     setValue("");
     dispatch(chatActions.setError(undefined));
-    dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: message, createdAt: new Date().toISOString() }));
-    dispatch(chatActions.setProcessing(true));
+    if (!queueing) {
+      dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: message, createdAt: new Date().toISOString() }));
+      dispatch(chatActions.setProcessing(true));
+    }
     try {
+      if (queueing && targetSessionID) {
+        await sendSteering(targetSessionID, message);
+        return;
+      }
       const result = await startStream({
-        session_id: sessionID || undefined,
+        session_id: targetSessionID || undefined,
         message,
         mode,
         agent_name: currentAgent || undefined,
       });
+      if (result.status === "queued") return;
       dispatch(chatActions.setActiveSession(result.session_id));
       dispatch(chatActions.setRunningSession(result.session_id));
       pushAppPath(chatPath(result.session_id));
@@ -46,7 +55,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
       void subscribe(result.session_id, 0);
     } catch (error) {
       dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
-      dispatch(chatActions.setProcessing(false));
+      if (!queueing) dispatch(chatActions.setProcessing(false));
     }
   }
 

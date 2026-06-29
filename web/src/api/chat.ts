@@ -11,6 +11,9 @@ export interface StartStreamRequest {
 export interface StartStreamResponse {
   session_id: string;
   run_id?: string;
+  status?: "processing" | "queued" | string;
+  queue_kind?: string;
+  queued_count?: number;
 }
 
 export function startStream(req: StartStreamRequest) {

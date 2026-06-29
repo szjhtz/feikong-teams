@@ -2,7 +2,6 @@ import {
   Archive,
   ArrowLeft,
   Code2,
-  Copy,
   Download,
   File,
   FilePenLine,
@@ -11,12 +10,13 @@ import {
   Image,
   RefreshCcw,
   Save,
+  Share2,
   Trash2,
   Upload,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { createPreviewLink, deleteFile, listFiles, readFileContent, saveFileContent, uploadFile } from "@/api/files";
+import { deleteFile, listFiles, readFileContent, saveFileContent, uploadFile } from "@/api/files";
 import { filesActions, appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { formatBytes, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { FileContent, FileEntry } from "@/types/files";
+import { FileShareDialog } from "./FileShareDialog";
 
 export function FileManager() {
   const dispatch = useAppDispatch();
@@ -35,7 +36,7 @@ export function FileManager() {
   const [draft, setDraft] = useState("");
   const [editorError, setEditorError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [linkingPath, setLinkingPath] = useState("");
+  const [shareTarget, setShareTarget] = useState<FileEntry | null>(null);
 
   async function load(nextPath = path) {
     const files = await listFiles(nextPath);
@@ -78,23 +79,6 @@ export function FileManager() {
       setEditorError(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function copyPreviewLink(filePath: string) {
-    setEditorError("");
-    setLinkingPath(filePath);
-    try {
-      const link = await createPreviewLink(filePath);
-      const id = link.link_id || link.id;
-      if (!id) throw new Error("preview link id is empty");
-      const url = `${window.location.origin}/p/${encodeURIComponent(id)}`;
-      await navigator.clipboard.writeText(url);
-      dispatch(appActions.showToast("预览链接已复制"));
-    } catch (error) {
-      setEditorError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLinkingPath("");
     }
   }
 
@@ -221,14 +205,8 @@ export function FileManager() {
                             <Button size="icon" variant="ghost" onClick={() => void editFile(entry.path)} aria-label="编辑">
                               <FilePenLine className="h-4 w-4" />
                             </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => void copyPreviewLink(entry.path)}
-                              aria-label="生成预览链接"
-                              disabled={linkingPath === entry.path}
-                            >
-                              <Copy className="h-4 w-4" />
+                            <Button size="icon" variant="ghost" onClick={() => setShareTarget(entry)} aria-label="分享文件">
+                              <Share2 className="h-4 w-4" />
                             </Button>
                             <Button size="icon" variant="ghost" onClick={() => window.open(`/api/fkteams/files/download?path=${encodeURIComponent(entry.path)}`)} aria-label="下载">
                               <Download className="h-4 w-4" />
@@ -252,6 +230,7 @@ export function FileManager() {
           )}
         </PanelBody>
       </Panel>
+      <FileShareDialog file={shareTarget} onClose={() => setShareTarget(null)} />
     </div>
   );
 }

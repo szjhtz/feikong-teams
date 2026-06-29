@@ -14,10 +14,12 @@ export interface MessageEvent {
   type: string;
   sequence?: number;
   content?: string;
+  detail?: string;
   tool_call?: ToolCallDTO;
   action?: {
     action_type?: string;
     content?: string;
+    detail?: string;
   };
 }
 

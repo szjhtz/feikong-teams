@@ -2,15 +2,27 @@ import type { SessionDetail } from "@/types/chat";
 import { del, get, post } from "./client";
 
 export interface SessionShare {
-  share_id: string;
+  id?: string;
+  share_id?: string;
   session_id: string;
   title?: string;
-  created_at?: string;
-  expires_at?: string;
+  has_password?: boolean;
+  allow_tool_details?: boolean;
+  message_count?: number;
+  created_at?: string | number;
+  expires_at?: string | number;
+  last_accessed_at?: string | number;
 }
 
-export function createSessionShare(sessionID: string, password = "") {
-  return post<SessionShare>("/api/fkteams/session-shares", { session_id: sessionID, password });
+export interface CreateSessionShareOptions {
+  password?: string;
+  expires_in?: number;
+  allow_tool_details?: boolean;
+}
+
+export function createSessionShare(sessionID: string, options: CreateSessionShareOptions | string = {}) {
+  const payload = typeof options === "string" ? { password: options } : options;
+  return post<SessionShare>("/api/fkteams/session-shares", { session_id: sessionID, ...payload });
 }
 
 export function listSessionShares() {

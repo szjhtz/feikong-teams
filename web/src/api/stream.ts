@@ -37,6 +37,19 @@ export function moveQueueItem(sessionID: string, queueID: string, direction: "up
   );
 }
 
+export function submitAskResponse(
+  sessionID: string,
+  askID: string,
+  payload: { selected?: string[]; free_text?: string },
+) {
+  return post<{ message: string }>("/api/fkteams/stream/ask-response", {
+    session_id: sessionID,
+    ask_id: askID,
+    selected: payload.selected || [],
+    free_text: payload.free_text || "",
+  });
+}
+
 export async function subscribeStream(
   sessionID: string,
   offset: number,

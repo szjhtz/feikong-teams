@@ -34,6 +34,8 @@ export interface ToolCallDTO {
 export interface QueueItem {
   queue_id: string;
   kind: "steering" | "follow_up" | string;
+  text?: string;
+  display_text?: string;
   content?: string;
   message?: string;
   created_at?: string;
@@ -69,6 +71,11 @@ export interface ChatEvent {
   tool_calls?: ToolCallDTO[];
   tool_call?: ToolCallDTO;
   action_type?: string;
+  detail?: string;
+  ask_id?: string;
+  question?: string;
+  options?: string[];
+  multi_select?: boolean;
   error?: string;
   message?: string;
   queue?: QueueItem[];

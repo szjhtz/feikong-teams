@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import anime from "animejs";
-import { Check, ChevronRight, Copy, GitBranch } from "lucide-react";
-import { useAppSelector } from "@/app/hooks";
+import { Check, ChevronRight, CircleHelp, Copy, GitBranch, Send } from "lucide-react";
+import { useAppDispatch, useAppSelector } from "@/app/hooks";
+import { chatActions } from "@/app/store";
+import { submitAskResponse } from "@/api/stream";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -10,19 +14,35 @@ import type { ChatEvent, ToolCallDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
 
 type ToolActivity = ToolCallDTO & { message_id?: string };
+interface AskActivity {
+  id: string;
+  sessionID?: string;
+  question: string;
+  options: string[];
+  multiSelect: boolean;
+  selected: string[];
+  freeText: string;
+  answered: boolean;
+  memberName?: string;
+  toolName?: string;
+}
 
 export function MessageList() {
+  const dispatch = useAppDispatch();
   const messages = useAppSelector((state) => state.chat.messages);
   const events = useAppSelector((state) => state.chat.events);
   const isProcessing = useAppSelector((state) => state.chat.isProcessing);
   const statusText = useAppSelector((state) => state.chat.statusText);
   const error = useAppSelector((state) => state.chat.error);
+  const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const previousMessageCountRef = useRef(0);
+  const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
   const displayEvents = eventsForDisplay(messages, events);
   const reasoningByMessage = collectReasoningBlocks(displayEvents);
   const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
   const memberEvents = collectMemberActivities(displayEvents);
+  const asks = collectAskActivities(displayEvents, submittedAskIDs);
   const memberByCallID = new Map(memberEvents.map((member) => [member.id, member]));
   const memberByMessageID = mapMembersByMessageID(memberEvents);
   const timelineMessages = dedupeAdjacentSystemMessages(
@@ -34,7 +54,7 @@ export function MessageList() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [timelineMessages, isProcessing, statusText, error, toolEventsKey(displayEvents)]);
+  }, [timelineMessages, asks.length, isProcessing, statusText, error, toolEventsKey(displayEvents)]);
 
   useEffect(() => {
     const previous = previousMessageCountRef.current;
@@ -54,7 +74,7 @@ export function MessageList() {
   }
 
   return (
-    <div className="chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-8">
+    <div className="chat-scroll chat-thread-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-8">
       <div className="mx-auto w-full max-w-4xl space-y-6">
         {timelineMessages.map((message) => {
           if (message.hidden) {
@@ -78,10 +98,28 @@ export function MessageList() {
             </div>
           );
         })}
+        {asks.map((ask) => (
+          <AskPanel
+            key={ask.id}
+            ask={ask}
+            sessionID={ask.sessionID || activeSessionID}
+            onAnswered={(selected, freeText) => {
+              setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
+              dispatch(chatActions.receiveEvent({
+                type: "action",
+                action_type: "ask_response",
+                session_id: ask.sessionID || activeSessionID,
+                ask_id: ask.id,
+                detail: ask.id,
+                content: askResponseSummary(selected, freeText),
+              }));
+            }}
+          />
+        ))}
         {isProcessing ? (
           <div className="message-row text-lg text-muted-foreground">
             <div>
-              {statusText || "处理中"}
+              {loadingStatusText(statusText)}
               <span className="ml-1 inline-flex w-8 justify-between align-middle">
                 <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
                 <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45" />
@@ -101,6 +139,11 @@ export function MessageList() {
       </div>
     </div>
   );
+}
+
+function loadingStatusText(statusText?: string) {
+  if (!statusText || statusText === "处理中" || statusText === "开始处理您的请求...") return "思考中...";
+  return statusText;
 }
 
 export function chatMessageElementID(messageID: string) {
@@ -204,7 +247,7 @@ function ActivityList({
   nestedMemberIDs: Set<string>;
   renderedToolKeys: Set<string>;
 }) {
-        const visibleTools = tools.slice(-12).filter((tool) => !renderedToolKeys.has(toolActivityKey(tool)));
+  const visibleTools = tools.slice(-12).filter((tool) => !renderedToolKeys.has(toolActivityKey(tool)));
   if (!visibleTools.length) return null;
   return (
     <div className="space-y-2">
@@ -300,14 +343,110 @@ function MessageActions({ content, align = "left", time }: { content: string; al
   );
 }
 
+function AskPanel({
+  ask,
+  sessionID,
+  onAnswered,
+}: {
+  ask: AskActivity;
+  sessionID?: string;
+  onAnswered: (selected: string[], freeText: string) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(ask.selected);
+  const [freeText, setFreeText] = useState(ask.freeText);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const hasOptions = ask.options.length > 0;
+  const canSubmit = Boolean(sessionID && ask.id && !ask.answered && !submitting && (hasOptions ? selected.length > 0 || freeText.trim() : freeText.trim()));
+
+  function toggleOption(option: string) {
+    setSelected((current) => {
+      if (!ask.multiSelect) return current.includes(option) ? [] : [option];
+      return current.includes(option) ? current.filter((item) => item !== option) : [...current, option];
+    });
+  }
+
+  async function submit() {
+    if (!canSubmit || !sessionID) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const text = freeText.trim();
+      await submitAskResponse(sessionID, ask.id, { selected, free_text: text });
+      onAnswered(selected, text);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : String(submitError));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="sketch-surface rounded-xl bg-card/95 px-4 py-4 shadow-[0_10px_24px_hsl(218_30%_25%/0.1)]">
+      <div className="mb-3 flex items-start gap-3">
+        <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-muted-foreground">
+            {ask.memberName || ask.toolName ? `${ask.memberName || ask.toolName} · ask_questions` : "ask_questions"}
+          </div>
+          <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">{ask.question}</div>
+        </div>
+      </div>
+      {hasOptions ? (
+        <div className="mb-3 grid gap-2 sm:grid-cols-2">
+          {ask.options.map((option) => {
+            const checked = selected.includes(option);
+            return (
+              <label
+                key={option}
+                className={cn(
+                  "flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                  checked ? "border-primary/55 bg-primary/10 text-foreground" : "border-border bg-background/60 hover:bg-muted/65",
+                )}
+              >
+                <input
+                  className="h-4 w-4 shrink-0 accent-primary"
+                  type={ask.multiSelect ? "checkbox" : "radio"}
+                  name={`ask-${ask.id}`}
+                  checked={checked}
+                  onChange={() => toggleOption(option)}
+                />
+                <span className="min-w-0 break-words">{option}</span>
+              </label>
+            );
+          })}
+        </div>
+      ) : null}
+      <Textarea
+        className="min-h-20 resize-y"
+        value={freeText}
+        disabled={ask.answered || submitting}
+        placeholder={hasOptions ? "补充说明" : "输入回答"}
+        onChange={(event) => setFreeText(event.target.value)}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
+            void submit();
+          }
+        }}
+      />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-muted-foreground">
+          {ask.answered ? `已回答：${askResponseSummary(ask.selected, ask.freeText) || "空回答"}` : error}
+        </div>
+        <Button type="button" size="sm" onClick={() => void submit()} disabled={!canSubmit}>
+          <Send className="h-4 w-4" />
+          {submitting ? "提交中" : "提交回答"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unknown; tool_call_ref?: string; type?: string }>) {
   return events
     .map((event) => `${event.type}:${event.tool_call_ref || ""}:${event.tool_calls?.length || 0}:${event.tool_call ? 1 : 0}`)
     .join(":");
-}
-
-function hasEventToolActivity(event: ChatEvent) {
-  return Boolean(event.tool_calls?.length || event.tool_call || event.tool_name || event.tool_call_ref || event.tool_call_id);
 }
 
 function eventsForDisplay(messages: ChatViewMessage[], liveEvents: ChatEvent[]) {
@@ -320,12 +459,28 @@ function eventsForDisplay(messages: ChatViewMessage[], liveEvents: ChatEvent[]) 
     })),
   );
   for (const event of [...messageEvents, ...liveEvents]) {
-    const key = `${event.event_id || ""}:${event.sequence || ""}:${event.type}:${event.tool_call_ref || ""}:${event.tool_call_id || ""}:${event.content || event.delta || ""}`;
+    const key = eventDisplayKey(event);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(event);
   }
   return result;
+}
+
+function eventDisplayKey(event: ChatEvent) {
+  if (event.event_id) return `event:${event.event_id}`;
+  if (event.run_id && event.sequence !== undefined) return `run:${event.run_id}:${event.sequence}`;
+  return [
+    event.type,
+    event.message_id || "",
+    event.stream_id || "",
+    event.sequence || "",
+    event.delta_kind || "",
+    event.tool_call_ref || "",
+    event.tool_call_id || "",
+    event.ask_id || event.detail || "",
+    event.content || event.delta || "",
+  ].join(":");
 }
 
 function shouldShowTimelineItem(
@@ -338,7 +493,6 @@ function shouldShowTimelineItem(
   if (message.content.trim()) return true;
   if (message.reasoningContent?.trim()) return true;
   if (reasoningByMessage.get(message.id)?.trim()) return true;
-  if (message.events.some((event) => hasEventToolActivity(event))) return true;
   return false;
 }
 
@@ -396,8 +550,79 @@ function reasoningKeys(event: ChatEvent) {
       keys.add(event.stream_id.slice(0, -suffix.length));
     }
   }
-  keys.add(`${event.agent_name || "assistant"}`);
+  if (keys.size === 0) keys.add(`${event.agent_name || "assistant"}`);
   return keys;
+}
+
+function collectAskActivities(events: ChatEvent[], submittedAskIDs: Set<string>) {
+  const asks = new Map<string, AskActivity>();
+  const answered = new Map<string, { selected: string[]; freeText: string }>();
+  let latestAskID = "";
+
+  for (const event of events) {
+    if (isAskQuestionEvent(event)) {
+      const id = askEventID(event) || `ask-${asks.size + 1}`;
+      latestAskID = id;
+      const existing = asks.get(id);
+      asks.set(id, {
+        id,
+        sessionID: event.session_id || existing?.sessionID,
+        question: String(event.question || event.content || existing?.question || ""),
+        options: askOptions(event.options) || existing?.options || [],
+        multiSelect: Boolean(event.multi_select ?? existing?.multiSelect),
+        selected: existing?.selected || [],
+        freeText: existing?.freeText || "",
+        answered: submittedAskIDs.has(id) || existing?.answered || false,
+        memberName: event.member_name || existing?.memberName,
+        toolName: event.tool_name || existing?.toolName,
+      });
+    }
+    if (isAskResponseEvent(event)) {
+      const id = askEventID(event) || latestAskID;
+      if (!id) continue;
+      answered.set(id, parseAskResponse(event));
+    }
+  }
+
+  for (const [id, response] of answered) {
+    const ask = asks.get(id);
+    if (!ask) continue;
+    ask.selected = response.selected;
+    ask.freeText = response.freeText;
+    ask.answered = true;
+  }
+  for (const id of submittedAskIDs) {
+    const ask = asks.get(id);
+    if (ask) ask.answered = true;
+  }
+  return Array.from(asks.values()).filter((ask) => !ask.answered && ask.question.trim());
+}
+
+function isAskQuestionEvent(event: ChatEvent) {
+  return event.type === "ask_questions" || event.action_type === "ask_questions";
+}
+
+function isAskResponseEvent(event: ChatEvent) {
+  return event.type === "ask_response" || event.action_type === "ask_response";
+}
+
+function askEventID(event: ChatEvent) {
+  return String(event.ask_id || event.detail || "");
+}
+
+function askOptions(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+  return value.map((item) => String(item)).filter(Boolean);
+}
+
+function parseAskResponse(event: ChatEvent) {
+  const selected = askOptions(event.selected) || askOptions(event.ask_selected) || [];
+  const freeText = String(event.free_text || event.ask_free_text || event.content || "");
+  return { selected, freeText };
+}
+
+function askResponseSummary(selected: string[], freeText: string) {
+  return [...selected, freeText].filter((item) => item && item.trim()).join("；");
 }
 
 function collectToolActivities(events: ChatEvent[], options: { includeMemberEvents?: boolean } = {}): ToolActivity[] {

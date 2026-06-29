@@ -131,6 +131,10 @@
     scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
   }
 
+  .chat-thread-scroll {
+    scrollbar-gutter: stable both-edges;
+  }
+
   .chat-scroll::-webkit-scrollbar-track {
     background: transparent;
     border: 0;

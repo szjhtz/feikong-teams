@@ -10,7 +10,6 @@ import (
 
 const (
 	ModeTeam       = "team"
-	ModeSupervisor = "supervisor"
 	ModeRoundtable = "roundtable"
 	ModeCustom     = "custom"
 	ModeDeep       = "deep"
@@ -110,7 +109,7 @@ func resolveFactory(ctx context.Context, mode, agentName string, fallbackToTeam 
 		return mode, func() (runtimeport.Runner, error) {
 			return CreateDeepAgentsRunner(ctx)
 		}, nil
-	case ModeTeam, ModeSupervisor:
+	case ModeTeam:
 		return mode, func() (runtimeport.Runner, error) {
 			return CreateTeamRunner(ctx)
 		}, nil

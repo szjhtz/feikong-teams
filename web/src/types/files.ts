@@ -20,6 +20,8 @@ export interface PreviewLink {
   path?: string;
   file_path?: string;
   file_paths?: string[];
+  has_password?: boolean;
   url?: string;
   created_at?: string | number;
+  expires_at?: string | number;
 }

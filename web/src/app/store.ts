@@ -9,7 +9,7 @@ import type { SkillInfo } from "@/types/skills";
 import { storageKeys } from "@/lib/storage";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 
-export type AppPanel = "chat" | "config" | "files" | "schedules" | "skills";
+export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "skills";
 
 const initialChatState: ChatState = {
   activeSessionID: chatSessionIDFromPath(location.pathname),
@@ -135,7 +135,7 @@ const chatSlice = createSlice({
         }
         message.events.push(event);
       }
-      if (event.type === "action") {
+      if (event.type === "action" && event.action_type !== "ask_response") {
         state.statusText = eventText(event) || state.statusText;
       }
       if (event.type === "error") {

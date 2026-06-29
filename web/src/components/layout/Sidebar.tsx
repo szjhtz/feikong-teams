@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   Settings,
+  Share2,
   Sparkles,
   Star,
   Trash2,
@@ -25,10 +26,12 @@ import { cn } from "@/lib/cn";
 import { chatPath, panelPath, pushAppPath } from "@/lib/navigation";
 import { deleteSession, favoriteSession, renameSession } from "@/api/sessions";
 import { loadSessions } from "@/features/sessions/sessionThunks";
+import { SessionShareDialog } from "./SessionShareDialog";
 
 const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
   { key: "files", label: "文件", icon: FolderOpen },
   { key: "schedules", label: "任务", icon: CalendarClock },
+  { key: "shares", label: "分享", icon: Share2 },
   { key: "skills", label: "技能", icon: Sparkles },
   { key: "config", label: "配置", icon: Settings },
 ] as const;
@@ -36,6 +39,9 @@ const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
 export function Sidebar() {
   const dispatch = useAppDispatch();
   const [openMenuID, setOpenMenuID] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ session_id: string; title?: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ session_id: string; title?: string } | null>(null);
+  const [deletingSessionID, setDeletingSessionID] = useState("");
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -98,16 +104,32 @@ export function Sidebar() {
     dispatch(loadSessions());
   }
 
-  async function handleDelete(sessionID: string) {
-    if (!window.confirm("确定删除这个会话吗？")) return;
-    await deleteSession(sessionID);
+  function requestDelete(session: { session_id: string; title?: string }) {
     setOpenMenuID("");
-    if (activeSessionID === sessionID) {
-      dispatch(chatActions.setActiveSession(""));
-      dispatch(chatActions.clearMessages());
-      pushAppPath(chatPath());
+    setDeleteTarget(session);
+  }
+
+  function requestShare(session: { session_id: string; title?: string }) {
+    setOpenMenuID("");
+    setShareTarget(session);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deletingSessionID) return;
+    const sessionID = deleteTarget.session_id;
+    setDeletingSessionID(sessionID);
+    try {
+      await deleteSession(sessionID);
+      setDeleteTarget(null);
+      if (activeSessionID === sessionID) {
+        dispatch(chatActions.setActiveSession(""));
+        dispatch(chatActions.clearMessages());
+        pushAppPath(chatPath());
+      }
+      dispatch(loadSessions());
+    } finally {
+      setDeletingSessionID("");
     }
-    dispatch(loadSessions());
   }
 
   return (
@@ -224,7 +246,8 @@ export function Sidebar() {
                           favorite={Boolean(session.favorite)}
                           onToggleFavorite={() => void toggleFavorite(session)}
                           onRename={() => void handleRename(session)}
-                          onDelete={() => void handleDelete(session.session_id)}
+                          onShare={() => requestShare(session)}
+                          onDelete={() => requestDelete(session)}
                         />
                       ) : null}
                     </div>
@@ -249,7 +272,69 @@ export function Sidebar() {
           }}
         />
       ) : null}
+      <SessionDeleteDialog
+        session={deleteTarget}
+        deleting={Boolean(deleteTarget && deletingSessionID === deleteTarget.session_id)}
+        onCancel={() => {
+          if (!deletingSessionID) setDeleteTarget(null);
+        }}
+        onConfirm={() => void confirmDelete()}
+      />
+      <SessionShareDialog
+        session={shareTarget}
+        onClose={() => setShareTarget(null)}
+        onCreated={() => dispatch(loadSessions())}
+      />
     </>
+  );
+}
+
+function SessionDeleteDialog({
+  session,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  session: { session_id: string; title?: string } | null;
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!session) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-6 backdrop-blur-[1px]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="session-delete-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <div className="sketch-surface w-full max-w-md rounded-2xl bg-card/95 p-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
+            <Trash2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 id="session-delete-title" className="text-lg font-semibold text-foreground">
+              删除会话
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              会话「{session.title || shortID(session.session_id)}」会从列表中移除，相关聊天记录也将不可恢复。
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={onCancel} disabled={deleting}>
+            取消
+          </Button>
+          <Button variant="destructive" onClick={onConfirm} disabled={deleting}>
+            {deleting ? "删除中" : "确认删除"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -321,11 +406,13 @@ function SessionMenu({
   favorite,
   onToggleFavorite,
   onRename,
+  onShare,
   onDelete,
 }: {
   favorite: boolean;
   onToggleFavorite: () => void;
   onRename: () => void;
+  onShare: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -337,6 +424,10 @@ function SessionMenu({
       <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-accent/65" onClick={onRename}>
         <Pencil className="h-4 w-4" />
         重命名
+      </button>
+      <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-accent/65" onClick={onShare}>
+        <Share2 className="h-4 w-4" />
+        分享
       </button>
       <div className="my-1 border-t border-border/70" />
       <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-destructive hover:bg-destructive/10" onClick={onDelete}>

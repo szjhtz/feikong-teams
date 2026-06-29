@@ -12,6 +12,7 @@ import { FileManager } from "@/features/files/FileManager";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { PreviewPage } from "@/features/preview/PreviewPage";
 import { SchedulePanel } from "@/features/schedules/SchedulePanel";
+import { ShareManagerPanel } from "@/features/share/ShareManagerPanel";
 import { SharePage } from "@/features/share/SharePage";
 import { SkillPanel } from "@/features/skills/SkillPanel";
 import { loadSessions } from "@/features/sessions/sessionThunks";
@@ -78,6 +79,8 @@ function Workspace() {
       return <FileManager />;
     case "schedules":
       return <SchedulePanel />;
+    case "shares":
+      return <ShareManagerPanel />;
     case "skills":
       return <SkillPanel />;
     case "chat":

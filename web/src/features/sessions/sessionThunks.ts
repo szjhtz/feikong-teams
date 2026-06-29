@@ -170,6 +170,7 @@ function historyEventsToChatEvents(messageID: string, message: AgentMessage): Ch
         type: "action",
         action_type: event.action?.action_type,
         content: event.action?.content || event.content || "",
+        detail: event.action?.detail || event.detail,
       };
     }
     return {

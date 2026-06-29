@@ -143,7 +143,7 @@ func TestResolveFactoryDefaultsToTeam(t *testing.T) {
 }
 
 func TestResolveFactoryKnownModes(t *testing.T) {
-	for _, mode := range []string{ModeRoundtable, ModeCustom, ModeDeep, ModeTeam, ModeSupervisor} {
+	for _, mode := range []string{ModeRoundtable, ModeCustom, ModeDeep, ModeTeam} {
 		key, factory, err := resolveFactory(context.Background(), mode, "", false)
 		if err != nil {
 			t.Fatalf("resolveFactory(%q): %v", mode, err)

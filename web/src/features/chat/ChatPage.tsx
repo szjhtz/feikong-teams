@@ -20,6 +20,7 @@ export function ChatPage() {
   const error = useAppSelector((state) => state.chat.error);
   const [loadedSessionID, setLoadedSessionID] = useState("");
   const [failedSessionID, setFailedSessionID] = useState("");
+  const [showSessionLoading, setShowSessionLoading] = useState(false);
   const hasConversation = messages.length > 0 || events.length > 0 || queue.length > 0 || isProcessing || Boolean(error);
   const currentSessionIsRunning = Boolean(isProcessing && runningSessionID === activeSessionID);
   const isLoadingSession = Boolean(
@@ -63,7 +64,20 @@ export function ChatPage() {
     dispatch(chatActions.setConnectionState("connected"));
   }, [dispatch]);
 
-  if (isLoadingSession) {
+  useEffect(() => {
+    if (!isLoadingSession) {
+      setShowSessionLoading(false);
+      return;
+    }
+    if (!hasConversation) {
+      setShowSessionLoading(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowSessionLoading(true), 180);
+    return () => window.clearTimeout(timer);
+  }, [isLoadingSession, hasConversation]);
+
+  if (isLoadingSession && showSessionLoading) {
     return <ChatSessionLoading />;
   }
 

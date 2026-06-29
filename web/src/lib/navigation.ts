@@ -4,6 +4,7 @@ export function panelFromPath(path: string): AppPanel {
   if (path === "/config") return "config";
   if (path === "/files") return "files";
   if (path === "/schedules") return "schedules";
+  if (path === "/shares") return "shares";
   if (path === "/skills") return "skills";
   return "chat";
 }
@@ -30,6 +31,8 @@ export function panelPath(panel: AppPanel) {
       return "/files";
     case "schedules":
       return "/schedules";
+    case "shares":
+      return "/shares";
     case "skills":
       return "/skills";
     case "chat":

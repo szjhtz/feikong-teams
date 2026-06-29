@@ -1,37 +1,27 @@
-import { ChevronDown, Menu } from "lucide-react";
-import { useEffect } from "react";
+import { ChevronDown, Menu, Share2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
-import { createSessionShare } from "@/api/shares";
 import { shortID } from "@/lib/format";
 import { Sidebar } from "./Sidebar";
+import { SessionShareDialog } from "./SessionShareDialog";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
   const toast = useAppSelector((state) => state.app.toast);
+  const [shareOpen, setShareOpen] = useState(false);
   const activePanel = useAppSelector((state) => state.app.activePanel);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const sessions = useAppSelector((state) => state.sessions.items);
   const title = resolveTitle(activePanel, activeSessionID, sessions);
+  const activeSession = sessions.find((item) => item.session_id === activeSessionID);
 
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => dispatch(appActions.showToast(undefined)), 2000);
     return () => window.clearTimeout(timer);
   }, [dispatch, toast]);
-
-  async function shareSession() {
-    if (!activeSessionID) return;
-    try {
-      const share = await createSessionShare(activeSessionID);
-      const url = `${location.origin}/s/${encodeURIComponent(share.share_id)}`;
-      await navigator.clipboard?.writeText(url);
-      dispatch(appActions.showToast("分享链接已复制"));
-    } catch (error) {
-      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
-    }
-  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background/95 text-foreground">
@@ -53,12 +43,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </button>
           </div>
-          <Button variant="outline" onClick={shareSession} disabled={activePanel !== "chat" || !activeSessionID}>
-            分享
-          </Button>
+          <button
+            className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            aria-label="分享会话"
+            title="分享会话"
+            type="button"
+            onClick={() => setShareOpen(true)}
+            disabled={activePanel !== "chat" || !activeSessionID}
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
         </header>
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </main>
+      <SessionShareDialog
+        session={shareOpen && activeSessionID ? { session_id: activeSessionID, title: activeSession?.title } : null}
+        onClose={() => setShareOpen(false)}
+      />
       {toast ? (
         <div className="sketch-surface fixed bottom-4 right-4 z-50 rounded-md px-4 py-3 text-sm">
           {toast}
@@ -69,7 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function resolveTitle(
-  activePanel: "chat" | "config" | "files" | "schedules" | "skills",
+  activePanel: "chat" | "config" | "files" | "schedules" | "shares" | "skills",
   activeSessionID: string,
   sessions: Array<{ session_id: string; title?: string }>,
 ) {
@@ -77,6 +78,7 @@ function resolveTitle(
     return {
       files: "文件",
       schedules: "任务",
+      shares: "分享",
       skills: "技能",
       config: "配置",
     }[activePanel];

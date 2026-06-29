@@ -32,8 +32,13 @@ export function saveFileContent(path: string, content: string) {
   return put<Omit<FileContent, "content">>("/api/fkteams/files/content", { path, content });
 }
 
-export function createPreviewLink(path: string) {
-  return post<PreviewLink>("/api/fkteams/preview", { file_path: path });
+export interface CreatePreviewLinkOptions {
+  password?: string;
+  expires_in?: number;
+}
+
+export function createPreviewLink(path: string, options: CreatePreviewLinkOptions = {}) {
+  return post<PreviewLink>("/api/fkteams/preview", { file_path: path, ...options });
 }
 
 export function listPreviewLinks() {

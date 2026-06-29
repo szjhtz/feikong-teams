@@ -9,7 +9,6 @@ const modeOptions = [
   { value: "team", label: "团队" },
   { value: "deep", label: "深度" },
   { value: "roundtable", label: "圆桌" },
-  { value: "supervisor", label: "主管" },
   { value: "custom", label: "自定义" },
 ] as const;
 
@@ -262,11 +261,10 @@ export function ChatComposer({
             <Button variant="destructive" size="icon" onClick={onStop} aria-label="取消">
               <Square className="h-4 w-4" />
             </Button>
-          ) : (
-            <Button size="icon" onClick={onSubmit} aria-label="发送">
-              <Send className="h-4 w-4" />
-            </Button>
-          )}
+          ) : null}
+          <Button size="icon" onClick={onSubmit} aria-label={processing ? "加入队列" : "发送"}>
+            <Send className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </div>

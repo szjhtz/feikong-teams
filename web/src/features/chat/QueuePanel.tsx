@@ -1,48 +1,88 @@
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { CornerDownRight, MoreHorizontal, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
 import { changeQueueKind, deleteQueueItem, moveQueueItem, updateQueueItem } from "@/api/stream";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/cn";
 
 export function QueuePanel() {
   const dispatch = useAppDispatch();
   const sessionID = useAppSelector((state) => state.chat.activeSessionID);
   const queue = useAppSelector((state) => state.chat.queue);
+  const [openMenuID, setOpenMenuID] = useState("");
   if (!queue.length) return null;
 
   async function refresh(action: Promise<{ queue: typeof queue }>) {
     const result = await action;
+    setOpenMenuID("");
     dispatch(chatActions.setQueue(result.queue || []));
   }
 
   return (
-    <div className="border-t bg-muted/30 px-4 py-3">
-      <div className="mx-auto max-w-5xl space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">运行中队列</div>
-        {queue.map((item) => (
-          <div key={item.queue_id} className="flex items-center gap-2 rounded-md border bg-background p-2">
-            <Badge>{item.kind}</Badge>
+    <div className="relative z-10 -mb-2 bg-transparent px-6 pb-0 pt-2">
+      <div className="mx-auto max-w-4xl overflow-hidden rounded-[1.35rem] border border-border/55 bg-card/85 px-5 py-3 shadow-[0_10px_30px_hsl(218_30%_25%/0.06)] backdrop-blur">
+        {queue.map((item, index) => (
+          <div
+            key={item.queue_id}
+            className={cn(
+              "group relative flex min-h-10 items-center gap-3",
+              index > 0 && "pt-1.5",
+              index < queue.length - 1 && "pb-1.5",
+            )}
+          >
+            <CornerDownRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
             <Input
-              defaultValue={item.content || item.message || ""}
+              className="h-8 flex-1 border-0 bg-transparent px-0 text-base font-semibold text-muted-foreground shadow-none focus-visible:ring-0"
+              defaultValue={queueItemText(item)}
               onBlur={(event) => refresh(updateQueueItem(sessionID, item.queue_id, event.target.value))}
             />
-            <Button size="sm" variant="outline" onClick={() => refresh(changeQueueKind(sessionID, item.queue_id, item.kind === "steering" ? "follow_up" : "steering"))}>
-              转换
+            <Button
+              className={cn(
+                "h-8 shrink-0 px-2 text-base font-semibold text-muted-foreground hover:text-foreground",
+                item.kind === "steering" && "text-foreground",
+              )}
+              size="sm"
+              variant="ghost"
+              onClick={() => refresh(changeQueueKind(sessionID, item.queue_id, "steering"))}
+            >
+              <CornerDownRight className="h-4 w-4" />
+              引导
             </Button>
-            <Button size="icon" variant="ghost" onClick={() => refresh(moveQueueItem(sessionID, item.queue_id, "up"))} aria-label="上移">
-              <ArrowUp className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="ghost" onClick={() => refresh(moveQueueItem(sessionID, item.queue_id, "down"))} aria-label="下移">
-              <ArrowDown className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="ghost" onClick={() => refresh(deleteQueueItem(sessionID, item.queue_id))} aria-label="删除">
+            <Button className="h-8 w-8 text-muted-foreground hover:text-foreground" size="icon" variant="ghost" onClick={() => refresh(deleteQueueItem(sessionID, item.queue_id))} aria-label="删除">
               <Trash2 className="h-4 w-4" />
             </Button>
+            <Button
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              size="icon"
+              variant="ghost"
+              onClick={() => setOpenMenuID(openMenuID === item.queue_id ? "" : item.queue_id)}
+              aria-label="更多"
+              aria-expanded={openMenuID === item.queue_id}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+            {openMenuID === item.queue_id ? (
+              <div className="absolute right-0 top-9 z-20 w-28 overflow-hidden rounded-md border border-border bg-card py-1 text-sm shadow-[0_10px_24px_hsl(218_30%_25%/0.14)]">
+                <button className="block w-full px-3 py-2 text-left hover:bg-muted" type="button" onClick={() => refresh(moveQueueItem(sessionID, item.queue_id, "up"))}>
+                  上移
+                </button>
+                <button className="block w-full px-3 py-2 text-left hover:bg-muted" type="button" onClick={() => refresh(moveQueueItem(sessionID, item.queue_id, "down"))}>
+                  下移
+                </button>
+                <button className="block w-full px-3 py-2 text-left hover:bg-muted" type="button" onClick={() => refresh(changeQueueKind(sessionID, item.queue_id, "follow_up"))}>
+                  后续
+                </button>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+function queueItemText(item: { display_text?: string; text?: string; content?: string; message?: string }) {
+  return item.display_text || item.text || item.content || item.message || "";
 }
