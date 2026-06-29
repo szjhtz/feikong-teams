@@ -17,6 +17,8 @@ type ToolActivity = ToolCallDTO & { message_id?: string };
 interface AskActivity {
   id: string;
   sessionID?: string;
+  messageID?: string;
+  sequence?: number;
   question: string;
   options: string[];
   multiSelect: boolean;
@@ -26,6 +28,11 @@ interface AskActivity {
   memberName?: string;
   toolName?: string;
 }
+
+type MessageRenderPart =
+  | { type: "reasoning"; content: string }
+  | { type: "text"; content: string }
+  | { type: "ask"; ask: AskActivity };
 
 export function MessageList() {
   const dispatch = useAppDispatch();
@@ -42,19 +49,21 @@ export function MessageList() {
   const reasoningByMessage = collectReasoningBlocks(displayEvents);
   const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
   const memberEvents = collectMemberActivities(displayEvents);
-  const asks = collectAskActivities(displayEvents, submittedAskIDs);
+  const askActivities = collectAskActivities(displayEvents, submittedAskIDs);
   const memberByCallID = new Map(memberEvents.map((member) => [member.id, member]));
   const memberByMessageID = mapMembersByMessageID(memberEvents);
   const timelineMessages = dedupeAdjacentSystemMessages(
     messages.filter((message) => shouldShowTimelineItem(message, reasoningByMessage, memberByMessageID)),
   );
+  const inlineAskIDs = collectInlineAskIDs(timelineMessages, askActivities);
+  const trailingAsks = askActivities.filter((ask) => !inlineAskIDs.has(ask.id));
   const nestedMemberIDs = new Set<string>();
   const renderedToolKeys = new Set<string>();
   const toolEventsByMessageID = groupToolsByMessageID(toolEvents);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [timelineMessages, asks.length, isProcessing, statusText, error, toolEventsKey(displayEvents)]);
+  }, [timelineMessages, askActivities.length, isProcessing, statusText, error, toolEventsKey(displayEvents)]);
 
   useEffect(() => {
     const previous = previousMessageCountRef.current;
@@ -86,7 +95,25 @@ export function MessageList() {
           const messageTools = toolEventsByMessageID.get(message.id) || [];
           return (
             <div key={message.id} className="space-y-3">
-              <MessageRow message={message} reasoning={message.reasoningContent || reasoningByMessage.get(message.id)} />
+              <MessageRow
+                message={message}
+                asks={askActivities}
+                reasoningBlocks={reasoningByMessage.get(message.id) || reasoningContentBlocks(message.reasoningContent)}
+                sessionID={activeSessionID}
+                onAskAnswered={(ask, selected, freeText) => {
+                  setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
+                  dispatch(chatActions.receiveEvent({
+                    type: "action",
+                    action_type: "ask_response",
+                    session_id: ask.sessionID || activeSessionID,
+                    ask_id: ask.id,
+                    detail: ask.id,
+                    selected,
+                    free_text: freeText,
+                    content: askResponseSummary(selected, freeText),
+                  }));
+                }}
+              />
               {messageTools.length ? (
                 <ActivityList
                   tools={messageTools}
@@ -98,8 +125,8 @@ export function MessageList() {
             </div>
           );
         })}
-        {asks.map((ask) => (
-          <AskPanel
+        {trailingAsks.map((ask) => (
+          <AskTimelineItem
             key={ask.id}
             ask={ask}
             sessionID={ask.sessionID || activeSessionID}
@@ -111,6 +138,8 @@ export function MessageList() {
                 session_id: ask.sessionID || activeSessionID,
                 ask_id: ask.id,
                 detail: ask.id,
+                selected,
+                free_text: freeText,
                 content: askResponseSummary(selected, freeText),
               }));
             }}
@@ -152,17 +181,16 @@ export function chatMessageElementID(messageID: string) {
 
 function MessageRow({
   message,
-  reasoning,
+  asks,
+  reasoningBlocks,
+  sessionID,
+  onAskAnswered,
 }: {
-  message: {
-    id: string;
-    role: "user" | "assistant" | "system" | "tool";
-    agent?: string;
-    content: string;
-    reasoningContent?: string;
-    createdAt?: string;
-  };
-  reasoning?: string;
+  message: ChatViewMessage;
+  asks: AskActivity[];
+  reasoningBlocks?: string[];
+  sessionID?: string;
+  onAskAnswered: (ask: AskActivity, selected: string[], freeText: string) => void;
 }) {
   const hasContent = Boolean(message.content.trim());
   if (message.role === "system") {
@@ -187,20 +215,50 @@ function MessageRow({
     );
   }
 
+  const parts = assistantMessageParts(message, asks, reasoningBlocks);
+  const textParts = parts.filter((part): part is { type: "text"; content: string } => part.type === "text");
+  const copyContent = textParts.map((part) => part.content).join("");
+
   return (
     <article id={chatMessageElementID(message.id)} className="message-row group w-full scroll-mt-8">
       {message.agent ? <div className="mb-2 text-sm text-muted-foreground">{message.agent}</div> : null}
-      {reasoning ? <ReasoningBlock content={reasoning} /> : null}
-      {hasContent ? (
-        <>
-          <div
-            className="prose message-prose w-full max-w-none text-lg leading-9"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-          />
-          <MessageActions content={message.content} />
-        </>
-      ) : null}
+      {parts.map((part, index) => (
+        <MessagePart
+          key={`${message.id}-part-${index}`}
+          part={part}
+          sessionID={sessionID}
+          onAskAnswered={(selected, freeText) => {
+            if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
+          }}
+        />
+      ))}
+      {hasContent || copyContent ? <MessageActions content={copyContent || message.content} /> : null}
     </article>
+  );
+}
+
+function MessagePart({
+  part,
+  sessionID,
+  onAskAnswered,
+}: {
+  part: MessageRenderPart;
+  sessionID?: string;
+  onAskAnswered: (selected: string[], freeText: string) => void;
+}) {
+  if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
+  if (part.type === "ask") {
+    return (
+      <div className="my-4">
+        <AskTimelineItem ask={part.ask} sessionID={part.ask.sessionID || sessionID} onAnswered={onAskAnswered} />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="prose message-prose w-full max-w-none text-lg leading-9"
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(part.content) }}
+    />
   );
 }
 
@@ -224,6 +282,44 @@ function ReasoningBlock({ content }: { content: string }) {
       ) : null}
     </div>
   );
+}
+
+function assistantMessageParts(message: ChatViewMessage, asks: AskActivity[], fallbackReasoningBlocks?: string[]) {
+  const parts: MessageRenderPart[] = [];
+  for (const event of message.events || []) {
+    if (event.type === "message_delta" && event.delta_kind === "reasoning" && event.role !== "tool") {
+      appendMessagePart(parts, "reasoning", String(event.reasoning_content || event.content || event.delta || ""));
+      continue;
+    }
+    if (event.type === "message_delta" && (event.delta_kind === "output" || event.delta_kind === "") && event.role !== "tool") {
+      appendMessagePart(parts, "text", String(event.content || event.delta || ""));
+      continue;
+    }
+    const ask = askFromToolEvent(event, asks);
+    if (ask) parts.push({ type: "ask", ask });
+  }
+
+  if (!parts.length) {
+    for (const content of fallbackReasoningBlocks || []) {
+      appendMessagePart(parts, "reasoning", content);
+    }
+  }
+
+  const hasTextPart = parts.some((part) => part.type === "text" && part.content.trim());
+  if (!hasTextPart && message.content.trim()) {
+    parts.push({ type: "text", content: message.content });
+  }
+  return parts.filter((part) => part.type === "ask" || part.content.trim());
+}
+
+function appendMessagePart(parts: MessageRenderPart[], type: "reasoning" | "text", content: string) {
+  if (!content) return;
+  const previous = parts[parts.length - 1];
+  if (previous?.type === type) {
+    previous.content = appendText(previous.content, content);
+    return;
+  }
+  parts.push({ type, content });
 }
 
 interface MemberActivity {
@@ -443,6 +539,58 @@ function AskPanel({
   );
 }
 
+function AskRecord({ ask }: { ask: AskActivity }) {
+  const answer = askResponseSummary(ask.selected, ask.freeText);
+  return (
+    <section className="rounded-xl border border-primary/20 bg-card/70 px-4 py-4 shadow-[1px_2px_0_hsl(218_32%_30%/0.06)]">
+      <div className="flex items-start gap-3">
+        <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-muted-foreground">
+            {ask.memberName || ask.toolName ? `${ask.memberName || ask.toolName} · ask_questions` : "ask_questions"}
+          </div>
+          <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">{ask.question}</div>
+          {ask.options.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {ask.options.map((option) => {
+                const selected = ask.selected.includes(option);
+                return (
+                  <span
+                    key={option}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-sm",
+                      selected ? "border-primary/45 bg-primary/10 text-primary" : "border-border bg-background/55 text-muted-foreground",
+                    )}
+                  >
+                    {option}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className="mt-3 rounded-md border border-border bg-background/55 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">你的回答：</span>
+            <span className="whitespace-pre-wrap text-foreground">{answer || "空回答"}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AskTimelineItem({
+  ask,
+  sessionID,
+  onAnswered,
+}: {
+  ask: AskActivity;
+  sessionID?: string;
+  onAnswered: (selected: string[], freeText: string) => void;
+}) {
+  if (ask.answered) return <AskRecord ask={ask} />;
+  return <AskPanel ask={ask} sessionID={sessionID} onAnswered={onAnswered} />;
+}
+
 function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unknown; tool_call_ref?: string; type?: string }>) {
   return events
     .map((event) => `${event.type}:${event.tool_call_ref || ""}:${event.tool_calls?.length || 0}:${event.tool_call ? 1 : 0}`)
@@ -485,14 +633,14 @@ function eventDisplayKey(event: ChatEvent) {
 
 function shouldShowTimelineItem(
   message: ChatViewMessage,
-  reasoningByMessage: Map<string, string>,
+  reasoningByMessage: Map<string, string[]>,
   memberByMessageID: Map<string, MemberActivity>,
 ) {
   if (message.hidden) return memberByMessageID.has(message.id);
   if (message.role === "user") return Boolean(message.content.trim());
   if (message.content.trim()) return true;
   if (message.reasoningContent?.trim()) return true;
-  if (reasoningByMessage.get(message.id)?.trim()) return true;
+  if ((reasoningByMessage.get(message.id) || []).some((content) => content.trim())) return true;
   return false;
 }
 
@@ -527,17 +675,47 @@ function groupToolsByMessageID(tools: ToolActivity[]) {
   return result;
 }
 
+function collectInlineAskIDs(messages: ChatViewMessage[], asks: AskActivity[]) {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    for (const event of message.events || []) {
+      const ask = askFromToolEvent(event, asks);
+      if (ask) ids.add(ask.id);
+    }
+  }
+  return ids;
+}
+
 function collectReasoningBlocks(events: ChatEvent[]) {
-  const blocks = new Map<string, string>();
+  const blocks = new Map<string, string[]>();
+  const closed = new Set<string>();
   for (const event of events) {
-    if (isMemberActivityEvent(event) || event.type !== "message_delta" || event.delta_kind !== "reasoning" || event.role === "tool") continue;
+    if (isMemberActivityEvent(event)) continue;
+    const keys = reasoningKeys(event);
+    if (event.type !== "message_delta" || event.delta_kind !== "reasoning" || event.role === "tool") {
+      for (const key of keys) {
+        if ((blocks.get(key) || []).length > 0) closed.add(key);
+      }
+      continue;
+    }
     const content = String(event.reasoning_content || event.content || event.delta || "");
     if (!content) continue;
-    for (const key of reasoningKeys(event)) {
-      blocks.set(key, appendText(blocks.get(key), content));
+    for (const key of keys) {
+      const current = blocks.get(key) || [];
+      if (!current.length || closed.has(key)) {
+        current.push(content);
+      } else {
+        current[current.length - 1] = appendText(current[current.length - 1], content);
+      }
+      blocks.set(key, current);
+      closed.delete(key);
     }
   }
   return blocks;
+}
+
+function reasoningContentBlocks(content?: string) {
+  return content?.trim() ? [content] : [];
 }
 
 function reasoningKeys(event: ChatEvent) {
@@ -567,6 +745,8 @@ function collectAskActivities(events: ChatEvent[], submittedAskIDs: Set<string>)
       asks.set(id, {
         id,
         sessionID: event.session_id || existing?.sessionID,
+        messageID: event.message_id || existing?.messageID,
+        sequence: event.sequence ?? existing?.sequence,
         question: String(event.question || event.content || existing?.question || ""),
         options: askOptions(event.options) || existing?.options || [],
         multiSelect: Boolean(event.multi_select ?? existing?.multiSelect),
@@ -595,7 +775,7 @@ function collectAskActivities(events: ChatEvent[], submittedAskIDs: Set<string>)
     const ask = asks.get(id);
     if (ask) ask.answered = true;
   }
-  return Array.from(asks.values()).filter((ask) => !ask.answered && ask.question.trim());
+  return Array.from(asks.values()).filter((ask) => ask.question.trim());
 }
 
 function isAskQuestionEvent(event: ChatEvent) {
@@ -625,6 +805,54 @@ function askResponseSummary(selected: string[], freeText: string) {
   return [...selected, freeText].filter((item) => item && item.trim()).join("；");
 }
 
+function askFromToolEvent(event: ChatEvent, asks: AskActivity[]) {
+  const tools = [...(event.tool_calls || []), event.tool_call].filter(Boolean) as ToolCallDTO[];
+  for (const tool of tools) {
+    if (tool.name !== "ask_questions") continue;
+    const args = parseToolJSON(tool.arguments);
+    const result = parseToolJSON(tool.result);
+    const question = String(args.question || "");
+    if (!question.trim()) continue;
+    const matched = findMatchingAsk(question, asks, event.sequence);
+    const selected = askOptions(result.selected) || matched?.selected || [];
+    const freeText = String(result.free_text || result.answer || matched?.freeText || "");
+    return {
+      id: matched?.id || tool.id || tool.ref || `ask-${event.message_id || ""}-${event.sequence ?? ""}`,
+      sessionID: matched?.sessionID || event.session_id,
+      messageID: event.message_id,
+      sequence: event.sequence,
+      question,
+      options: askOptions(args.options) || matched?.options || [],
+      multiSelect: Boolean(args.multi_select ?? matched?.multiSelect),
+      selected,
+      freeText,
+      answered: Boolean(matched?.answered || selected.length || freeText.trim() || tool.result),
+      memberName: matched?.memberName || event.member_name,
+      toolName: matched?.toolName || tool.display_name || tool.name,
+    };
+  }
+  return undefined;
+}
+
+function findMatchingAsk(question: string, asks: AskActivity[], sequence?: number) {
+  const sameQuestion = asks.filter((ask) => ask.question.trim() === question.trim());
+  if (!sameQuestion.length) return undefined;
+  if (sequence === undefined) return sameQuestion[0];
+  return sameQuestion
+    .slice()
+    .sort((left, right) => Math.abs((left.sequence ?? sequence) - sequence) - Math.abs((right.sequence ?? sequence) - sequence))[0];
+}
+
+function parseToolJSON(value: unknown) {
+  if (!value || typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
 function collectToolActivities(events: ChatEvent[], options: { includeMemberEvents?: boolean } = {}): ToolActivity[] {
   const result = new Map<string, ToolActivity>();
   const order: string[] = [];
@@ -645,6 +873,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
   for (const event of events) {
     if (!options.includeMemberEvents && isMemberActivityEvent(event)) continue;
     for (const tool of event.tool_calls || []) {
+      if (tool.name === "ask_questions") continue;
       const key = toolKey(tool, event);
       upsert(key, {
         ...tool,
@@ -656,6 +885,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
       });
     }
     if (event.tool_call) {
+      if (event.tool_call.name === "ask_questions") continue;
       const key = toolKey(event.tool_call, event);
       upsert(key, {
         ...event.tool_call,
