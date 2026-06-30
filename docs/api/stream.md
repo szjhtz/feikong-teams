@@ -218,6 +218,13 @@
 
 SSE 订阅后台任务事件。支持通过 `Last-Event-ID` 或 `?offset=N` 从指定事件继续接收。
 
+推送事件遵循统一事件协议：
+
+- `event_id`、`sequence`、`created_at`、`session_id`、`type` 为公共字段。
+- `run_id` 和 `turn_id` 标识当前运行和用户回合。
+- `sequence` 是业务展示顺序；`stream_event_id` 只用于 SSE offset 和重连续传。
+- 历史 API 返回的事件与实时事件同构，客户端不得使用单独的历史排序字段。
+
 ```http
 GET /api/fkteams/stream/subscribe/abc-123?offset=0
 Accept: text/event-stream
@@ -227,7 +234,7 @@ SSE 事件格式：
 
 ```text
 id: 42
-data: {"type":"assistant_text_delta","session_id":"abc-123","content":"...","stream_event_id":42}
+data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_at":"2026-06-30T00:00:00Z","session_id":"abc-123","run_id":"abc-123:run:...","turn_id":"abc-123:run:...:turn:1","message_id":"msg_1","role":"assistant","delta_kind":"output","content":"...","stream_event_id":42}
 ```
 
 服务端优先使用 `Last-Event-ID`，并从 `Last-Event-ID + 1` 开始回放；没有该 header 时使用 `offset` query 参数。
@@ -263,7 +270,13 @@ data: {"type":"assistant_text_delta","session_id":"abc-123","content":"...","str
         "id": 0,
         "data": {
           "type": "processing_start",
+          "event_id": "evt_1",
+          "sequence": 1,
+          "created_at": "2026-06-30T00:00:00Z",
           "session_id": "abc-123",
+          "run_id": "abc-123:run:...",
+          "turn_id": "abc-123:run:...:turn:1",
+          "content": "开始处理您的请求...",
           "stream_event_id": 0
         }
       }

@@ -35,7 +35,6 @@ type ContextHook func(context.Context) context.Context
 // HistorySink 描述对话用例需要的最小历史写入能力。
 type HistorySink interface {
 	GetMessageCount() int
-	RecordUserMessage(msg message.Message)
 	SetSummary(summary string, beforeCount int)
 }
 

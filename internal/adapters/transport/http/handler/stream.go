@@ -110,12 +110,9 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 
 		rt.updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 		initialRunID := newTurnRunID(sessionID)
-		stream.Publish(attachContentParts(
-			attachTurnMeta(taskstream.UserMessageEvent(sessionID, userDisplayText), initialRunID),
-			messageContentParts(turnInput.Message),
-		))
-
-		stream.Publish(attachTurnMeta(taskstream.ProcessingStartEvent(sessionID, "开始处理您的请求..."), initialRunID))
+		initialTurnID := turnIDForRun(initialRunID)
+		stream.SetTurn(initialRunID, initialTurnID)
+		stream.Publish(standardMessageEventPayload(sessionID, initialRunID, initialTurnID, "开始处理您的请求..."))
 
 		// 后台执行任务
 		go rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
@@ -378,12 +375,16 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			appchat.WithRunID(currentRunID),
 			appchat.NonInteractive(),
 			appchat.OnEvent(func(event events.Event) error {
-				data := rt.convertEventToMap(event)
-				data["session_id"] = sessionID
-				stream.Publish(taskstream.Event(data))
+				if stream.Status() == "cancelled" {
+					return context.Canceled
+				}
+				stream.Publish(standardEventPayload(sessionID, event, rt.ToolDisplays))
 				return nil
 			}),
 			appchat.WithEventRecorderFunc(func(event events.Event) {
+				if stream.Status() == "cancelled" {
+					return
+				}
 				recorder.RecordEvent(event)
 			}),
 			appchat.WithHistory(recorder),
@@ -395,8 +396,10 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 		if runErr != nil {
 			if isConnectionClosed(ctx, runErr) {
 				log.Printf("stream task cancelled: session=%s", sessionID)
-				stream.SetStatus("cancelled")
-				stream.Publish(taskstream.CancelledEvent(sessionID, "任务已取消"))
+				if stream.Status() != "cancelled" {
+					stream.SetStatus("cancelled")
+					stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
+				}
 				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
 			}
@@ -420,7 +423,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 		}
 
 		stream.SetStatus("completed")
-		stream.Publish(taskstream.ProcessingEndEvent(sessionID, "处理完成"))
+		stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
 		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}
@@ -450,6 +453,9 @@ func (rt *Runtime) StreamStopHandler() gin.HandlerFunc {
 		}
 
 		stream.Cancel()
+		stream.SetStatus("cancelled")
+		runID, _ := stream.CurrentTurn()
+		stream.Publish(cancelledEventPayload(sessionID, runID, "任务已取消"))
 		OK(c, gin.H{
 			"session_id": sessionID,
 			"message":    "task stop requested",
@@ -715,9 +721,7 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 			askEvent := askRequestedEvent(memberEvent, askID, info)
 			askEvent = events.NormalizeEvent(askEvent)
 			recorder.RecordEvent(askEvent)
-			askPayload := taskstream.Event(convertEventToMapWithResolver(askEvent, nil)).
-				With("session_id", sessionID)
-			stream.Publish(askPayload)
+			stream.Publish(standardEventPayload(sessionID, askEvent, nil))
 
 			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 			if err == nil {
@@ -734,25 +738,33 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 		stream.BeginInterrupt(taskstream.InterruptApproval)
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
-		recorder.RecordEvent(events.Event{
+		runID, turnID := stream.CurrentTurn()
+		approvalEvent := events.NormalizeEvent(events.Event{
 			Type:    events.EventApprovalRequested,
+			RunID:   runID,
+			TurnID:  turnID,
 			Content: msg,
 			Approval: &events.ApprovalPayload{
 				Message: msg,
 			},
 		})
-		stream.Publish(taskstream.NewEvent(events.NotifyApprovalRequired, sessionID).With("message", msg))
+		recorder.RecordEvent(approvalEvent)
+		payload := standardEventPayload(sessionID, approvalEvent, nil)
+		payload["message"] = msg
+		stream.Publish(payload)
 
 		result, err := channelHandler(ctx, interrupts)
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
-				recorder.RecordEvent(events.Event{
+				recorder.RecordEvent(events.NormalizeEvent(events.Event{
 					Type:    events.EventApprovalAnswered,
+					RunID:   runID,
+					TurnID:  turnID,
 					Content: text,
 					Approval: &events.ApprovalPayload{
 						Decision: text,
 					},
-				})
+				}))
 			}
 		}
 

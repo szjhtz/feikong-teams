@@ -12,6 +12,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/domain/message"
 	"fkteams/internal/runtime/env"
+	runtimeevents "fkteams/internal/runtime/events"
 
 	"github.com/gin-gonic/gin"
 )
@@ -70,9 +71,9 @@ func TestPublicSessionShareRequiresPassword(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected response data object, got %#v", got.Data)
 	}
-	messages, ok := data["messages"].([]any)
-	if !ok || len(messages) != 1 {
-		t.Fatalf("expected one shared message, got %#v", data["messages"])
+	events, ok := data["events"].([]any)
+	if !ok || len(events) != 1 {
+		t.Fatalf("expected one shared event, got %#v", data["events"])
 	}
 }
 
@@ -121,7 +122,7 @@ func writeShareableSession(t *testing.T, rt *Runtime, sessionID, title string) {
 		t.Fatalf("save metadata: %v", err)
 	}
 	recorder := eventlog.NewHistoryRecorder()
-	recorder.RecordUserMessage(message.Message{Role: message.RoleUser, Content: "hello"})
+	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "run-1:user", message.Message{Role: message.RoleUser, Content: "hello"}))
 	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.HistoryFileName)); err != nil {
 		t.Fatalf("save history: %v", err)
 	}

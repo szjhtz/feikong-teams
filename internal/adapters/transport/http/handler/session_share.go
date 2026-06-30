@@ -218,6 +218,28 @@ func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) (
 	return messages, nil
 }
 
+func sessionShareLines(historyDir, sessionID string, allowToolDetails bool) ([]eventlog.HistoryLine, error) {
+	if !validateSessionID(sessionID) {
+		return nil, errors.New("invalid session ID")
+	}
+	histFile := filepath.Join(sessionDirPath(historyDir, sessionID), eventlog.HistoryFileName)
+	lines, err := eventlog.LoadLinesFromFile(histFile)
+	if err != nil {
+		return nil, err
+	}
+	if allowToolDetails {
+		return lines, nil
+	}
+	for index := range lines {
+		if lines[index].Event.ToolCall != nil {
+			lines[index].Event.ToolCall.Arguments = ""
+			lines[index].Event.ToolCall.Result = ""
+		}
+		lines[index].Event.Detail = ""
+	}
+	return lines, nil
+}
+
 func (s *SessionShareStore) entryByID(id string) (*sessionShareEntry, bool, bool) {
 	s.RLock()
 	entry, exists := s.m[id]
@@ -454,7 +476,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 			return
 		}
 
-		messages, err := sessionShareMessages(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails)
+		lines, err := sessionShareLines(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails)
 		if err != nil {
 			log.Printf("failed to load public session share: share=%s, session=%s, err=%v", shareID, entry.SessionID, err)
 			Fail(c, http.StatusGone, "shared session unavailable")
@@ -472,8 +494,8 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 		OK(c, gin.H{
 			"id":                 shareID,
 			"title":              entry.Title,
-			"messages":           messages,
-			"message_count":      len(messages),
+			"events":             rt.historyLinesToChatEvents(entry.SessionID, lines),
+			"message_count":      entry.MessageCount,
 			"expires_at":         expiresAtUnix(entry.ExpiresAt),
 			"created_at":         entry.CreatedAt.Unix(),
 			"allow_tool_details": entry.AllowToolDetails,

@@ -296,7 +296,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		if !ok {
 			return nil, nil
 		}
-		recorder.RecordUserMessage(message)
+		runID := session.sessionID()
+		turnID := events.TurnID(runID, 1)
+		recorder.RecordEvent(events.UserMessage(runID, turnID, fmt.Sprintf("%s:steering", turnID), message))
 		if err := innerCallback(events.Event{
 			Type:    events.EventType(events.NotifyProcessingStart),
 			Content: strings.TrimSpace(message.DisplayText()),

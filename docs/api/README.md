@@ -123,7 +123,7 @@ Authorization: Bearer <api_key>
 
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
-| POST | `/api/fkteams/chat` | HTTP 聊天，支持同步和 SSE |
+| POST | `/api/fkteams/chat` | HTTP 同步聊天 |
 | POST | `/api/fkteams/stream/start` | 启动后台流式任务；运行中则追加 follow-up |
 | POST | `/api/fkteams/stream/steer` | 向运行中任务追加 steering |
 | GET | `/api/fkteams/stream/queue/:sessionID` | 查询未消费队列 |

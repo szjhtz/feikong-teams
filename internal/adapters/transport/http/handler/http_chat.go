@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -79,58 +78,10 @@ func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
 		if req.Stream {
-			rt.handleStreamChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
-		} else {
-			rt.handleSyncChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
+			Fail(c, http.StatusBadRequest, "stream=true is not supported on /api/fkteams/chat; use /api/fkteams/stream/start")
+			return
 		}
-	}
-}
-
-// handleStreamChat SSE 流式聊天响应
-func (rt *Runtime) handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-
-	taskCtx, taskCancel := context.WithCancel(ctx)
-	defer taskCancel()
-	taskCtx = rt.withRuntimeContext(taskCtx)
-
-	_, runErr := appchat.NewService().RunTurn(taskCtx, appchat.TurnRequest{
-		SessionID: sessionID,
-		Runner:    r,
-		Input:     turnInput,
-	},
-		appchat.OnEvent(func(event events.Event) error {
-			data, _ := json.Marshal(rt.convertEventToMap(event))
-			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-			c.Writer.Flush()
-			return err
-		}),
-		appchat.WithEventRecorder(recorder),
-		appchat.WithHistory(recorder),
-		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
-			if err != nil {
-				if isConnectionClosed(ctx, err) {
-					log.Printf("connection closed, stopping: session=%s", sessionID)
-					rt.saveTurnHistory(recorder, sessionID)
-					return
-				}
-				log.Printf("error processing event: %v", err)
-				rt.finishErrorChat(recorder, sessionID, userDisplayText, err)
-				data, _ := json.Marshal(errorEventPayload("", err.Error()))
-				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-				c.Writer.Flush()
-				return
-			}
-			rt.finishChat(recorder, sessionID, userDisplayText, manager)
-			data, _ := json.Marshal(map[string]string{"type": string(events.NotifyProcessingEnd), "message": "处理完成"})
-			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-			c.Writer.Flush()
-		}),
-	)
-	if runErr != nil && !isConnectionClosed(taskCtx, runErr) {
-		log.Printf("stream chat failed: session=%s, err=%v", sessionID, runErr)
+		rt.handleSyncChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
 	}
 }
 

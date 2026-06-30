@@ -49,10 +49,6 @@ const chatSlice = createSlice({
       state.runningSessionID = action.payload;
       state.isProcessing = Boolean(action.payload);
     },
-    setMessages(state, action: PayloadAction<ChatViewMessage[]>) {
-      state.messages = action.payload;
-      state.events = [];
-    },
     clearMessages(state) {
       state.messages = [];
       state.events = [];
@@ -63,42 +59,53 @@ const chatSlice = createSlice({
       state.statusText = undefined;
     },
     appendUserMessage(state, action: PayloadAction<{ id: string; content: string; createdAt?: string }>) {
+      const event: ChatEvent = {
+        type: "user_message",
+        event_id: `local:${action.payload.id}`,
+        content: action.payload.content,
+        created_at: action.payload.createdAt,
+      };
+      state.events.push(event);
       state.messages.push({
         id: action.payload.id,
         role: "user",
         content: action.payload.content,
         createdAt: action.payload.createdAt,
-        events: [],
+        events: [event],
       });
     },
     receiveEvent(state, action: PayloadAction<ChatEvent>) {
-      const event = action.payload;
+      const event = { ...action.payload };
       state.events.push(event);
-      if (event.session_id) {
-        state.runningSessionID = event.session_id;
-      }
       if (event.type === "queue_updated" && Array.isArray(event.queue)) {
         state.queue = event.queue;
       }
       if (event.type === "processing_start") {
         state.isProcessing = true;
+        if (event.session_id) state.runningSessionID = event.session_id;
         state.statusText = String(event.message || event.content || "处理中");
       }
       if (event.type === "user_message") {
         const content = eventText(event);
-        const exists = state.messages.some((item) => item.role === "user" && item.content === content);
-        if (content && !exists) {
-          state.messages.push({
-            id: `user-${event.stream_event_id ?? Date.now()}`,
-            role: "user",
-            content,
-            createdAt: event.created_at,
-            events: [event],
-          });
+        if (!content) return;
+        const eventExists = state.messages.some((item) => item.role === "user" && item.events.some((messageEvent) => sameEventIdentity(messageEvent, event)));
+        if (eventExists) return;
+        const mergeTarget = findMergeableUserMessage(state.messages, content);
+        if (mergeTarget) {
+          mergeTarget.createdAt = mergeTarget.createdAt || event.created_at;
+          mergeTarget.events.push(event);
+          return;
         }
+        state.messages.push({
+          id: `user-${eventIdentityKey(event)}`,
+          role: "user",
+          content,
+          createdAt: event.created_at,
+          events: [event],
+        });
       }
       if (isMemberActivityEvent(event)) {
-        const key = event.member_call_id || event.parent_tool_call_id || event.member_name || event.agent_name || event.message_id || "member";
+        const key = memberActivityKey(event);
         const id = `member-${key}`;
         let message = state.messages.find((item) => item.id === id);
         if (!message) {
@@ -154,7 +161,7 @@ const chatSlice = createSlice({
         const exists = state.messages.some((message) => message.role === "system" && message.events.some((item) => sameEventIdentity(item, event)));
         if (!exists) {
           state.messages.push({
-            id: `cancelled-${event.stream_event_id ?? event.sequence ?? Date.now()}`,
+            id: `cancelled-${event.event_id ?? event.sequence ?? Date.now()}`,
             role: "system",
             content,
             createdAt: event.created_at,
@@ -176,10 +183,29 @@ function eventText(event: ChatEvent) {
   return String(event.content || event.message || "");
 }
 
+function findMergeableUserMessage(messages: ChatViewMessage[], content: string) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") return undefined;
+    if (message.content === content) return message;
+  }
+  return undefined;
+}
+
 function sameEventIdentity(left: ChatEvent, right: ChatEvent) {
   if (left.event_id && right.event_id) return left.event_id === right.event_id;
-  if (left.run_id && right.run_id && left.sequence && right.sequence) return left.run_id === right.run_id && left.sequence === right.sequence;
+  if (left.run_id && right.run_id && left.sequence !== undefined && right.sequence !== undefined) {
+    return left.run_id === right.run_id && left.sequence === right.sequence;
+  }
   return false;
+}
+
+function eventIdentityKey(event: ChatEvent) {
+  if (event.event_id) return event.event_id;
+  if (event.run_id && event.sequence !== undefined) return `${event.run_id}:${event.sequence}`;
+  if (event.turn_id && event.sequence !== undefined) return `${event.turn_id}:${event.sequence}`;
+  if (event.sequence !== undefined) return String(event.sequence);
+  return `${event.type}:${Date.now()}`;
 }
 
 function shouldAttachAssistantMessage(event: ChatEvent) {
@@ -201,6 +227,8 @@ function assistantMessageKey(event: ChatEvent) {
     const suffix = `:${event.delta_kind}`;
     if (event.stream_id.endsWith(suffix)) return event.stream_id.slice(0, -suffix.length);
   }
+  if (event.turn_id) return `${event.turn_id}:${event.agent_name || "assistant"}`;
+  if (event.run_id) return `${event.run_id}:${event.agent_name || "assistant"}`;
   return event.stream_id || event.agent_name || "assistant";
 }
 
@@ -218,6 +246,14 @@ function hasToolActivity(event: ChatEvent) {
 
 function isMemberActivityEvent(event: ChatEvent) {
   return Boolean(event.is_member_event || event.member_call_id || event.member_name || event.member_tool_name || event.parent_tool_call_id);
+}
+
+function memberActivityKey(event: ChatEvent) {
+  if (event.member_call_id) return event.member_call_id;
+  if (event.parent_tool_call_id) return event.parent_tool_call_id;
+  if (event.message_id) return event.message_id;
+  if (event.stream_id) return event.stream_id;
+  return eventIdentityKey(event);
 }
 
 function findParentToolMessageIndex(messages: ChatViewMessage[], event: ChatEvent) {

@@ -98,9 +98,14 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 		}
 		if !h.updateToolCallEvent(ctx, tc, content) {
 			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-				Sequence: tc.Sequence,
-				Type:     MsgTypeToolCall,
-				ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
+				Type:      MsgTypeToolCall,
+				EventID:   tc.EventID,
+				Sequence:  tc.Sequence,
+				CreatedAt: tc.CreatedAt,
+				RunID:     tc.RunID,
+				TurnID:    tc.TurnID,
+				MessageID: tc.MessageID,
+				ToolCall:  ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 			})
 		}
 		return
@@ -118,12 +123,17 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 	if event.ToolName == "" {
 		return
 	}
-	pending := h.pendingToolCallFromEvent(resultKey, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs, event.Sequence)
+	pending := h.pendingToolCallFromEvent(event, resultKey, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
 	if !events.IsInternalToolName(pending.Name) {
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Sequence: event.Sequence,
-			Type:     MsgTypeToolCall,
-			ToolCall: ptrToolCallRecord(toolCallRecordFromPending(pending, content)),
+			Type:      MsgTypeToolCall,
+			EventID:   event.EventID,
+			Sequence:  event.Sequence,
+			CreatedAt: event.CreatedAt,
+			RunID:     event.RunID,
+			TurnID:    event.TurnID,
+			MessageID: event.MessageID,
+			ToolCall:  ptrToolCallRecord(toolCallRecordFromPending(pending, content)),
 		})
 	}
 }
@@ -224,20 +234,43 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	defer h.mu.Unlock()
 
 	switch event.Type {
+	case events.EventUserMessage:
+		msg := message.Message{Role: message.RoleUser, Content: event.Content}
+		if event.Message != nil {
+			msg = *event.Message
+			if msg.Role == "" {
+				msg.Role = message.RoleUser
+			}
+		}
+		if msg.Role != message.RoleUser || msg.IsEmpty() {
+			return
+		}
+		h.finalizeAllActiveMessages()
+		evt := historyEventEnvelope(event, MsgTypeText)
+		evt.Content = msg.DisplayText()
+		evt.ContentParts = append([]message.ContentPart(nil), msg.ContentParts...)
+		createdAt := event.CreatedAt
+		h.messages = append(h.messages, AgentMessage{
+			AgentName: "user",
+			StartTime: createdAt,
+			EndTime:   createdAt,
+			Events: []MessageEvent{
+				evt,
+			},
+		})
+
 	case EventUsageReported:
 		if event.PromptTokens == 0 && event.CompletionTokens == 0 && event.TotalTokens == 0 {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
-		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Sequence: event.Sequence,
-			Type:     MsgTypeUsageReported,
-			Usage: &UsageRecord{
-				PromptTokens:     event.PromptTokens,
-				CompletionTokens: event.CompletionTokens,
-				TotalTokens:      event.TotalTokens,
-			},
-		})
+		evt := historyEventEnvelope(event, MsgTypeUsageReported)
+		evt.Usage = &UsageRecord{
+			PromptTokens:     event.PromptTokens,
+			CompletionTokens: event.CompletionTokens,
+			TotalTokens:      event.TotalTokens,
+		}
+		ctx.msg.Events = append(ctx.msg.Events, evt)
 
 	case events.EventAssistantReasoning, events.EventAssistantText:
 		if event.Role == message.RoleUser {
@@ -267,22 +300,18 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning {
 				ctx.msg.Events[n-1].Content += content
 			} else {
-				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-					Sequence: event.Sequence,
-					Type:     MsgTypeReasoning,
-					Content:  content,
-				})
+				evt := historyEventEnvelope(event, MsgTypeReasoning)
+				evt.Content = content
+				ctx.msg.Events = append(ctx.msg.Events, evt)
 			}
 		case events.DeltaOutput, "":
 
 			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeText {
 				ctx.msg.Events[n-1].Content += content
 			} else {
-				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-					Sequence: event.Sequence,
-					Type:     MsgTypeText,
-					Content:  content,
-				})
+				evt := historyEventEnvelope(event, MsgTypeText)
+				evt.Content = content
+				ctx.msg.Events = append(ctx.msg.Events, evt)
 			}
 		case events.DeltaToolResult:
 			if events.IsInternalContinueContent(content) {
@@ -335,8 +364,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				}
 			}
 			if !updated {
-				pending := h.pendingToolCallFromEvent(ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments, event.Sequence)
-				pending.EventIndex = h.appendToolCallEvent(ctx, pending, event.Sequence)
+				pending := h.pendingToolCallFromEvent(event, ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
 		}
@@ -395,32 +424,26 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				record.FreeText = event.Content
 			}
 		}
-		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Sequence: event.Sequence,
-			Type:     MsgTypeAsk,
-			Ask:      record,
-		})
+		evt := historyEventEnvelope(event, MsgTypeAsk)
+		evt.Ask = record
+		ctx.msg.Events = append(ctx.msg.Events, evt)
 
 	case EventSystemNotice:
 		ctx := h.ensureMessageContext(event)
-		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Sequence: event.Sequence,
-			Type:     MsgTypeNotice,
-			Content:  event.Content,
-			Detail:   event.Detail,
-		})
+		evt := historyEventEnvelope(event, MsgTypeNotice)
+		evt.Content = event.Content
+		evt.Detail = event.Detail
+		ctx.msg.Events = append(ctx.msg.Events, evt)
 
 	case EventError:
 		ctx := h.ensureMessageContext(event)
 		friendly := events.NormalizeFriendlyError(event.Error)
 		friendly.TechnicalDetail = truncateErrorContent(friendly.TechnicalDetail)
 		historyError := FriendlyError(friendly)
-		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Sequence: event.Sequence,
-			Type:     MsgTypeError,
-			Content:  historyError.Message,
-			Error:    &historyError,
-		})
+		evt := historyEventEnvelope(event, MsgTypeError)
+		evt.Content = historyError.Message
+		evt.Error = &historyError
+		ctx.msg.Events = append(ctx.msg.Events, evt)
 
 	}
 }
@@ -450,9 +473,14 @@ func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 		if !events.IsInternalToolName(tc.Name) {
 			if !h.updateToolCallEvent(ctx, tc, content) {
 				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-					Sequence: tc.Sequence,
-					Type:     MsgTypeToolCall,
-					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
+					Type:      MsgTypeToolCall,
+					EventID:   tc.EventID,
+					Sequence:  tc.Sequence,
+					CreatedAt: tc.CreatedAt,
+					RunID:     tc.RunID,
+					TurnID:    tc.TurnID,
+					MessageID: tc.MessageID,
+					ToolCall:  ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 				})
 			}
 		}

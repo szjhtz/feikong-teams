@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 )
 
@@ -17,13 +16,13 @@ func newTestStream() *Stream {
 
 func TestEventBuilderKeepsTransportPayloadStable(t *testing.T) {
 	parts := []domainmessage.ContentPart{{Type: domainmessage.ContentPartText, Text: "hello"}}
-	event := UserMessageEvent("session-1", "hello").
+	event := Event{"type": "user_message", "session_id": "session-1", "content": "hello"}.
 		With("queued", true).
 		WithTurn("run-1", "turn-1").
 		WithContentParts(parts)
 
-	if event["type"] != domainevent.NotifyUserMessage {
-		t.Fatalf("type = %v, want %v", event["type"], domainevent.NotifyUserMessage)
+	if event["type"] != "user_message" {
+		t.Fatalf("type = %v, want user_message", event["type"])
 	}
 	if event["session_id"] != "session-1" || event["content"] != "hello" {
 		t.Fatalf("unexpected event payload: %#v", event)

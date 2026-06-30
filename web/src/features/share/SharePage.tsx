@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { accessPublicShare, getPublicShareInfo, type SessionShare } from "@/api/shares";
 import { APIError } from "@/api/client";
 import type { SessionDetail } from "@/types/chat";
+import type { ChatEvent } from "@/types/events";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -108,13 +109,10 @@ export function SharePage() {
             <div className="mt-1 text-sm text-muted-foreground">公开只读视图</div>
           </PanelHeader>
           <PanelBody className="space-y-4">
-            {detail.messages?.map((message, index) => (
+            {shareEntriesFromEvents(detail.events || []).map((message, index) => (
               <div key={index} className="rounded-md border border-border bg-card/70 p-4">
-                <div className="mb-2 text-xs text-muted-foreground">{message.agent_name || message.role}</div>
-                <MarkdownContent
-                  className="prose-sm"
-                  content={(message.events || []).map((event) => event.content || event.tool_call?.result || "").join("\n") || message.content || ""}
-                />
+                <div className="mb-2 text-xs text-muted-foreground">{message.agent || message.role}</div>
+                <MarkdownContent className="prose-sm" content={message.content} />
               </div>
             ))}
           </PanelBody>
@@ -122,6 +120,82 @@ export function SharePage() {
       )}
     </div>
   );
+}
+
+interface ShareEntry {
+  id: string;
+  role: string;
+  agent?: string;
+  content: string;
+}
+
+function shareEntriesFromEvents(events: ChatEvent[]) {
+  const entries: ShareEntry[] = [];
+  const byID = new Map<string, ShareEntry>();
+  for (const event of orderedShareEvents(events)) {
+    if (event.type === "user_message") {
+      entries.push({
+        id: String(event.event_id || event.sequence || entries.length),
+        role: "用户",
+        content: eventText(event),
+      });
+      continue;
+    }
+    if (!shareEventHasVisibleContent(event)) continue;
+    const id = shareEventMessageID(event);
+    let entry = byID.get(id);
+    if (!entry) {
+      entry = {
+        id,
+        role: "助手",
+        agent: String(event.member_name || event.agent_name || ""),
+        content: "",
+      };
+      byID.set(id, entry);
+      entries.push(entry);
+    }
+    const content = shareEventContent(event);
+    if (content) entry.content += entry.content ? `\n\n${content}` : content;
+  }
+  return entries.filter((entry) => entry.content.trim());
+}
+
+function orderedShareEvents(events: ChatEvent[]) {
+  return [...events].sort((left, right) => shareEventOrder(left) - shareEventOrder(right));
+}
+
+function shareEventOrder(event: ChatEvent) {
+  const order = event.sequence;
+  return typeof order === "number" ? order : Number.MAX_SAFE_INTEGER;
+}
+
+function shareEventMessageID(event: ChatEvent) {
+  return String(event.message_id || event.member_call_id || event.stream_id || event.event_id || event.sequence || "assistant");
+}
+
+function shareEventHasVisibleContent(event: ChatEvent) {
+  return (
+    event.type === "assistant_text_delta" ||
+    event.type === "assistant_reasoning_delta" ||
+    event.type === "tool_call_completed" ||
+    event.type === "system_notice" ||
+    event.type === "error" ||
+    event.type === "cancelled"
+  );
+}
+
+function shareEventContent(event: ChatEvent) {
+  if (event.type === "tool_call_completed") {
+    const result = String(event.tool_result || event.content || "");
+    if (!result.trim()) return "";
+    const name = String(event.tool_display_name || event.tool_name || "工具调用");
+    return `**${name}**\n\n\`\`\`text\n${result}\n\`\`\``;
+  }
+  return eventText(event);
+}
+
+function eventText(event: ChatEvent) {
+  return String(event.content || event.message || "");
 }
 
 function publicShareErrorMessage(error: unknown) {

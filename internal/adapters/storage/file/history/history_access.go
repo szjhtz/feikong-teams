@@ -1,41 +1,12 @@
 package eventlog
 
 import (
-	"fkteams/internal/domain/message"
-
 	"fmt"
 
 	"strings"
 
 	"time"
 )
-
-func (h *HistoryRecorder) RecordUserMessage(msg message.Message) {
-	if msg.Role == "" {
-		msg.Role = message.RoleUser
-	}
-	if msg.Role != message.RoleUser || msg.IsEmpty() {
-		return
-	}
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	h.finalizeAllActiveMessages()
-
-	content := msg.DisplayText()
-	parts := append([]message.ContentPart(nil), msg.ContentParts...)
-
-	h.messages = append(h.messages, AgentMessage{
-		AgentName: "user",
-		StartTime: time.Now(),
-		EndTime:   time.Now(),
-		Events: []MessageEvent{
-			{Type: MsgTypeText, Content: content, ContentParts: parts},
-		},
-	})
-
-}
 
 // RecordCancelled 收束当前活跃消息，并在历史末尾追加用户取消提示。
 func (h *HistoryRecorder) RecordCancelled(message string) {

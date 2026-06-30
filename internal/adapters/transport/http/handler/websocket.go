@@ -218,9 +218,7 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 			askEvent := askRequestedEvent(memberEvent, askID, info)
 			askEvent = events.NormalizeEvent(askEvent)
 			recorder.RecordEvent(askEvent)
-			payload := taskstream.Event(convertEventToMapWithResolver(askEvent, nil)).
-				With("session_id", sessionID)
-			_ = publish(payload)
+			_ = publish(standardEventPayload(sessionID, askEvent, nil))
 
 			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 
@@ -238,26 +236,34 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 		stream.BeginInterrupt(taskstream.InterruptApproval)
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
-		recorder.RecordEvent(events.Event{
+		runID, turnID := stream.CurrentTurn()
+		approvalEvent := events.NormalizeEvent(events.Event{
 			Type:    events.EventApprovalRequested,
+			RunID:   runID,
+			TurnID:  turnID,
 			Content: msg,
 			Approval: &events.ApprovalPayload{
 				Message: msg,
 			},
 		})
-		_ = publish(taskstream.NewEvent(events.NotifyApprovalRequired, sessionID).With("message", msg))
+		recorder.RecordEvent(approvalEvent)
+		payload := standardEventPayload(sessionID, approvalEvent, nil)
+		payload["message"] = msg
+		_ = publish(payload)
 
 		result, err := channelHandler(ctx, interrupts)
 
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
-				recorder.RecordEvent(events.Event{
+				recorder.RecordEvent(events.NormalizeEvent(events.Event{
 					Type:    events.EventApprovalAnswered,
+					RunID:   runID,
+					TurnID:  turnID,
 					Content: text,
 					Approval: &events.ApprovalPayload{
 						Decision: text,
 					},
-				})
+				}))
 			}
 		}
 
@@ -338,10 +344,8 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	manager := memoryFromState(state)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
 	currentRunID := newTurnRunID(sessionID)
-	stream.Publish(attachContentParts(
-		attachTurnMeta(taskstream.UserMessageEvent(sessionID, userDisplayText), currentRunID),
-		messageContentParts(turnInput.Message),
-	))
+	currentTurnID := turnIDForRun(currentRunID)
+	stream.SetTurn(currentRunID, currentTurnID)
 
 	publishFn := func(event taskstream.Event) error {
 		stream.Publish(event)
@@ -352,7 +356,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
 	rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
-	stream.Publish(attachTurnMeta(taskstream.ProcessingStartEvent(sessionID, "开始处理您的请求..."), currentRunID))
+	stream.Publish(standardMessageEventPayload(sessionID, currentRunID, currentTurnID, "开始处理您的请求..."))
 
 	chatService := appchat.NewService()
 	for {
@@ -364,6 +368,9 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 			appchat.WithRunID(currentRunID),
 			appchat.OnEvent(wsEventCallbackBuffered(sessionID, stream, rt.ToolDisplays)),
 			appchat.WithEventRecorderFunc(func(event events.Event) {
+				if stream.Status() == "cancelled" {
+					return
+				}
 				recorder.RecordEvent(event)
 			}),
 			appchat.WithHistory(recorder),
@@ -377,7 +384,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 			if isConnectionClosed(taskCtx, runErr) {
 				log.Printf("task cancelled: session=%s", sessionID)
 				stream.SetStatus("cancelled")
-				stream.Publish(taskstream.CancelledEvent(sessionID, "任务已取消"))
+				stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
 				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
 			}
@@ -401,7 +408,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		}
 
 		stream.SetStatus("completed")
-		stream.Publish(taskstream.ProcessingEndEvent(sessionID, "处理完成"))
+		stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
 		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}

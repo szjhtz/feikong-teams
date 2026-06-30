@@ -1,4 +1,4 @@
-import type { ChatEvent, QueueItem, ToolCallDTO } from "./events";
+import type { ChatEvent, QueueItem } from "./events";
 
 export interface SessionSummary {
   session_id: string;
@@ -10,42 +10,15 @@ export interface SessionSummary {
   current_agent?: string;
 }
 
-export interface MessageEvent {
-  type: string;
-  sequence?: number;
-  content?: string;
-  detail?: string;
-  tool_call?: ToolCallDTO;
-  ask?: {
-    id?: string;
-    question?: string;
-    options?: string[];
-    multi_select?: boolean;
-    selected?: string[];
-    free_text?: string;
-    answered?: boolean;
-  };
-}
-
-export interface AgentMessage {
-  agent_name?: string;
-  run_path?: string;
-  member_call_id?: string;
-  member_tool_name?: string;
-  member_name?: string;
-  role?: string;
-  content?: string;
-  start_time?: string;
-  end_time?: string;
-  events?: MessageEvent[];
-}
-
 export interface SessionDetail {
   session_id: string;
   title?: string;
   status?: string;
   favorite?: boolean;
-  messages?: AgentMessage[];
+  active_task?: boolean;
+  events?: ChatEvent[];
+  message_count?: number;
+  allow_tool_details?: boolean;
 }
 
 export interface ChatViewMessage {

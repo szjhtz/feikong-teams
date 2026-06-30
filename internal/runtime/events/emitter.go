@@ -232,6 +232,22 @@ func Error(agentName, runPath string, err error) Event {
 	return event
 }
 
+func ProcessingStart(runID, turnID, content string) Event {
+	return Event{Type: EventProcessingStart, RunID: runID, TurnID: turnID, Content: content}
+}
+
+func ProcessingEnd(runID, turnID, content string) Event {
+	return Event{Type: EventProcessingEnd, RunID: runID, TurnID: turnID, Content: content}
+}
+
+func Cancelled(runID, turnID, content string) Event {
+	return Event{Type: EventCancelled, RunID: runID, TurnID: turnID, Content: content}
+}
+
+func QueueUpdated(runID, turnID string) Event {
+	return Event{Type: EventQueueUpdated, RunID: runID, TurnID: turnID}
+}
+
 func Usage(agentName, runPath string, promptTokens, completionTokens, totalTokens int) Event {
 	return Event{
 		Type:             EventUsageReported,

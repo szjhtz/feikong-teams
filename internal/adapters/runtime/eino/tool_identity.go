@@ -78,12 +78,12 @@ func (t *toolIdentityTracker) refsFor(toolCalls []domainmessage.ToolCall) map[in
 	return refs
 }
 
-func (t *toolIdentityTracker) attach(event *domainevent.Event) {
+func (t *toolIdentityTracker) attach(event *domainevent.Event, scope MemberScope) {
 	if event == nil {
 		return
 	}
 	if event.ToolCallID == "" && event.ToolName != "" {
-		event.ToolCallID = t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolCallCompleted)
+		event.ToolCallID = t.resultIDByName(event.ToolName, scope, event.Type == domainevent.TypeToolCallCompleted)
 	}
 	if event.ToolCallID == "" {
 		return
@@ -94,7 +94,7 @@ func (t *toolIdentityTracker) attach(event *domainevent.Event) {
 		}
 	}
 	if event.ToolCallRef == "" && event.ToolName != "" {
-		if mappedID := t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolCallCompleted); mappedID != "" {
+		if mappedID := t.resultIDByName(event.ToolName, scope, event.Type == domainevent.TypeToolCallCompleted); mappedID != "" {
 			event.ToolCallID = mappedID
 			if ref, ok := t.refsByID.Load(event.ToolCallID); ok {
 				if value, ok := ref.(string); ok && value != "" {
@@ -107,16 +107,18 @@ func (t *toolIdentityTracker) attach(event *domainevent.Event) {
 		event.ToolCallIndex = &order
 	}
 	if event.Type == domainevent.TypeToolCallCompleted && event.ToolName != "" {
-		delete(t.activeResultsByName, event.ToolName)
-		t.consumePendingResult(event.ToolName, event.ToolCallID)
+		key := t.resultNameKey(event.ToolName, scope)
+		delete(t.activeResultsByName, key)
+		t.consumePendingResult(key, event.ToolCallID)
 	}
 }
 
-func (t *toolIdentityTracker) rememberResult(name, id string) {
+func (t *toolIdentityTracker) rememberResult(name, id string, scope MemberScope) {
 	if name == "" || id == "" {
 		return
 	}
-	t.pendingResultsByName[name] = append(t.pendingResultsByName[name], id)
+	key := t.resultNameKey(name, scope)
+	t.pendingResultsByName[key] = append(t.pendingResultsByName[key], id)
 }
 
 func (t *toolIdentityTracker) orderForID(id string) (int, bool) {
@@ -140,44 +142,52 @@ func (t *toolIdentityTracker) syntheticKey(sourceMessageID string, position int,
 	return strings.Join(parts, "|")
 }
 
-func (t *toolIdentityTracker) resultIDByName(name string, done bool) string {
+func (t *toolIdentityTracker) resultIDByName(name string, scope MemberScope, done bool) string {
 	if name == "" {
 		return ""
 	}
-	if id := t.activeResultsByName[name]; id != "" {
+	key := t.resultNameKey(name, scope)
+	if id := t.activeResultsByName[key]; id != "" {
 		if done {
-			delete(t.activeResultsByName, name)
-			t.consumePendingResult(name, id)
+			delete(t.activeResultsByName, key)
+			t.consumePendingResult(key, id)
 		}
 		return id
 	}
-	queue := t.pendingResultsByName[name]
+	queue := t.pendingResultsByName[key]
 	if len(queue) == 0 {
 		return ""
 	}
 	id := queue[0]
 	if done {
-		t.pendingResultsByName[name] = queue[1:]
+		t.pendingResultsByName[key] = queue[1:]
 	} else {
-		t.activeResultsByName[name] = id
+		t.activeResultsByName[key] = id
 	}
 	return id
 }
 
-func (t *toolIdentityTracker) consumePendingResult(name, id string) {
-	queue := t.pendingResultsByName[name]
+func (t *toolIdentityTracker) consumePendingResult(key, id string) {
+	queue := t.pendingResultsByName[key]
 	if len(queue) == 0 {
 		return
 	}
 	if queue[0] == id {
-		t.pendingResultsByName[name] = queue[1:]
+		t.pendingResultsByName[key] = queue[1:]
 		return
 	}
 	for i, queued := range queue {
 		if queued != id {
 			continue
 		}
-		t.pendingResultsByName[name] = append(queue[:i], queue[i+1:]...)
+		t.pendingResultsByName[key] = append(queue[:i], queue[i+1:]...)
 		return
 	}
+}
+
+func (t *toolIdentityTracker) resultNameKey(name string, scope MemberScope) string {
+	if scope.CallID == "" {
+		return name
+	}
+	return scope.CallID + "\x00" + name
 }

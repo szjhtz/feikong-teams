@@ -34,6 +34,9 @@ const (
 	TypeSystemNotice       Type = "system_notice"
 	TypeUsageReported      Type = "usage_reported"
 	TypeError              Type = "error"
+	TypeProcessingStart    Type = "processing_start"
+	TypeProcessingEnd      Type = "processing_end"
+	TypeCancelled          Type = "cancelled"
 )
 
 type DeltaKind string

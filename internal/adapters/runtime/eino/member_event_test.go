@@ -119,6 +119,27 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 	requireBefore(t, got, memberToolStartIdx, memberToolResultIdx, "member tool start", "member tool result")
 }
 
+func TestAgentToolScopeUsesSyntheticCallIDWhenContextHasNoToolCallID(t *testing.T) {
+	agent := &agentToolNameAgent{
+		toolName:    "ask_fkagent_researcher",
+		displayName: "researcher",
+	}
+	ctx, scope := agent.contextWithMemberScope(context.Background())
+	if scope.CallID == "" {
+		t.Fatal("scope call ID is empty")
+	}
+	if scope.ToolName != "ask_fkagent_researcher" || scope.Name != "researcher" {
+		t.Fatalf("scope = %#v", scope)
+	}
+	metadata, ok := runtimeport.InterruptMetadataFromContext(ctx)
+	if !ok {
+		t.Fatal("interrupt metadata missing")
+	}
+	if metadata.MemberCallID != scope.CallID {
+		t.Fatalf("metadata member call ID = %q, want %q", metadata.MemberCallID, scope.CallID)
+	}
+}
+
 func TestAdaptInterruptsKeepsMemberScope(t *testing.T) {
 	order := 2
 	got := adaptInterruptsFromRunner([]*adk.InterruptCtx{{

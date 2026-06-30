@@ -9,20 +9,22 @@ export function ToolCallCard({ tool, children }: { tool: ToolCallDTO; children?:
   const isError = tool.status === "error";
   const title = tool.display_name || tool.name || "tool";
   const isAgentDispatch = isAgentDispatchTool(tool);
+  const runningTone = "text-amber-600";
+  const runningDotTone = "bg-amber-400";
   const showArguments = Boolean(tool.arguments);
   const showResult = Boolean(tool.result && !(isAgentDispatch && children));
   return (
-    <div className="text-sm">
+    <div className="-ml-2 text-sm">
       <button
         className={cn(
           "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/70",
-          isError ? "text-destructive" : isRunning ? "text-amber-600" : "text-muted-foreground",
+          isError ? "text-destructive" : isRunning ? runningTone : "text-muted-foreground",
         )}
         onClick={() => setOpen(!open)}
         type="button"
       >
         <span
-          className={cn("h-2 w-2 rounded-full", isError ? "bg-destructive" : isRunning ? "bg-amber-400" : "bg-muted-foreground/35")}
+          className={cn("h-2 w-2 rounded-full", isError ? "bg-destructive" : isRunning ? runningDotTone : "bg-muted-foreground/35")}
         />
         <span className="font-semibold">{title}</span>
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />

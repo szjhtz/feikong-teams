@@ -14,7 +14,6 @@ type TurnInput = message.TurnInput
 
 type HistorySink interface {
 	GetMessageCount() int
-	RecordUserMessage(message message.Message)
 	SetSummary(summary string, beforeCount int)
 }
 

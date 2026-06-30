@@ -109,25 +109,23 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	return nil
 }
 
+func LoadLinesFromFile(filePath string) ([]HistoryLine, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	defer file.Close()
+	return loadHistoryLines(file)
+}
+
 func loadMessagesJSONL(file *os.File) ([]AgentMessage, error) {
+	lines, err := loadHistoryLines(file)
+	if err != nil {
+		return nil, err
+	}
 	messages := make([]AgentMessage, 0)
 	messageIndex := make(map[string]int)
-	decoder := json.NewDecoder(file)
-	lineNo := 1
-	for {
-		var line HistoryLine
-		if err := decoder.Decode(&line); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, fmt.Errorf("decode jsonl record %d: %w", lineNo, err)
-		}
-		if line.Type != historyLineTypeMessageEvent {
-			return nil, fmt.Errorf("unsupported history line type at record %d: %s", lineNo, line.Type)
-		}
-		if line.MessageID == "" {
-			return nil, fmt.Errorf("missing message_id at record %d", lineNo)
-		}
+	for _, line := range lines {
 		idx, exists := messageIndex[line.MessageID]
 		if !exists {
 			messageIndex[line.MessageID] = len(messages)
@@ -145,7 +143,30 @@ func loadMessagesJSONL(file *os.File) ([]AgentMessage, error) {
 		}
 		messages[idx].Events = append(messages[idx].Events, line.Event)
 		messages[idx].EndTime = line.EndTime
-		lineNo++
 	}
 	return messages, nil
+}
+
+func loadHistoryLines(r io.Reader) ([]HistoryLine, error) {
+	lines := make([]HistoryLine, 0)
+	decoder := json.NewDecoder(r)
+	lineNo := 1
+	for {
+		var line HistoryLine
+		if err := decoder.Decode(&line); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("decode jsonl record %d: %w", lineNo, err)
+		}
+		if line.Type != historyLineTypeMessageEvent {
+			return nil, fmt.Errorf("unsupported history line type at record %d: %s", lineNo, line.Type)
+		}
+		if line.MessageID == "" {
+			return nil, fmt.Errorf("missing message_id at record %d", lineNo)
+		}
+		lines = append(lines, line)
+		lineNo++
+	}
+	return lines, nil
 }

@@ -60,9 +60,6 @@ func (cfg runConfig) prepareContext(ctx context.Context, checkpointID string) co
 func (cfg runConfig) prepareHistoryContext(ctx context.Context, input message.TurnInput) context.Context {
 	if cfg.Recorder != nil {
 		countBefore := cfg.Recorder.GetMessageCount()
-		if !input.Message.IsEmpty() {
-			cfg.Recorder.RecordUserMessage(input.Message)
-		}
 		ctx = runtimeport.WithSummaryPersistCallback(ctx, func(s string) {
 			cfg.Recorder.SetSummary(s, countBefore)
 		})

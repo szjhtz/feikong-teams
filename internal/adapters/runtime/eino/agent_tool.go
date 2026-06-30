@@ -4,10 +4,13 @@ import (
 	"context"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/compose"
 )
+
+var syntheticMemberCallSeq int64
 
 func NewAgentTools(ctx context.Context, subAgents []runtimeport.Agent, cfg runtimeport.AgentToolConfig) ([]runtimeport.Tool, error) {
 	runnerAgents, err := AdaptAgentsForRunner(subAgents)
@@ -77,8 +80,12 @@ func (a *agentToolNameAgent) Resume(ctx context.Context, info *adk.ResumeInfo, o
 }
 
 func (a *agentToolNameAgent) contextWithMemberScope(ctx context.Context) (context.Context, MemberScope) {
+	callID := compose.GetToolCallID(ctx)
+	if callID == "" {
+		callID = fmt.Sprintf("synthetic_member_call:%s:%d", a.toolName, atomic.AddInt64(&syntheticMemberCallSeq, 1))
+	}
 	scope := MemberScope{
-		CallID:   compose.GetToolCallID(ctx),
+		CallID:   callID,
 		ToolName: a.toolName,
 		Name:     a.displayName,
 	}

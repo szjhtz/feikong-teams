@@ -43,7 +43,7 @@ fkteams 支持多模态输入，允许用户在对话中发送文本、图片、
 
 ## HTTP API
 
-HTTP POST `/api/chat` 同样支持 `contents` 字段，格式与 WebSocket 一致。
+HTTP POST `/api/fkteams/chat` 同样支持 `contents` 字段，格式与 WebSocket 一致。
 
 ## 历史记录
 

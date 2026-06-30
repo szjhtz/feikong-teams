@@ -12,8 +12,23 @@ func ToolCallsFromEvent(event Event) []message.ToolCall {
 	}
 	toolCalls := make([]message.ToolCall, 0, len(event.ToolCalls)+1)
 	toolCalls = append(toolCalls, *event.ToolCall)
-	toolCalls = append(toolCalls, event.ToolCalls...)
+	for _, tool := range event.ToolCalls {
+		if sameToolCall(*event.ToolCall, tool) {
+			continue
+		}
+		toolCalls = append(toolCalls, tool)
+	}
 	return toolCalls
+}
+
+func sameToolCall(left, right message.ToolCall) bool {
+	if left.ID != "" && right.ID != "" {
+		return left.ID == right.ID
+	}
+	if left.Index != nil && right.Index != nil && *left.Index != *right.Index {
+		return false
+	}
+	return left.Function.Name != "" && left.Function.Name == right.Function.Name && left.Function.Arguments == right.Function.Arguments
 }
 
 func ToolCallRefAt(event Event, tool message.ToolCall, position int) string {
@@ -79,6 +94,10 @@ func ValidateEventContract(event Event) error {
 	case EventError:
 		if event.Error == "" && event.Content == "" {
 			return fmt.Errorf("error event missing error content")
+		}
+	case EventProcessingStart, EventProcessingEnd, EventCancelled:
+		if event.RunID == "" || event.TurnID == "" {
+			return fmt.Errorf("%s missing run or turn identity", event.Type)
 		}
 	case EventSystemNotice:
 		if event.Content == "" && (event.Notice == nil || event.Notice.Message == "") {

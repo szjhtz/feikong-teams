@@ -48,8 +48,8 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
         agent_name: currentAgent || undefined,
       });
       if (result.status === "queued") return;
-      dispatch(chatActions.setActiveSession(result.session_id));
       dispatch(chatActions.setRunningSession(result.session_id));
+      dispatch(chatActions.setActiveSession(result.session_id));
       pushAppPath(chatPath(result.session_id));
       dispatch(loadSessions());
       resetOffset(result.session_id);

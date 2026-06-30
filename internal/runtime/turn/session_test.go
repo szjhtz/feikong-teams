@@ -18,8 +18,6 @@ func (h *historySinkStub) GetMessageCount() int {
 	return h.count
 }
 
-func (h *historySinkStub) RecordUserMessage(message.Message) {}
-
 func (h *historySinkStub) SetSummary(string, int) {}
 
 type runnerStub struct {

@@ -4,13 +4,13 @@
 
 | 入口 | 适用场景 | 特点 |
 | ---- | -------- | ---- |
-| `POST /api/fkteams/chat` | 普通 HTTP 调用 | 同步 JSON 或请求内 SSE；连接断开会影响本次请求 |
+| `POST /api/fkteams/chat` | 普通 HTTP 调用 | 同步 JSON 响应 |
 | `GET /ws` | Web 前端交互 | WebSocket 推送、HITL、运行中队列、断线后可 `resume` |
 | `POST /api/fkteams/stream/start` | 推荐的后台任务入口 | 任务与连接解耦，详见 [流式任务 API](stream.md) |
 
 ## POST /api/fkteams/chat
 
-通过 HTTP 发送聊天消息，支持同步响应和 SSE 流式响应。
+通过 HTTP 发送聊天消息，返回同步 JSON 响应。实时流式输出统一使用 [流式任务 API](stream.md)。
 
 > HTTP 聊天默认使用非交互式中断处理。需要完整 HITL 审批或运行中排队管理时，使用 WebSocket 或后台流式任务接口。
 
@@ -22,7 +22,6 @@
   "message": "string",
   "mode": "team",
   "agent_name": "string",
-  "stream": false,
   "contents": []
 }
 ```
@@ -33,7 +32,6 @@
 | `message` | string | 条件 | 用户文本，和 `contents` 至少提供一个 |
 | `mode` | string | 否 | 运行模式，默认 `team`；具体值由 Runner 缓存解析 |
 | `agent_name` | string | 否 | 指定单个智能体，优先于 `mode` |
-| `stream` | bool | 否 | 是否返回请求内 SSE，默认 `false` |
 | `contents` | array | 条件 | 多模态内容；存在时优先用于构建输入 |
 
 `contents` 元素结构：
@@ -58,7 +56,7 @@
 | `video_url` | `url` |
 | `file_url` | `url` |
 
-**同步响应**（`stream: false`）：
+**同步响应**：
 
 ```json
 {
@@ -74,22 +72,13 @@
 
 `events` 是原始 Agent 事件数组，按执行顺序返回。
 
-**SSE 响应**（`stream: true`）：
-
-```text
-data: {"type":"assistant_text_delta","agent_name":"coder","content":"..."}
-
-data: {"type":"processing_end","message":"处理完成"}
-```
-
-该 SSE 只存在于当前 HTTP 请求内，不提供后台续接能力；需要续接时使用 [流式任务 API](stream.md)。
-
 **失败响应**：
 
 | 状态码 | message | 说明 |
 | ------ | ------- | ---- |
 | 400 | `invalid request: ...` | 请求体解析失败 |
 | 400 | `message or contents is required` | 消息为空 |
+| 400 | `stream=true is not supported on /api/fkteams/chat; use /api/fkteams/stream/start` | 请求内 SSE 已移除 |
 | 400 | Runner 错误详情 | `agent_name` 指定的智能体不可用 |
 | 500 | Runner 错误详情 | Runner 创建或执行失败 |
 
@@ -308,11 +297,13 @@ Agent 事件基础字段：
   "tool_kind": "string",
   "detail": "string",
   "error": "string",
-  "stream_event_id": 0
+  "event_id": "evt_1",
+  "sequence": 1,
+  "created_at": "2026-06-30T00:00:00Z"
 }
 ```
 
-字段均为按需返回。`stream_event_id` 由 taskstream 注入，用于 WebSocket `resume` 或 SSE 续接。
+字段均为按需返回。业务展示顺序只使用 `sequence`；WebSocket/SSE 续接使用对应传输层 offset。
 
 常见 Agent `type`：
 

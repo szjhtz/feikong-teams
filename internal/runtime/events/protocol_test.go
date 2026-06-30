@@ -72,6 +72,27 @@ func TestToolCallsFromEventPrependsSingleToolCall(t *testing.T) {
 	}
 }
 
+func TestToolCallsFromEventDedupesSingleToolCall(t *testing.T) {
+	index := 0
+	single := message.ToolCall{
+		ID:    "call_1",
+		Index: &index,
+		Function: message.FunctionCall{
+			Name:      "search",
+			Arguments: `{"query":"news"}`,
+		},
+	}
+	event := Event{
+		ToolCall:  &single,
+		ToolCalls: []message.ToolCall{single},
+	}
+
+	got := ToolCallsFromEvent(event)
+	if len(got) != 1 || got[0].ID != "call_1" {
+		t.Fatalf("ToolCallsFromEvent duplicate = %#v", got)
+	}
+}
+
 func TestValidateEventContractRequiresStableToolIdentity(t *testing.T) {
 	if err := ValidateEventContract(Event{
 		Type:     EventToolCallStarted,

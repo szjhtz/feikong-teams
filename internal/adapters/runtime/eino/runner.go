@@ -209,7 +209,7 @@ func (c *converter) flushUnknownToolReports() error {
 			ToolArgs:   report.ToolArgs,
 			ToolResult: normalizeToolResultContent(report.ToolResult),
 		})
-		c.identities.attach(&nEvent)
+		c.identities.attach(&nEvent, MemberScope{})
 		if nEvent.ToolCallID == "" || nEvent.ToolCallRef == "" {
 			pending = append(pending, report)
 			continue
@@ -348,8 +348,8 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 		ToolName:   msg.ToolName,
 		ToolResult: content,
 	})
-	c.identities.attach(&toolEvent)
 	scope.apply(&toolEvent, c)
+	c.identities.attach(&toolEvent, scope)
 	return c.emit(toolEvent)
 }
 
@@ -359,7 +359,7 @@ func (c *converter) emitToolStarts(event *adk.AgentEvent, sourceMessageID string
 			continue
 		}
 		ref := c.identities.ensure(sourceMessageID, position, scope, &tc)
-		c.identities.rememberResult(tc.Function.Name, tc.ID)
+		c.identities.rememberResult(tc.Function.Name, tc.ID, scope)
 		nEvent := events.ToolCallStarted(events.ToolEvent{
 			AgentName:     event.AgentName,
 			RunPath:       formatRunPath(event.RunPath),
@@ -477,8 +477,8 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 			ToolName:   chunk.ToolName,
 			Content:    chunk.Content,
 		})
-		c.identities.attach(&nEvent)
 		scope.apply(&nEvent, c)
+		c.identities.attach(&nEvent, scope)
 		return c.emit(nEvent)
 	}
 	if !ss.messageStarted {

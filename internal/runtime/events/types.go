@@ -31,6 +31,9 @@ const (
 	EventSystemNotice       = domainevent.TypeSystemNotice
 	EventUsageReported      = domainevent.TypeUsageReported
 	EventError              = domainevent.TypeError
+	EventProcessingStart    = domainevent.TypeProcessingStart
+	EventProcessingEnd      = domainevent.TypeProcessingEnd
+	EventCancelled          = domainevent.TypeCancelled
 )
 
 type DeltaKind = domainevent.DeltaKind

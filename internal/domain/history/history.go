@@ -73,7 +73,12 @@ const (
 
 type MessageEvent struct {
 	Type         MsgEventType          `json:"type"`
+	EventID      string                `json:"event_id,omitempty"`
 	Sequence     int64                 `json:"sequence,omitempty"`
+	CreatedAt    time.Time             `json:"created_at,omitempty"`
+	RunID        string                `json:"run_id,omitempty"`
+	TurnID       string                `json:"turn_id,omitempty"`
+	MessageID    string                `json:"message_id,omitempty"`
 	Content      string                `json:"content,omitempty"`
 	Detail       string                `json:"detail,omitempty"`
 	ContentParts []message.ContentPart `json:"content_parts,omitempty"`

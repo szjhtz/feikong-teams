@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	domainmessage "fkteams/internal/domain/message"
+	runtimeevents "fkteams/internal/runtime/events"
 )
 
 func TestSessionMessageReaderLoadsActiveRecorder(t *testing.T) {
 	manager := NewSessionHistoryManager()
 	recorder := manager.GetOrCreate("active-session", t.TempDir())
-	recorder.RecordUserMessage(domainmessage.Message{Role: domainmessage.RoleUser, Content: "hello"})
+	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "msg-1", domainmessage.Message{Role: domainmessage.RoleUser, Content: "hello"}))
 
 	messages, err := NewSessionMessageReader(t.TempDir(), manager).LoadSessionMessages(context.Background(), "active-session")
 	if err != nil {
@@ -26,7 +27,7 @@ func TestSessionMessageReaderLoadsPersistedHistory(t *testing.T) {
 	dir := t.TempDir()
 	sessionID := "persisted-session"
 	recorder := NewHistoryRecorder()
-	recorder.RecordUserMessage(domainmessage.Message{Role: domainmessage.RoleUser, Content: "from disk"})
+	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "msg-1", domainmessage.Message{Role: domainmessage.RoleUser, Content: "from disk"}))
 	if err := recorder.SaveToFile(filepath.Join(dir, sessionID, HistoryFileName)); err != nil {
 		t.Fatalf("SaveToFile returned error: %v", err)
 	}

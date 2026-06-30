@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 
 	"github.com/google/uuid"
@@ -21,36 +20,6 @@ import (
 
 // Event 是传输无关的任务通知事件。
 type Event map[string]any
-
-func NewEvent(eventType domainevent.NotifyType, sessionID string) Event {
-	event := Event{"type": eventType}
-	if sessionID != "" {
-		event["session_id"] = sessionID
-	}
-	return event
-}
-
-func UserMessageEvent(sessionID, content string) Event {
-	return NewEvent(domainevent.NotifyUserMessage, sessionID).With("content", content)
-}
-
-func ProcessingStartEvent(sessionID, message string) Event {
-	return NewEvent(domainevent.NotifyProcessingStart, sessionID).With("message", message)
-}
-
-func ProcessingEndEvent(sessionID, message string) Event {
-	return NewEvent(domainevent.NotifyProcessingEnd, sessionID).With("message", message)
-}
-
-func CancelledEvent(sessionID, message string) Event {
-	return NewEvent(domainevent.NotifyCancelled, sessionID).With("message", message)
-}
-
-func QueueUpdatedEvent(sessionID string, queue []QueuedMessage, count int) Event {
-	return NewEvent(domainevent.NotifyQueueUpdated, sessionID).
-		With("queue", queue).
-		With("queued_count", count)
-}
 
 func (e Event) With(key string, value any) Event {
 	e[key] = value
@@ -140,6 +109,8 @@ type StreamConfig struct {
 	// 元数据（可选）
 	Mode      string // 协作模式
 	AgentName string // 智能体名称
+	runID     string
+	turnID    string
 }
 
 // Stream 代表单个任务的事件流，是事件投递的核心抽象。
@@ -204,6 +175,19 @@ func (s *Stream) Publish(event Event) {
 		default:
 		}
 	}
+}
+
+func (s *Stream) SetTurn(runID, turnID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.runID = runID
+	s.config.turnID = turnID
+}
+
+func (s *Stream) CurrentTurn() (string, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.config.runID, s.config.turnID
 }
 
 // Subscribe 绑定 Push 订阅者并回放错过的事件。

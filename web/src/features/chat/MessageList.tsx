@@ -69,7 +69,7 @@ export function MessageList() {
   const previousMessageCountRef = useRef(0);
   const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const displayEvents = useMemo(() => eventsForDisplay(messages, events), [messages, events]);
+  const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
   const timeline = useMemo(
     () => buildTimelineModel(messages, displayEvents, submittedAskIDs),
     [messages, displayEvents, submittedAskIDs],
@@ -177,6 +177,7 @@ export function MessageList() {
               }}
             />
           ))}
+          <ActivityList tools={timeline.trailingTools} agents={agents} />
           {isProcessing ? (
             <div className="message-row text-lg text-muted-foreground">
               <div>
@@ -190,7 +191,6 @@ export function MessageList() {
             </div>
           ) : null}
           {error ? <div className="sketch-surface rounded-md border-destructive/50 px-4 py-3 text-sm text-destructive">{error}</div> : null}
-          <ActivityList tools={timeline.trailingTools} agents={agents} />
           <div ref={bottomRef} />
         </div>
       </div>
@@ -319,7 +319,7 @@ function MessagePart({
 function ReasoningBlock({ content }: { content: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="text-sm">
+    <div className="-ml-2 text-sm">
       <button
         className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-amber-600 transition-colors hover:bg-amber-50/70"
         onClick={() => setOpen(!open)}
@@ -429,9 +429,8 @@ function ActivityList({
 
 function memberForTool(tool: ToolActivity, memberByCallID: Map<string, MemberActivity>) {
   const keys = uniqueStrings([
-    tool.id || "",
-    tool.ref || "",
-    stripToolRef(tool.ref || ""),
+    ...toolIdentityKeys(tool.ref),
+    ...toolIdentityKeys(tool.id),
     tool.name || "",
   ].filter(Boolean));
   for (const key of keys) {
@@ -463,7 +462,7 @@ function memberIDsWithParentTools(members: MemberActivity[], tools: ToolActivity
 
 function memberLookupKeys(value: string) {
   if (!value) return [];
-  return uniqueStrings(value.startsWith("tool_call:") ? [value, stripToolRef(value)] : [value, `tool_call:${value}`]);
+  return uniqueStrings(toolIdentityKeys(value));
 }
 
 function MemberActivityBlock({ member, agents }: { member: MemberActivity; agents: AgentInfo[] }) {
@@ -472,16 +471,16 @@ function MemberActivityBlock({ member, agents }: { member: MemberActivity; agent
   return (
     <div className="text-sm">
       <button
-        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-muted-foreground transition-colors hover:bg-muted/70"
+        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-amber-600 transition-colors hover:bg-amber-50/70"
         onClick={() => setOpen(!open)}
         type="button"
       >
-        <span className="h-2 w-2 rounded-full bg-muted-foreground/35" />
+        <span className="h-2 w-2 rounded-full bg-amber-400" />
         <AgentNameLabel name={member.name} agent={agent} loud />
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
-        <div className="ml-7 space-y-3 border-l border-border/60 pl-4 pt-2">
+        <div className="ml-7 space-y-3 border-l border-amber-200/70 pl-4 pt-2">
           <MemberActivityDetails member={member} agents={agents} />
         </div>
       ) : null}
@@ -820,16 +819,10 @@ function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unkno
     .join(":");
 }
 
-function eventsForDisplay(messages: ChatViewMessage[], liveEvents: ChatEvent[]) {
+function eventsForDisplay(liveEvents: ChatEvent[]) {
   const seen = new Set<string>();
   const result: ChatEvent[] = [];
-  const messageEvents = messages.flatMap((message) =>
-    (message.events || []).map((event) => ({
-      ...event,
-      message_id: event.message_id || message.id,
-    })),
-  );
-  for (const event of [...messageEvents, ...liveEvents]) {
+  for (const event of liveEvents) {
     const key = eventDisplayKey(event);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -1207,7 +1200,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
       });
     }
     if (event.tool_name || event.tool_call_ref || event.tool_call_id) {
-      const key = event.tool_call_ref || event.tool_call_id || event.tool_name || "tool";
+      const key = canonicalToolRef(event.tool_call_ref || event.tool_call_id) || eventDisplayKey(event);
       const current = result.get(key);
       upsert(key, {
         ref: event.tool_call_ref,
@@ -1221,15 +1214,16 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         message_id: event.message_id || current?.message_id,
       });
       const next = result.get(key)!;
-      const content = String(event.tool_args || event.content || "");
-      if (event.delta_kind === "tool_args" && content) {
-        next.arguments = appendText(next.arguments, content);
+      const argsContent = String(event.tool_args || (event.delta_kind === "tool_args" ? event.content : "") || "");
+      const resultContent = String(event.tool_result || ((isToolResultEvent(event) || event.role === "tool") ? event.content : "") || "");
+      if (event.delta_kind === "tool_args" && argsContent) {
+        next.arguments = appendText(next.arguments, argsContent);
       }
-      if ((event.type === "tool_call_started" || event.delta_kind === "tool_args") && content && !next.arguments) {
-        next.arguments = content;
+      if ((event.type === "tool_call_started" || event.delta_kind === "tool_args") && argsContent && !next.arguments) {
+        next.arguments = argsContent;
       }
-      if ((isToolResultEvent(event) || event.role === "tool") && content) {
-        next.result = appendText(next.result, content);
+      if ((isToolResultEvent(event) || event.role === "tool") && resultContent) {
+        next.result = event.type === "tool_call_completed" ? resultContent : appendText(next.result, resultContent);
       }
     }
   }
@@ -1268,7 +1262,11 @@ function collectMemberActivities(events: ChatEvent[]) {
 }
 
 function memberActivityID(event: ChatEvent) {
-  return event.member_call_id || event.parent_tool_call_id || event.member_name || event.agent_name || event.message_id || "member";
+  if (event.member_call_id) return event.member_call_id;
+  if (event.parent_tool_call_id) return event.parent_tool_call_id;
+  if (event.message_id) return event.message_id;
+  if (event.stream_id) return event.stream_id;
+  return eventDisplayKey(event);
 }
 
 function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
@@ -1330,10 +1328,6 @@ function appendSequencedTextPart(parts: MessageRenderPart[], type: "reasoning" |
 function eventOrder(event: ChatEvent, fallback: number) {
   const sequence = Number(event.sequence);
   if (Number.isFinite(sequence)) return sequence;
-  const displayOrder = Number(event.display_order);
-  if (Number.isFinite(displayOrder)) return displayOrder;
-  const streamID = Number(event.stream_event_id);
-  if (Number.isFinite(streamID)) return streamID;
   return fallback + 0.5;
 }
 
@@ -1357,11 +1351,23 @@ function stripToolRef(ref: string) {
 }
 
 function toolActivityKey(tool: ToolActivity) {
-  return tool.ref || tool.id || `${tool.message_id || ""}:${tool.name}:${tool.index ?? ""}`;
+  return canonicalToolRef(tool.ref || tool.id) || `${tool.message_id || "tool"}:${tool.index ?? ""}`;
 }
 
 function toolKey(tool: ToolCallDTO, event: ChatEvent) {
-  return tool.ref || event.tool_call_ref || tool.id || event.tool_call_id || `${tool.name}:${tool.index ?? ""}`;
+  return canonicalToolRef(tool.ref || event.tool_call_ref || tool.id || event.tool_call_id) || eventDisplayKey(event);
+}
+
+function toolIdentityKeys(value?: string) {
+  if (!value) return [];
+  const stripped = stripToolRef(value);
+  return [value, stripped, `tool_call:${stripped}`];
+}
+
+function canonicalToolRef(value?: string) {
+  if (!value) return "";
+  const stripped = stripToolRef(value);
+  return `tool_call:${stripped}`;
 }
 
 function appendText(left = "", right = "") {

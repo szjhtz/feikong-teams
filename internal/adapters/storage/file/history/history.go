@@ -7,6 +7,7 @@ import (
 	"fkteams/internal/runtime/events"
 
 	"sync"
+	"time"
 )
 
 type Event = events.Event
@@ -60,7 +61,12 @@ type pendingToolCall struct {
 	ID          string
 	Index       *int
 	EventIndex  int
+	EventID     string
 	Sequence    int64
+	CreatedAt   time.Time
+	RunID       string
+	TurnID      string
+	MessageID   string
 	Name        string
 	Display     toolmeta.ToolDisplay
 	DisplayName string
@@ -139,14 +145,31 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 	return &record
 }
 
-func (h *HistoryRecorder) pendingToolCallFromEvent(ref, id string, index *int, name, arguments string, sequence int64) pendingToolCall {
+func historyEventEnvelope(event Event, typ MsgEventType) MessageEvent {
+	return MessageEvent{
+		Type:      typ,
+		EventID:   event.EventID,
+		Sequence:  event.Sequence,
+		CreatedAt: event.CreatedAt,
+		RunID:     event.RunID,
+		TurnID:    event.TurnID,
+		MessageID: event.MessageID,
+	}
+}
+
+func (h *HistoryRecorder) pendingToolCallFromEvent(event Event, ref, id string, index *int, name, arguments string) pendingToolCall {
 	display := h.formatToolDisplay(name)
 	return pendingToolCall{
 		Ref:         ref,
 		ID:          id,
 		Index:       index,
 		EventIndex:  -1,
-		Sequence:    sequence,
+		EventID:     event.EventID,
+		Sequence:    event.Sequence,
+		CreatedAt:   event.CreatedAt,
+		RunID:       event.RunID,
+		TurnID:      event.TurnID,
+		MessageID:   event.MessageID,
 		Name:        name,
 		Display:     display,
 		DisplayName: display.DisplayName,
@@ -156,12 +179,17 @@ func (h *HistoryRecorder) pendingToolCallFromEvent(ref, id string, index *int, n
 	}
 }
 
-func (h *HistoryRecorder) appendToolCallEvent(ctx *activeMessageContext, tc pendingToolCall, sequence int64) int {
+func (h *HistoryRecorder) appendToolCallEvent(ctx *activeMessageContext, tc pendingToolCall) int {
 	record := toolCallRecordFromPending(tc, "")
 	ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-		Sequence: sequence,
-		Type:     MsgTypeToolCall,
-		ToolCall: ptrToolCallRecord(record),
+		Type:      MsgTypeToolCall,
+		EventID:   tc.EventID,
+		Sequence:  tc.Sequence,
+		CreatedAt: tc.CreatedAt,
+		RunID:     tc.RunID,
+		TurnID:    tc.TurnID,
+		MessageID: tc.MessageID,
+		ToolCall:  ptrToolCallRecord(record),
 	})
 	return len(ctx.msg.Events) - 1
 }

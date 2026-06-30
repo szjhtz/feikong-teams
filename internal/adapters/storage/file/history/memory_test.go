@@ -2,12 +2,13 @@ package eventlog
 
 import (
 	domainmessage "fkteams/internal/domain/message"
+	runtimeevents "fkteams/internal/runtime/events"
 	"testing"
 )
 
 func TestConvertMemoryMessages(t *testing.T) {
 	recorder := NewHistoryRecorder()
-	recorder.RecordUserMessage(domainmessage.Message{Role: domainmessage.RoleUser, Content: "用户消息"})
+	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "msg-1", domainmessage.Message{Role: domainmessage.RoleUser, Content: "用户消息"}))
 	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "assistant", Content: "助手回复"})
 	recorder.FinalizeCurrent()
 

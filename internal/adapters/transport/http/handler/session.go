@@ -194,8 +194,8 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 		meta, metaErr := eventlog.LoadMetadata(sessionDir)
 
 		histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
-		recorder := eventlog.NewHistoryRecorder()
-		if err := recorder.LoadFromFile(histFile); err != nil {
+		lines, err := eventlog.LoadLinesFromFile(histFile)
+		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				if !activeTask && metaErr != nil {
 					Fail(c, http.StatusNotFound, "session not found")
@@ -219,7 +219,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 			"session_id":    sessionID,
 			"current_agent": currentAgent,
 			"favorite":      favorite,
-			"messages":      recorder.GetMessages(),
+			"events":        rt.historyLinesToChatEvents(sessionID, lines),
 			"active_task":   activeTask,
 		})
 	}
