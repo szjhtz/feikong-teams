@@ -14,10 +14,57 @@ marked.use(markedKatex({
 export function renderMarkdown(value?: string) {
   if (!value) return "";
   try {
-    return withCodeCopyButtons(marked.parse(normalizeMathDelimiters(value)) as string);
+    const footnoteInput = normalizeFootnotes(value);
+    const html = withCodeCopyButtons(marked.parse(normalizeMathDelimiters(footnoteInput.markdown)) as string) + footnoteInput.html;
+    return withExternalLinkTargets(html);
   } catch {
     return escapeHTML(value).replace(/\n/g, "<br />");
   }
+}
+
+function withExternalLinkTargets(html: string) {
+  return html.replace(/<a\s+([^>]*href="(?!#)[^"]+"[^>]*)>/g, (match, attrs: string) => {
+    const nextAttrs = attrs
+      .replace(/\s+target="[^"]*"/g, "")
+      .replace(/\s+rel="[^"]*"/g, "");
+    return `<a ${nextAttrs} target="_blank" rel="noreferrer noopener">`;
+  });
+}
+
+function normalizeFootnotes(value: string) {
+  const footnotes: Array<{ id: string; content: string }> = [];
+  const lines = value.split(/\r?\n/);
+  const bodyLines: string[] = [];
+  for (const line of lines) {
+    const match = line.match(/^\[\^([^\]]+)\]:\s*(.*)$/);
+    if (!match) {
+      bodyLines.push(line);
+      continue;
+    }
+    footnotes.push({ id: match[1], content: match[2] });
+  }
+
+  if (!footnotes.length) return { markdown: value, html: "" };
+
+  return {
+    markdown: bodyLines.join("\n").replace(/\[\^([^\]]+)\]/g, (_match, id: string) => (
+      `<sup class="markdown-footnote-ref"><a href="#fn-${slugFootnoteID(id)}" id="fnref-${slugFootnoteID(id)}">${escapeHTML(id)}</a></sup>`
+    )),
+    html: renderFootnotes(footnotes),
+  };
+}
+
+function renderFootnotes(footnotes: Array<{ id: string; content: string }>) {
+  const items = footnotes.map(({ id, content }) => {
+    const safeID = slugFootnoteID(id);
+    const rendered = marked.parseInline(normalizeMathDelimiters(content)) as string;
+    return `<li id="fn-${safeID}"><span class="markdown-footnote-label">${escapeHTML(id)}</span><span class="markdown-footnote-content">${rendered}</span><a class="markdown-footnote-backref" href="#fnref-${safeID}" aria-label="返回正文">↩</a></li>`;
+  }).join("");
+  return `<section class="markdown-footnotes"><ol>${items}</ol></section>`;
+}
+
+function slugFootnoteID(value: string) {
+  return encodeURIComponent(value.trim()).replace(/%/g, "");
 }
 
 function withCodeCopyButtons(html: string) {
