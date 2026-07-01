@@ -55,14 +55,14 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	}
 
 	appService := appschedule.NewService(sched)
-	engine, _ := runtimeport.EngineFromContext(ctx)
+	runtime, _ := runtimeport.RuntimeFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	models, _ := modelregistry.RegistryFromContext(ctx)
 	tools, _ := apptools.RegistryFromContext(ctx)
 	executor := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks")).
 		WithContextHook(func(ctx context.Context) context.Context {
-			ctx = runtimeport.WithEngine(ctx, engine)
+			ctx = runtimeport.WithRuntime(ctx, runtime)
 			ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
 			ctx = agents.WithRegistry(ctx, agentRegistry)
 			ctx = modelregistry.WithRegistry(ctx, models)

@@ -37,7 +37,7 @@ func main() {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
-	ctx := runtimeport.WithEngine(context.Background(), runtimeDefaults.Engine)
+	ctx := runtimeport.WithRuntime(context.Background(), runtimeDefaults.Runtime)
 	ctx = runtimeport.WithInterruptRuntime(ctx, runtimeDefaults.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, runtimeDefaults.ModelRegistry)
 	ctx = modelproviders.WithRegistry(ctx, runtimeDefaults.ModelProviderRegistry)

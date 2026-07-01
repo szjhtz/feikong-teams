@@ -38,7 +38,7 @@ func agentToolName(name string, index int, used map[string]bool) string {
 }
 
 func buildAgentTools(ctx context.Context, subAgents []runtimeport.Agent) ([]runtimeport.Tool, error) {
-	engine, err := runtimeport.RequireEngine(ctx)
+	runtime, err := runtimeport.RequireAgentToolRuntime(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func buildAgentTools(ctx context.Context, subAgents []runtimeport.Agent) ([]runt
 			registry.RegisterAgentToolDisplay(toolName, displayName)
 		}
 	}
-	return engine.NewAgentTools(ctx, subAgents, runtimeport.AgentToolConfig{
+	return runtime.NewAgentTools(ctx, subAgents, runtimeport.AgentToolConfig{
 		ToolName: func(displayName string, index int) string {
 			return agentToolName(displayName, index, usedNames)
 		},
@@ -92,11 +92,11 @@ func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Mod
 
 // newRunner 用共享配置创建 Runner
 func newRunner(ctx context.Context, agent runtimeport.Agent) (runtimeport.Runner, error) {
-	engine, err := runtimeport.RequireEngine(ctx)
+	runtime, err := runtimeport.RequireRunnerRuntime(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return engine.NewRunner(ctx, runtimeport.RunnerConfig{
+	return runtime.NewRunner(ctx, runtimeport.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
 		CheckpointStore: checkpoint.NewMemoryStore(),
@@ -163,11 +163,11 @@ func CreateLoopAgentRunner(ctx context.Context) (runtimeport.Runner, error) {
 		}
 		subAgents = append(subAgents, agent)
 	}
-	engine, err := runtimeport.RequireEngine(ctx)
+	runtime, err := runtimeport.RequireAgentRuntime(ctx)
 	if err != nil {
 		return nil, err
 	}
-	loopAgent, err := engine.NewLoopAgent(ctx, &runtimeport.LoopAgentConfig{
+	loopAgent, err := runtime.NewLoopAgent(ctx, &runtimeport.LoopAgentConfig{
 		Name:          "Roundtable",
 		Description:   "多智能体共同讨论并解决问题",
 		SubAgents:     subAgents,

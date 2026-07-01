@@ -116,15 +116,15 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
 	}
-	engine, err := runtimeport.RequireEngine(ctx)
+	agentRuntime, err := runtimeport.RequireAgentRuntime(ctx)
 	if err != nil {
 		return nil, err
 	}
-	coreModel, err = decorateChatModel(ctx, engine, coreModel)
+	pipelineRuntime, hasPipelineRuntime := runtimeport.PipelineRuntimeFromContext(ctx)
+	coreModel, err = decorateChatModel(ctx, pipelineRuntime, coreModel)
 	if err != nil {
 		return nil, fmt.Errorf("decorate chat model: %w", err)
 	}
-	agentPipelineProvider, hasAgentPipelineProvider := engine.(runtimeport.AgentPipelineProvider)
 
 	// 提示词
 	instruction := b.instruction
@@ -164,15 +164,15 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 		Instruction:        instruction,
 		Model:              coreModel,
 		Tools:              toolList,
-		ToolMiddlewares:    defaultToolMiddlewares(engine),
+		ToolMiddlewares:    defaultToolMiddlewares(pipelineRuntime, hasPipelineRuntime),
 		UnknownToolHandler: unknownToolsHandler,
 		ModelRetryConfig:   retry.NewModelRetryConfig(),
 		MaxIterations:      MaxIterations(),
 		EmitInternalEvents: true,
 	}
 
-	if hasAgentPipelineProvider {
-		defaultMiddlewares, err := agentPipelineProvider.DefaultAgentMiddlewares(ctx)
+	if hasPipelineRuntime {
+		defaultMiddlewares, err := pipelineRuntime.DefaultAgentMiddlewares(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("init default agent middlewares: %w", err)
 		}
@@ -180,7 +180,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	}
 
 	if b.enableSummary {
-		if !hasAgentPipelineProvider {
+		if !hasPipelineRuntime {
 			return nil, fmt.Errorf("runtime does not support summary middleware")
 		}
 		maxTokens := runtimeport.DefaultMaxTokensBeforeSummary
@@ -189,7 +189,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 				maxTokens = n
 			}
 		}
-		summaryMiddleware, err := agentPipelineProvider.NewSummaryMiddleware(ctx, &runtimeport.SummaryConfig{
+		summaryMiddleware, err := pipelineRuntime.NewSummaryMiddleware(ctx, &runtimeport.SummaryConfig{
 			Model:                  coreModel,
 			MaxTokensBeforeSummary: maxTokens,
 		})
@@ -200,10 +200,10 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	}
 
 	if b.enableSkills {
-		if !hasAgentPipelineProvider {
+		if !hasPipelineRuntime {
 			return nil, fmt.Errorf("runtime does not support skills middleware")
 		}
-		skillsMiddleware, err := agentPipelineProvider.NewSkillsMiddleware(ctx)
+		skillsMiddleware, err := pipelineRuntime.NewSkillsMiddleware(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("init skills middleware: %w", err)
 		}
@@ -230,18 +230,18 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 		if err := toolpolicy.ClassifyTools(dispatchConfig.Tools); err != nil {
 			return nil, fmt.Errorf("classify dispatch tools: %w", err)
 		}
-		if !hasAgentPipelineProvider {
+		if !hasPipelineRuntime {
 			return nil, fmt.Errorf("runtime does not support dispatch middleware")
 		}
-		dispatchMiddleware, err := agentPipelineProvider.NewDispatchMiddleware(ctx, dispatchConfig)
+		dispatchMiddleware, err := pipelineRuntime.NewDispatchMiddleware(ctx, dispatchConfig)
 		if err != nil {
 			return nil, fmt.Errorf("init dispatch middleware: %w", err)
 		}
 		cfg.Middlewares = append(cfg.Middlewares, dispatchMiddleware)
 	}
 
-	if hasAgentPipelineProvider {
-		agentsMDMiddleware, err := agentPipelineProvider.NewAgentsMDMiddleware(ctx)
+	if hasPipelineRuntime {
+		agentsMDMiddleware, err := pipelineRuntime.NewAgentsMDMiddleware(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("init agents.md middleware: %w", err)
 		}
@@ -249,7 +249,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	}
 
 	cfg.Middlewares = append(cfg.Middlewares, b.handlers...)
-	return engine.NewChatModelAgent(ctx, cfg)
+	return agentRuntime.NewChatModelAgent(ctx, cfg)
 }
 
 func resolveNamedToolGroups(ctx context.Context, names []string, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
@@ -288,10 +288,9 @@ func decorateChatModel(ctx context.Context, engine any, model runtimeport.ChatMo
 	return decorator.DecorateChatModel(ctx, model)
 }
 
-func defaultToolMiddlewares(engine any) []runtimeport.ToolMiddleware {
-	provider, ok := engine.(runtimeport.ToolPipelineProvider)
+func defaultToolMiddlewares(runtime runtimeport.PipelineRuntime, ok bool) []runtimeport.ToolMiddleware {
 	if !ok {
 		return nil
 	}
-	return provider.DefaultToolMiddlewares()
+	return runtime.DefaultToolMiddlewares()
 }

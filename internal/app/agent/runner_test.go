@@ -34,7 +34,7 @@ func TestAgentToolNameNormalizesAndDeduplicates(t *testing.T) {
 func TestBuildAgentToolsUsesRuntimeToolNameMapping(t *testing.T) {
 	engine := &runnerTestEngine{}
 	displays := toolmeta.NewRegistry()
-	ctx := runtimeport.WithEngine(context.Background(), engine)
+	ctx := runtimeport.WithRuntime(context.Background(), engine)
 	ctx = toolmeta.WithRegistry(ctx, displays)
 
 	agents := []runtimeport.Agent{
@@ -64,7 +64,7 @@ func TestBuildAgentToolsUsesRuntimeToolNameMapping(t *testing.T) {
 
 func TestCreateAgentRunnerUsesRuntimeRunnerConfig(t *testing.T) {
 	engine := &runnerTestEngine{}
-	ctx := runtimeport.WithEngine(context.Background(), engine)
+	ctx := runtimeport.WithRuntime(context.Background(), engine)
 
 	agent := runnerTestAgent{name: "agent"}
 	got, err := CreateAgentRunner(ctx, agent)
@@ -87,7 +87,7 @@ func TestCreateAgentRunnerUsesRuntimeRunnerConfig(t *testing.T) {
 
 func TestCreateAgentRunnerPropagatesRuntimeError(t *testing.T) {
 	engine := &runnerTestEngine{runnerErr: errors.New("runner failed")}
-	ctx := runtimeport.WithEngine(context.Background(), engine)
+	ctx := runtimeport.WithRuntime(context.Background(), engine)
 
 	if _, err := CreateAgentRunner(ctx, runnerTestAgent{name: "agent"}); err == nil || !strings.Contains(err.Error(), "runner failed") {
 		t.Fatalf("CreateAgentRunner error = %v, want runtime error", err)

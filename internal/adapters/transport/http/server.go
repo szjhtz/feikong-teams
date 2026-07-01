@@ -67,7 +67,7 @@ func (s *httpService) Start(ctx context.Context) error {
 		h   http.Handler
 		err error
 	)
-	engine, _ := runtimeport.EngineFromContext(ctx)
+	runtimeAdapter, _ := runtimeport.RuntimeFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	modelRegistry, _ := modelregistry.RegistryFromContext(ctx)
 	providerRegistry, _ := modelproviders.RegistryFromContext(ctx)
@@ -75,7 +75,7 @@ func (s *httpService) Start(ctx context.Context) error {
 	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	toolDisplays, _ := toolmeta.RegistryFromContext(ctx)
 	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
-		Engine:        engine,
+		Runtime:       runtimeAdapter,
 		Interrupt:     interrupt,
 		AgentRegistry: agentRegistry,
 		ToolRegistry:  toolRegistry,

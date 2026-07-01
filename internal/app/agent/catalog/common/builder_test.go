@@ -19,8 +19,8 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runtime engine: %v", err)
 	}
-	engine := defaults.Engine
-	ctx := runtimeport.WithEngine(context.Background(), engine)
+	engine := defaults.Runtime
+	ctx := runtimeport.WithRuntime(context.Background(), engine)
 	cm := testmodel.New().EnqueueStream(testmodel.AssistantMessage("builder-ok"))
 
 	agent, err := agentscommon.NewAgentBuilder("builder_test", "builder test agent").

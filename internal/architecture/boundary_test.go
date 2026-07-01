@@ -644,7 +644,7 @@ func TestAppLayerDoesNotReadRuntimeRegistry(t *testing.T) {
 		for _, spec := range file.Imports {
 			if strings.Trim(spec.Path.Value, `"`) == "fkteams/internal/runtime/registry" {
 				rel, _ := filepath.Rel(root, path)
-				t.Errorf("%s imports runtime registry; app layer must receive runtime.Engine from context or composition root", filepath.ToSlash(rel))
+				t.Errorf("%s imports runtime registry; app layer must receive runtime dependencies from context or composition root", filepath.ToSlash(rel))
 			}
 		}
 		return nil
@@ -726,11 +726,11 @@ func TestRuntimeCompositionDoesNotExposeProcessDefaults(t *testing.T) {
 	checks := map[string][]string{
 		"internal/runtime/registry/runtime.go": {
 			"var registry",
-			"func Engine()",
+			"func DefaultRuntime()",
 			"func Register(",
 			"func Use(",
 			"func DefaultName()",
-			"func EngineByName(",
+			"func DefaultRuntimeByName(",
 			"func RegisteredNames()",
 		},
 		"internal/bootstrap/runtimes/runtimes.go": {
@@ -739,7 +739,7 @@ func TestRuntimeCompositionDoesNotExposeProcessDefaults(t *testing.T) {
 			"registerErr",
 			"modelReg     *",
 			"providerReg  *",
-			"DefaultEngine(",
+			"DefaultRuntime(",
 			"DefaultModelRegistry(",
 			"DefaultModelProviderRegistry(",
 		},

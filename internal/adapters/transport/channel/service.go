@@ -102,14 +102,14 @@ func (s *Service) Name() string { return "channels" }
 
 // Start 启动所有通道
 func (s *Service) Start(ctx context.Context) error {
-	engine, _ := runtimeport.EngineFromContext(ctx)
+	runtime, _ := runtimeport.RuntimeFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	models, _ := modelregistry.RegistryFromContext(ctx)
 	tools, _ := apptools.RegistryFromContext(ctx)
 	displays, _ := toolmeta.RegistryFromContext(ctx)
 	for _, bridge := range s.bridges {
-		bridge.SetRuntimeDependencies(engine, interrupt, agentRegistry, models, tools, displays)
+		bridge.SetRuntimeDependencies(runtime, interrupt, agentRegistry, models, tools, displays)
 	}
 	log.Printf("[channels] starting all channels...")
 	return s.manager.StartAll(ctx)

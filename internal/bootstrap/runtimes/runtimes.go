@@ -14,7 +14,7 @@ import (
 // Defaults 保存组合根创建的默认 runtime 依赖。
 type Defaults struct {
 	RuntimeRegistry       *runtimeregistry.Registry
-	Engine                runtimeport.Engine
+	Runtime               runtimeport.Runtime
 	Interrupt             runtimeport.InterruptRuntime
 	ModelRegistry         *modelregistry.Registry
 	ModelProviderRegistry *modelproviders.Registry
@@ -51,7 +51,7 @@ func NewDefaults(options ...Options) (*Defaults, error) {
 
 	return &Defaults{
 		RuntimeRegistry:       runtimeRegistry,
-		Engine:                engine,
+		Runtime:               engine,
 		Interrupt:             einoruntime.NewInterruptRuntime(),
 		ModelRegistry:         modelRegistry,
 		ModelProviderRegistry: providerRegistry,

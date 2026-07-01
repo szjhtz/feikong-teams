@@ -65,7 +65,7 @@ type Bridge struct {
 	runnerErr error
 
 	runtimeMu sync.RWMutex
-	engine    runtimeport.Engine
+	runtime   runtimeport.Runtime
 	interrupt runtimeport.InterruptRuntime
 	agents    *agents.Registry
 	models    *modelregistry.Registry
@@ -128,9 +128,9 @@ func (b *Bridge) ResetRunner() {
 }
 
 // SetRuntimeDependencies 设置当前通道服务实例使用的 runtime 依赖。
-func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime, agentRegistry *agents.Registry, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry, displays *toolmeta.Registry) {
+func (b *Bridge) SetRuntimeDependencies(runtime runtimeport.Runtime, interrupt runtimeport.InterruptRuntime, agentRegistry *agents.Registry, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry, displays *toolmeta.Registry) {
 	b.runtimeMu.Lock()
-	b.engine = engine
+	b.runtime = runtime
 	b.interrupt = interrupt
 	b.agents = agentRegistry
 	b.models = models
@@ -142,14 +142,14 @@ func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt run
 
 func (b *Bridge) withRuntimeContext(ctx context.Context) context.Context {
 	b.runtimeMu.RLock()
-	engine := b.engine
+	runtime := b.runtime
 	interrupt := b.interrupt
 	agentRegistry := b.agents
 	models := b.models
 	tools := b.tools
 	displays := b.displays
 	b.runtimeMu.RUnlock()
-	ctx = runtimeport.WithEngine(ctx, engine)
+	ctx = runtimeport.WithRuntime(ctx, runtime)
 	ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
 	ctx = agents.WithRegistry(ctx, agentRegistry)
 	ctx = modelregistry.WithRegistry(ctx, models)

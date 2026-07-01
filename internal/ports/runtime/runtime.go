@@ -172,37 +172,28 @@ type DispatchConfig struct {
 }
 
 // ChatAgentFactory 创建单模型工具智能体。
-type ChatAgentFactory interface {
+type AgentRuntime interface {
 	NewChatModelAgent(ctx context.Context, cfg *ChatAgentConfig) (Agent, error)
-}
-
-// LoopAgentFactory 创建循环协作智能体。
-type LoopAgentFactory interface {
 	NewLoopAgent(ctx context.Context, cfg *LoopAgentConfig) (Agent, error)
-}
-
-// DeepAgentFactory 创建深度协作智能体。
-type DeepAgentFactory interface {
 	NewDeepAgent(ctx context.Context, cfg *DeepAgentConfig) (Agent, error)
 }
 
-// RunnerFactory 创建可执行 Runner。
-type RunnerFactory interface {
+// RunnerRuntime 创建可执行 Runner。
+type RunnerRuntime interface {
 	NewRunner(ctx context.Context, cfg RunnerConfig) (Runner, error)
 }
 
-// AgentToolFactory 将子智能体包装为可调用工具。
-type AgentToolFactory interface {
+// AgentToolRuntime 将子智能体包装为可调用工具。
+type AgentToolRuntime interface {
 	NewAgentTools(ctx context.Context, subAgents []Agent, cfg AgentToolConfig) ([]Tool, error)
 }
 
-// Engine 聚合一个 runtime adapter 对外提供的核心能力。
-type Engine interface {
-	ChatAgentFactory
-	LoopAgentFactory
-	DeepAgentFactory
-	RunnerFactory
-	AgentToolFactory
+// Runtime 是 runtime registry 保存的最小可执行 adapter 能力集合。
+// 消费方应优先依赖 AgentRuntime、RunnerRuntime、AgentToolRuntime 等小接口。
+type Runtime interface {
+	AgentRuntime
+	RunnerRuntime
+	AgentToolRuntime
 }
 
 // RuntimeInfo 描述 runtime adapter 的静态能力。
@@ -230,18 +221,14 @@ type ModelDecorator interface {
 	DecorateChatModel(ctx context.Context, model ChatModel) (ChatModel, error)
 }
 
-// AgentPipelineProvider 创建 runtime 默认智能体中间件。
-type AgentPipelineProvider interface {
+// PipelineRuntime 创建 runtime 默认中间件与可选能力中间件。
+type PipelineRuntime interface {
 	DefaultAgentMiddlewares(ctx context.Context) ([]AgentMiddleware, error)
 	NewSteeringMiddleware() AgentMiddleware
 	NewSummaryMiddleware(ctx context.Context, cfg *SummaryConfig) (AgentMiddleware, error)
 	NewSkillsMiddleware(ctx context.Context) (AgentMiddleware, error)
 	NewDispatchMiddleware(ctx context.Context, cfg *DispatchConfig) (AgentMiddleware, error)
 	NewAgentsMDMiddleware(ctx context.Context) (AgentMiddleware, error)
-}
-
-// ToolPipelineProvider 创建 runtime 默认工具中间件。
-type ToolPipelineProvider interface {
 	DefaultToolMiddlewares() []ToolMiddleware
 }
 

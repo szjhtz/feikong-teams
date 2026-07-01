@@ -37,11 +37,11 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 
-	engine, err := runtimeport.RequireEngine(ctx)
+	agentRuntime, err := runtimeport.RequireAgentRuntime(ctx)
 	if err != nil {
 		return nil, err
 	}
-	middlewareProvider, ok := engine.(runtimeport.AgentPipelineProvider)
+	pipelineRuntime, ok := runtimeport.PipelineRuntimeFromContext(ctx)
 	if !ok {
 		return nil, fmt.Errorf("runtime does not support deep agent middlewares")
 	}
@@ -51,18 +51,18 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 			maxTokens = n
 		}
 	}
-	summaryMiddleware, err := middlewareProvider.NewSummaryMiddleware(ctx, &runtimeport.SummaryConfig{
+	summaryMiddleware, err := pipelineRuntime.NewSummaryMiddleware(ctx, &runtimeport.SummaryConfig{
 		Model:                  chatModel,
 		MaxTokensBeforeSummary: maxTokens,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init summary middleware: %w", err)
 	}
-	agentsMDMiddleware, err := middlewareProvider.NewAgentsMDMiddleware(ctx)
+	agentsMDMiddleware, err := pipelineRuntime.NewAgentsMDMiddleware(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("init agents.md middleware: %w", err)
 	}
-	return engine.NewDeepAgent(ctx, &runtimeport.DeepAgentConfig{
+	return agentRuntime.NewDeepAgent(ctx, &runtimeport.DeepAgentConfig{
 		Name:             "deep_researcher",
 		Description:      "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
 		Model:            chatModel,
@@ -71,7 +71,7 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 		Tools:            toolList,
 		MaxIterations:    retry.MaxIterations(),
 		Middlewares: []runtimeport.AgentMiddleware{
-			middlewareProvider.NewSteeringMiddleware(),
+			pipelineRuntime.NewSteeringMiddleware(),
 			summaryMiddleware,
 			agentsMDMiddleware,
 		},

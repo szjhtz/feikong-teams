@@ -19,7 +19,7 @@ func TestRegisterAndUseRuntime(t *testing.T) {
 	if registry.DefaultName() != "test-runtime" {
 		t.Fatalf("default runtime = %q, want test-runtime", registry.DefaultName())
 	}
-	got, err := registry.Engine()
+	got, err := registry.Runtime()
 	if err != nil {
 		t.Fatalf("default engine: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestRegisterAndUseRuntime(t *testing.T) {
 
 func TestEngineByNameRequiresExplicitRegistration(t *testing.T) {
 	registry := NewRegistry(DefaultRuntimeName)
-	if _, err := registry.EngineByName("missing-runtime"); err == nil {
+	if _, err := registry.RuntimeByName("missing-runtime"); err == nil {
 		t.Fatal("expected missing runtime error")
 	}
 }

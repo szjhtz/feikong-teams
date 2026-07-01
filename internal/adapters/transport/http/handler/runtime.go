@@ -40,7 +40,7 @@ type Runtime struct {
 	SkillProviders *appskill.ProviderRegistry
 	ModelRegistry  *modelregistry.Registry
 	Providers      *modelproviders.Registry
-	Engine         runtimeport.Engine
+	Runtime        runtimeport.Runtime
 	Interrupt      runtimeport.InterruptRuntime
 	ResetChannels  func()
 }
@@ -63,7 +63,7 @@ type RuntimeOptions struct {
 	SkillProviders *appskill.ProviderRegistry
 	ModelRegistry  *modelregistry.Registry
 	Providers      *modelproviders.Registry
-	Engine         runtimeport.Engine
+	Runtime        runtimeport.Runtime
 	Interrupt      runtimeport.InterruptRuntime
 	ResetChannels  func()
 }
@@ -95,7 +95,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		SkillProviders: opt.SkillProviders,
 		ModelRegistry:  opt.ModelRegistry,
 		Providers:      opt.Providers,
-		Engine:         opt.Engine,
+		Runtime:        opt.Runtime,
 		Interrupt:      opt.Interrupt,
 		ResetChannels:  opt.ResetChannels,
 	}
@@ -163,7 +163,7 @@ func (rt *Runtime) resolveRunner(ctx context.Context, mode, agentName string) (r
 }
 
 func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
-	ctx = runtimeport.WithEngine(ctx, rt.Engine)
+	ctx = runtimeport.WithRuntime(ctx, rt.Runtime)
 	ctx = runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, rt.ModelRegistry)
 	ctx = modelproviders.WithRegistry(ctx, rt.Providers)
