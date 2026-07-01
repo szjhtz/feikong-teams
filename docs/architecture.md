@@ -36,6 +36,7 @@ internal/ports/              # 外部能力接口和核心契约
 
 internal/app/                # 应用用例层
   agent/
+    standalone/              # 轻量独立 agent 门面
   appdata/
   appstate/
   chat/
@@ -133,6 +134,8 @@ type Service interface {
 - Scheduler：时间触发和结果归档。
 
 智能体目录由 `internal/app/agent/catalog.Registry` 实例持有，命令入口创建后通过 context 注入 HTTP、CLI、channel 和 scheduler。配置更新只 reload 当前入口持有的 registry；catalog 包不提供进程级 `Registry`、`GetRegistry()` 或 `ReloadRegistry()` 默认实例。
+
+轻量后台任务如果只需要一个独立 agent，例如会话标题、任务分类、检索 query 生成等，应使用 `internal/app/agent/standalone.Service`。该门面只依赖 `AgentRuntime` 和 `RunnerRuntime`，默认按 `ProfileBare` 创建 agent，并同时提供非流式 `RunText` 与流式 `StreamText`。调用方只需要显式传入 model、instruction 和 input；不得在业务服务中手动拼装 `Definition`、runner、checkpoint 或事件文本聚合。
 
 ## Runtime 边界
 
