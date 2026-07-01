@@ -108,6 +108,31 @@ func TestServeHTMLServesSPAEntry(t *testing.T) {
 	}
 }
 
+func TestChatDeepLinkServesSPAEntry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	webFS := web.GetFS()
+	serveIndex := func(c *gin.Context) {
+		serveHTML(c, webFS)
+	}
+	engine.GET("/chat", serveIndex)
+	engine.GET("/chat/:sessionID", serveIndex)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/chat/bf8e4112-3255-4b31-ba16-3fc7f486f206", nil)
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := recorder.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
+		t.Fatalf("expected html content type, got %q", got)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, `id="root"`) {
+		t.Fatalf("expected SPA entry body, got %q", body)
+	}
+}
+
 func TestServeAssetsUsesImmutableCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

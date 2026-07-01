@@ -236,6 +236,7 @@ func InitWithRuntime(state *appstate.State, runtime *handler.Runtime) (*gin.Engi
 	}
 	r.GET("/", serveIndex)
 	r.GET("/chat", serveIndex)
+	r.GET("/chat/:sessionID", serveIndex)
 	r.GET("/config", serveIndex)
 	r.GET("/files", serveIndex)
 	r.GET("/schedules", serveIndex)
