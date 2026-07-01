@@ -2,6 +2,7 @@ import {
   Bot,
   Brain,
   Cable,
+  Check,
   Database,
   KeyRound,
   ListPlus,
@@ -9,10 +10,12 @@ import {
   Plus,
   RefreshCcw,
   Save,
+  Search,
   Server,
   Settings2,
   Trash2,
   Wrench,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getConfig, getToolCatalog, saveConfig } from "@/api/config";
@@ -35,6 +38,7 @@ import type {
   ServerAuthConfig,
   SSHVisitorConfig,
   TeamMemberConfig,
+  ToolInfo,
 } from "@/types/config";
 
 type ConfigTab = "models" | "server" | "agents" | "memory" | "channels" | "custom" | "tools" | "other";
@@ -421,6 +425,8 @@ function ChannelsTab({ draft, updateDraft }: EditorProps) {
 function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelNames: string[] }) {
   const custom = draft.custom || {};
   const moderator = custom.moderator || {};
+  const tools = useAppSelector((state) => state.config.tools);
+  const toolOptions = useMemo(() => customToolOptions(tools, custom.mcp_servers || []), [custom.mcp_servers, tools]);
   return (
     <div className="space-y-4">
       <Panel>
@@ -431,6 +437,7 @@ function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
           <CustomAgentEditor
             agent={moderator}
             modelNames={modelNames}
+            toolOptions={toolOptions}
             onChange={(value) =>
               updateDraft((next) => {
                 next.custom = { ...(next.custom || {}), moderator: value };
@@ -476,6 +483,7 @@ function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
               <CustomAgentEditor
                 agent={agent}
                 modelNames={modelNames}
+                toolOptions={toolOptions}
                 onChange={(value) =>
                   updateDraft((next) => {
                     const agents = [...(next.custom?.agents || [])];
@@ -627,10 +635,12 @@ function RoundtableMemberEditor({
 function CustomAgentEditor({
   agent,
   modelNames,
+  toolOptions,
   onChange,
 }: {
   agent: CustomAgentConfig;
   modelNames: string[];
+  toolOptions: ToolSelectOption[];
   onChange: (value: CustomAgentConfig) => void;
 }) {
   return (
@@ -647,9 +657,214 @@ function CustomAgentEditor({
           onChange={(event) => onChange({ ...agent, system_prompt: event.target.value })}
         />
       </Field>
-      <StringListField label="工具" values={agent.tools || []} placeholder="command 或 mcp-服务名称" onChange={(values) => onChange({ ...agent, tools: values })} />
+      <ToolSelectField tools={agent.tools || []} options={toolOptions} onChange={(tools) => onChange({ ...agent, tools })} />
     </div>
   );
+}
+
+interface ToolSelectOption {
+  name: string;
+  label: string;
+  description?: string;
+  category?: string;
+  source: "builtin" | "mcp";
+  readOnly?: boolean;
+  destructive?: boolean;
+  enabled?: boolean;
+}
+
+function ToolSelectField({
+  tools,
+  options,
+  onChange,
+}: {
+  tools: string[];
+  options: ToolSelectOption[];
+  onChange: (tools: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selectedTools = uniqueToolNames(tools);
+  const selectedSet = new Set(selectedTools);
+  const optionByName = new Map(options.map((option) => [option.name, option]));
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOptions = options.filter((option) => {
+    if (!normalizedQuery) return true;
+    return `${option.name} ${option.label} ${option.description || ""} ${option.category || ""}`.toLowerCase().includes(normalizedQuery);
+  });
+  const canAddCustom = Boolean(query.trim() && !selectedSet.has(query.trim()) && !optionByName.has(query.trim()));
+
+  function addTool(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || selectedSet.has(trimmed)) return;
+    onChange([...selectedTools, trimmed]);
+    setQuery("");
+  }
+
+  function removeTool(name: string) {
+    onChange(selectedTools.filter((tool) => tool !== name));
+  }
+
+  function toggleTool(name: string) {
+    if (selectedSet.has(name)) {
+      removeTool(name);
+      return;
+    }
+    addTool(name);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm text-muted-foreground">工具</div>
+        <Button variant="outline" size="sm" onClick={() => setOpen((value) => !value)}>
+          <Plus className="h-4 w-4" />
+          添加工具
+        </Button>
+      </div>
+
+      <div className="min-h-12 rounded-xl border border-border/75 bg-background/45 p-2">
+        {selectedTools.length ? (
+          <div className="flex flex-wrap gap-2">
+            {selectedTools.map((tool) => {
+              const option = optionByName.get(tool);
+              return (
+                <span
+                  key={tool}
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-card/85 px-2 py-1 text-sm"
+                >
+                  <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{option?.label || tool}</span>
+                  {option?.source === "mcp" ? <Badge>MCP</Badge> : null}
+                  {!option ? <Badge>手动</Badge> : null}
+                  <button
+                    type="button"
+                    className="ml-0.5 rounded-full text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={`移除工具 ${tool}`}
+                    onClick={() => removeTool(tool)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex min-h-8 items-center text-sm text-muted-foreground">还没有选择工具</div>
+        )}
+      </div>
+
+      {open ? (
+        <div className="rounded-xl border border-border/75 bg-card/70 p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              value={query}
+              placeholder="搜索工具或 MCP 服务"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          <div className="mt-2 max-h-64 space-y-1 overflow-y-auto pr-1">
+            {visibleOptions.map((option) => {
+              const selected = selectedSet.has(option.name);
+              return (
+                <button
+                  key={option.name}
+                  type="button"
+                  className={cn(
+                    "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent/60",
+                    selected && "bg-accent/55",
+                  )}
+                  onClick={() => toggleTool(option.name)}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border",
+                      selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background/70",
+                    )}
+                  >
+                    {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="truncate font-medium">{option.label}</span>
+                      <span className="text-xs text-muted-foreground">{option.name}</span>
+                      {option.source === "mcp" ? <Badge>MCP</Badge> : null}
+                      {option.readOnly ? <Badge>只读</Badge> : null}
+                      {option.destructive ? <Badge>破坏性</Badge> : null}
+                      {option.enabled === false ? <Badge>未启用</Badge> : null}
+                    </span>
+                    {option.description ? <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">{option.description}</span> : null}
+                  </span>
+                </button>
+              );
+            })}
+            {canAddCustom ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-accent/60"
+                onClick={() => addTool(query)}
+              >
+                <Plus className="h-4 w-4 text-muted-foreground" />
+                <span>添加自定义工具名</span>
+                <span className="min-w-0 truncate font-medium">{query.trim()}</span>
+              </button>
+            ) : null}
+            {!visibleOptions.length && !canAddCustom ? (
+              <div className="px-2 py-6 text-center text-sm text-muted-foreground">没有匹配的工具</div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function customToolOptions(tools: ToolInfo[], mcpServers: MCPServerConfig[]): ToolSelectOption[] {
+  const options = new Map<string, ToolSelectOption>();
+  for (const tool of tools) {
+    const name = tool.name.trim();
+    if (!name) continue;
+    options.set(name, {
+      name,
+      label: tool.display_name || name,
+      description: tool.description || tool.included_tools?.join(", "),
+      category: tool.category,
+      source: tool.builtin === false ? "mcp" : "builtin",
+      readOnly: tool.read_only,
+      destructive: tool.destructive,
+      enabled: true,
+    });
+  }
+  for (const server of mcpServers) {
+    const name = server.name?.trim();
+    if (!name || options.has(name)) continue;
+    options.set(name, {
+      name,
+      label: name,
+      description: server.desc,
+      category: "mcp",
+      source: "mcp",
+      enabled: Boolean(server.enabled),
+    });
+  }
+  return Array.from(options.values()).sort((a, b) => {
+    if (a.source !== b.source) return a.source === "builtin" ? -1 : 1;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function uniqueToolNames(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
 }
 
 function MCPServerEditor({
