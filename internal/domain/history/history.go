@@ -12,6 +12,7 @@ type TranscriptEventType string
 
 const (
 	TranscriptUserMessage      TranscriptEventType = "user_message"
+	TranscriptAgentStep        TranscriptEventType = "agent_step"
 	TranscriptAssistantMessage TranscriptEventType = "assistant_message"
 	TranscriptToolCallStart    TranscriptEventType = "tool_call_start"
 	TranscriptToolCallEnd      TranscriptEventType = "tool_call_end"
@@ -23,32 +24,35 @@ const (
 )
 
 type TranscriptEvent struct {
-	ID               string                `json:"id"`
-	At               time.Time             `json:"at"`
-	Turn             int                   `json:"turn,omitempty"`
-	Type             TranscriptEventType   `json:"type"`
-	Agent            string                `json:"agent,omitempty"`
-	ToolCallID       string                `json:"tool_call_id,omitempty"`
-	ParentToolCallID string                `json:"parent_tool_call_id,omitempty"`
-	AgentRunID       string                `json:"agent_run_id,omitempty"`
-	Content          string                `json:"content,omitempty"`
-	Detail           string                `json:"detail,omitempty"`
-	Reasoning        string                `json:"reasoning,omitempty"`
-	ContentParts     []message.ContentPart `json:"content_parts,omitempty"`
-	ToolCall         *ToolCallRecord       `json:"tool_call,omitempty"`
-	ToolName         string                `json:"tool_name,omitempty"`
-	ToolArgs         string                `json:"tool_args,omitempty"`
-	Result           string                `json:"result,omitempty"`
-	ResultRef        string                `json:"result_ref,omitempty"`
-	Summary          string                `json:"summary,omitempty"`
-	Truncated        bool                  `json:"truncated,omitempty"`
-	OriginalChars    int                   `json:"original_chars,omitempty"`
-	Ask              *AskRecord            `json:"ask,omitempty"`
-	Usage            *UsageRecord          `json:"usage,omitempty"`
-	Error            *FriendlyError        `json:"error,omitempty"`
-	DisplayName      string                `json:"display_name,omitempty"`
-	Kind             string                `json:"kind,omitempty"`
-	Target           string                `json:"target,omitempty"`
+	ID            string                `json:"id"`
+	At            time.Time             `json:"at"`
+	Type          TranscriptEventType   `json:"type"`
+	Agent         string                `json:"agent,omitempty"`
+	CallID        string                `json:"call_id,omitempty"`
+	Content       string                `json:"content,omitempty"`
+	Detail        string                `json:"detail,omitempty"`
+	Reasoning     string                `json:"reasoning,omitempty"`
+	ContentParts  []message.ContentPart `json:"content_parts,omitempty"`
+	Name          string                `json:"name,omitempty"`
+	Args          string                `json:"args,omitempty"`
+	Result        string                `json:"result,omitempty"`
+	ResultRef     string                `json:"result_ref,omitempty"`
+	Summary       string                `json:"summary,omitempty"`
+	Truncated     bool                  `json:"truncated,omitempty"`
+	OriginalChars int                   `json:"original_chars,omitempty"`
+	Ask           *AskRecord            `json:"ask,omitempty"`
+	Usage         *UsageRecord          `json:"usage,omitempty"`
+	Error         *FriendlyError        `json:"error,omitempty"`
+	Display       string                `json:"display,omitempty"`
+	Kind          string                `json:"kind,omitempty"`
+	Target        string                `json:"target,omitempty"`
+}
+
+type SubagentMetadata struct {
+	AgentRunID   string `json:"agent_run_id,omitempty"`
+	Agent        string `json:"agent"`
+	ParentCallID string `json:"parent_call_id"`
+	ToolName     string `json:"tool_name,omitempty"`
 }
 
 type ToolResultArtifact struct {

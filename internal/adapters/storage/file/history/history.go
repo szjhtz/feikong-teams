@@ -31,6 +31,7 @@ type UsageRecord = domainhistory.UsageRecord
 type FriendlyError = domainhistory.FriendlyError
 type TranscriptEvent = domainhistory.TranscriptEvent
 type TranscriptEventType = domainhistory.TranscriptEventType
+type SubagentMetadata = domainhistory.SubagentMetadata
 type ToolResultArtifact = domainhistory.ToolResultArtifact
 type MsgEventType = domainhistory.MsgEventType
 type MessageEvent = domainhistory.MessageEvent
@@ -39,6 +40,7 @@ type AttachmentRef = domainhistory.AttachmentRef
 
 const (
 	TranscriptUserMessage      = domainhistory.TranscriptUserMessage
+	TranscriptAgentStep        = domainhistory.TranscriptAgentStep
 	TranscriptAssistantMessage = domainhistory.TranscriptAssistantMessage
 	TranscriptToolCallStart    = domainhistory.TranscriptToolCallStart
 	TranscriptToolCallEnd      = domainhistory.TranscriptToolCallEnd

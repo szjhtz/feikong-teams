@@ -49,6 +49,7 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 	var current *AgentMessage
 	toolEventIndex := make(map[string]int)
 	sessionID := filepath.Base(sessionDir)
+	turn := 0
 	flush := func() {
 		if current == nil || len(current.Events) == 0 {
 			current = nil
@@ -81,7 +82,10 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 		if ts.IsZero() {
 			ts = time.Now()
 		}
-		turnID := transcriptTurnID(sessionID, event.Turn)
+		if event.Type == TranscriptUserMessage {
+			turn++
+		}
+		turnID := historyTurnID(sessionID, turn)
 		messageID := event.ID
 		switch event.Type {
 		case TranscriptUserMessage:
@@ -99,7 +103,7 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 					ContentParts: append([]message.ContentPart(nil), event.ContentParts...),
 				}},
 			})
-		case TranscriptAssistantMessage:
+		case TranscriptAgentStep, TranscriptAssistantMessage:
 			msg := ensure(event.Agent, ts)
 			if event.Reasoning != "" {
 				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Reasoning})
@@ -114,13 +118,13 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 			msg := ensure(event.Agent, ts)
 			record := transcriptToolCallRecord(event, "")
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
-			if event.ToolCallID != "" {
-				toolEventIndex[event.ToolCallID] = len(msg.Events) - 1
+			if event.CallID != "" {
+				toolEventIndex[event.CallID] = len(msg.Events) - 1
 			}
 		case TranscriptToolCallEnd:
 			msg := ensure(event.Agent, ts)
 			result := transcriptToolResult(event)
-			if idx, ok := toolEventIndex[event.ToolCallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
+			if idx, ok := toolEventIndex[event.CallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
 				msg.Events[idx].ToolCall.Result = result
 				continue
 			}
@@ -150,17 +154,21 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 }
 
 func projectSubagentTranscriptFiles(sessionDir string) []AgentMessage {
-	matches, err := filepath.Glob(filepath.Join(sessionDir, subagentsDirName, "*.jsonl"))
+	matches, err := filepath.Glob(filepath.Join(sessionDir, subagentsDirName, "*", TranscriptFileName))
 	if err != nil || len(matches) == 0 {
 		return nil
 	}
 	messages := make([]AgentMessage, 0, len(matches))
 	for _, filePath := range matches {
+		metadata, err := loadSubagentMetadata(filepath.Join(filepath.Dir(filePath), "metadata.json"))
+		if err != nil {
+			continue
+		}
 		events, err := loadTranscript(filePath)
 		if err != nil {
 			continue
 		}
-		msg := projectSubagentTranscript(events)
+		msg := projectSubagentTranscript(events, metadata)
 		if len(msg.Events) > 0 {
 			messages = append(messages, msg)
 		}
@@ -168,42 +176,29 @@ func projectSubagentTranscriptFiles(sessionDir string) []AgentMessage {
 	return messages
 }
 
-func projectSubagentTranscript(events []TranscriptEvent) AgentMessage {
-	agent := ""
-	parentToolCallID := ""
-	parentToolName := ""
-	for _, event := range events {
-		if agent == "" {
-			agent = event.Agent
-		}
-		if parentToolCallID == "" {
-			parentToolCallID = event.ParentToolCallID
-		}
-		if parentToolName == "" {
-			parentToolName = event.ToolName
-		}
-	}
+func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetadata) AgentMessage {
+	agent := metadata.Agent
 	if agent == "" {
 		agent = "member"
 	}
 	msg := AgentMessage{
 		AgentName:      agent,
-		MemberCallID:   parentToolCallID,
-		MemberToolName: parentToolName,
+		MemberCallID:   metadata.ParentCallID,
+		MemberToolName: metadata.ToolName,
 		MemberName:     agent,
 		Events:         make([]MessageEvent, 0),
 	}
 	toolEventIndex := make(map[string]int)
 	for _, event := range events {
 		ts := event.At
-		turnID := transcriptTurnID("", event.Turn)
+		turnID := historyTurnID("", 1)
 		messageID := event.ID
 		if msg.StartTime.IsZero() {
 			msg.StartTime = ts
 		}
 		msg.EndTime = ts
 		switch event.Type {
-		case TranscriptAssistantMessage:
+		case TranscriptAgentStep, TranscriptAssistantMessage:
 			if event.Reasoning != "" {
 				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Reasoning})
 			}
@@ -216,12 +211,12 @@ func projectSubagentTranscript(events []TranscriptEvent) AgentMessage {
 		case TranscriptToolCallStart:
 			record := transcriptToolCallRecord(event, "")
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
-			if event.ToolCallID != "" {
-				toolEventIndex[event.ToolCallID] = len(msg.Events) - 1
+			if event.CallID != "" {
+				toolEventIndex[event.CallID] = len(msg.Events) - 1
 			}
 		case TranscriptToolCallEnd:
 			result := transcriptToolResult(event)
-			if idx, ok := toolEventIndex[event.ToolCallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
+			if idx, ok := toolEventIndex[event.CallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
 				msg.Events[idx].ToolCall.Result = result
 				continue
 			}
@@ -237,22 +232,14 @@ func projectSubagentTranscript(events []TranscriptEvent) AgentMessage {
 }
 
 func transcriptToolCallRecord(event TranscriptEvent, result string) ToolCallRecord {
-	if event.ToolCall != nil {
-		record := *event.ToolCall
-		record.Result = result
-		if record.Result == "" {
-			record.Result = transcriptToolResult(event)
-		}
-		return record
-	}
 	return ToolCallRecord{
-		Ref:         toolCallRef(event.ToolCallID),
-		ID:          event.ToolCallID,
-		Name:        event.ToolName,
-		DisplayName: event.DisplayName,
+		Ref:         toolCallRef(event.CallID),
+		ID:          event.CallID,
+		Name:        event.Name,
+		DisplayName: event.Display,
 		Kind:        event.Kind,
 		Target:      event.Target,
-		Arguments:   event.ToolArgs,
+		Arguments:   event.Args,
 		Result:      result,
 	}
 }
@@ -268,6 +255,16 @@ func transcriptToolResult(event TranscriptEvent) string {
 		return fmt.Sprintf("[tool result stored at %s]", event.ResultRef)
 	}
 	return ""
+}
+
+func historyTurnID(sessionID string, turn int) string {
+	if turn <= 0 {
+		turn = 1
+	}
+	if sessionID == "" {
+		return fmt.Sprintf("history:turn:%d", turn)
+	}
+	return fmt.Sprintf("%s:history:turn:%d", sessionID, turn)
 }
 
 func toolCallRef(id string) string {

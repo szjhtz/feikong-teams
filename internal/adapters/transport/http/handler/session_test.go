@@ -150,11 +150,11 @@ func TestTranscriptToChatEventsUsesAppendOrder(t *testing.T) {
 	rt := newTestRuntime(t)
 	transcript := []eventlog.TranscriptEvent{
 		{
-			ID:       "tool-1",
-			At:       time.Now(),
-			Type:     eventlog.TranscriptToolCallStart,
-			Agent:    "coordinator",
-			ToolName: "ask_fkagent_researcher",
+			ID:    "tool-1",
+			At:    time.Now(),
+			Type:  eventlog.TranscriptToolCallStart,
+			Agent: "coordinator",
+			Name:  "ask_fkagent_researcher",
 		},
 		{
 			ID:      "msg-1",

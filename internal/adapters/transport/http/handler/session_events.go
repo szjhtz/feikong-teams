@@ -10,15 +10,16 @@ import (
 
 func (rt *Runtime) transcriptToChatEvents(sessionID string, transcript []eventlog.TranscriptEvent) []map[string]any {
 	result := make([]map[string]any, 0, len(transcript))
+	turn := 0
 	for index, item := range transcript {
-		for _, event := range transcriptEventToRuntimeEvents(sessionID, item) {
+		if item.Type == eventlog.TranscriptUserMessage {
+			turn++
+		}
+		for _, event := range transcriptEventToRuntimeEvents(item, transcriptRuntimeTurnID(sessionID, turn)) {
 			event.Sequence = int64(len(result) + 1)
 			payload := rt.convertEventToMap(event)
 			payload["session_id"] = sessionID
 			payload["transcript_index"] = index
-			if item.AgentRunID != "" {
-				payload["agent_run_id"] = item.AgentRunID
-			}
 			if item.ResultRef != "" {
 				payload["result_ref"] = item.ResultRef
 			}
@@ -38,15 +39,14 @@ func (rt *Runtime) transcriptToChatEvents(sessionID string, transcript []eventlo
 	return result
 }
 
-func transcriptEventToRuntimeEvents(sessionID string, item eventlog.TranscriptEvent) []events.Event {
+func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string) []events.Event {
 	base := events.Event{
-		EventID:          item.ID,
-		CreatedAt:        item.At,
-		TurnID:           transcriptRuntimeTurnID(sessionID, item.Turn),
-		MessageID:        item.ID,
-		AgentName:        item.Agent,
-		ToolCallID:       item.ToolCallID,
-		ParentToolCallID: item.ParentToolCallID,
+		EventID:    item.ID,
+		CreatedAt:  item.At,
+		TurnID:     turnID,
+		MessageID:  item.ID,
+		AgentName:  item.Agent,
+		ToolCallID: item.CallID,
 	}
 	switch item.Type {
 	case eventlog.TranscriptUserMessage:
@@ -54,7 +54,7 @@ func transcriptEventToRuntimeEvents(sessionID string, item eventlog.TranscriptEv
 		base.Role = domainmessage.RoleUser
 		base.Content = item.Content
 		return []events.Event{base}
-	case eventlog.TranscriptAssistantMessage:
+	case eventlog.TranscriptAgentStep, eventlog.TranscriptAssistantMessage:
 		base.Type = events.EventAssistantCompleted
 		base.Role = domainmessage.RoleAssistant
 		base.Content = item.Content
@@ -82,7 +82,6 @@ func transcriptEventToRuntimeEvents(sessionID string, item eventlog.TranscriptEv
 		usage.TurnID = base.TurnID
 		usage.MessageID = item.ID
 		usage.AgentName = item.Agent
-		usage.ParentToolCallID = item.ParentToolCallID
 		return []events.Event{base, usage}
 	case eventlog.TranscriptToolCallStart:
 		base.Type = events.EventToolCallStarted
@@ -137,20 +136,9 @@ func attachTranscriptToolCall(event *events.Event, item eventlog.TranscriptEvent
 	if event == nil {
 		return
 	}
-	id := item.ToolCallID
-	name := item.ToolName
-	args := item.ToolArgs
-	if item.ToolCall != nil {
-		if id == "" {
-			id = item.ToolCall.ID
-		}
-		if name == "" {
-			name = item.ToolCall.Name
-		}
-		if args == "" {
-			args = item.ToolCall.Arguments
-		}
-	}
+	id := item.CallID
+	name := item.Name
+	args := item.Args
 	event.ToolCallID = id
 	if id != "" {
 		event.ToolCallRef = "tool_call:" + id

@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -32,6 +31,8 @@ func transcriptIDPrefix(typ TranscriptEventType) string {
 	switch typ {
 	case TranscriptUserMessage, TranscriptAssistantMessage:
 		return "msg"
+	case TranscriptAgentStep:
+		return "step"
 	case TranscriptToolCallStart, TranscriptToolCallEnd:
 		return "tool"
 	case TranscriptAskRequested, TranscriptAskAnswered:
@@ -47,38 +48,39 @@ func transcriptIDPrefix(typ TranscriptEventType) string {
 	}
 }
 
-func transcriptTurnID(sessionID string, turn int) string {
-	if turn <= 0 {
-		turn = 1
-	}
-	if sessionID == "" {
-		return fmt.Sprintf("history:turn:%d", turn)
-	}
-	return fmt.Sprintf("%s:history:turn:%d", sessionID, turn)
-}
-
-func transcriptTurnFromRuntimeID(turnID string) int {
-	turnID = strings.TrimSpace(turnID)
-	if turnID == "" {
-		return 0
-	}
-	index := strings.LastIndex(turnID, ":turn:")
-	if index < 0 {
-		return 0
-	}
-	n, err := strconv.Atoi(turnID[index+len(":turn:"):])
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
-}
-
 func transcriptPath(sessionDir string) string {
 	return filepath.Join(sessionDir, TranscriptFileName)
 }
 
 func subagentTranscriptPath(sessionDir, agentRunID string) string {
-	return filepath.Join(sessionDir, subagentsDirName, filepath.Base(agentRunID)+".jsonl")
+	return filepath.Join(sessionDir, subagentsDirName, filepath.Base(agentRunID), TranscriptFileName)
+}
+
+func subagentMetadataPath(sessionDir, agentRunID string) string {
+	return filepath.Join(sessionDir, subagentsDirName, filepath.Base(agentRunID), "metadata.json")
+}
+
+func writeSubagentMetadata(sessionDir string, metadata SubagentMetadata) {
+	if sessionDir == "" || metadata.AgentRunID == "" {
+		return
+	}
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = atomicfile.WriteFile(subagentMetadataPath(sessionDir, metadata.AgentRunID), data, 0644)
+}
+
+func loadSubagentMetadata(filePath string) (SubagentMetadata, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return SubagentMetadata{}, fmt.Errorf("read subagent metadata: %w", err)
+	}
+	var metadata SubagentMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return SubagentMetadata{}, fmt.Errorf("decode subagent metadata: %w", err)
+	}
+	return metadata, nil
 }
 
 func (h *HistoryRecorder) appendTranscriptEvent(event TranscriptEvent, subagent *subagentRun) {
@@ -95,8 +97,6 @@ func (h *HistoryRecorder) appendTranscriptEvent(event TranscriptEvent, subagent 
 		_ = appendJSONL(transcriptPath(h.sessionDir), event)
 		return
 	}
-	event.AgentRunID = subagent.AgentRunID
-	event.ParentToolCallID = subagent.ParentToolCallID
 	if event.Agent == "" {
 		event.Agent = subagent.AgentName
 	}

@@ -519,6 +519,41 @@ func TestTranscriptRecorderAggregatesAssistantDeltas(t *testing.T) {
 	}
 }
 
+func TestTranscriptRecorderStoresReasoningOnlyModelOutputAsAgentStep(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+
+	recorder.RecordEvent(Event{
+		Type:             events.EventAssistantCompleted,
+		AgentName:        "researcher",
+		ReasoningContent: "I should search first",
+		PromptTokens:     3,
+		CompletionTokens: 4,
+		TotalTokens:      7,
+	})
+
+	transcript, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+	if err != nil {
+		t.Fatalf("load transcript: %v", err)
+	}
+	if len(transcript) != 1 {
+		t.Fatalf("event count = %d, want 1: %#v", len(transcript), transcript)
+	}
+	if transcript[0].Type != TranscriptAgentStep {
+		t.Fatalf("type = %s, want agent_step", transcript[0].Type)
+	}
+	if !strings.HasPrefix(transcript[0].ID, "step_") {
+		t.Fatalf("id = %q, want step_ prefix", transcript[0].ID)
+	}
+	if transcript[0].Content != "" || transcript[0].Reasoning != "I should search first" {
+		t.Fatalf("agent step = %#v", transcript[0])
+	}
+	if transcript[0].Usage == nil || transcript[0].Usage.TotalTokens != 7 {
+		t.Fatalf("usage = %#v, want total tokens 7", transcript[0].Usage)
+	}
+}
+
 func TestTranscriptRecorderExternalizesLongToolResults(t *testing.T) {
 	dir := t.TempDir()
 	recorder := NewHistoryRecorder()
@@ -535,9 +570,16 @@ func TestTranscriptRecorderExternalizesLongToolResults(t *testing.T) {
 	if len(transcript) != 2 {
 		t.Fatalf("event count = %d, want 2", len(transcript))
 	}
+	start := transcript[0]
+	if start.CallID != "call_1" || start.Name != "fetch" || start.Args != `{"url":"https://example.com"}` {
+		t.Fatalf("tool start = %#v, want flat call fields", start)
+	}
 	end := transcript[1]
 	if end.Result != "" || end.ResultRef == "" || !end.Truncated {
 		t.Fatalf("tool record = %#v, want externalized result", end)
+	}
+	if end.CallID != "call_1" || end.Name != "" || end.Args != "" {
+		t.Fatalf("tool end = %#v, want only call id and result fields", end)
 	}
 	if _, err := os.Stat(filepath.Join(dir, end.ResultRef)); err != nil {
 		t.Fatalf("result artifact missing: %v", err)
@@ -578,7 +620,7 @@ func TestTranscriptRecorderWritesSubagentTranscriptSeparately(t *testing.T) {
 	if main[0].Type != TranscriptToolCallStart || main[1].Type != TranscriptToolCallEnd {
 		t.Fatalf("main transcript types = %s,%s", main[0].Type, main[1].Type)
 	}
-	matches, err := filepath.Glob(filepath.Join(dir, subagentsDirName, "*.jsonl"))
+	matches, err := filepath.Glob(filepath.Join(dir, subagentsDirName, "*", TranscriptFileName))
 	if err != nil {
 		t.Fatalf("glob subagents: %v", err)
 	}
@@ -591,6 +633,20 @@ func TestTranscriptRecorderWritesSubagentTranscriptSeparately(t *testing.T) {
 	}
 	if len(sub) != 1 || sub[0].Type != TranscriptAssistantMessage || sub[0].Content != "member result" {
 		t.Fatalf("subagent transcript = %#v", sub)
+	}
+	rawSubLine, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("read subagent transcript: %v", err)
+	}
+	if strings.Contains(string(rawSubLine), "agent_run_id") || strings.Contains(string(rawSubLine), "parent_tool_call_id") {
+		t.Fatalf("subagent transcript line should not repeat run metadata: %s", rawSubLine)
+	}
+	metadata, err := loadSubagentMetadata(filepath.Join(filepath.Dir(matches[0]), "metadata.json"))
+	if err != nil {
+		t.Fatalf("load subagent metadata: %v", err)
+	}
+	if metadata.ParentCallID != "call_1" || metadata.Agent != "researcher" || metadata.ToolName != "ask_fkagent_researcher" {
+		t.Fatalf("subagent metadata = %#v", metadata)
 	}
 }
 

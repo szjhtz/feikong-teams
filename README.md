@@ -98,7 +98,7 @@ fkteams logout openai                # 退出指定供应商
 
 运行期数据默认保存在 `~/.fkteams/` 下，可通过 `FEIKONG_APP_DIR` 覆盖；常用子目录包括 `workspace`、`sessions`、`scheduler`、`history`、`config`、`log`、`share` 和 `runtime`。
 
-会话记录保存在 `~/.fkteams/sessions/<session-id>/`：主会话事实源为 append-only `transcript.jsonl`，子智能体执行轨迹保存在 `subagents/<agent-run-id>.jsonl`，大工具结果保存在 `tool-results/<result-id>.json`。子智能体作为父级工具调用返回最终结果，内部轨迹只用于展示和审计。顶层 `history.jsonl` 仅用于用户输入历史，不作为会话 transcript。
+会话记录保存在 `~/.fkteams/sessions/<session-id>/`：主会话事实源为 append-only `transcript.jsonl`，子智能体执行轨迹保存在 `subagents/<agent-run-id>/transcript.jsonl`，归属信息保存在同目录 `metadata.json`，大工具结果保存在 `tool-results/<result-id>.json`。子智能体作为父级工具调用返回最终结果，内部轨迹只用于展示和审计。顶层 `history.jsonl` 仅用于用户输入历史，不作为会话 transcript。
 
 如果需要为所有智能体提供项目约定，可在 `~/.fkteams/workspace/` 放置 `AGENTS.md`（也兼容 `Agents.md`）。系统会在每次模型调用前临时注入该文件内容，支持 `@import` 拆分规则文件，内容不会写入会话历史。
 

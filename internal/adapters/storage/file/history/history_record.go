@@ -237,6 +237,12 @@ func (h *HistoryRecorder) ensureSubagentRun(event Event) *subagentRun {
 		AgentName:        agentName,
 		TranscriptPath:   subagentTranscriptPath(h.sessionDir, agentRunID),
 	}
+	writeSubagentMetadata(h.sessionDir, SubagentMetadata{
+		AgentRunID:   agentRunID,
+		Agent:        agentName,
+		ParentCallID: event.MemberCallID,
+		ToolName:     event.MemberToolName,
+	})
 	for _, key := range memberCallKeys(event.MemberCallID) {
 		h.subagents[key] = run
 	}
@@ -257,13 +263,8 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		ts = time.Now()
 	}
 	base := TranscriptEvent{
-		At:               ts,
-		Turn:             transcriptTurnFromRuntimeID(event.TurnID),
-		Agent:            agent,
-		ParentToolCallID: event.ParentToolCallID,
-	}
-	if target != nil {
-		base.ParentToolCallID = target.ParentToolCallID
+		At:    ts,
+		Agent: agent,
 	}
 
 	switch event.Type {
@@ -299,6 +300,9 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 			return
 		}
 		base.Type = TranscriptAssistantMessage
+		if content == "" {
+			base.Type = TranscriptAgentStep
+		}
 		base.Content = content
 		base.Reasoning = reasoning
 		base.ContentParts = parts
@@ -328,11 +332,10 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 			record := toolCallRecordFromPending(pending, "")
 			line := base
 			line.Type = TranscriptToolCallStart
-			line.ToolCallID = pending.ID
-			line.ToolCall = ptrToolCallRecord(record)
-			line.ToolName = record.Name
-			line.ToolArgs = record.Arguments
-			line.DisplayName = record.DisplayName
+			line.CallID = pending.ID
+			line.Name = record.Name
+			line.Args = record.Arguments
+			line.Display = record.DisplayName
 			line.Kind = record.Kind
 			line.Target = record.Target
 			h.appendTranscriptEvent(line, target)
@@ -352,14 +355,12 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		resultPayload := h.toolResultPayload(toolName, content)
 		line := base
 		line.Type = TranscriptToolCallEnd
-		line.ToolCallID = event.ToolCallID
+		line.CallID = event.ToolCallID
 		line.Result = resultPayload.Result
 		line.ResultRef = resultPayload.ResultRef
 		line.Summary = resultPayload.Summary
 		line.Truncated = resultPayload.Truncated
 		line.OriginalChars = resultPayload.OriginalChars
-		line.ToolName = toolName
-		line.ToolArgs = event.ToolArgs
 		h.appendTranscriptEvent(line, target)
 	case EventUsageReported:
 		return
