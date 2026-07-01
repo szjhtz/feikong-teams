@@ -24,7 +24,7 @@ const (
 
 // Config 分发中间件配置。未指定工具时子智能体自动继承父智能体的工具。
 type Config struct {
-	Model          runtimeport.ChatModel // 子智能体模型（由 AgentBuilder 自动填充）
+	Model          runtimeport.ChatModel // 子任务模型（由 agent definition resolver 自动填充）
 	Tools          []runtimeport.Tool    // 子智能体工具实例；为空时继承父智能体工具
 	MaxConcurrency int                   // 最大并发数（默认 3）
 	TaskTimeout    time.Duration         // 单任务超时（默认 30min）

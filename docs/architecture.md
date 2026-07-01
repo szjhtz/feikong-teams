@@ -110,18 +110,18 @@ docs/
 
 ## 核心用例中轴
 
-所有入口统一调用 `internal/app/chat.Service` 或对应应用服务。Web、CLI、消息通道、定时任务不直接调用 engine 或具体 runtime；runner 创建由 `internal/app/agent` 完成，并通过 context 注入的 `runtime.Engine` 与组合根连接。
+所有入口统一调用 `internal/app/chat.Service` 或对应应用服务。Web、CLI、消息通道、定时任务不直接调用具体 runtime adapter；runner 创建由 `internal/app/agent` 完成，组合根按能力注入 `AgentRuntime`、`RunnerRuntime`、`AgentToolRuntime` 和 `PipelineRuntime`。
 
 ```go
 type Service interface {
-    RunTurn(ctx context.Context, req TurnRequest, opts ...TurnOption) (*runtime.RunResult, error)
+    RunTurn(ctx context.Context, req TurnRequest) (*runtime.RunResult, error)
 }
 ```
 
 `chat.Service` 负责：
 
-- 将入口层能力转换为稳定的 turn 执行选项：approval、ask、steering、事件记录、history sink、hooks、scheduler service 和 context hook。
-- 统一调用 `internal/runtime/turn.Session`，入口层不得直接散落这些 runtime context key。
+- 将入口层能力装配为稳定的 `turn.Request`：approval、ask、steering、事件 sink、summary sink、hooks、scheduler service 和 context hook。
+- 统一调用 `internal/runtime/turn.Executor`，入口层不得直接调用 runner 或散落 runtime context key。
 - 通过 `SessionLifecycle` 统一保存 history、更新 metadata、记录取消/错误、提取或 flush 长期记忆。
 - 通过 `internal/app/chat/taskstream` 提供运行中事件流、follow-up 队列、steering 队列、interrupt/ask 响应和断线续接能力。
 
@@ -139,10 +139,18 @@ type Service interface {
 Runtime 端口必须足够小，不能暴露 Eino 概念。
 
 ```go
-type Runtime interface {
-    BuildAgent(ctx context.Context, spec AgentSpec) (Agent, error)
-    BuildRunner(ctx context.Context, spec RunnerSpec) (Runner, error)
-    Capabilities() RuntimeCapabilities
+type AgentRuntime interface {
+    NewChatModelAgent(ctx context.Context, cfg *ChatAgentConfig) (Agent, error)
+    NewLoopAgent(ctx context.Context, cfg *LoopAgentConfig) (Agent, error)
+    NewDeepAgent(ctx context.Context, cfg *DeepAgentConfig) (Agent, error)
+}
+
+type RunnerRuntime interface {
+    NewRunner(ctx context.Context, cfg RunnerConfig) (Runner, error)
+}
+
+type AgentToolRuntime interface {
+    NewAgentTools(ctx context.Context, subAgents []Agent, cfg AgentToolConfig) ([]Tool, error)
 }
 
 type Runner interface {
@@ -159,7 +167,7 @@ type Runner interface {
 ```go
 type ToolRegistry interface {
     Register(group ToolGroupSpec, factory ToolFactory) error
-    Resolve(ctx context.Context, refs []ToolGroupRef) ([]Tool, []ToolPolicy, error)
+    Resolve(ctx ToolResolveContext, refs []ToolGroupRef) ([]Tool, []ToolPolicy, error)
     Catalog(ctx context.Context) ([]ToolGroupInfo, error)
 }
 ```
@@ -180,7 +188,7 @@ type ToolRegistry interface {
 
 - `internal/app/tools` 只保留工具组注册表、目录查询、MCP provider 门面、审批策略和无需外部 IO 生命周期的应用级能力；默认工具组不在 app 层内建，也不保留进程级默认注册表或 MCP provider。
 - `internal/bootstrap/runtimes` 显式注册 runtime engine、MCP tool provider 桥接和模型 provider；运行时模型工厂注册表和 adapter 模型 provider 注册表都由组合根创建并注入入口上下文，`internal/runtime/model` 与 `internal/adapters/model/providers` 不提供可变的进程级默认注册表；禁止用空白 import 或 `init()` 完成 provider 装配。
-- `internal/bootstrap/tools` 是唯一默认工具组组合入口，负责创建工具注册表实例，注册 file、todo、ask、command、uv、bun、excel、doc、fetch、search、git、ssh、scheduler 等工具组，并由命令入口注入 HTTP、CLI、channel 和 scheduler 上下文。
+- `internal/bootstrap/tools` 是唯一默认工具组组合入口，负责创建带 `ToolResolveContext` 的工具注册表实例，注册 file、todo、ask、command、uv、bun、excel、doc、fetch、search、git、ssh、scheduler 等工具组，并显式注入 workspace、sessions、runtime、配置快照和历史读取器。
 - `tools/mcp`：MCP client、缓存和工具组 provider 位于 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`。MCP provider 实例由组合根创建，并同时传给 `internal/bootstrap/runtimes` 注册 runtime tool bridge、传给 `internal/bootstrap/tools` 注册工具目录；adapter 不提供进程级默认 provider。
 - `tools/command`、`tools/script/uv`、`tools/script/bun`：进程执行和脚本运行时实现位于 `internal/adapters/tools/builtin/*`；后台 tasker 通过隐藏工具组 `command_reject` 使用自动拒绝危险操作的命令策略。
 - `tools/file`、`tools/todo`：工作区文件 IO 和会话 todo 持久化位于 `internal/adapters/tools/builtin/*`，由 bootstrap 注入工作区和会话目录。

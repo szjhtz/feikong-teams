@@ -765,6 +765,68 @@ func TestRuntimeCompositionDoesNotExposeProcessDefaults(t *testing.T) {
 	}
 }
 
+func TestRemovedRuntimeAndBuilderAPIsDoNotReturn(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	forbidden := map[string][]string{
+		"internal/ports/runtime": {
+			"type Engine interface",
+			"func WithEngine(",
+			"func RequireEngine(",
+			"func EngineFromContext(",
+		},
+		"internal/runtime/turn": {
+			"func NewSession(",
+			"type Session struct",
+			"WithInput(",
+			"WithRunID(",
+		},
+		"internal/app/chat": {
+			"type TurnOption",
+			"func WithRunID(",
+			"func OnEvent(",
+			"func WithHistory(",
+		},
+		"internal/app/agent/catalog/common": {
+			"type AgentBuilder",
+			"func NewAgentBuilder(",
+		},
+		"internal/app/tools/attachment": {
+			"SetSessionMessageReader",
+			"sessionMessageReader",
+		},
+		"internal/app/tools": {
+			"ToolGroupFactory func(cleaner",
+			"func GetBuiltinCapabilityTools()",
+		},
+	}
+	for rel, forbiddenList := range forbidden {
+		dir := filepath.Join(root, filepath.FromSlash(rel))
+		err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			text := string(data)
+			for _, needle := range forbiddenList {
+				if strings.Contains(text, needle) {
+					fileRel, _ := filepath.Rel(root, path)
+					t.Errorf("%s contains removed API %q", filepath.ToSlash(fileRel), needle)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestModelProvidersRegisterExplicitly(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{
