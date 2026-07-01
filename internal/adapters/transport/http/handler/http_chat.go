@@ -97,22 +97,21 @@ func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtime
 		SessionID: sessionID,
 		Runner:    r,
 		Input:     turnInput,
-	},
-		appchat.OnEvent(func(event events.Event) error {
+		Summary:   recorder,
+		EventSink: func(event events.Event) error {
+			recorder.RecordEvent(event)
 			collectedEvents = append(collectedEvents, event)
 			return nil
-		}),
-		appchat.WithEventRecorder(recorder),
-		appchat.WithHistory(recorder),
-		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
+		},
+		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
 				rt.finishErrorChat(recorder, sessionID, userDisplayText, err)
 				return
 			}
 			rt.finishChat(recorder, sessionID, userDisplayText, manager)
-		}),
-	)
+		},
+	})
 	if runErr != nil {
 		Fail(c, http.StatusInternalServerError, runErr.Error())
 		return

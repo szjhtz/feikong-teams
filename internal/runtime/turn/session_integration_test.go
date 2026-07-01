@@ -30,18 +30,20 @@ func (r *recordingRunner) Run(_ context.Context, input message.TurnInput, opts r
 	return &runtimeport.RunResult{LastEvent: event}, nil
 }
 
-func TestSessionRunsCoreRunner(t *testing.T) {
+func TestExecutorRunsCoreRunner(t *testing.T) {
 	ctx := context.Background()
 	r := &recordingRunner{}
 
 	var collectedEvents []events.Event
-	_, err := NewSession(r, "test-session").
-		WithInput(TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}}).
-		OnEvent(func(event events.Event) error {
+	_, err := NewExecutor().Run(ctx, Request{
+		Runner:    r,
+		SessionID: "test-session",
+		Input:     TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
+		EventSink: func(event events.Event) error {
 			collectedEvents = append(collectedEvents, event)
 			return nil
-		}).
-		Run(ctx)
+		},
+	})
 	if err != nil {
 		t.Fatalf("run session: %v", err)
 	}
@@ -63,7 +65,7 @@ func TestSessionRunsCoreRunner(t *testing.T) {
 	}
 }
 
-func TestSessionInvokesRunHooks(t *testing.T) {
+func TestExecutorInvokesRunHooks(t *testing.T) {
 	ctx := context.Background()
 	r := &recordingRunner{}
 	bus := hooks.NewBus()
@@ -86,10 +88,12 @@ func TestSessionInvokesRunHooks(t *testing.T) {
 		return hooks.Result{}, nil
 	}, hooks.Options{})
 
-	_, err := NewSession(r, "test-session").
-		WithHookBus(bus).
-		WithInput(TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}}).
-		Run(ctx)
+	_, err := NewExecutor().Run(ctx, Request{
+		Runner:    r,
+		SessionID: "test-session",
+		HookBus:   bus,
+		Input:     TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
+	})
 	if err != nil {
 		t.Fatalf("run session: %v", err)
 	}
@@ -101,13 +105,15 @@ func TestSessionInvokesRunHooks(t *testing.T) {
 	}
 }
 
-func TestSessionHasNoImplicitGlobalHookBus(t *testing.T) {
+func TestExecutorHasNoImplicitGlobalHookBus(t *testing.T) {
 	ctx := context.Background()
 	r := &recordingRunner{}
 
-	_, err := NewSession(r, "test-session").
-		WithInput(TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}}).
-		Run(ctx)
+	_, err := NewExecutor().Run(ctx, Request{
+		Runner:    r,
+		SessionID: "test-session",
+		Input:     TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
+	})
 	if err != nil {
 		t.Fatalf("run session: %v", err)
 	}

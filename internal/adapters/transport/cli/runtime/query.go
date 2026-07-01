@@ -310,22 +310,23 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	}
 	for {
 		_, err := appchat.NewService().RunTurn(queryCtx, appchat.TurnRequest{
-			SessionID: session.sessionID(),
-			Runner:    e.runner,
-			Input:     currentInput,
-		},
-			appchat.OnEvent(func(event events.Event) error {
+			SessionID:        session.sessionID(),
+			Runner:           e.runner,
+			Input:            currentInput,
+			Summary:          recorder,
+			InterruptHandler: runtimeport.InterruptHandler(handler),
+			ApprovalRegistry: approvalReg,
+			SteeringSource:   steeringSource,
+			AskHandler:       e.askRuntime,
+			ContextHooks: []appchat.ContextHook{
+				func(ctx context.Context) context.Context {
+					return appschedule.WithService(ctx, e.scheduler)
+				},
+			},
+			EventSink: func(event events.Event) error {
 				return innerCallback(event)
-			}),
-			appchat.WithHistory(recorder),
-			appchat.OnInterrupt(runtimeport.InterruptHandler(handler)),
-			appchat.WithApprovalRegistry(approvalReg),
-			appchat.WithSteeringSource(steeringSource),
-			appchat.WithAskRuntimeHandler(e.askRuntime),
-			appchat.WithContext(func(ctx context.Context) context.Context {
-				return appschedule.WithService(ctx, e.scheduler)
-			}),
-		)
+			},
+		})
 
 		recorder.FinalizeCurrent()
 		if err != nil {

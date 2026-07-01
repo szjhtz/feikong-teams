@@ -18,17 +18,16 @@ func TestRunTurnDelegatesToRunnerAndPublishesEvents(t *testing.T) {
 
 	result, err := service.RunTurn(context.Background(), TurnRequest{
 		SessionID: "session-1",
+		RunID:     "run-1",
 		Runner:    runner,
 		Input: message.TurnInput{
 			Message: message.Message{Role: message.RoleUser, Content: "ping"},
 		},
-	},
-		WithRunID("run-1"),
-		OnEvent(func(event event.Event) error {
+		EventSink: func(event event.Event) error {
 			gotEvents = append(gotEvents, event)
 			return nil
-		}),
-	)
+		},
+	})
 	if err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
@@ -59,21 +58,17 @@ func TestRunTurnRejectsMissingDependencies(t *testing.T) {
 func TestRunTurnRecordsEventsBeforePublishing(t *testing.T) {
 	runner := &fakeRunner{}
 	var calls []string
-	recorder := EventRecorderFunc(func(event.Event) {
-		calls = append(calls, "record")
-	})
 
 	_, err := NewService().RunTurn(context.Background(), TurnRequest{
 		SessionID: "session-1",
 		Runner:    runner,
 		Input:     message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
-	},
-		WithEventRecorder(recorder),
-		OnEvent(func(event.Event) error {
+		EventSink: func(event.Event) error {
+			calls = append(calls, "record")
 			calls = append(calls, "publish")
 			return nil
-		}),
-	)
+		},
+	})
 	if err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
@@ -92,14 +87,13 @@ func TestRunTurnInjectsTypedRuntimeCapabilities(t *testing.T) {
 	}
 
 	_, err := NewService().RunTurn(context.Background(), TurnRequest{
-		SessionID: "session-1",
-		Runner:    runner,
-		Input:     message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
-	},
-		WithApprovalRegistry(approval.NewAutoApproveRegistry()),
-		WithSteeringSource(steeringSource),
-		WithAskRuntimeHandler(askHandler),
-	)
+		SessionID:        "session-1",
+		Runner:           runner,
+		Input:            message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
+		ApprovalRegistry: approval.NewAutoApproveRegistry(),
+		SteeringSource:   steeringSource,
+		AskHandler:       askHandler,
+	})
 	if err != nil {
 		t.Fatalf("run turn: %v", err)
 	}

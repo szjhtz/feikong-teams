@@ -10,8 +10,8 @@ import (
 )
 
 // run 执行查询，处理事件和 HITL 中断。
-// 根据 runConfig 自动装配 context（session ID、事件回调、摘要持久化、审批注册表等）。
-func (e *core) run(ctx context.Context, cfg runConfig) (*runtimeport.RunResult, error) {
+// 根据 Request 自动装配 context（session ID、事件回调、摘要持久化、审批注册表等）。
+func (e *core) run(ctx context.Context, cfg Request) (*runtimeport.RunResult, error) {
 	ctx = cfg.prepareContext(ctx, e.checkpointID)
 
 	input, err := cfg.invokeBeforeRun(ctx)
@@ -37,12 +37,12 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*runtimeport.RunResult, 
 	return result, err
 }
 
-func (cfg runConfig) prepareContext(ctx context.Context, checkpointID string) context.Context {
+func (cfg Request) prepareContext(ctx context.Context, checkpointID string) context.Context {
 	ctx = session.WithID(ctx, checkpointID)
 	ctx = hooks.WithBus(ctx, cfg.hookBus())
 
-	if cfg.EventCallback != nil {
-		ctx = events.WithCallback(ctx, cfg.EventCallback)
+	if cfg.EventSink != nil {
+		ctx = events.WithCallback(ctx, cfg.EventSink)
 	}
 
 	if cfg.NonInteractive {
@@ -57,32 +57,32 @@ func (cfg runConfig) prepareContext(ctx context.Context, checkpointID string) co
 	return ctx
 }
 
-func (cfg runConfig) prepareHistoryContext(ctx context.Context, input message.TurnInput) context.Context {
-	if cfg.Recorder != nil {
-		countBefore := cfg.Recorder.GetMessageCount()
+func (cfg Request) prepareHistoryContext(ctx context.Context, input message.TurnInput) context.Context {
+	if cfg.Summary != nil {
+		countBefore := cfg.Summary.GetMessageCount()
 		ctx = runtimeport.WithSummaryPersistCallback(ctx, func(s string) {
-			cfg.Recorder.SetSummary(s, countBefore)
+			cfg.Summary.SetSummary(s, countBefore)
 		})
 	}
 	return ctx
 }
 
-func (cfg runConfig) invokeBeforeRun(ctx context.Context) (message.TurnInput, error) {
+func (cfg Request) invokeBeforeRun(ctx context.Context) (message.TurnInput, error) {
 	return cfg.hookBus().InvokeBeforeRun(ctx, cfg.Input)
 }
 
-func (cfg runConfig) invokeAfterRun(ctx context.Context, input message.TurnInput, result *runtimeport.RunResult, runErr error) error {
+func (cfg Request) invokeAfterRun(ctx context.Context, input message.TurnInput, result *runtimeport.RunResult, runErr error) error {
 	return cfg.hookBus().InvokeAfterRun(ctx, input, result, runErr)
 }
 
-func (cfg runConfig) hookBus() *hooks.Bus {
+func (cfg Request) hookBus() *hooks.Bus {
 	if cfg.HookBus != nil {
 		return cfg.HookBus
 	}
 	return nil
 }
 
-func (cfg runConfig) interruptHandler() InterruptHandler {
+func (cfg Request) interruptHandler() InterruptHandler {
 	if cfg.OnInterrupt != nil {
 		return cfg.OnInterrupt
 	}

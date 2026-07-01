@@ -368,31 +368,25 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	chatService := appchat.NewService()
 	for {
 		_, runErr := chatService.RunTurn(ctx, appchat.TurnRequest{
-			SessionID: sessionID,
-			Runner:    r,
-			Input:     currentInput,
-		},
-			appchat.WithRunID(currentRunID),
-			appchat.NonInteractive(),
-			appchat.OnEvent(func(event events.Event) error {
+			SessionID:        sessionID,
+			RunID:            currentRunID,
+			Runner:           r,
+			Input:            currentInput,
+			Summary:          recorder,
+			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
+			NonInteractive:   true,
+			ApprovalRegistry: approval.NewDefaultRegistry(),
+			AskHandler:       buildMemberAskRuntimeHandler(stream, recorder, sessionID),
+			SteeringSource:   steeringSource,
+			EventSink: func(event events.Event) error {
 				if stream.Status() == "cancelled" {
 					return context.Canceled
 				}
+				recorder.RecordEvent(event)
 				stream.Publish(standardEventPayload(sessionID, event, rt.ToolDisplays))
 				return nil
-			}),
-			appchat.WithEventRecorderFunc(func(event events.Event) {
-				if stream.Status() == "cancelled" {
-					return
-				}
-				recorder.RecordEvent(event)
-			}),
-			appchat.WithHistory(recorder),
-			appchat.OnInterrupt(runtimeport.InterruptHandler(interruptHandler)),
-			appchat.WithApprovalRegistry(approval.NewDefaultRegistry()),
-			appchat.WithAskRuntimeHandler(buildMemberAskRuntimeHandler(stream, recorder, sessionID)),
-			appchat.WithSteeringSource(steeringSource),
-		)
+			},
+		})
 		if runErr != nil {
 			if isConnectionClosed(ctx, runErr) {
 				log.Printf("stream task cancelled: session=%s", sessionID)

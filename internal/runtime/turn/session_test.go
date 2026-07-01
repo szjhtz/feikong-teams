@@ -10,15 +10,15 @@ import (
 	"testing"
 )
 
-type historySinkStub struct {
+type summarySinkStub struct {
 	count int
 }
 
-func (h *historySinkStub) GetMessageCount() int {
+func (h *summarySinkStub) GetMessageCount() int {
 	return h.count
 }
 
-func (h *historySinkStub) SetSummary(string, int) {}
+func (h *summarySinkStub) SetSummary(string, int) {}
 
 type runnerStub struct {
 	input message.TurnInput
@@ -31,88 +31,14 @@ func (r *runnerStub) Run(_ context.Context, input message.TurnInput, opts runtim
 	return &runtimeport.RunResult{}, nil
 }
 
-func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
-	messages := []message.Message{{Role: message.RoleUser, Content: "hello"}}
-	history := &historySinkStub{}
-	approvalReg := approval.NewDefaultRegistry()
-	eventHandler := func(events.Event) error { return nil }
-	startHandler := func(context.Context) {}
-	interruptHandler := FixedDecisionHandler(approval.Reject)
-	finishHandler := func(context.Context, *runtimeport.RunResult, error) {}
-
-	session := NewSession(&runnerStub{}, "session-1").
-		WithMessages(messages).
-		OnEvent(eventHandler).
-		WithHistory(history).
-		OnStart(startHandler).
-		OnInterrupt(interruptHandler).
-		NonInteractive().
-		WithContext(approval.RegistryContext(approvalReg)).
-		OnFinish(finishHandler)
-
-	if len(session.cfg.Input.Context) != 1 || session.cfg.Input.Context[0].Content != "hello" {
-		t.Fatal("messages were not configured")
-	}
-	if session.cfg.EventCallback == nil {
-		t.Fatal("event handler was not configured")
-	}
-	if session.cfg.Recorder != history {
-		t.Fatal("history sink was not configured")
-	}
-	if session.cfg.OnStart == nil {
-		t.Fatal("start handler was not configured")
-	}
-	if session.cfg.OnInterrupt == nil {
-		t.Fatal("interrupt handler was not configured")
-	}
-	if !session.cfg.NonInteractive {
-		t.Fatal("non-interactive flag was not configured")
-	}
-	if len(session.cfg.ContextHooks) != 1 {
-		t.Fatal("context hook was not configured")
-	}
-	if session.cfg.OnFinish == nil {
-		t.Fatal("finish handler was not configured")
-	}
-}
-
-func TestSessionBuilderConfiguresRunID(t *testing.T) {
-	session := NewSession(&runnerStub{}, "session-1").WithRunID("run-1")
-	if session.cfg.RunID != "run-1" {
-		t.Fatalf("run id = %q, want run-1", session.cfg.RunID)
-	}
-}
-
-func TestSessionBuilderConfiguresHookBus(t *testing.T) {
-	bus := hooks.NewBus()
-	session := NewSession(&runnerStub{}, "session-1").WithHookBus(bus)
-	if session.cfg.HookBus != bus {
-		t.Fatal("hook bus was not configured")
-	}
-}
-
-func TestSessionBuilderConfiguresTurnInput(t *testing.T) {
-	input := TurnInput{
-		Context: []message.Message{{Role: message.RoleSystem, Content: "context"}},
-		Message: message.Message{Role: message.RoleUser, Content: "hello"},
-	}
-
-	session := NewSession(&runnerStub{}, "session-1").WithInput(input)
-
-	if len(session.cfg.Input.Context) != 1 || session.cfg.Input.Context[0].Content != "context" {
-		t.Fatal("input context was not configured")
-	}
-	if session.cfg.Input.Message.Content != "hello" {
-		t.Fatalf("input message = %q, want hello", session.cfg.Input.Message.Content)
-	}
-}
-
-func TestSessionRunUsesConfiguredRunID(t *testing.T) {
+func TestExecutorRunUsesConfiguredRunID(t *testing.T) {
 	runner := &runnerStub{}
-	_, err := NewSession(runner, "session-1").
-		WithRunID("run-1").
-		WithText("hello").
-		Run(context.Background())
+	_, err := NewExecutor().Run(context.Background(), Request{
+		Runner:    runner,
+		SessionID: "session-1",
+		RunID:     "run-1",
+		Input:     TurnInput{Message: message.Message{Role: message.RoleUser, Content: "hello"}},
+	})
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -124,21 +50,44 @@ func TestSessionRunUsesConfiguredRunID(t *testing.T) {
 	}
 }
 
-func TestSessionBuilderConfiguresPromptMessage(t *testing.T) {
-	session := NewSession(&runnerStub{}, "session-1").
-		WithMessages([]message.Message{{Role: message.RoleSystem, Content: "context"}}).
-		WithText("hello")
+func TestExecutorRunConfiguresRequestCapabilities(t *testing.T) {
+	history := &summarySinkStub{}
+	approvalReg := approval.NewDefaultRegistry()
+	eventHandler := func(events.Event) error { return nil }
+	startHandler := func(context.Context) {}
+	interruptHandler := FixedDecisionHandler(approval.Reject)
+	finishHandler := func(context.Context, *runtimeport.RunResult, error) {}
+	bus := hooks.NewBus()
 
-	if session.cfg.Input.Message.Role != message.RoleUser {
-		t.Fatalf("input role = %q, want user", session.cfg.Input.Message.Role)
+	runner := &runnerStub{}
+	_, err := NewExecutor().Run(context.Background(), Request{
+		Runner:         runner,
+		SessionID:      "session-1",
+		Input:          TurnInput{Context: []message.Message{{Role: message.RoleSystem, Content: "context"}}},
+		EventSink:      eventHandler,
+		Summary:        history,
+		OnStart:        startHandler,
+		OnInterrupt:    interruptHandler,
+		NonInteractive: true,
+		ContextHooks: []ContextHook{
+			approval.RegistryContext(approvalReg),
+		},
+		HookBus:  bus,
+		OnFinish: finishHandler,
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
 	}
-	if session.cfg.Input.Message.Content != "hello" {
-		t.Fatalf("input message = %q, want hello", session.cfg.Input.Message.Content)
+	if len(runner.input.Context) != 1 || runner.input.Context[0].Content != "context" {
+		t.Fatalf("input context = %#v, want configured context", runner.input.Context)
 	}
+}
 
-	msg := message.Message{Role: message.RoleUser, Content: "override"}
-	session.WithMessage(msg)
-	if session.cfg.Input.Message.Content != "override" {
-		t.Fatalf("input message = %q, want override", session.cfg.Input.Message.Content)
+func TestExecutorRunRejectsMissingDependencies(t *testing.T) {
+	if _, err := NewExecutor().Run(context.Background(), Request{SessionID: "s"}); err == nil {
+		t.Fatal("expected missing runner error")
+	}
+	if _, err := NewExecutor().Run(context.Background(), Request{Runner: &runnerStub{}}); err == nil {
+		t.Fatal("expected missing session ID error")
 	}
 }

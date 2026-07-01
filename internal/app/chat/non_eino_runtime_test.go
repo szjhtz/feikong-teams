@@ -52,22 +52,19 @@ func TestServiceRunsThroughNonEinoRuntime(t *testing.T) {
 		SessionID: "session-1",
 		Runner:    runner,
 		Input:     message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "original"}},
-	},
-		WithHookBus(bus),
-		WithEventRecorderFunc(func(event event.Event) {
+		HookBus:   bus,
+		EventSink: func(event event.Event) error {
 			recorded = append(recorded, event)
-		}),
-		OnEvent(func(event event.Event) error {
 			published = append(published, event)
 			return nil
-		}),
-		OnInterrupt(func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
+		},
+		InterruptHandler: func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
 			if len(interrupts) != 1 || interrupts[0].ID != "approval-1" {
 				t.Fatalf("interrupts = %#v, want approval-1", interrupts)
 			}
 			return runtimeport.InterruptDecisions{"approval-1": "approved"}, nil
-		}),
-	)
+		},
+	})
 	if err != nil {
 		t.Fatalf("run turn: %v", err)
 	}

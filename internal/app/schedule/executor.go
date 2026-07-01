@@ -73,7 +73,8 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 		SessionID: "fkteams_scheduler",
 		Runner:    r,
 		Input:     input,
-	}, appchat.OnEvent(callback))
+		EventSink: callback,
+	})
 	if err != nil {
 		errMsg := fmt.Sprintf("execution error: %v", err)
 		e.writeResult(taskID, task, errMsg)
