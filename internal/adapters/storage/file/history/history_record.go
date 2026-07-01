@@ -280,18 +280,28 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		base.Payload = TranscriptPayload{Role: message.RoleUser, Content: content, ContentParts: parts}
 		h.appendTranscriptEvent(base, target)
 	case events.EventAssistantReasoning:
-		if event.Content == "" {
-			return
-		}
-		base.Type = TranscriptAssistantReasoning
-		base.Payload = TranscriptPayload{Role: transcriptRoleFromEvent(event), Content: event.Content, ReasoningContent: event.Content}
-		h.appendTranscriptEvent(base, target)
+		return
 	case events.EventAssistantText:
-		if event.Content == "" {
+		return
+	case events.EventAssistantCompleted:
+		content := event.Content
+		reasoning := event.ReasoningContent
+		parts := []message.ContentPart(nil)
+		if event.Message != nil {
+			content = event.Message.DisplayText()
+			reasoning = event.Message.ReasoningContent
+			parts = append(parts, event.Message.ContentParts...)
+		}
+		if content == "" && reasoning == "" && len(parts) == 0 {
 			return
 		}
-		base.Type = TranscriptAssistantTextDelta
-		base.Payload = TranscriptPayload{Role: transcriptRoleFromEvent(event), Content: event.Content}
+		base.Type = TranscriptAssistantMessageEnd
+		base.Payload = TranscriptPayload{
+			Role:             transcriptRoleFromEvent(event),
+			Content:          content,
+			ReasoningContent: reasoning,
+			ContentParts:     parts,
+		}
 		h.appendTranscriptEvent(base, target)
 	case EventToolCallStarted:
 		toolCalls := event.ToolCalls

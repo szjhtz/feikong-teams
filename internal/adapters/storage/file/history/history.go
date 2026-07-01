@@ -42,8 +42,6 @@ const (
 	TranscriptTurnStarted           = domainhistory.TranscriptTurnStarted
 	TranscriptUserMessage           = domainhistory.TranscriptUserMessage
 	TranscriptAssistantMessageStart = domainhistory.TranscriptAssistantMessageStart
-	TranscriptAssistantReasoning    = domainhistory.TranscriptAssistantReasoning
-	TranscriptAssistantTextDelta    = domainhistory.TranscriptAssistantTextDelta
 	TranscriptAssistantMessageEnd   = domainhistory.TranscriptAssistantMessageEnd
 	TranscriptToolCallStart         = domainhistory.TranscriptToolCallStart
 	TranscriptToolCallEnd           = domainhistory.TranscriptToolCallEnd

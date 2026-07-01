@@ -27,6 +27,12 @@ func TestTranscriptProjectionBuildsTurnInput(t *testing.T) {
 		AgentName: "coordinator",
 		Content:   "world",
 	})
+	recorder.RecordEvent(Event{
+		Type:      events.EventAssistantCompleted,
+		Role:      message.RoleAssistant,
+		AgentName: "coordinator",
+		Content:   "world",
+	})
 	recorder.FinalizeCurrent()
 
 	loaded := NewHistoryRecorder()
@@ -452,6 +458,7 @@ func TestTranscriptRecorderAppendsEventsInWriteOrder(t *testing.T) {
 
 	recorder.RecordEvent(events.UserMessage("run-1", events.TurnID("run-1", 1), "msg-1", message.Message{Role: message.RoleUser, Content: "hello"}))
 	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "coordinator", Content: "world"})
+	recorder.RecordEvent(Event{Type: events.EventAssistantCompleted, AgentName: "coordinator", Content: "world"})
 
 	transcript, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
 	if err != nil {
@@ -463,8 +470,49 @@ func TestTranscriptRecorderAppendsEventsInWriteOrder(t *testing.T) {
 	if transcript[0].Seq != 1 || transcript[1].Seq != 2 {
 		t.Fatalf("seqs = %d,%d want 1,2", transcript[0].Seq, transcript[1].Seq)
 	}
-	if transcript[0].Type != TranscriptUserMessage || transcript[1].Type != TranscriptAssistantTextDelta {
+	if transcript[0].Type != TranscriptUserMessage || transcript[1].Type != TranscriptAssistantMessageEnd {
 		t.Fatalf("types = %s,%s", transcript[0].Type, transcript[1].Type)
+	}
+	if transcript[1].Payload.Content != "world" {
+		t.Fatalf("assistant payload = %#v", transcript[1].Payload)
+	}
+}
+
+func TestTranscriptRecorderAggregatesAssistantDeltas(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+
+	recorder.RecordEvent(Event{Type: events.EventAssistantReasoning, AgentName: "coordinator", MessageID: "msg-1", Content: "think "})
+	recorder.RecordEvent(Event{Type: events.EventAssistantReasoning, AgentName: "coordinator", MessageID: "msg-1", Content: "more"})
+	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "coordinator", MessageID: "msg-1", Content: "hello "})
+	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "coordinator", MessageID: "msg-1", Content: "world"})
+	recorder.RecordEvent(Event{Type: events.EventAssistantCompleted, AgentName: "coordinator", MessageID: "msg-1", Content: "hello world", ReasoningContent: "think more"})
+
+	transcript, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+	if err != nil {
+		t.Fatalf("load transcript: %v", err)
+	}
+	if len(transcript) != 1 {
+		t.Fatalf("event count = %d, want 1: %#v", len(transcript), transcript)
+	}
+	if transcript[0].Type != TranscriptAssistantMessageEnd {
+		t.Fatalf("type = %s, want assistant_message_end", transcript[0].Type)
+	}
+	if transcript[0].Payload.Content != "hello world" || transcript[0].Payload.ReasoningContent != "think more" {
+		t.Fatalf("payload = %#v", transcript[0].Payload)
+	}
+
+	loaded := NewHistoryRecorder()
+	if err := loaded.LoadFromFile(filepath.Join(dir, TranscriptFileName)); err != nil {
+		t.Fatalf("load recorder: %v", err)
+	}
+	messages := loaded.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	if messages[0].GetTextContent() != "hello world" || messages[0].GetReasoningContent() != "think more" {
+		t.Fatalf("projected message text=%q reasoning=%q", messages[0].GetTextContent(), messages[0].GetReasoningContent())
 	}
 }
 
@@ -507,6 +555,14 @@ func TestTranscriptRecorderWritesSubagentTranscriptSeparately(t *testing.T) {
 		MemberToolName: "ask_fkagent_researcher",
 		MemberName:     "researcher",
 	})
+	recorder.RecordEvent(Event{
+		Type:           events.EventAssistantCompleted,
+		AgentName:      "researcher",
+		Content:        "member result",
+		MemberCallID:   "call_1",
+		MemberToolName: "ask_fkagent_researcher",
+		MemberName:     "researcher",
+	})
 	recorder.RecordEvent(Event{Type: EventToolCallCompleted, AgentName: "coordinator", ToolCallID: "call_1", ToolName: "ask_fkagent_researcher", Content: "member result"})
 
 	main, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
@@ -530,7 +586,7 @@ func TestTranscriptRecorderWritesSubagentTranscriptSeparately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load subagent transcript: %v", err)
 	}
-	if len(sub) != 1 || sub[0].Type != TranscriptAssistantTextDelta || sub[0].Payload.Content != "member result" {
+	if len(sub) != 1 || sub[0].Type != TranscriptAssistantMessageEnd || sub[0].Payload.Content != "member result" {
 		t.Fatalf("subagent transcript = %#v", sub)
 	}
 }

@@ -57,21 +57,17 @@ func transcriptEventToRuntimeEvents(sessionID string, item eventlog.TranscriptEv
 		base.Role = domainmessage.RoleUser
 		base.Content = item.Payload.Content
 		return []events.Event{base}
-	case eventlog.TranscriptAssistantReasoning:
-		base.Type = events.EventAssistantReasoning
+	case eventlog.TranscriptAssistantMessageEnd:
+		base.Type = events.EventAssistantCompleted
 		base.Role = domainmessage.RoleAssistant
-		base.DeltaKind = events.DeltaReasoning
 		base.Content = item.Payload.Content
 		base.ReasoningContent = item.Payload.ReasoningContent
-		if base.ReasoningContent == "" {
-			base.ReasoningContent = item.Payload.Content
+		base.Message = &domainmessage.Message{
+			Role:             domainmessage.RoleAssistant,
+			Content:          item.Payload.Content,
+			ReasoningContent: item.Payload.ReasoningContent,
+			ContentParts:     append([]domainmessage.ContentPart(nil), item.Payload.ContentParts...),
 		}
-		return []events.Event{base}
-	case eventlog.TranscriptAssistantTextDelta:
-		base.Type = events.EventAssistantText
-		base.Role = domainmessage.RoleAssistant
-		base.DeltaKind = events.DeltaOutput
-		base.Content = item.Payload.Content
 		return []events.Event{base}
 	case eventlog.TranscriptToolCallStart:
 		base.Type = events.EventToolCallStarted

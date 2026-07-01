@@ -14,8 +14,6 @@ const (
 	TranscriptTurnStarted           TranscriptEventType = "turn_started"
 	TranscriptUserMessage           TranscriptEventType = "user_message"
 	TranscriptAssistantMessageStart TranscriptEventType = "assistant_message_start"
-	TranscriptAssistantReasoning    TranscriptEventType = "assistant_reasoning"
-	TranscriptAssistantTextDelta    TranscriptEventType = "assistant_text_delta"
 	TranscriptAssistantMessageEnd   TranscriptEventType = "assistant_message_end"
 	TranscriptToolCallStart         TranscriptEventType = "tool_call_start"
 	TranscriptToolCallEnd           TranscriptEventType = "tool_call_end"

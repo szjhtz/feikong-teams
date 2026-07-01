@@ -107,12 +107,14 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 					ContentParts: append([]message.ContentPart(nil), event.Payload.ContentParts...),
 				}},
 			})
-		case TranscriptAssistantReasoning:
+		case TranscriptAssistantMessageEnd:
 			msg := ensure(event.Agent, ts)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content})
-		case TranscriptAssistantTextDelta:
-			msg := ensure(event.Agent, ts)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content})
+			if event.Payload.ReasoningContent != "" {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.ReasoningContent})
+			}
+			if event.Payload.Content != "" || len(event.Payload.ContentParts) > 0 {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, ContentParts: append([]message.ContentPart(nil), event.Payload.ContentParts...)})
+			}
 		case TranscriptToolCallStart:
 			msg := ensure(event.Agent, ts)
 			record := transcriptToolCallRecord(event, "")
@@ -207,10 +209,13 @@ func projectSubagentTranscript(events []TranscriptEvent) AgentMessage {
 		}
 		msg.EndTime = ts
 		switch event.Type {
-		case TranscriptAssistantReasoning:
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content})
-		case TranscriptAssistantTextDelta:
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content})
+		case TranscriptAssistantMessageEnd:
+			if event.Payload.ReasoningContent != "" {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.ReasoningContent})
+			}
+			if event.Payload.Content != "" || len(event.Payload.ContentParts) > 0 {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, ContentParts: append([]message.ContentPart(nil), event.Payload.ContentParts...)})
+			}
 		case TranscriptToolCallStart:
 			record := transcriptToolCallRecord(event, "")
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, ToolCall: &record})

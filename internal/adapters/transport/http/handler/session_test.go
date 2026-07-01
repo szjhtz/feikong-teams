@@ -86,8 +86,10 @@ func TestGetSessionReturnsEventsInHistoryOrder(t *testing.T) {
 	recorder.SetSessionDir(sessionDir)
 	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "run-1:user", message.Message{Role: message.RoleUser, Content: "你好"}))
 	recorder.RecordEvent(eventlog.Event{Type: eventlog.EventAssistantText, AgentName: "coordinator", Content: "你好！", Sequence: 42})
+	recorder.RecordEvent(eventlog.Event{Type: runtimeevents.EventAssistantCompleted, AgentName: "coordinator", Content: "你好！", Sequence: 43})
 	recorder.RecordEvent(runtimeevents.UserMessage("run-2", runtimeevents.TurnID("run-2", 1), "run-2:user", message.Message{Role: message.RoleUser, Content: "你是谁"}))
 	recorder.RecordEvent(eventlog.Event{Type: eventlog.EventAssistantText, AgentName: "coordinator", Content: "我是协调者", Sequence: 84})
+	recorder.RecordEvent(eventlog.Event{Type: runtimeevents.EventAssistantCompleted, AgentName: "coordinator", Content: "我是协调者", Sequence: 85})
 	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.TranscriptFileName)); err != nil {
 		t.Fatalf("save history: %v", err)
 	}
@@ -116,9 +118,9 @@ func TestGetSessionReturnsEventsInHistoryOrder(t *testing.T) {
 	}
 	wantTypes := []string{
 		string(runtimeevents.EventUserMessage),
-		string(runtimeevents.EventAssistantText),
+		string(runtimeevents.EventAssistantCompleted),
 		string(runtimeevents.EventUserMessage),
-		string(runtimeevents.EventAssistantText),
+		string(runtimeevents.EventAssistantCompleted),
 	}
 	wantContents := []string{"你好", "你好！", "你是谁", "我是协调者"}
 	if len(gotEvents) != len(wantTypes) {
@@ -157,7 +159,7 @@ func TestTranscriptToChatEventsUsesAppendOrder(t *testing.T) {
 		{
 			ID:      "evt-2",
 			TS:      time.Now(),
-			Type:    eventlog.TranscriptAssistantTextDelta,
+			Type:    eventlog.TranscriptAssistantMessageEnd,
 			Agent:   "coordinator",
 			Payload: eventlog.TranscriptPayload{Content: "最终回复"},
 		},
@@ -166,7 +168,7 @@ func TestTranscriptToChatEventsUsesAppendOrder(t *testing.T) {
 	got := rt.transcriptToChatEvents("session-1", transcript)
 	wantTypes := []string{
 		string(runtimeevents.EventToolCallStarted),
-		string(runtimeevents.EventAssistantText),
+		string(runtimeevents.EventAssistantCompleted),
 	}
 	wantContents := []string{"", "最终回复"}
 	if len(got) != len(wantTypes) {
