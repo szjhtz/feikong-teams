@@ -233,14 +233,14 @@ func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool)
 		return lines, nil
 	}
 	for index := range lines {
-		if lines[index].Payload.ToolCall != nil {
-			lines[index].Payload.ToolCall.Arguments = ""
-			lines[index].Payload.ToolCall.Result = ""
+		if lines[index].ToolCall != nil {
+			lines[index].ToolCall.Arguments = ""
+			lines[index].ToolCall.Result = ""
 		}
-		lines[index].Payload.ToolArgs = ""
-		lines[index].Payload.Result = ""
-		lines[index].Payload.ResultRef = ""
-		lines[index].Payload.Detail = ""
+		lines[index].ToolArgs = ""
+		lines[index].Result = ""
+		lines[index].ResultRef = ""
+		lines[index].Detail = ""
 	}
 	return lines, nil
 }

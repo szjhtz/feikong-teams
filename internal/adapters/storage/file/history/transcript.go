@@ -6,11 +6,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"fkteams/internal/domain/message"
 	"fkteams/internal/runtime/atomicfile"
 
 	"github.com/google/uuid"
@@ -28,6 +28,51 @@ func newPrefixedID(prefix string) string {
 	return prefix + "_" + uuid.NewString()
 }
 
+func transcriptIDPrefix(typ TranscriptEventType) string {
+	switch typ {
+	case TranscriptUserMessage, TranscriptAssistantMessage:
+		return "msg"
+	case TranscriptToolCallStart, TranscriptToolCallEnd:
+		return "tool"
+	case TranscriptAskRequested, TranscriptAskAnswered:
+		return "ask"
+	case TranscriptError:
+		return "err"
+	case TranscriptSystemNotice:
+		return "notice"
+	case TranscriptCancelled:
+		return "cancel"
+	default:
+		return "rec"
+	}
+}
+
+func transcriptTurnID(sessionID string, turn int) string {
+	if turn <= 0 {
+		turn = 1
+	}
+	if sessionID == "" {
+		return fmt.Sprintf("history:turn:%d", turn)
+	}
+	return fmt.Sprintf("%s:history:turn:%d", sessionID, turn)
+}
+
+func transcriptTurnFromRuntimeID(turnID string) int {
+	turnID = strings.TrimSpace(turnID)
+	if turnID == "" {
+		return 0
+	}
+	index := strings.LastIndex(turnID, ":turn:")
+	if index < 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(turnID[index+len(":turn:"):])
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
 func transcriptPath(sessionDir string) string {
 	return filepath.Join(sessionDir, TranscriptFileName)
 }
@@ -41,19 +86,15 @@ func (h *HistoryRecorder) appendTranscriptEvent(event TranscriptEvent, subagent 
 		return
 	}
 	if event.ID == "" {
-		event.ID = newPrefixedID("evt")
+		event.ID = newPrefixedID(transcriptIDPrefix(event.Type))
 	}
-	if event.TS.IsZero() {
-		event.TS = time.Now()
+	if event.At.IsZero() {
+		event.At = time.Now()
 	}
 	if subagent == nil {
-		h.nextSeq++
-		event.Seq = h.nextSeq
 		_ = appendJSONL(transcriptPath(h.sessionDir), event)
 		return
 	}
-	subagent.Seq++
-	event.Seq = subagent.Seq
 	event.AgentRunID = subagent.AgentRunID
 	event.ParentToolCallID = subagent.ParentToolCallID
 	if event.Agent == "" {
@@ -120,8 +161,16 @@ func summarizeToolResult(content string) string {
 	return string(runes[:resultSummaryChars]) + "\n...(truncated)..."
 }
 
-func (h *HistoryRecorder) toolResultPayload(toolName, content string) TranscriptPayload {
-	payload := TranscriptPayload{
+type toolResultPayload struct {
+	Result        string
+	ResultRef     string
+	Summary       string
+	Truncated     bool
+	OriginalChars int
+}
+
+func (h *HistoryRecorder) toolResultPayload(toolName, content string) toolResultPayload {
+	payload := toolResultPayload{
 		Result: content,
 	}
 	if h == nil || h.sessionDir == "" || content == "" || !shouldExternalizeToolResult(toolName, content) {
@@ -152,9 +201,23 @@ func (h *HistoryRecorder) toolResultPayload(toolName, content string) Transcript
 	return payload
 }
 
-func transcriptRoleFromEvent(event Event) message.Role {
-	if event.Role != "" {
-		return event.Role
+func usageRecordFromEvent(event Event) *UsageRecord {
+	promptTokens := event.PromptTokens
+	completionTokens := event.CompletionTokens
+	totalTokens := event.TotalTokens
+	if event.Usage != nil {
+		if promptTokens == 0 {
+			promptTokens = event.Usage.PromptTokens
+		}
+		if completionTokens == 0 {
+			completionTokens = event.Usage.CompletionTokens
+		}
+		if totalTokens == 0 {
+			totalTokens = event.Usage.TotalTokens
+		}
 	}
-	return message.RoleAssistant
+	if promptTokens == 0 && completionTokens == 0 && totalTokens == 0 {
+		return nil
+	}
+	return &UsageRecord{PromptTokens: promptTokens, CompletionTokens: completionTokens, TotalTokens: totalTokens}
 }

@@ -388,6 +388,13 @@ type streamState struct {
 	toolArgs       map[int]string
 	toolRefs       map[int]string
 	toolStarted    map[int]bool
+	usage          *streamUsage
+}
+
+type streamUsage struct {
+	promptTokens     int
+	completionTokens int
+	totalTokens      int
 }
 
 func newStreamState(event *adk.AgentEvent) *streamState {
@@ -443,13 +450,21 @@ func (c *converter) handleStreamingMessage(ctx context.Context, event *adk.Agent
 			ToolCalls:        message.ToolCalls,
 			ToolCallRefs:     ss.toolRefs,
 		})
+		attachStreamUsage(&end, ss)
 		scope.apply(&end, c)
 		if err := c.emit(end); err != nil {
+			return err
+		}
+		if err := c.emitStreamUsage(event, ss, scope); err != nil {
 			return err
 		}
 		if err := c.emitToolStarts(event, ss.messageID, message.ToolCalls, scope); err != nil {
 			return err
 		}
+		return nil
+	}
+	if err := c.emitStreamUsage(event, ss, scope); err != nil {
+		return err
 	}
 	return nil
 }
@@ -460,10 +475,10 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 	}
 	if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
 		usage := chunk.ResponseMeta.Usage
-		usageEvent := events.Usage(event.AgentName, formatRunPath(event.RunPath), usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
-		scope.apply(&usageEvent, c)
-		if err := c.emit(usageEvent); err != nil {
-			return err
+		ss.usage = &streamUsage{
+			promptTokens:     usage.PromptTokens,
+			completionTokens: usage.CompletionTokens,
+			totalTokens:      usage.TotalTokens,
 		}
 	}
 	if chunk.Role == schema.Tool {
@@ -566,6 +581,31 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		}
 	}
 	return nil
+}
+
+func (c *converter) emitStreamUsage(event *adk.AgentEvent, ss *streamState, scope MemberScope) error {
+	if ss == nil || ss.usage == nil {
+		return nil
+	}
+	usageEvent := events.Usage(event.AgentName, formatRunPath(event.RunPath), ss.usage.promptTokens, ss.usage.completionTokens, ss.usage.totalTokens)
+	scope.apply(&usageEvent, c)
+	ss.usage = nil
+	return c.emit(usageEvent)
+}
+
+func attachStreamUsage(event *events.Event, ss *streamState) {
+	if event == nil || ss == nil || ss.usage == nil {
+		return
+	}
+	event.PromptTokens = ss.usage.promptTokens
+	event.CompletionTokens = ss.usage.completionTokens
+	event.TotalTokens = ss.usage.totalTokens
+	event.Usage = &domainevent.UsagePayload{
+		PromptTokens:     ss.usage.promptTokens,
+		CompletionTokens: ss.usage.completionTokens,
+		TotalTokens:      ss.usage.totalTokens,
+	}
+	ss.usage = nil
 }
 
 func (c *converter) messageID(event *adk.AgentEvent, suffix string) string {

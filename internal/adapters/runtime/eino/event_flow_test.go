@@ -10,7 +10,11 @@ import (
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
+	runtimeevents "fkteams/internal/runtime/events"
 	"fkteams/internal/testmodel"
+
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestRunnerEmitsLifecycleEventsInOrder(t *testing.T) {
@@ -100,6 +104,52 @@ func TestRunnerEmitsErrorAndClosesLifecycleOnModelError(t *testing.T) {
 	requireBefore(t, got, turnEndIdx, agentEndIdx, "turn end", "agent end")
 	if agentEndIdx != len(got)-1 {
 		t.Fatalf("agent_end should be final event; index=%d len=%d events=%#v", agentEndIdx, len(got), got)
+	}
+}
+
+func TestStreamingUsageAttachesToAssistantCompleted(t *testing.T) {
+	reader, writer := schema.Pipe[*schema.Message](1)
+	if stopped := writer.Send(&schema.Message{
+		Role:    schema.Assistant,
+		Content: "hello",
+		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+			PromptTokens:     10,
+			CompletionTokens: 2,
+			TotalTokens:      12,
+		}},
+	}, nil); stopped {
+		t.Fatal("stream writer stopped before sending chunk")
+	}
+	writer.Close()
+
+	var got []domainevent.Event
+	emitter := runtimeevents.NewEmitter("run-1", "turn-1", func(event domainevent.Event) error {
+		got = append(got, event)
+		return nil
+	})
+	converter := newConverter(emitter, newUnknownToolRecorder())
+	if err := converter.handleStreamingMessage(context.Background(), &adk.AgentEvent{AgentName: "coordinator"}, reader, MemberScope{}); err != nil {
+		t.Fatalf("handle stream: %v", err)
+	}
+
+	textIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeAssistantText && event.Content == "hello"
+	}, "assistant text")
+	completedIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
+		return event.Type == domainevent.TypeAssistantCompleted &&
+			event.Content == "hello" &&
+			event.PromptTokens == 10 &&
+			event.CompletionTokens == 2 &&
+			event.TotalTokens == 12 &&
+			event.Usage != nil &&
+			event.Usage.TotalTokens == 12
+	}, "assistant completed")
+
+	requireBefore(t, got, textIdx, completedIdx, "assistant text", "assistant completed")
+	for _, event := range got {
+		if event.Type == domainevent.TypeUsageReported {
+			t.Fatalf("usage should be attached to assistant_completed, got standalone usage event: %#v", event)
+		}
 	}
 }
 

@@ -150,18 +150,18 @@ func TestTranscriptToChatEventsUsesAppendOrder(t *testing.T) {
 	rt := newTestRuntime(t)
 	transcript := []eventlog.TranscriptEvent{
 		{
-			ID:      "evt-1",
-			TS:      time.Now(),
-			Type:    eventlog.TranscriptToolCallStart,
-			Agent:   "coordinator",
-			Payload: eventlog.TranscriptPayload{ToolName: "ask_fkagent_researcher"},
+			ID:       "tool-1",
+			At:       time.Now(),
+			Type:     eventlog.TranscriptToolCallStart,
+			Agent:    "coordinator",
+			ToolName: "ask_fkagent_researcher",
 		},
 		{
-			ID:      "evt-2",
-			TS:      time.Now(),
-			Type:    eventlog.TranscriptAssistantMessageEnd,
+			ID:      "msg-1",
+			At:      time.Now(),
+			Type:    eventlog.TranscriptAssistantMessage,
 			Agent:   "coordinator",
-			Payload: eventlog.TranscriptPayload{Content: "最终回复"},
+			Content: "最终回复",
 		},
 	}
 
@@ -195,18 +195,17 @@ func TestTranscriptToChatEventsProjectsCancellationInAppendOrder(t *testing.T) {
 	rt := newTestRuntime(t)
 	transcript := []eventlog.TranscriptEvent{
 		{
-			ID:      "evt-1",
-			TS:      time.Now(),
+			ID:      "msg-1",
+			At:      time.Now(),
 			Type:    eventlog.TranscriptUserMessage,
-			Agent:   "user",
-			Payload: eventlog.TranscriptPayload{Content: "任务"},
+			Content: "任务",
 		},
 		{
-			ID:      "evt-2",
-			TS:      time.Now(),
+			ID:      "cancel-1",
+			At:      time.Now(),
 			Type:    eventlog.TranscriptCancelled,
 			Agent:   "system",
-			Payload: eventlog.TranscriptPayload{Content: "任务已取消"},
+			Content: "任务已取消",
 		},
 	}
 

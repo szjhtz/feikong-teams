@@ -257,10 +257,9 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		ts = time.Now()
 	}
 	base := TranscriptEvent{
-		TS:               ts,
-		TurnID:           event.TurnID,
+		At:               ts,
+		Turn:             transcriptTurnFromRuntimeID(event.TurnID),
 		Agent:            agent,
-		MessageID:        event.MessageID,
 		ParentToolCallID: event.ParentToolCallID,
 	}
 	if target != nil {
@@ -276,14 +275,18 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 			parts = append(parts, event.Message.ContentParts...)
 		}
 		base.Type = TranscriptUserMessage
-		base.Agent = "user"
-		base.Payload = TranscriptPayload{Role: message.RoleUser, Content: content, ContentParts: parts}
+		base.Agent = ""
+		base.Content = content
+		base.ContentParts = parts
 		h.appendTranscriptEvent(base, target)
 	case events.EventAssistantReasoning:
 		return
 	case events.EventAssistantText:
 		return
 	case events.EventAssistantCompleted:
+		if event.Role == message.RoleTool {
+			return
+		}
 		content := event.Content
 		reasoning := event.ReasoningContent
 		parts := []message.ContentPart(nil)
@@ -295,13 +298,11 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		if content == "" && reasoning == "" && len(parts) == 0 {
 			return
 		}
-		base.Type = TranscriptAssistantMessageEnd
-		base.Payload = TranscriptPayload{
-			Role:             transcriptRoleFromEvent(event),
-			Content:          content,
-			ReasoningContent: reasoning,
-			ContentParts:     parts,
-		}
+		base.Type = TranscriptAssistantMessage
+		base.Content = content
+		base.Reasoning = reasoning
+		base.ContentParts = parts
+		base.Usage = usageRecordFromEvent(event)
 		h.appendTranscriptEvent(base, target)
 	case EventToolCallStarted:
 		toolCalls := event.ToolCalls
@@ -328,14 +329,12 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 			line := base
 			line.Type = TranscriptToolCallStart
 			line.ToolCallID = pending.ID
-			line.Payload = TranscriptPayload{
-				ToolCall:    ptrToolCallRecord(record),
-				ToolName:    record.Name,
-				ToolArgs:    record.Arguments,
-				DisplayName: record.DisplayName,
-				Kind:        record.Kind,
-				Target:      record.Target,
-			}
+			line.ToolCall = ptrToolCallRecord(record)
+			line.ToolName = record.Name
+			line.ToolArgs = record.Arguments
+			line.DisplayName = record.DisplayName
+			line.Kind = record.Kind
+			line.Target = record.Target
 			h.appendTranscriptEvent(line, target)
 			if record.Kind == toolmeta.ToolKindAgent {
 				h.rememberAgentToolCall(pending)
@@ -354,17 +353,16 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		line := base
 		line.Type = TranscriptToolCallEnd
 		line.ToolCallID = event.ToolCallID
-		line.Payload = resultPayload
-		line.Payload.ToolName = toolName
-		line.Payload.ToolArgs = event.ToolArgs
+		line.Result = resultPayload.Result
+		line.ResultRef = resultPayload.ResultRef
+		line.Summary = resultPayload.Summary
+		line.Truncated = resultPayload.Truncated
+		line.OriginalChars = resultPayload.OriginalChars
+		line.ToolName = toolName
+		line.ToolArgs = event.ToolArgs
 		h.appendTranscriptEvent(line, target)
 	case EventUsageReported:
-		if event.PromptTokens == 0 && event.CompletionTokens == 0 && event.TotalTokens == 0 {
-			return
-		}
-		base.Type = TranscriptUsageReported
-		base.Payload = TranscriptPayload{Usage: &UsageRecord{PromptTokens: event.PromptTokens, CompletionTokens: event.CompletionTokens, TotalTokens: event.TotalTokens}}
-		h.appendTranscriptEvent(base, target)
+		return
 	case events.EventAskRequested, events.EventAskAnswered:
 		base.Type = TranscriptAskRequested
 		if event.Type == events.EventAskAnswered {
@@ -382,22 +380,25 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		if event.Type == events.EventAskAnswered {
 			record.Answered = true
 		}
-		base.Payload = TranscriptPayload{Ask: record, Content: event.Content}
+		base.Ask = record
+		base.Content = event.Content
 		h.appendTranscriptEvent(base, target)
 	case EventSystemNotice:
 		base.Type = TranscriptSystemNotice
-		base.Payload = TranscriptPayload{Content: event.Content, Detail: event.Detail}
+		base.Content = event.Content
+		base.Detail = event.Detail
 		h.appendTranscriptEvent(base, target)
 	case EventError:
 		friendly := events.NormalizeFriendlyError(event.Error)
 		friendly.TechnicalDetail = truncateErrorContent(friendly.TechnicalDetail)
 		historyError := FriendlyError(friendly)
 		base.Type = TranscriptError
-		base.Payload = TranscriptPayload{Content: historyError.Message, Error: &historyError}
+		base.Content = historyError.Message
+		base.Error = &historyError
 		h.appendTranscriptEvent(base, target)
 	case events.EventCancelled:
 		base.Type = TranscriptCancelled
-		base.Payload = TranscriptPayload{Content: event.Content}
+		base.Content = event.Content
 		h.appendTranscriptEvent(base, target)
 	}
 }

@@ -31,7 +31,6 @@ type UsageRecord = domainhistory.UsageRecord
 type FriendlyError = domainhistory.FriendlyError
 type TranscriptEvent = domainhistory.TranscriptEvent
 type TranscriptEventType = domainhistory.TranscriptEventType
-type TranscriptPayload = domainhistory.TranscriptPayload
 type ToolResultArtifact = domainhistory.ToolResultArtifact
 type MsgEventType = domainhistory.MsgEventType
 type MessageEvent = domainhistory.MessageEvent
@@ -39,18 +38,15 @@ type AgentMessage = domainhistory.AgentMessage
 type AttachmentRef = domainhistory.AttachmentRef
 
 const (
-	TranscriptTurnStarted           = domainhistory.TranscriptTurnStarted
-	TranscriptUserMessage           = domainhistory.TranscriptUserMessage
-	TranscriptAssistantMessageStart = domainhistory.TranscriptAssistantMessageStart
-	TranscriptAssistantMessageEnd   = domainhistory.TranscriptAssistantMessageEnd
-	TranscriptToolCallStart         = domainhistory.TranscriptToolCallStart
-	TranscriptToolCallEnd           = domainhistory.TranscriptToolCallEnd
-	TranscriptUsageReported         = domainhistory.TranscriptUsageReported
-	TranscriptAskRequested          = domainhistory.TranscriptAskRequested
-	TranscriptAskAnswered           = domainhistory.TranscriptAskAnswered
-	TranscriptSystemNotice          = domainhistory.TranscriptSystemNotice
-	TranscriptError                 = domainhistory.TranscriptError
-	TranscriptCancelled             = domainhistory.TranscriptCancelled
+	TranscriptUserMessage      = domainhistory.TranscriptUserMessage
+	TranscriptAssistantMessage = domainhistory.TranscriptAssistantMessage
+	TranscriptToolCallStart    = domainhistory.TranscriptToolCallStart
+	TranscriptToolCallEnd      = domainhistory.TranscriptToolCallEnd
+	TranscriptAskRequested     = domainhistory.TranscriptAskRequested
+	TranscriptAskAnswered      = domainhistory.TranscriptAskAnswered
+	TranscriptSystemNotice     = domainhistory.TranscriptSystemNotice
+	TranscriptError            = domainhistory.TranscriptError
+	TranscriptCancelled        = domainhistory.TranscriptCancelled
 )
 
 const (
@@ -105,14 +101,12 @@ type subagentRun struct {
 	ToolName         string
 	AgentName        string
 	TranscriptPath   string
-	Seq              int64
 }
 
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
 	mu              sync.RWMutex
 	sessionDir      string
-	nextSeq         int64
 	messages        []AgentMessage
 	activeMessages  map[string]*activeMessageContext
 	activeOrder     []string

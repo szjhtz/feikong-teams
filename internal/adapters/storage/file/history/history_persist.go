@@ -32,7 +32,6 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 		return err
 	}
 	h.messages = projectTranscriptEvents(h.sessionDir, events)
-	h.nextSeq = maxTranscriptSeq(events)
 	h.reconstructSummaryFromEvents()
 	h.activeMessages = make(map[string]*activeMessageContext)
 	h.activeOrder = nil
@@ -45,20 +44,11 @@ func LoadTranscriptFromFile(filePath string) ([]TranscriptEvent, error) {
 	return loadTranscript(filePath)
 }
 
-func maxTranscriptSeq(events []TranscriptEvent) int64 {
-	var max int64
-	for _, event := range events {
-		if event.Seq > max {
-			max = event.Seq
-		}
-	}
-	return max
-}
-
 func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []AgentMessage {
 	var messages []AgentMessage
 	var current *AgentMessage
 	toolEventIndex := make(map[string]int)
+	sessionID := filepath.Base(sessionDir)
 	flush := func() {
 		if current == nil || len(current.Events) == 0 {
 			current = nil
@@ -87,10 +77,12 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 	}
 
 	for _, event := range events {
-		ts := event.TS
+		ts := event.At
 		if ts.IsZero() {
 			ts = time.Now()
 		}
+		turnID := transcriptTurnID(sessionID, event.Turn)
+		messageID := event.ID
 		switch event.Type {
 		case TranscriptUserMessage:
 			flush()
@@ -101,24 +93,27 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 				Events: []MessageEvent{{
 					Type:         MsgTypeText,
 					CreatedAt:    ts,
-					TurnID:       event.TurnID,
-					MessageID:    event.MessageID,
-					Content:      event.Payload.Content,
-					ContentParts: append([]message.ContentPart(nil), event.Payload.ContentParts...),
+					TurnID:       turnID,
+					MessageID:    messageID,
+					Content:      event.Content,
+					ContentParts: append([]message.ContentPart(nil), event.ContentParts...),
 				}},
 			})
-		case TranscriptAssistantMessageEnd:
+		case TranscriptAssistantMessage:
 			msg := ensure(event.Agent, ts)
-			if event.Payload.ReasoningContent != "" {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.ReasoningContent})
+			if event.Reasoning != "" {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Reasoning})
 			}
-			if event.Payload.Content != "" || len(event.Payload.ContentParts) > 0 {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, ContentParts: append([]message.ContentPart(nil), event.Payload.ContentParts...)})
+			if event.Content != "" || len(event.ContentParts) > 0 {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, ContentParts: append([]message.ContentPart(nil), event.ContentParts...)})
+			}
+			if event.Usage != nil {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeUsageReported, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Usage: event.Usage})
 			}
 		case TranscriptToolCallStart:
 			msg := ensure(event.Agent, ts)
 			record := transcriptToolCallRecord(event, "")
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, ToolCall: &record})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 			if event.ToolCallID != "" {
 				toolEventIndex[event.ToolCallID] = len(msg.Events) - 1
 			}
@@ -130,26 +125,23 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 				continue
 			}
 			record := transcriptToolCallRecord(event, result)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, ToolCall: &record})
-		case TranscriptUsageReported:
-			msg := ensure(event.Agent, ts)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeUsageReported, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Usage: event.Payload.Usage})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 		case TranscriptAskRequested, TranscriptAskAnswered:
 			msg := ensure(event.Agent, ts)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeAsk, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, Ask: event.Payload.Ask})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeAsk, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, Ask: event.Ask})
 		case TranscriptSystemNotice:
 			msg := ensure(event.Agent, ts)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeNotice, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, Detail: event.Payload.Detail})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeNotice, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, Detail: event.Detail})
 		case TranscriptError:
 			msg := ensure(event.Agent, ts)
-			content := event.Payload.Content
-			if content == "" && event.Payload.Error != nil {
-				content = event.Payload.Error.Message
+			content := event.Content
+			if content == "" && event.Error != nil {
+				content = event.Error.Message
 			}
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeError, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: content, Error: event.Payload.Error})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeError, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: content, Error: event.Error})
 		case TranscriptCancelled:
 			msg := ensure(event.Agent, ts)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeCancelled, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeCancelled, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content})
 		}
 	}
 	flush()
@@ -188,7 +180,7 @@ func projectSubagentTranscript(events []TranscriptEvent) AgentMessage {
 			parentToolCallID = event.ParentToolCallID
 		}
 		if parentToolName == "" {
-			parentToolName = event.Payload.ToolName
+			parentToolName = event.ToolName
 		}
 	}
 	if agent == "" {
@@ -203,22 +195,27 @@ func projectSubagentTranscript(events []TranscriptEvent) AgentMessage {
 	}
 	toolEventIndex := make(map[string]int)
 	for _, event := range events {
-		ts := event.TS
+		ts := event.At
+		turnID := transcriptTurnID("", event.Turn)
+		messageID := event.ID
 		if msg.StartTime.IsZero() {
 			msg.StartTime = ts
 		}
 		msg.EndTime = ts
 		switch event.Type {
-		case TranscriptAssistantMessageEnd:
-			if event.Payload.ReasoningContent != "" {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.ReasoningContent})
+		case TranscriptAssistantMessage:
+			if event.Reasoning != "" {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Reasoning})
 			}
-			if event.Payload.Content != "" || len(event.Payload.ContentParts) > 0 {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, ContentParts: append([]message.ContentPart(nil), event.Payload.ContentParts...)})
+			if event.Content != "" || len(event.ContentParts) > 0 {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, ContentParts: append([]message.ContentPart(nil), event.ContentParts...)})
+			}
+			if event.Usage != nil {
+				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeUsageReported, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Usage: event.Usage})
 			}
 		case TranscriptToolCallStart:
 			record := transcriptToolCallRecord(event, "")
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, ToolCall: &record})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 			if event.ToolCallID != "" {
 				toolEventIndex[event.ToolCallID] = len(msg.Events) - 1
 			}
@@ -229,21 +226,19 @@ func projectSubagentTranscript(events []TranscriptEvent) AgentMessage {
 				continue
 			}
 			record := transcriptToolCallRecord(event, result)
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, ToolCall: &record})
-		case TranscriptUsageReported:
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeUsageReported, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Usage: event.Payload.Usage})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 		case TranscriptSystemNotice:
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeNotice, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, Detail: event.Payload.Detail})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeNotice, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, Detail: event.Detail})
 		case TranscriptError:
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeError, CreatedAt: ts, TurnID: event.TurnID, MessageID: event.MessageID, Content: event.Payload.Content, Error: event.Payload.Error})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeError, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, Error: event.Error})
 		}
 	}
 	return msg
 }
 
 func transcriptToolCallRecord(event TranscriptEvent, result string) ToolCallRecord {
-	if event.Payload.ToolCall != nil {
-		record := *event.Payload.ToolCall
+	if event.ToolCall != nil {
+		record := *event.ToolCall
 		record.Result = result
 		if record.Result == "" {
 			record.Result = transcriptToolResult(event)
@@ -253,24 +248,24 @@ func transcriptToolCallRecord(event TranscriptEvent, result string) ToolCallReco
 	return ToolCallRecord{
 		Ref:         toolCallRef(event.ToolCallID),
 		ID:          event.ToolCallID,
-		Name:        event.Payload.ToolName,
-		DisplayName: event.Payload.DisplayName,
-		Kind:        event.Payload.Kind,
-		Target:      event.Payload.Target,
-		Arguments:   event.Payload.ToolArgs,
+		Name:        event.ToolName,
+		DisplayName: event.DisplayName,
+		Kind:        event.Kind,
+		Target:      event.Target,
+		Arguments:   event.ToolArgs,
 		Result:      result,
 	}
 }
 
 func transcriptToolResult(event TranscriptEvent) string {
-	if event.Payload.Result != "" {
-		return event.Payload.Result
+	if event.Result != "" {
+		return event.Result
 	}
-	if event.Payload.Summary != "" {
-		return event.Payload.Summary
+	if event.Summary != "" {
+		return event.Summary
 	}
-	if event.Payload.ResultRef != "" {
-		return fmt.Sprintf("[tool result stored at %s]", event.Payload.ResultRef)
+	if event.ResultRef != "" {
+		return fmt.Sprintf("[tool result stored at %s]", event.ResultRef)
 	}
 	return ""
 }

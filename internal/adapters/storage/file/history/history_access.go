@@ -18,10 +18,10 @@ func (h *HistoryRecorder) RecordCancelled(message string) {
 	}
 	now := time.Now()
 	h.appendTranscriptEvent(TranscriptEvent{
-		TS:      now,
+		At:      now,
 		Type:    TranscriptCancelled,
 		Agent:   "system",
-		Payload: TranscriptPayload{Content: message},
+		Content: message,
 	}, nil)
 	cancelEvent := MessageEvent{Type: MsgTypeCancelled, Content: message}
 	h.finalizeAllActiveMessages()
@@ -171,7 +171,6 @@ func (h *HistoryRecorder) Clear() {
 	h.activeOrder = nil
 	h.subagents = make(map[string]*subagentRun)
 	h.agentToolCalls = make(map[string]pendingToolCall)
-	h.nextSeq = 0
 	h.summary = ""
 	h.summarizedCount = 0
 }

@@ -467,14 +467,17 @@ func TestTranscriptRecorderAppendsEventsInWriteOrder(t *testing.T) {
 	if len(transcript) != 2 {
 		t.Fatalf("event count = %d, want 2: %#v", len(transcript), transcript)
 	}
-	if transcript[0].Seq != 1 || transcript[1].Seq != 2 {
-		t.Fatalf("seqs = %d,%d want 1,2", transcript[0].Seq, transcript[1].Seq)
+	if !strings.HasPrefix(transcript[0].ID, "msg_") || !strings.HasPrefix(transcript[1].ID, "msg_") {
+		t.Fatalf("ids = %q,%q want msg_ prefixes", transcript[0].ID, transcript[1].ID)
 	}
-	if transcript[0].Type != TranscriptUserMessage || transcript[1].Type != TranscriptAssistantMessageEnd {
+	if transcript[0].At.IsZero() || transcript[1].At.IsZero() {
+		t.Fatalf("transcript timestamps must be set: %#v", transcript)
+	}
+	if transcript[0].Type != TranscriptUserMessage || transcript[1].Type != TranscriptAssistantMessage {
 		t.Fatalf("types = %s,%s", transcript[0].Type, transcript[1].Type)
 	}
-	if transcript[1].Payload.Content != "world" {
-		t.Fatalf("assistant payload = %#v", transcript[1].Payload)
+	if transcript[1].Content != "world" {
+		t.Fatalf("assistant content = %#v", transcript[1])
 	}
 }
 
@@ -496,11 +499,11 @@ func TestTranscriptRecorderAggregatesAssistantDeltas(t *testing.T) {
 	if len(transcript) != 1 {
 		t.Fatalf("event count = %d, want 1: %#v", len(transcript), transcript)
 	}
-	if transcript[0].Type != TranscriptAssistantMessageEnd {
-		t.Fatalf("type = %s, want assistant_message_end", transcript[0].Type)
+	if transcript[0].Type != TranscriptAssistantMessage {
+		t.Fatalf("type = %s, want assistant_message", transcript[0].Type)
 	}
-	if transcript[0].Payload.Content != "hello world" || transcript[0].Payload.ReasoningContent != "think more" {
-		t.Fatalf("payload = %#v", transcript[0].Payload)
+	if transcript[0].Content != "hello world" || transcript[0].Reasoning != "think more" {
+		t.Fatalf("transcript = %#v", transcript[0])
 	}
 
 	loaded := NewHistoryRecorder()
@@ -533,10 +536,10 @@ func TestTranscriptRecorderExternalizesLongToolResults(t *testing.T) {
 		t.Fatalf("event count = %d, want 2", len(transcript))
 	}
 	end := transcript[1]
-	if end.Payload.Result != "" || end.Payload.ResultRef == "" || !end.Payload.Truncated {
-		t.Fatalf("tool payload = %#v, want externalized result", end.Payload)
+	if end.Result != "" || end.ResultRef == "" || !end.Truncated {
+		t.Fatalf("tool record = %#v, want externalized result", end)
 	}
-	if _, err := os.Stat(filepath.Join(dir, end.Payload.ResultRef)); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, end.ResultRef)); err != nil {
 		t.Fatalf("result artifact missing: %v", err)
 	}
 }
@@ -586,7 +589,7 @@ func TestTranscriptRecorderWritesSubagentTranscriptSeparately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load subagent transcript: %v", err)
 	}
-	if len(sub) != 1 || sub[0].Type != TranscriptAssistantMessageEnd || sub[0].Payload.Content != "member result" {
+	if len(sub) != 1 || sub[0].Type != TranscriptAssistantMessage || sub[0].Content != "member result" {
 		t.Fatalf("subagent transcript = %#v", sub)
 	}
 }

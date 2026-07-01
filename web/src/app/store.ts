@@ -140,6 +140,10 @@ const chatSlice = createSlice({
         if (isAssistantTextDelta(event) && content) {
           message.content += content;
         }
+        if (event.type === "assistant_completed") {
+          if (!message.content && content) message.content = content;
+          if (event.reasoning_content) message.reasoningContent = String(event.reasoning_content);
+        }
         message.events.push(event);
       }
       if (event.type === "system_notice") {

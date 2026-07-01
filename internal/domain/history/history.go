@@ -11,39 +11,29 @@ import (
 type TranscriptEventType string
 
 const (
-	TranscriptTurnStarted           TranscriptEventType = "turn_started"
-	TranscriptUserMessage           TranscriptEventType = "user_message"
-	TranscriptAssistantMessageStart TranscriptEventType = "assistant_message_start"
-	TranscriptAssistantMessageEnd   TranscriptEventType = "assistant_message_end"
-	TranscriptToolCallStart         TranscriptEventType = "tool_call_start"
-	TranscriptToolCallEnd           TranscriptEventType = "tool_call_end"
-	TranscriptUsageReported         TranscriptEventType = "usage_reported"
-	TranscriptAskRequested          TranscriptEventType = "ask_requested"
-	TranscriptAskAnswered           TranscriptEventType = "ask_answered"
-	TranscriptSystemNotice          TranscriptEventType = "system_notice"
-	TranscriptError                 TranscriptEventType = "error"
-	TranscriptCancelled             TranscriptEventType = "cancelled"
+	TranscriptUserMessage      TranscriptEventType = "user_message"
+	TranscriptAssistantMessage TranscriptEventType = "assistant_message"
+	TranscriptToolCallStart    TranscriptEventType = "tool_call_start"
+	TranscriptToolCallEnd      TranscriptEventType = "tool_call_end"
+	TranscriptAskRequested     TranscriptEventType = "ask_requested"
+	TranscriptAskAnswered      TranscriptEventType = "ask_answered"
+	TranscriptSystemNotice     TranscriptEventType = "system_notice"
+	TranscriptError            TranscriptEventType = "error"
+	TranscriptCancelled        TranscriptEventType = "cancelled"
 )
 
 type TranscriptEvent struct {
-	ID               string              `json:"id"`
-	Seq              int64               `json:"seq"`
-	TS               time.Time           `json:"ts"`
-	TurnID           string              `json:"turn_id,omitempty"`
-	Type             TranscriptEventType `json:"type"`
-	Agent            string              `json:"agent,omitempty"`
-	MessageID        string              `json:"message_id,omitempty"`
-	ToolCallID       string              `json:"tool_call_id,omitempty"`
-	ParentToolCallID string              `json:"parent_tool_call_id,omitempty"`
-	AgentRunID       string              `json:"agent_run_id,omitempty"`
-	Payload          TranscriptPayload   `json:"payload,omitempty"`
-}
-
-type TranscriptPayload struct {
-	Role             message.Role          `json:"role,omitempty"`
+	ID               string                `json:"id"`
+	At               time.Time             `json:"at"`
+	Turn             int                   `json:"turn,omitempty"`
+	Type             TranscriptEventType   `json:"type"`
+	Agent            string                `json:"agent,omitempty"`
+	ToolCallID       string                `json:"tool_call_id,omitempty"`
+	ParentToolCallID string                `json:"parent_tool_call_id,omitempty"`
+	AgentRunID       string                `json:"agent_run_id,omitempty"`
 	Content          string                `json:"content,omitempty"`
 	Detail           string                `json:"detail,omitempty"`
-	ReasoningContent string                `json:"reasoning_content,omitempty"`
+	Reasoning        string                `json:"reasoning,omitempty"`
 	ContentParts     []message.ContentPart `json:"content_parts,omitempty"`
 	ToolCall         *ToolCallRecord       `json:"tool_call,omitempty"`
 	ToolName         string                `json:"tool_name,omitempty"`
@@ -59,8 +49,6 @@ type TranscriptPayload struct {
 	DisplayName      string                `json:"display_name,omitempty"`
 	Kind             string                `json:"kind,omitempty"`
 	Target           string                `json:"target,omitempty"`
-	Transcript       string                `json:"transcript,omitempty"`
-	AgentName        string                `json:"agent_name,omitempty"`
 }
 
 type ToolResultArtifact struct {
