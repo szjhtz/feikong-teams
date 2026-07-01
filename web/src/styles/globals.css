@@ -127,6 +127,42 @@
     background-clip: padding-box;
   }
 
+  .attachment-preview-scroll {
+    scrollbar-color: hsl(218 22% 66% / 0.7) transparent;
+  }
+
+  .attachment-preview-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .attachment-preview-scroll::-webkit-scrollbar-track {
+    background: transparent;
+    border: 0;
+  }
+
+  .attachment-preview-scroll::-webkit-scrollbar-thumb {
+    background: hsl(218 22% 66% / 0.7);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+    box-shadow: none;
+  }
+
+  .attachment-preview-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(218 22% 58% / 0.82);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .attachment-preview-strip {
+    scrollbar-width: none;
+  }
+
+  .attachment-preview-strip::-webkit-scrollbar {
+    display: none;
+  }
+
   .chat-scroll {
     scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
   }

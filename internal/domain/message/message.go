@@ -23,6 +23,7 @@ const (
 
 type ContentPart struct {
 	Type       ContentPartType `json:"type"`
+	Name       string          `json:"name,omitempty"`
 	Text       string          `json:"text,omitempty"`
 	URL        string          `json:"url,omitempty"`
 	Base64Data string          `json:"base64_data,omitempty"`

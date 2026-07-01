@@ -21,7 +21,7 @@ export function uploadFile(file: File, path = "") {
   const form = new FormData();
   form.append("file", file);
   if (path) form.append("path", path);
-  return request<{ path: string }>("/api/fkteams/files/upload", { method: "POST", body: form });
+  return request<FileEntry[]>("/api/fkteams/files/upload", { method: "POST", body: form });
 }
 
 export function readFileContent(path: string) {

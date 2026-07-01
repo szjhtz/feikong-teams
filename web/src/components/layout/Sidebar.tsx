@@ -368,14 +368,14 @@ function SessionSearchDialog({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 bg-foreground/10 px-6 pt-24 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 bg-foreground/10 px-4 pt-20 backdrop-blur-[1px]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="mx-auto flex max-h-[78vh] max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_50px_hsl(218_30%_20%/0.18)]">
-        <div className="flex h-20 items-center gap-4 border-b border-border/70 px-6">
-          <Search className="h-6 w-6 shrink-0 text-muted-foreground" />
+      <div className="mx-auto flex max-h-[68vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_50px_hsl(218_30%_20%/0.18)]">
+        <div className="flex h-16 items-center gap-3 border-b border-border/70 px-5">
+          <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
           <Input
             autoFocus
             value={query}
@@ -384,30 +384,32 @@ function SessionSearchDialog({
               if (event.key === "Escape") onClose();
             }}
             placeholder="搜索会话"
-            className="h-12 border-0 bg-transparent px-0 text-xl shadow-none focus-visible:ring-0"
+            className="h-10 border-0 bg-transparent px-0 text-lg shadow-none focus-visible:ring-0"
           />
-          <button className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClose} aria-label="关闭搜索">
+          <button className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClose} aria-label="关闭搜索">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-3">
           {sessions.length === 0 ? (
             <div className="px-4 py-10 text-sm text-muted-foreground">没有匹配的会话</div>
           ) : (
-            sessions.map((session) => (
-              <button
-                key={session.session_id}
-                className={cn(
-                  "flex h-14 w-full items-center gap-3 rounded-xl px-4 text-left text-base hover:bg-muted",
-                  activeSessionID === session.session_id && "bg-muted",
-                )}
-                onClick={() => onSelect(session.session_id)}
-              >
-                <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-medium">{session.title || shortID(session.session_id)}</span>
-                <span className="shrink-0 text-sm text-muted-foreground">{relativeSessionTime(session)}</span>
-              </button>
-            ))
+            <div className="space-y-2">
+              {sessions.map((session) => (
+                <button
+                  key={session.session_id}
+                  className={cn(
+                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left text-base transition-colors hover:bg-muted/60",
+                    activeSessionID === session.session_id && "bg-muted",
+                  )}
+                  onClick={() => onSelect(session.session_id)}
+                >
+                  <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{session.title || shortID(session.session_id)}</span>
+                  <span className="shrink-0 text-sm text-muted-foreground">{relativeSessionTime(session)}</span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>

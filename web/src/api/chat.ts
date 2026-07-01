@@ -1,11 +1,12 @@
 import { post } from "./client";
+import type { ContentPartDTO } from "@/types/events";
 
 export interface StartStreamRequest {
   session_id?: string;
   message?: string;
   mode?: string;
   agent_name?: string;
-  contents?: unknown[];
+  contents?: ContentPartDTO[];
 }
 
 export interface StartStreamResponse {
@@ -24,6 +25,6 @@ export function stopStream(sessionID: string) {
   return post<{ session_id: string }>(`/api/fkteams/stream/stop/${encodeURIComponent(sessionID)}`);
 }
 
-export function sendSteering(sessionID: string, message: string) {
-  return post<{ session_id: string }>("/api/fkteams/stream/steer", { session_id: sessionID, message });
+export function sendSteering(sessionID: string, message: string, contents?: ContentPartDTO[]) {
+  return post<{ session_id: string }>("/api/fkteams/stream/steer", { session_id: sessionID, message, contents });
 }

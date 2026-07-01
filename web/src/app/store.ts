@@ -1,6 +1,6 @@
 import { configureStore, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { AgentInfo, VersionInfo } from "@/types/api";
-import type { ChatEvent, QueueItem } from "@/types/events";
+import type { ChatEvent, ContentPartDTO, QueueItem } from "@/types/events";
 import type { ChatState, ChatViewMessage, SessionSummary } from "@/types/chat";
 import type { AppConfig, ToolInfo } from "@/types/config";
 import type { FileEntry } from "@/types/files";
@@ -56,13 +56,17 @@ const chatSlice = createSlice({
       state.isProcessing = false;
       state.runningSessionID = "";
       state.error = undefined;
+      state.errorTitle = undefined;
+      state.errorSuggestions = undefined;
+      state.technicalError = undefined;
       state.statusText = undefined;
     },
-    appendUserMessage(state, action: PayloadAction<{ id: string; content: string; createdAt?: string }>) {
+    appendUserMessage(state, action: PayloadAction<{ id: string; content: string; contentParts?: ContentPartDTO[]; createdAt?: string }>) {
       const event: ChatEvent = {
         type: "user_message",
         event_id: `local:${action.payload.id}`,
         content: action.payload.content,
+        content_parts: action.payload.contentParts,
         created_at: action.payload.createdAt,
       };
       state.events.push(event);
@@ -70,6 +74,7 @@ const chatSlice = createSlice({
         id: action.payload.id,
         role: "user",
         content: action.payload.content,
+        contentParts: action.payload.contentParts,
         createdAt: action.payload.createdAt,
         events: [event],
       });
@@ -87,12 +92,16 @@ const chatSlice = createSlice({
       }
       if (event.type === "user_message") {
         const content = eventText(event);
-        if (!content) return;
+        const contentParts = Array.isArray(event.content_parts) ? event.content_parts : [];
+        if (!content && contentParts.length === 0) return;
         const eventExists = state.messages.some((item) => item.role === "user" && item.events.some((messageEvent) => sameEventIdentity(messageEvent, event)));
         if (eventExists) return;
-        const mergeTarget = findMergeableUserMessage(state.messages, content);
+        const mergeTarget = content
+          ? findMergeableUserMessage(state.messages, content)
+          : findMergeableUserAttachmentMessage(state.messages, contentParts);
         if (mergeTarget) {
           mergeTarget.createdAt = mergeTarget.createdAt || event.created_at;
+          mergeTarget.contentParts = mergeTarget.contentParts?.length ? mergeTarget.contentParts : contentParts;
           mergeTarget.events.push(event);
           return;
         }
@@ -100,6 +109,7 @@ const chatSlice = createSlice({
           id: `user-${eventIdentityKey(event)}`,
           role: "user",
           content,
+          contentParts,
           createdAt: event.created_at,
           events: [event],
         });
@@ -150,7 +160,10 @@ const chatSlice = createSlice({
         state.statusText = eventText(event) || state.statusText;
       }
       if (event.type === "error") {
-        state.error = String(event.error || event.content || event.message || "request failed");
+        state.error = friendlyEventMessage(event);
+        state.errorTitle = event.error_title;
+        state.errorSuggestions = Array.isArray(event.error_suggestions) ? event.error_suggestions : undefined;
+        state.technicalError = event.technical_error || event.error || event.content || event.message;
         state.isProcessing = false;
         state.runningSessionID = "";
         state.statusText = undefined;
@@ -179,12 +192,19 @@ const chatSlice = createSlice({
     },
     setError(state, action: PayloadAction<string | undefined>) {
       state.error = action.payload;
+      state.errorTitle = undefined;
+      state.errorSuggestions = undefined;
+      state.technicalError = undefined;
     },
   },
 });
 
 function eventText(event: ChatEvent) {
   return String(event.content || event.message || "");
+}
+
+function friendlyEventMessage(event: ChatEvent) {
+  return String(event.display_error || event.error_title || event.error || event.content || event.message || "请求失败");
 }
 
 function findMergeableUserMessage(messages: ChatViewMessage[], content: string) {
@@ -194,6 +214,24 @@ function findMergeableUserMessage(messages: ChatViewMessage[], content: string) 
     if (message.content === content) return message;
   }
   return undefined;
+}
+
+function findMergeableUserAttachmentMessage(messages: ChatViewMessage[], contentParts: ContentPartDTO[]) {
+  if (!contentParts.length) return undefined;
+  const signature = contentPartsSignature(contentParts);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") return undefined;
+    if (contentPartsSignature(message.contentParts || []) === signature) return message;
+  }
+  return undefined;
+}
+
+function contentPartsSignature(parts: ContentPartDTO[]) {
+  return parts
+    .filter((part) => part.type !== "text")
+    .map((part) => `${part.type}:${part.url || ""}:${part.mime_type || ""}:${part.base64_data?.slice(0, 64) || ""}`)
+    .join("|");
 }
 
 function sameEventIdentity(left: ChatEvent, right: ChatEvent) {

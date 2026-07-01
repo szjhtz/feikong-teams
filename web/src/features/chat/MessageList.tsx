@@ -1,6 +1,6 @@
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
-import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, GitBranch, Send } from "lucide-react";
+import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
 import { submitAskResponse } from "@/api/stream";
@@ -12,7 +12,7 @@ import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
 import { chatMessageElementID } from "./dom";
 import { useDisclosureState } from "./disclosureState";
-import type { ChatEvent, ToolCallDTO } from "@/types/events";
+import type { ChatEvent, ContentPartDTO, ToolCallDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
 import type { AgentInfo } from "@/types/api";
 
@@ -65,6 +65,9 @@ export function MessageList() {
   const isProcessing = useAppSelector((state) => state.chat.isProcessing);
   const statusText = useAppSelector((state) => state.chat.statusText);
   const error = useAppSelector((state) => state.chat.error);
+  const errorTitle = useAppSelector((state) => state.chat.errorTitle);
+  const errorSuggestions = useAppSelector((state) => state.chat.errorSuggestions);
+  const technicalError = useAppSelector((state) => state.chat.technicalError);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const agents = useAppSelector((state) => state.app.agents);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -210,7 +213,14 @@ export function MessageList() {
               </div>
             </div>
           ) : null}
-          {error ? <div className="sketch-surface mt-4 rounded-md border-destructive/50 px-4 py-3 text-sm text-destructive">{error}</div> : null}
+          {error ? (
+            <ErrorNotice
+              title={errorTitle}
+              message={error}
+              suggestions={errorSuggestions}
+              technicalDetail={technicalError}
+            />
+          ) : null}
           <div ref={bottomRef} />
         </div>
       </div>
@@ -223,6 +233,41 @@ export function MessageList() {
           <ArrowDown className="h-4 w-4" />
           回到底部
         </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ErrorNotice({
+  title,
+  message,
+  suggestions,
+  technicalDetail,
+}: {
+  title?: string;
+  message: string;
+  suggestions?: string[];
+  technicalDetail?: string;
+}) {
+  const showTechnical = Boolean(technicalDetail && technicalDetail !== message);
+  return (
+    <div className="sketch-surface mt-4 rounded-md border-destructive/45 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      {title ? <div className="font-semibold">{title}</div> : null}
+      <div className={title ? "mt-1 text-destructive/90" : "text-destructive/90"}>{message}</div>
+      {suggestions?.length ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-destructive/80">
+          {suggestions.map((suggestion) => (
+            <li key={suggestion}>{suggestion}</li>
+          ))}
+        </ul>
+      ) : null}
+      {showTechnical ? (
+        <details className="mt-2 text-destructive/70">
+          <summary className="cursor-pointer select-none">技术详情</summary>
+          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background/70 p-2 text-xs leading-5">
+            {technicalDetail}
+          </pre>
+        </details>
       ) : null}
     </div>
   );
@@ -277,10 +322,16 @@ function MessageRow({
   }
 
   if (message.role === "user") {
+    const attachments = messageAttachmentParts(message.contentParts);
     return (
       <article id={chatMessageElementID(message.id)} className="message-row group flex w-full scroll-mt-8 flex-col items-end gap-2">
-        <div className="max-w-[78%] rounded-2xl bg-muted px-5 py-4 text-lg leading-8 text-foreground">
-          <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className="flex max-w-[78%] flex-col items-end gap-2">
+          {attachments.length ? <UserAttachmentPills attachments={attachments} /> : null}
+          {message.content.trim() ? (
+            <div className="rounded-2xl bg-muted px-5 py-4 text-lg leading-8 text-foreground">
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            </div>
+          ) : null}
         </div>
         <MessageActions align="right" content={message.content} time={message.createdAt} />
       </article>
@@ -320,6 +371,69 @@ function MessageRow({
       {showCopyAction && (hasContent || copyContent) ? <MessageActions content={copyContent || message.content} compact /> : null}
     </article>
   );
+}
+
+function UserAttachmentPills({ attachments }: { attachments: ContentPartDTO[] }) {
+  return (
+    <div className="flex max-w-full flex-wrap justify-end gap-2">
+      {attachments.map((part, index) => {
+        if (isImagePart(part)) return <UserImagePill key={attachmentPartKey(part, index)} part={part} index={index} />;
+        return <UserFilePill key={attachmentPartKey(part, index)} part={part} />;
+      })}
+    </div>
+  );
+}
+
+function UserImagePill({ part, index }: { part: ContentPartDTO; index: number }) {
+  const src = part.base64_data
+    ? `data:${part.mime_type || "image/png"};base64,${part.base64_data}`
+    : part.url || "";
+  const label = imagePartLabel(part, index);
+  return (
+    <div className="flex h-12 max-w-[13rem] items-center gap-2 rounded-xl border border-border/70 bg-muted px-2 py-1.5 text-sm text-foreground">
+      <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-background/60">
+        {src ? <img className="h-full w-full object-cover" src={src} alt={label} /> : null}
+      </div>
+      <div className="min-w-0">
+        <div className="truncate font-medium leading-5">{label}</div>
+        <div className="flex items-center gap-1 text-xs leading-4 text-muted-foreground">
+          <FileText className="h-3.5 w-3.5" />
+          <span>{part.mime_type || "图片"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserFilePill({ part }: { part: ContentPartDTO }) {
+  const label = part.name || part.url || part.text || "附件";
+  return (
+    <div className="flex h-12 max-w-[13rem] items-center gap-2 rounded-xl border border-border/70 bg-muted px-3 py-1.5 text-sm text-foreground">
+      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 truncate font-medium">{label}</span>
+    </div>
+  );
+}
+
+function messageAttachmentParts(parts?: ContentPartDTO[]) {
+  return (parts || []).filter((part) => part.type !== "text");
+}
+
+function isImagePart(part: ContentPartDTO) {
+  return part.type === "image_url" || part.type === "image_base64" || Boolean(part.base64_data);
+}
+
+function attachmentPartKey(part: ContentPartDTO, index: number) {
+  return `${part.type}:${part.name || ""}:${part.url || part.mime_type || ""}:${index}`;
+}
+
+function imagePartLabel(part: ContentPartDTO, index: number) {
+  if (part.name) return part.name;
+  if (part.url) {
+    const segments = part.url.split(/[\\/]/).filter(Boolean);
+    return segments[segments.length - 1] || `图片 ${index + 1}`;
+  }
+  return `图片 ${index + 1}`;
 }
 
 function MessagePart({

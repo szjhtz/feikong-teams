@@ -1,15 +1,19 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions, sessionsActions } from "@/app/store";
 import { sendSteering, startStream, stopStream } from "@/api/chat";
-import { listFiles, searchFiles } from "@/api/files";
+import { listFiles, searchFiles, uploadFile } from "@/api/files";
 import { subscribeStream } from "@/api/stream";
 import { readJSON, storageKeys, writeJSON } from "@/lib/storage";
 import { cn } from "@/lib/cn";
 import { chatPath, pushAppPath } from "@/lib/navigation";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 import { ChatComposer } from "./ChatComposer";
+import type { ChatAttachmentDraft } from "@/types/chat";
+import type { ContentPartDTO } from "@/types/events";
 import type { FileEntry } from "@/types/files";
+
+const maxPastedImageBytes = 12 * 1024 * 1024;
 
 export function ChatInput({ variant = "dock", className }: { variant?: "dock" | "hero"; className?: string }) {
   const dispatch = useAppDispatch();
@@ -21,29 +25,52 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   const agents = useAppSelector((state) => state.app.agents);
   const [value, setValue] = useState("");
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
+  const [attachments, setAttachments] = useState<ChatAttachmentDraft[]>([]);
   const [referenceLoading, setReferenceLoading] = useState(false);
   const referenceRequestID = useRef(0);
   const fileSuggestionCache = useRef(new Map<string, FileEntry[]>());
+  const attachmentsRef = useRef<ChatAttachmentDraft[]>([]);
+
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  useEffect(() => () => {
+    for (const attachment of attachmentsRef.current) revokeAttachmentPreview(attachment);
+  }, []);
 
   async function submit() {
     const message = value.trim();
-    if (!message) return;
+    const readyAttachments = attachments.filter((attachment) => attachment.status === "ready");
+    if (!message && readyAttachments.length === 0) return;
+    if (attachments.some((attachment) => attachment.status === "uploading")) {
+      dispatch(chatActions.setError("附件仍在处理中，请稍后发送"));
+      return;
+    }
+    if (attachments.some((attachment) => attachment.status === "error")) {
+      dispatch(chatActions.setError("请先移除上传失败的附件"));
+      return;
+    }
+    const contents = readyAttachments.length ? buildContentParts(message, readyAttachments) : undefined;
+    const displayText = message || attachmentSummary(readyAttachments);
     const targetSessionID = runningSessionID || sessionID;
     const queueing = Boolean(isProcessing && targetSessionID);
     setValue("");
+    clearAttachments();
     dispatch(chatActions.setError(undefined));
     if (!queueing) {
-      dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: message, createdAt: new Date().toISOString() }));
+      dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: displayText, contentParts: contents, createdAt: new Date().toISOString() }));
       dispatch(chatActions.setProcessing(true));
     }
     try {
       if (queueing && targetSessionID) {
-        await sendSteering(targetSessionID, message);
+        await sendSteering(targetSessionID, message, contents);
         return;
       }
       const result = await startStream({
         session_id: targetSessionID || undefined,
         message,
+        contents,
         mode,
         agent_name: currentAgent || undefined,
       });
@@ -51,7 +78,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
       const now = new Date().toISOString();
       dispatch(sessionsActions.upsertSession({
         session_id: result.session_id,
-        title: message,
+        title: displayText,
         status: "processing",
         active_task: true,
         mod_time: now,
@@ -135,6 +162,69 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
     dispatch(chatActions.setCurrentAgent(agent));
   }
 
+  async function addAttachments(files: File[]) {
+    if (!files.length) return;
+    const uploadDir = `chat-attachments/${Date.now().toString(36)}`;
+    for (const file of files) {
+      const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      const isImage = file.type.startsWith("image/");
+      const draft: ChatAttachmentDraft = {
+        id,
+        kind: isImage ? "image" : "file",
+        name: file.name || (isImage ? "pasted-image.png" : "attachment"),
+        size: file.size,
+        mimeType: file.type || "application/octet-stream",
+        status: "uploading",
+        previewURL: isImage ? URL.createObjectURL(file) : undefined,
+      };
+      setAttachments((current) => [...current, draft]);
+      try {
+        if (isImage) {
+          if (file.size > maxPastedImageBytes) {
+            throw new Error("图片过大，无法直接粘贴发送");
+          }
+          const dataURL = await readFileAsDataURL(file);
+          updateAttachment(id, {
+            status: "ready",
+            base64Data: dataURL.slice(dataURL.indexOf(",") + 1),
+            mimeType: file.type || mimeTypeFromDataURL(dataURL) || "image/png",
+          });
+          continue;
+        }
+        const uploaded = await uploadFile(file, uploadDir);
+        const path = uploaded[0]?.path;
+        if (!path) throw new Error("文件上传失败");
+        updateAttachment(id, { status: "ready", path });
+      } catch (error) {
+        updateAttachment(id, { status: "error", error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  function updateAttachment(id: string, patch: Partial<ChatAttachmentDraft>) {
+    setAttachments((current) => current.map((attachment) => (
+      attachment.id === id ? { ...attachment, ...patch } : attachment
+    )));
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((current) => {
+      const next: ChatAttachmentDraft[] = [];
+      for (const attachment of current) {
+        if (attachment.id === id) revokeAttachmentPreview(attachment);
+        else next.push(attachment);
+      }
+      return next;
+    });
+  }
+
+  function clearAttachments() {
+    setAttachments((current) => {
+      for (const attachment of current) revokeAttachmentPreview(attachment);
+      return [];
+    });
+  }
+
   if (variant === "hero") {
     return (
       <ChatComposer
@@ -145,11 +235,14 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
         agents={agents}
         selectedAgent={currentAgent}
         fileSuggestions={fileSuggestions}
+        attachments={attachments}
         referenceLoading={referenceLoading}
         variant="hero"
         onValueChange={setValue}
         onModeChange={changeMode}
         onReferenceQuery={queryReferences}
+        onFilesAdded={(files) => void addAttachments(files)}
+        onRemoveAttachment={removeAttachment}
         onAgentChange={changeAgent}
         onSubmit={() => void submit()}
         onStop={() => void stop()}
@@ -167,11 +260,14 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
         agents={agents}
         selectedAgent={currentAgent}
         fileSuggestions={fileSuggestions}
+        attachments={attachments}
         referenceLoading={referenceLoading}
         variant="dock"
         onValueChange={setValue}
         onModeChange={changeMode}
         onReferenceQuery={queryReferences}
+        onFilesAdded={(files) => void addAttachments(files)}
+        onRemoveAttachment={removeAttachment}
         onAgentChange={changeAgent}
         onSubmit={() => void submit()}
         onStop={() => void stop()}
@@ -216,4 +312,57 @@ function mergeFileSuggestions(files: FileEntry[]) {
     result.push(file);
   }
   return result;
+}
+
+function buildContentParts(message: string, attachments: ChatAttachmentDraft[]): ContentPartDTO[] | undefined {
+  if (!message && attachments.length === 0) return undefined;
+  const parts: ContentPartDTO[] = [];
+  if (message) parts.push({ type: "text", text: message });
+  for (const attachment of attachments) {
+    if (attachment.kind === "image" && attachment.base64Data) {
+      parts.push({
+        type: "image_base64",
+        name: attachment.name,
+        base64_data: attachment.base64Data,
+        mime_type: attachment.mimeType || "image/png",
+        detail: "auto",
+      });
+      continue;
+    }
+    if (attachment.kind === "file" && attachment.path) {
+      parts.push({
+        type: "file_url",
+        name: attachment.name,
+        url: attachment.path,
+      });
+    }
+  }
+  return parts;
+}
+
+function attachmentSummary(attachments: ChatAttachmentDraft[]) {
+  const imageCount = attachments.filter((attachment) => attachment.kind === "image").length;
+  const fileCount = attachments.length - imageCount;
+  const labels: string[] = [];
+  if (imageCount) labels.push(`${imageCount} 张图片`);
+  if (fileCount) labels.push(`${fileCount} 个文件`);
+  return labels.length ? `发送了${labels.join("、")}` : "发送了附件";
+}
+
+function readFileAsDataURL(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("读取文件失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function mimeTypeFromDataURL(dataURL: string) {
+  const match = /^data:([^;,]+)/.exec(dataURL);
+  return match?.[1];
+}
+
+function revokeAttachmentPreview(attachment: ChatAttachmentDraft) {
+  if (attachment.previewURL?.startsWith("blob:")) URL.revokeObjectURL(attachment.previewURL);
 }

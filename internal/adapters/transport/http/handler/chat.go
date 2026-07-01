@@ -494,6 +494,11 @@ func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolve
 	if event.Content != "" {
 		result["content"] = event.Content
 	}
+	if event.Message != nil {
+		if parts := messageContentParts(*event.Message); len(parts) > 0 {
+			result["content_parts"] = parts
+		}
+	}
 	if event.ReasoningContent != "" {
 		result["reasoning_content"] = event.ReasoningContent
 	}
@@ -681,6 +686,7 @@ func errorEventPayload(sessionID, raw string) taskstream.Event {
 // ContentPart 多模态内容部分
 type ContentPart struct {
 	Type       string `json:"type"`                  // text, image_url, image_base64, audio_url, video_url, file_url
+	Name       string `json:"name,omitempty"`        // 附件名称
 	Text       string `json:"text,omitempty"`        // type=text 时的文本内容
 	URL        string `json:"url,omitempty"`         // type=image_url/audio_url/video_url/file_url 时的 URL
 	Base64Data string `json:"base64_data,omitempty"` // type=image_base64 时的 Base64 数据
@@ -694,7 +700,9 @@ func convertContentParts(parts []ContentPart) []domainmessage.ContentPart {
 	for _, p := range parts {
 		switch p.Type {
 		case "text":
-			result = append(result, appchat.TextPart(p.Text))
+			part := appchat.TextPart(p.Text)
+			part.Name = p.Name
+			result = append(result, part)
 		case "image_url":
 			detail := "auto"
 			switch p.Detail {
@@ -703,19 +711,29 @@ func convertContentParts(parts []ContentPart) []domainmessage.ContentPart {
 			case "low":
 				detail = "low"
 			}
-			result = append(result, appchat.ImageURLPart(p.URL, detail))
+			part := appchat.ImageURLPart(p.URL, detail)
+			part.Name = p.Name
+			result = append(result, part)
 		case "image_base64":
 			mimeType := p.MIMEType
 			if mimeType == "" {
 				mimeType = "image/png"
 			}
-			result = append(result, appchat.ImageBase64Part(p.Base64Data, mimeType))
+			part := appchat.ImageBase64Part(p.Base64Data, mimeType)
+			part.Name = p.Name
+			result = append(result, part)
 		case "audio_url":
-			result = append(result, appchat.AudioURLPart(p.URL))
+			part := appchat.AudioURLPart(p.URL)
+			part.Name = p.Name
+			result = append(result, part)
 		case "video_url":
-			result = append(result, appchat.VideoURLPart(p.URL))
+			part := appchat.VideoURLPart(p.URL)
+			part.Name = p.Name
+			result = append(result, part)
 		case "file_url":
-			result = append(result, appchat.FileURLPart(p.URL))
+			part := appchat.FileURLPart(p.URL)
+			part.Name = p.Name
+			result = append(result, part)
 		}
 	}
 	return result

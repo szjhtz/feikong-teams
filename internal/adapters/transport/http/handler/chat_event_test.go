@@ -133,6 +133,20 @@ func TestConvertEventToMapAddsFriendlyErrorFields(t *testing.T) {
 	}
 }
 
+func TestConvertContentPartsPreservesAttachmentName(t *testing.T) {
+	parts := convertContentParts([]ContentPart{
+		{Type: "image_base64", Name: "image.png", Base64Data: "abc", MIMEType: "image/png"},
+		{Type: "file_url", Name: "report.pdf", URL: "chat-attachments/report.pdf"},
+	})
+
+	if len(parts) != 2 {
+		t.Fatalf("parts len = %d, want 2", len(parts))
+	}
+	if parts[0].Name != "image.png" || parts[1].Name != "report.pdf" {
+		t.Fatalf("names not preserved: %#v", parts)
+	}
+}
+
 func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) {
 	toolIndex := 0
 	got := convertEventToMap(events.Event{

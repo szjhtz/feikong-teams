@@ -74,6 +74,11 @@ func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string
 		base.Type = events.EventUserMessage
 		base.Role = domainmessage.RoleUser
 		base.Content = item.Content
+		base.Message = &domainmessage.Message{
+			Role:         domainmessage.RoleUser,
+			Content:      item.Content,
+			ContentParts: append([]domainmessage.ContentPart(nil), item.ContentParts...),
+		}
 		return []events.Event{base}
 	case eventlog.TranscriptAgentStep, eventlog.TranscriptAssistantMessage:
 		base.Type = events.EventAssistantCompleted

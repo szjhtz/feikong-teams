@@ -1,8 +1,10 @@
-import { Bot, ChevronDown, FileText, Folder, Plus, Send, Square, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, FileText, Folder, Image as ImageIcon, Loader2, Plus, Send, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { formatBytes } from "@/lib/format";
 import type { AgentInfo } from "@/types/api";
+import type { ChatAttachmentDraft } from "@/types/chat";
 import type { FileEntry } from "@/types/files";
 
 const modeOptions = [
@@ -21,12 +23,15 @@ export interface ChatComposerProps {
   agents?: AgentInfo[];
   selectedAgent?: string;
   fileSuggestions?: FileEntry[];
+  attachments?: ChatAttachmentDraft[];
   referenceLoading?: boolean;
   variant?: "dock" | "hero";
   className?: string;
   onValueChange: (value: string) => void;
   onModeChange: (mode: string) => void;
   onReferenceQuery?: (query: string) => void;
+  onFilesAdded?: (files: File[]) => void;
+  onRemoveAttachment?: (id: string) => void;
   onAgentChange?: (agent: string) => void;
   onSubmit: () => void;
   onStop: () => void;
@@ -39,19 +44,25 @@ export function ChatComposer({
   agents = [],
   selectedAgent,
   fileSuggestions = [],
+  attachments = [],
   referenceLoading = false,
   variant = "dock",
   className,
   onValueChange,
   onModeChange,
   onReferenceQuery,
+  onFilesAdded,
+  onRemoveAttachment,
   onAgentChange,
   onSubmit,
   onStop,
 }: ChatComposerProps) {
   const [composing, setComposing] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [attachmentScroll, setAttachmentScroll] = useState({ left: false, right: false });
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentScrollerRef = useRef<HTMLDivElement | null>(null);
   const isHero = variant === "hero";
   const maxTextareaHeight = isHero ? 440 : 280;
   const [trigger, setTrigger] = useState<ReferenceTrigger | undefined>();
@@ -88,6 +99,8 @@ export function ChatComposer({
       agent,
     }));
   }, [fileSuggestions, filteredAgents, trigger]);
+  const attachmentBusy = attachments.some((attachment) => attachment.status === "uploading" || attachment.status === "error");
+  const canSubmit = Boolean(value.trim() || attachments.some((attachment) => attachment.status === "ready"));
 
   useEffect(() => {
     if (fileReferenceQuery !== undefined) onReferenceQuery?.(fileReferenceQuery);
@@ -106,9 +119,14 @@ export function ChatComposer({
     }
   }, [value]);
 
+  useEffect(() => {
+    requestAnimationFrame(updateAttachmentScrollState);
+  }, [attachments.length]);
+
   function syncFromEditor() {
     const editor = editorRef.current;
     if (!editor) return;
+    removeEmbeddedMedia(editor);
     const nextValue = editorText(editor);
     onValueChange(nextValue);
     updateTriggerFromEditor();
@@ -195,6 +213,41 @@ export function ChatComposer({
     return true;
   }
 
+  function handlePaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const files = clipboardFiles(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    onFilesAdded?.(files);
+  }
+
+  function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    if (files.length) onFilesAdded?.(files);
+    event.target.value = "";
+  }
+
+  function updateAttachmentScrollState() {
+    const scroller = attachmentScrollerRef.current;
+    if (!scroller) {
+      setAttachmentScroll({ left: false, right: false });
+      return;
+    }
+    const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+    setAttachmentScroll({
+      left: scroller.scrollLeft > 2,
+      right: maxScrollLeft - scroller.scrollLeft > 2,
+    });
+  }
+
+  function scrollAttachments(direction: -1 | 1) {
+    const scroller = attachmentScrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollBy({
+      left: direction * Math.max(220, Math.floor(scroller.clientWidth * 0.72)),
+      behavior: "smooth",
+    });
+  }
+
   return (
     <div
       className={cn(
@@ -203,10 +256,21 @@ export function ChatComposer({
         className,
       )}
     >
+      {attachments.length ? (
+        <AttachmentPreviewList
+          attachments={attachments}
+          scrollState={attachmentScroll}
+          scrollerRef={attachmentScrollerRef}
+          onScrollStateChange={updateAttachmentScrollState}
+          onScrollLeft={() => scrollAttachments(-1)}
+          onScrollRight={() => scrollAttachments(1)}
+          onRemove={onRemoveAttachment}
+        />
+      ) : null}
       <div className="relative">
-        {!value ? (
+        {!value && attachments.length === 0 ? (
           <div className="pointer-events-none absolute left-1 top-0 text-base leading-7 text-muted-foreground">
-            {isHero ? "今天要推进什么？" : "输入任务，使用 # 引用文件，@ 指定智能体。"}
+            {isHero ? "今天要推进什么？" : "输入任务，粘贴图片或文件，使用 # 引用文件，@ 指定智能体。"}
           </div>
         ) : null}
         <div
@@ -218,6 +282,7 @@ export function ChatComposer({
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => setComposing(false)}
           onInput={syncFromEditor}
+          onPaste={handlePaste}
           onClick={updateTriggerFromEditor}
           onKeyUp={updateTriggerFromEditor}
           onKeyDown={(event) => {
@@ -230,7 +295,7 @@ export function ChatComposer({
           }}
           className={cn(
             "composer-textarea min-w-0 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-0 text-base leading-7 text-foreground outline-none focus-visible:ring-0",
-            isHero ? "min-h-[92px]" : "min-h-[56px]",
+            isHero ? "min-h-[92px]" : attachments.length ? "min-h-[36px]" : "min-h-[56px]",
           )}
           style={{ maxHeight: maxTextareaHeight }}
         />
@@ -249,7 +314,14 @@ export function ChatComposer({
       ) : null}
       <div className="mt-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Button variant="ghost" size="icon" aria-label="添加附件">
+          <input
+            ref={fileInputRef}
+            className="hidden"
+            type="file"
+            multiple
+            onChange={handleFileInputChange}
+          />
+          <Button variant="ghost" size="icon" aria-label="添加附件" onClick={() => fileInputRef.current?.click()}>
             <Plus className="h-4 w-4" />
           </Button>
           {selectedAgent ? (
@@ -270,13 +342,120 @@ export function ChatComposer({
               <Square className="h-4 w-4" />
             </Button>
           ) : null}
-          <Button size="icon" onClick={onSubmit} aria-label={processing ? "加入队列" : "发送"}>
+          <Button size="icon" onClick={onSubmit} disabled={!canSubmit || attachmentBusy} aria-label={processing ? "加入队列" : "发送"}>
             <Send className="h-4 w-4" />
           </Button>
         </div>
       </div>
     </div>
   );
+}
+
+function AttachmentPreviewList({
+  attachments,
+  scrollState,
+  scrollerRef,
+  onScrollStateChange,
+  onScrollLeft,
+  onScrollRight,
+  onRemove,
+}: {
+  attachments: ChatAttachmentDraft[];
+  scrollState: { left: boolean; right: boolean };
+  scrollerRef: React.RefObject<HTMLDivElement | null>;
+  onScrollStateChange: () => void;
+  onScrollLeft: () => void;
+  onScrollRight: () => void;
+  onRemove?: (id: string) => void;
+}) {
+  return (
+    <div className="relative mb-3">
+      {scrollState.left ? (
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-14 items-center bg-gradient-to-r from-card via-card/92 to-transparent">
+          <button
+            type="button"
+            className="pointer-events-auto ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-card/95 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            aria-label="向左滚动附件"
+            onClick={onScrollLeft}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
+      <div
+        ref={scrollerRef}
+        className="attachment-preview-strip flex h-[4.25rem] gap-2 overflow-x-auto overflow-y-hidden scroll-smooth pr-1"
+        onScroll={onScrollStateChange}
+      >
+        {attachments.map((attachment) => (
+          <div
+            key={attachment.id}
+            className={cn(
+              "group relative flex h-16 w-44 shrink-0 items-center gap-2 rounded-xl border border-border/80 bg-background/55 p-1.5 transition-colors hover:bg-muted/35",
+              attachment.status === "error" && "border-destructive/45 bg-destructive/5 hover:bg-destructive/10",
+            )}
+          >
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/50">
+              {attachment.kind === "image" && attachment.previewURL ? (
+                <img className="h-full w-full object-cover" src={attachment.previewURL} alt={attachment.name} />
+              ) : (
+                <FileText className="h-5 w-5 text-muted-foreground" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1 pr-5">
+              <div className="truncate text-xs font-medium leading-5 text-foreground">{attachment.name}</div>
+              <div className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                {attachment.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                <span>{formatBytes(attachment.size)}</span>
+              </div>
+              {attachment.status === "uploading" ? (
+                <div className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>处理中</span>
+                </div>
+              ) : null}
+              {attachment.status === "error" ? (
+                <div className="truncate text-[11px] leading-4 text-destructive">{attachment.error || "处理失败"}</div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-foreground/90 text-background opacity-0 shadow-sm transition-opacity hover:bg-foreground group-hover:opacity-100"
+              aria-label="移除附件"
+              onClick={() => onRemove?.(attachment.id)}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+      {scrollState.right ? (
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 flex w-14 items-center justify-end bg-gradient-to-l from-card via-card/92 to-transparent">
+          <button
+            type="button"
+            className="pointer-events-auto mr-1 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-card/95 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            aria-label="向右滚动附件"
+            onClick={onScrollRight}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function clipboardFiles(data: DataTransfer) {
+  const files = Array.from(data.files || []).filter((file) => file.size > 0);
+  if (files.length) return files;
+  return Array.from(data.items || [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file && file.size > 0));
+}
+
+function removeEmbeddedMedia(root: HTMLElement) {
+  root.querySelectorAll("img, video, audio, object, embed").forEach((node) => node.remove());
 }
 
 function ReferenceMenu({

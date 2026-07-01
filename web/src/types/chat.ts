@@ -1,4 +1,4 @@
-import type { ChatEvent, QueueItem } from "./events";
+import type { ChatEvent, ContentPartDTO, QueueItem } from "./events";
 
 export interface SessionSummary {
   session_id: string;
@@ -27,10 +27,24 @@ export interface ChatViewMessage {
   role: "user" | "assistant" | "system" | "tool";
   agent?: string;
   content: string;
+  contentParts?: ContentPartDTO[];
   reasoningContent?: string;
   createdAt?: string;
   events: ChatEvent[];
   hidden?: boolean;
+}
+
+export interface ChatAttachmentDraft {
+  id: string;
+  kind: "image" | "file";
+  name: string;
+  size: number;
+  mimeType: string;
+  status: "uploading" | "ready" | "error";
+  previewURL?: string;
+  base64Data?: string;
+  path?: string;
+  error?: string;
 }
 
 export interface ChatState {
@@ -44,5 +58,8 @@ export interface ChatState {
   isProcessing: boolean;
   connectionState: "disconnected" | "connecting" | "connected";
   error?: string;
+  errorTitle?: string;
+  errorSuggestions?: string[];
+  technicalError?: string;
   statusText?: string;
 }

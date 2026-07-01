@@ -52,6 +52,16 @@ export interface QueueItem {
   created_at?: string;
 }
 
+export interface ContentPartDTO {
+  type: "text" | "image_url" | "image_base64" | "audio_url" | "video_url" | "file_url" | string;
+  name?: string;
+  text?: string;
+  url?: string;
+  base64_data?: string;
+  mime_type?: string;
+  detail?: string;
+}
+
 export interface ChatEvent {
   type: ChatEventType;
   session_id?: string;
@@ -65,6 +75,7 @@ export interface ChatEvent {
   role?: string;
   delta_kind?: string;
   content?: string;
+  content_parts?: ContentPartDTO[];
   reasoning_content?: string;
   message_id?: string;
   block_id?: string;
@@ -88,6 +99,11 @@ export interface ChatEvent {
   options?: string[];
   multi_select?: boolean;
   error?: string;
+  error_code?: string;
+  error_title?: string;
+  display_error?: string;
+  technical_error?: string;
+  error_suggestions?: string[];
   message?: string;
   queue?: QueueItem[];
   is_member_event?: boolean;
