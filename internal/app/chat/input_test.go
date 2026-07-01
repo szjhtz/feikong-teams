@@ -14,8 +14,14 @@ type testHistory struct {
 	summarizedCount int
 }
 
-func (h *testHistory) GetMessages() []domainhistory.AgentMessage {
-	return h.messages
+func (h *testHistory) ProjectContextMessages(offset int) []domainmessage.Message {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(h.messages) {
+		offset = len(h.messages)
+	}
+	return ProjectAgentMessages(h.messages[offset:])
 }
 
 func (h *testHistory) GetSummary() (string, int) {

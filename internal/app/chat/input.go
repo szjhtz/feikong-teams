@@ -13,8 +13,8 @@ import (
 	"fkteams/internal/runtime/log"
 )
 
-type HistoryReader interface {
-	GetMessages() []domainhistory.AgentMessage
+type HistoryProjector interface {
+	ProjectContextMessages(offset int) []domainmessage.Message
 	GetSummary() (string, int)
 }
 
@@ -23,12 +23,12 @@ type MemorySearcher interface {
 }
 
 // BuildTurnInput 构建一轮输入（长期记忆 + 对话历史 + 用户输入）
-func BuildTurnInput(recorder HistoryReader, userInput string) domainmessage.TurnInput {
+func BuildTurnInput(recorder HistoryProjector, userInput string) domainmessage.TurnInput {
 	return BuildTurnInputWithMemory(recorder, userInput, nil)
 }
 
 // BuildTurnInputWithMemory 构建一轮输入并按需注入长期记忆。
-func BuildTurnInputWithMemory(recorder HistoryReader, userInput string, manager MemorySearcher) domainmessage.TurnInput {
+func BuildTurnInputWithMemory(recorder HistoryProjector, userInput string, manager MemorySearcher) domainmessage.TurnInput {
 	var contextMessages []domainmessage.Message
 
 	// 注入长期记忆
@@ -53,12 +53,12 @@ func BuildTurnInputWithMemory(recorder HistoryReader, userInput string, manager 
 }
 
 // BuildMultimodalTurnInput 构建一轮多模态输入（长期记忆 + 对话历史 + 多模态内容）
-func BuildMultimodalTurnInput(recorder HistoryReader, textContent string, parts []domainmessage.ContentPart) domainmessage.TurnInput {
+func BuildMultimodalTurnInput(recorder HistoryProjector, textContent string, parts []domainmessage.ContentPart) domainmessage.TurnInput {
 	return BuildMultimodalTurnInputWithMemory(recorder, textContent, parts, nil)
 }
 
 // BuildMultimodalTurnInputWithMemory 构建多模态输入并按需注入长期记忆。
-func BuildMultimodalTurnInputWithMemory(recorder HistoryReader, textContent string, parts []domainmessage.ContentPart, manager MemorySearcher) domainmessage.TurnInput {
+func BuildMultimodalTurnInputWithMemory(recorder HistoryProjector, textContent string, parts []domainmessage.ContentPart, manager MemorySearcher) domainmessage.TurnInput {
 	var contextMessages []domainmessage.Message
 
 	// 注入长期记忆（使用文本部分进行搜索）
@@ -151,26 +151,19 @@ func ExtractTextFromParts(parts []domainmessage.ContentPart) string {
 }
 
 // buildHistoryMessages 构建结构化历史消息列表
-func buildHistoryMessages(recorder HistoryReader) []domainmessage.Message {
+func buildHistoryMessages(recorder HistoryProjector) []domainmessage.Message {
 	if recorder == nil {
 		return nil
 	}
-	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
 
 	var messages []domainmessage.Message
 
 	if summaryText != "" && summarizedCount > 0 {
 		messages = append(messages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: "## 对话历史摘要\n" + summaryText + "\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。"})
-
-		// 摘要未覆盖的最近记录
-		for i, msg := range agentMessages[summarizedCount:] {
-			messages = append(messages, agentMessageToCoreMessages(msg, summarizedCount+i)...)
-		}
-	} else if len(agentMessages) > 0 {
-		for i, msg := range agentMessages {
-			messages = append(messages, agentMessageToCoreMessages(msg, i)...)
-		}
+		messages = append(messages, recorder.ProjectContextMessages(summarizedCount)...)
+	} else {
+		messages = append(messages, recorder.ProjectContextMessages(0)...)
 	}
 
 	return messages
@@ -233,6 +226,14 @@ func truncatePreview(s string, n int) string {
 		return s
 	}
 	return string(r[:n]) + "..."
+}
+
+func ProjectAgentMessages(agentMessages []domainhistory.AgentMessage) []domainmessage.Message {
+	var messages []domainmessage.Message
+	for i, msg := range agentMessages {
+		messages = append(messages, agentMessageToCoreMessages(msg, i)...)
+	}
+	return messages
 }
 
 // agentMessageToCoreMessages 将 AgentMessage 转为结构化消息列表。

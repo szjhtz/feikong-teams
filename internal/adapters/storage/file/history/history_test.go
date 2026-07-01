@@ -1,6 +1,7 @@
 package eventlog
 
 import (
+	appchat "fkteams/internal/app/chat"
 	domainevent "fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	"fkteams/internal/runtime/events"
@@ -9,6 +10,43 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestTranscriptProjectionBuildsTurnInput(t *testing.T) {
+	sessionDir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(sessionDir)
+	recorder.RecordEvent(Event{
+		Type:    events.EventUserMessage,
+		Content: "hello",
+		Message: &message.Message{Role: message.RoleUser, Content: "hello"},
+	})
+	recorder.RecordEvent(Event{
+		Type:      EventAssistantText,
+		Role:      message.RoleAssistant,
+		DeltaKind: events.DeltaOutput,
+		AgentName: "coordinator",
+		Content:   "world",
+	})
+	recorder.FinalizeCurrent()
+
+	loaded := NewHistoryRecorder()
+	if err := loaded.LoadFromFile(filepath.Join(sessionDir, TranscriptFileName)); err != nil {
+		t.Fatalf("load transcript: %v", err)
+	}
+	input := appchat.BuildTurnInput(loaded, "next")
+	if len(input.Context) != 2 {
+		t.Fatalf("context count = %d, want 2: %#v", len(input.Context), input.Context)
+	}
+	if input.Context[0].Role != message.RoleUser || input.Context[0].Content != "hello" {
+		t.Fatalf("user context = %#v", input.Context[0])
+	}
+	if input.Context[1].Role != message.RoleAssistant || input.Context[1].Content != "world" {
+		t.Fatalf("assistant context = %#v", input.Context[1])
+	}
+	if input.Message.Content != "next" {
+		t.Fatalf("input message = %q, want next", input.Message.Content)
+	}
+}
 
 func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 	recorder := NewHistoryRecorder()
