@@ -196,8 +196,10 @@ func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) (
 		return nil, errors.New("invalid session ID")
 	}
 	recorder := eventlog.NewHistoryRecorder()
-	histFile := filepath.Join(sessionDirPath(historyDir, sessionID), eventlog.HistoryFileName)
-	if err := recorder.LoadFromFile(histFile); err != nil {
+	sessionDir := sessionDirPath(historyDir, sessionID)
+	recorder.SetSessionDir(sessionDir)
+	transcriptFile := filepath.Join(sessionDir, eventlog.TranscriptFileName)
+	if err := recorder.LoadFromFile(transcriptFile); err != nil {
 		return nil, err
 	}
 	messages := recorder.GetMessages()
@@ -218,12 +220,12 @@ func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) (
 	return messages, nil
 }
 
-func sessionShareLines(historyDir, sessionID string, allowToolDetails bool) ([]eventlog.HistoryLine, error) {
+func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool) ([]eventlog.TranscriptEvent, error) {
 	if !validateSessionID(sessionID) {
 		return nil, errors.New("invalid session ID")
 	}
-	histFile := filepath.Join(sessionDirPath(historyDir, sessionID), eventlog.HistoryFileName)
-	lines, err := eventlog.LoadLinesFromFile(histFile)
+	transcriptFile := filepath.Join(sessionDirPath(historyDir, sessionID), eventlog.TranscriptFileName)
+	lines, err := eventlog.LoadTranscriptFromFile(transcriptFile)
 	if err != nil {
 		return nil, err
 	}
@@ -231,11 +233,14 @@ func sessionShareLines(historyDir, sessionID string, allowToolDetails bool) ([]e
 		return lines, nil
 	}
 	for index := range lines {
-		if lines[index].Event.ToolCall != nil {
-			lines[index].Event.ToolCall.Arguments = ""
-			lines[index].Event.ToolCall.Result = ""
+		if lines[index].Payload.ToolCall != nil {
+			lines[index].Payload.ToolCall.Arguments = ""
+			lines[index].Payload.ToolCall.Result = ""
 		}
-		lines[index].Event.Detail = ""
+		lines[index].Payload.ToolArgs = ""
+		lines[index].Payload.Result = ""
+		lines[index].Payload.ResultRef = ""
+		lines[index].Payload.Detail = ""
 	}
 	return lines, nil
 }
@@ -476,7 +481,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 			return
 		}
 
-		lines, err := sessionShareLines(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails)
+		transcript, err := sessionShareTranscript(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails)
 		if err != nil {
 			log.Printf("failed to load public session share: share=%s, session=%s, err=%v", shareID, entry.SessionID, err)
 			Fail(c, http.StatusGone, "shared session unavailable")
@@ -494,7 +499,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 		OK(c, gin.H{
 			"id":                 shareID,
 			"title":              entry.Title,
-			"events":             rt.historyLinesToChatEvents(entry.SessionID, lines),
+			"events":             rt.transcriptToChatEvents(entry.SessionID, transcript),
 			"message_count":      entry.MessageCount,
 			"expires_at":         expiresAtUnix(entry.ExpiresAt),
 			"created_at":         entry.CreatedAt.Unix(),

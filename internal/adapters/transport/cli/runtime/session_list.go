@@ -37,7 +37,7 @@ func ListSessions(interactive ...bool) {
 			title = meta.Title
 		}
 
-		historyFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
+		historyFile := filepath.Join(sessionDir, eventlog.TranscriptFileName)
 		if info, err := os.Stat(historyFile); err == nil {
 			fmt.Fprintf(&sb, "| `%s` | %s | %s | %d B |\n",
 				sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())

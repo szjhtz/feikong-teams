@@ -22,7 +22,7 @@ func (s *ChatSessionStore) SaveHistory(_ context.Context, sessionID string, hist
 	if !ok {
 		return fmt.Errorf("history does not support file persistence")
 	}
-	return saver.SaveToFile(filepath.Join(s.sessionDir(sessionID), HistoryFileName))
+	return saver.SaveToFile(filepath.Join(s.sessionDir(sessionID), TranscriptFileName))
 }
 
 func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.MetadataUpdate) error {

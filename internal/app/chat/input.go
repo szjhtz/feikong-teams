@@ -238,6 +238,19 @@ func truncatePreview(s string, n int) string {
 // agentMessageToCoreMessages 将 AgentMessage 转为结构化消息列表。
 // 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
 func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int) []domainmessage.Message {
+	if msg.MemberCallID != "" {
+		var text strings.Builder
+		for _, event := range msg.Events {
+			if event.Type == domainhistory.MsgTypeText {
+				text.WriteString(event.Content)
+			}
+		}
+		content := strings.TrimSpace(text.String())
+		if content == "" {
+			return nil
+		}
+		return []domainmessage.Message{{Role: domainmessage.RoleAssistant, Name: msg.AgentName, Content: content}}
+	}
 	if isUserAgentName(msg.AgentName) {
 		var text strings.Builder
 		var parts []domainmessage.ContentPart
@@ -294,7 +307,6 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 				continue
 			}
 			flushText()
-			// AssistantMessage 携带 ToolCall
 			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				ID:   tc.ID,
 				Type: "function",
@@ -303,7 +315,6 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 					Arguments: tc.Arguments,
 				},
 			}}})
-			// ToolMessage 携带结果
 			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name})
 
 		case domainhistory.MsgTypeNotice:

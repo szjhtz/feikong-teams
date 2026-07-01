@@ -23,19 +23,37 @@ const (
 	EventError              = events.EventError
 )
 
-const HistoryFileName = "history.jsonl"
+const TranscriptFileName = "transcript.jsonl"
 
 type ToolCallRecord = domainhistory.ToolCallRecord
 type AskRecord = domainhistory.AskRecord
 type UsageRecord = domainhistory.UsageRecord
 type FriendlyError = domainhistory.FriendlyError
-type HistoryLine = domainhistory.Line
+type TranscriptEvent = domainhistory.TranscriptEvent
+type TranscriptEventType = domainhistory.TranscriptEventType
+type TranscriptPayload = domainhistory.TranscriptPayload
+type ToolResultArtifact = domainhistory.ToolResultArtifact
 type MsgEventType = domainhistory.MsgEventType
 type MessageEvent = domainhistory.MessageEvent
 type AgentMessage = domainhistory.AgentMessage
 type AttachmentRef = domainhistory.AttachmentRef
 
-const historyLineTypeMessageEvent = "message_event"
+const (
+	TranscriptTurnStarted           = domainhistory.TranscriptTurnStarted
+	TranscriptUserMessage           = domainhistory.TranscriptUserMessage
+	TranscriptAssistantMessageStart = domainhistory.TranscriptAssistantMessageStart
+	TranscriptAssistantReasoning    = domainhistory.TranscriptAssistantReasoning
+	TranscriptAssistantTextDelta    = domainhistory.TranscriptAssistantTextDelta
+	TranscriptAssistantMessageEnd   = domainhistory.TranscriptAssistantMessageEnd
+	TranscriptToolCallStart         = domainhistory.TranscriptToolCallStart
+	TranscriptToolCallEnd           = domainhistory.TranscriptToolCallEnd
+	TranscriptUsageReported         = domainhistory.TranscriptUsageReported
+	TranscriptAskRequested          = domainhistory.TranscriptAskRequested
+	TranscriptAskAnswered           = domainhistory.TranscriptAskAnswered
+	TranscriptSystemNotice          = domainhistory.TranscriptSystemNotice
+	TranscriptError                 = domainhistory.TranscriptError
+	TranscriptCancelled             = domainhistory.TranscriptCancelled
+)
 
 const (
 	MsgTypeText          = domainhistory.MsgTypeText
@@ -83,15 +101,37 @@ type activeMessageContext struct {
 	createdSeq       int64
 }
 
+type subagentRun struct {
+	AgentRunID       string
+	ParentToolCallID string
+	ToolName         string
+	AgentName        string
+	TranscriptPath   string
+	Seq              int64
+}
+
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
 	mu              sync.RWMutex
+	sessionDir      string
+	nextSeq         int64
 	messages        []AgentMessage
 	activeMessages  map[string]*activeMessageContext
 	activeOrder     []string
+	subagents       map[string]*subagentRun
+	agentToolCalls  map[string]pendingToolCall
 	toolDisplays    toolmeta.Resolver
 	summary         string // 上下文压缩摘要
 	summarizedCount int    // 已被摘要覆盖的消息数量
+}
+
+func (h *HistoryRecorder) SetSessionDir(sessionDir string) {
+	if h == nil || sessionDir == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.sessionDir = sessionDir
 }
 
 // SetToolDisplayResolver 设置当前 recorder 使用的工具展示解析器。

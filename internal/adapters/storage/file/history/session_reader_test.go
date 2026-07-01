@@ -27,8 +27,9 @@ func TestSessionMessageReaderLoadsPersistedHistory(t *testing.T) {
 	dir := t.TempDir()
 	sessionID := "persisted-session"
 	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(filepath.Join(dir, sessionID))
 	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "msg-1", domainmessage.Message{Role: domainmessage.RoleUser, Content: "from disk"}))
-	if err := recorder.SaveToFile(filepath.Join(dir, sessionID, HistoryFileName)); err != nil {
+	if err := recorder.SaveToFile(filepath.Join(dir, sessionID, TranscriptFileName)); err != nil {
 		t.Fatalf("SaveToFile returned error: %v", err)
 	}
 

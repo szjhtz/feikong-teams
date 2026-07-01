@@ -58,7 +58,7 @@ func NewSessionHistoryManager() *SessionHistoryManager {
 	}
 }
 
-// GetOrCreate 获取或创建会话的 HistoryRecorder，不存在时尝试从文件加载
+// GetOrCreate 获取或创建会话的 HistoryRecorder，不存在时尝试从 transcript 加载
 func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *HistoryRecorder {
 	m.mu.RLock()
 	if recorder, exists := m.sessions[sessionID]; exists {
@@ -74,8 +74,10 @@ func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *Histo
 		return recorder
 	}
 
+	sessionDir := filepath.Join(historyDir, filepath.Base(sessionID))
 	recorder := NewHistoryRecorder()
-	filePath := filepath.Join(historyDir, sessionID, HistoryFileName)
+	recorder.SetSessionDir(sessionDir)
+	filePath := filepath.Join(sessionDir, TranscriptFileName)
 	_ = recorder.LoadFromFile(filePath)
 
 	m.sessions[sessionID] = recorder
@@ -105,9 +107,10 @@ func (m *SessionHistoryManager) Clear(sessionID string) {
 	}
 }
 
-// LoadForSession 从文件加载历史并替换指定会话的 Recorder
+// LoadForSession 从 transcript 加载历史并替换指定会话的 Recorder
 func (m *SessionHistoryManager) LoadForSession(sessionID, filePath string) (*HistoryRecorder, error) {
 	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(filepath.Dir(filePath))
 	if err := recorder.LoadFromFile(filePath); err != nil {
 		return nil, fmt.Errorf("load session %s: %w", sessionID, err)
 	}

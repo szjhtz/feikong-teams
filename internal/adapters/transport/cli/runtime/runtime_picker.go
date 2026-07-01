@@ -371,7 +371,7 @@ func runtimeSessionPickerItems() ([]runtimePickerItem, error) {
 			title = meta.Title
 		}
 		label := title
-		historyFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
+		historyFile := filepath.Join(sessionDir, eventlog.TranscriptFileName)
 		if info, err := os.Stat(historyFile); err == nil {
 			label = fmt.Sprintf("%s (%s, %d B)", title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
 		}

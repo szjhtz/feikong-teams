@@ -301,7 +301,7 @@ func (m runtimeModel) openRuntimePicker(picker *runtimePicker, err error, title 
 
 func (m runtimeModel) saveRuntimeChatHistory() runtimeModel {
 	recorder := m.runtime.session.recorder()
-	historyFile := filepath.Join(m.runtime.session.historyDir, m.runtime.session.sessionID(), eventlog.HistoryFileName)
+	historyFile := filepath.Join(m.runtime.session.historyDir, m.runtime.session.sessionID(), eventlog.TranscriptFileName)
 	store := eventlog.NewChatSessionStore(m.runtime.session.historyDir)
 	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), m.runtime.session.sessionID(), m.runtime.session.sessionTitle, recorder); err != nil {
 		m.appendBlock(runtimeBlockError, "保存聊天历史失败", err.Error())
@@ -339,7 +339,7 @@ func (m runtimeModel) clearRuntimeChatHistory() runtimeModel {
 }
 
 func (m runtimeModel) loadRuntimeSession(sessionID string) runtimeModel {
-	historyFile := filepath.Join(m.runtime.session.historyDir, sessionID, eventlog.HistoryFileName)
+	historyFile := filepath.Join(m.runtime.session.historyDir, sessionID, eventlog.TranscriptFileName)
 	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
 		m.appendBlock(runtimeBlockError, "加载聊天历史失败", "历史文件不存在: "+historyFile)
 		return m

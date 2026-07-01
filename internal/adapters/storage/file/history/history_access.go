@@ -16,6 +16,13 @@ func (h *HistoryRecorder) RecordCancelled(message string) {
 	if strings.TrimSpace(message) == "" {
 		message = "任务已取消"
 	}
+	now := time.Now()
+	h.appendTranscriptEvent(TranscriptEvent{
+		TS:      now,
+		Type:    TranscriptCancelled,
+		Agent:   "system",
+		Payload: TranscriptPayload{Content: message},
+	}, nil)
 	cancelEvent := MessageEvent{Type: MsgTypeCancelled, Content: message}
 	h.finalizeAllActiveMessages()
 	if len(h.messages) > 0 && isSystemAgentName(h.messages[len(h.messages)-1].AgentName) && messageHasEventType(h.messages[len(h.messages)-1].Events, MsgTypeCancelled) {
@@ -23,8 +30,8 @@ func (h *HistoryRecorder) RecordCancelled(message string) {
 	}
 	h.messages = append(h.messages, AgentMessage{
 		AgentName: "system",
-		StartTime: time.Now(),
-		EndTime:   time.Now(),
+		StartTime: now,
+		EndTime:   now,
 		Events: []MessageEvent{
 			cancelEvent,
 		},
@@ -56,9 +63,22 @@ func (h *HistoryRecorder) FinalizeCurrent() {
 func (h *HistoryRecorder) GetMessages() []AgentMessage {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	result := make([]AgentMessage, len(h.messages))
-	copy(result, h.messages)
-	return result
+	return h.snapshotMessagesLocked()
+}
+
+func (h *HistoryRecorder) snapshotMessagesLocked() []AgentMessage {
+	messages := make([]AgentMessage, len(h.messages))
+	copy(messages, h.messages)
+	for _, key := range h.activeOrder {
+		ctx := h.activeMessages[key]
+		if ctx == nil || len(ctx.msg.Events) == 0 {
+			continue
+		}
+		msg := ctx.msg
+		msg.EndTime = time.Now()
+		messages = append(messages, msg)
+	}
+	return messages
 }
 
 func (h *HistoryRecorder) GetAgentMessages(agentName string) []AgentMessage {
@@ -149,6 +169,9 @@ func (h *HistoryRecorder) Clear() {
 	h.messages = make([]AgentMessage, 0)
 	h.activeMessages = make(map[string]*activeMessageContext)
 	h.activeOrder = nil
+	h.subagents = make(map[string]*subagentRun)
+	h.agentToolCalls = make(map[string]pendingToolCall)
+	h.nextSeq = 0
 	h.summary = ""
 	h.summarizedCount = 0
 }

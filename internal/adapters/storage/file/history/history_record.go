@@ -1,6 +1,7 @@
 package eventlog
 
 import (
+	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/domain/message"
 
 	"fkteams/internal/runtime/events"
@@ -16,6 +17,8 @@ func NewHistoryRecorder() *HistoryRecorder {
 		activeMessages: make(map[string]*activeMessageContext),
 		activeOrder:    make([]string, 0),
 		messages:       make([]AgentMessage, 0),
+		subagents:      make(map[string]*subagentRun),
+		agentToolCalls: make(map[string]pendingToolCall),
 	}
 }
 
@@ -182,6 +185,213 @@ func (h *HistoryRecorder) ensureMessageContext(event Event) *activeMessageContex
 	return ctx
 }
 
+func memberCallKeys(id string) []string {
+	if id == "" {
+		return nil
+	}
+	keys := []string{id}
+	if strings.HasPrefix(id, "tool_call:") {
+		keys = append(keys, strings.TrimPrefix(id, "tool_call:"))
+	} else {
+		keys = append(keys, "tool_call:"+id)
+	}
+	return keys
+}
+
+func (h *HistoryRecorder) rememberAgentToolCall(tc pendingToolCall) {
+	if h.agentToolCalls == nil {
+		h.agentToolCalls = make(map[string]pendingToolCall)
+	}
+	for _, key := range memberCallKeys(tc.ID) {
+		h.agentToolCalls[key] = tc
+	}
+	for _, key := range memberCallKeys(tc.Ref) {
+		h.agentToolCalls[key] = tc
+	}
+	if tc.Name != "" {
+		h.agentToolCalls[tc.Name] = tc
+	}
+}
+
+func (h *HistoryRecorder) ensureSubagentRun(event Event) *subagentRun {
+	if event.MemberCallID == "" {
+		return nil
+	}
+	if h.subagents == nil {
+		h.subagents = make(map[string]*subagentRun)
+	}
+	for _, key := range memberCallKeys(event.MemberCallID) {
+		if run := h.subagents[key]; run != nil {
+			return run
+		}
+	}
+	agentRunID := newPrefixedID("agent")
+	agentName := event.MemberName
+	if agentName == "" {
+		agentName = event.AgentName
+	}
+	run := &subagentRun{
+		AgentRunID:       agentRunID,
+		ParentToolCallID: event.MemberCallID,
+		ToolName:         event.MemberToolName,
+		AgentName:        agentName,
+		TranscriptPath:   subagentTranscriptPath(h.sessionDir, agentRunID),
+	}
+	for _, key := range memberCallKeys(event.MemberCallID) {
+		h.subagents[key] = run
+	}
+	return run
+}
+
+func (h *HistoryRecorder) recordTranscript(event Event) {
+	var target *subagentRun
+	if event.MemberCallID != "" {
+		target = h.ensureSubagentRun(event)
+	}
+	agent := event.AgentName
+	if target != nil {
+		agent = target.AgentName
+	}
+	ts := event.CreatedAt
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	base := TranscriptEvent{
+		TS:               ts,
+		TurnID:           event.TurnID,
+		Agent:            agent,
+		MessageID:        event.MessageID,
+		ParentToolCallID: event.ParentToolCallID,
+	}
+	if target != nil {
+		base.ParentToolCallID = target.ParentToolCallID
+	}
+
+	switch event.Type {
+	case events.EventUserMessage:
+		content := event.Content
+		parts := []message.ContentPart(nil)
+		if event.Message != nil {
+			content = event.Message.DisplayText()
+			parts = append(parts, event.Message.ContentParts...)
+		}
+		base.Type = TranscriptUserMessage
+		base.Agent = "user"
+		base.Payload = TranscriptPayload{Role: message.RoleUser, Content: content, ContentParts: parts}
+		h.appendTranscriptEvent(base, target)
+	case events.EventAssistantReasoning:
+		if event.Content == "" {
+			return
+		}
+		base.Type = TranscriptAssistantReasoning
+		base.Payload = TranscriptPayload{Role: transcriptRoleFromEvent(event), Content: event.Content, ReasoningContent: event.Content}
+		h.appendTranscriptEvent(base, target)
+	case events.EventAssistantText:
+		if event.Content == "" {
+			return
+		}
+		base.Type = TranscriptAssistantTextDelta
+		base.Payload = TranscriptPayload{Role: transcriptRoleFromEvent(event), Content: event.Content}
+		h.appendTranscriptEvent(base, target)
+	case EventToolCallStarted:
+		toolCalls := event.ToolCalls
+		if event.ToolCall != nil {
+			toolCalls = append([]message.ToolCall{*event.ToolCall}, toolCalls...)
+		}
+		if len(toolCalls) == 0 && event.ToolName != "" {
+			toolCalls = []message.ToolCall{{
+				ID:    event.ToolCallID,
+				Index: event.ToolCallIndex,
+				Function: message.FunctionCall{
+					Name:      event.ToolName,
+					Arguments: event.ToolArgs,
+				},
+			}}
+		}
+		for i, tc := range toolCalls {
+			if tc.Function.Name == "" || events.IsInternalToolName(tc.Function.Name) {
+				continue
+			}
+			ref := events.ToolCallRefAt(event, tc, i)
+			pending := h.pendingToolCallFromEvent(event, ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+			record := toolCallRecordFromPending(pending, "")
+			line := base
+			line.Type = TranscriptToolCallStart
+			line.ToolCallID = pending.ID
+			line.Payload = TranscriptPayload{
+				ToolCall:    ptrToolCallRecord(record),
+				ToolName:    record.Name,
+				ToolArgs:    record.Arguments,
+				DisplayName: record.DisplayName,
+				Kind:        record.Kind,
+				Target:      record.Target,
+			}
+			h.appendTranscriptEvent(line, target)
+			if record.Kind == toolmeta.ToolKindAgent {
+				h.rememberAgentToolCall(pending)
+			}
+		}
+	case EventToolCallCompleted:
+		content := toolResultContentFromEvent(event)
+		if events.IsInternalContinueContent(content) {
+			return
+		}
+		toolName := event.ToolName
+		if toolName == "" && event.ToolCall != nil {
+			toolName = event.ToolCall.Function.Name
+		}
+		resultPayload := h.toolResultPayload(toolName, content)
+		line := base
+		line.Type = TranscriptToolCallEnd
+		line.ToolCallID = event.ToolCallID
+		line.Payload = resultPayload
+		line.Payload.ToolName = toolName
+		line.Payload.ToolArgs = event.ToolArgs
+		h.appendTranscriptEvent(line, target)
+	case EventUsageReported:
+		if event.PromptTokens == 0 && event.CompletionTokens == 0 && event.TotalTokens == 0 {
+			return
+		}
+		base.Type = TranscriptUsageReported
+		base.Payload = TranscriptPayload{Usage: &UsageRecord{PromptTokens: event.PromptTokens, CompletionTokens: event.CompletionTokens, TotalTokens: event.TotalTokens}}
+		h.appendTranscriptEvent(base, target)
+	case events.EventAskRequested, events.EventAskAnswered:
+		base.Type = TranscriptAskRequested
+		if event.Type == events.EventAskAnswered {
+			base.Type = TranscriptAskAnswered
+		}
+		record := &AskRecord{}
+		if event.Ask != nil {
+			record.ID = event.Ask.ID
+			record.Question = event.Ask.Question
+			record.Options = append([]string(nil), event.Ask.Options...)
+			record.MultiSelect = event.Ask.MultiSelect
+			record.Selected = append([]string(nil), event.Ask.Selected...)
+			record.FreeText = event.Ask.FreeText
+		}
+		if event.Type == events.EventAskAnswered {
+			record.Answered = true
+		}
+		base.Payload = TranscriptPayload{Ask: record, Content: event.Content}
+		h.appendTranscriptEvent(base, target)
+	case EventSystemNotice:
+		base.Type = TranscriptSystemNotice
+		base.Payload = TranscriptPayload{Content: event.Content, Detail: event.Detail}
+		h.appendTranscriptEvent(base, target)
+	case EventError:
+		friendly := events.NormalizeFriendlyError(event.Error)
+		friendly.TechnicalDetail = truncateErrorContent(friendly.TechnicalDetail)
+		historyError := FriendlyError(friendly)
+		base.Type = TranscriptError
+		base.Payload = TranscriptPayload{Content: historyError.Message, Error: &historyError}
+		h.appendTranscriptEvent(base, target)
+	case events.EventCancelled:
+		base.Type = TranscriptCancelled
+		base.Payload = TranscriptPayload{Content: event.Content}
+		h.appendTranscriptEvent(base, target)
+	}
+}
+
 func (h *HistoryRecorder) finalizeActiveMessage(key string) {
 	ctx := h.activeMessages[key]
 	if ctx == nil {
@@ -232,6 +442,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	h.recordTranscript(event)
 
 	switch event.Type {
 	case events.EventUserMessage:

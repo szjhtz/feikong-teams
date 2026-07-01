@@ -29,8 +29,10 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 		return recorder.GetMessages(), nil
 	}
 	recorder := NewHistoryRecorder()
-	historyFile := filepath.Join(r.sessionsDir, filepath.Base(sessionID), HistoryFileName)
-	if err := recorder.LoadFromFile(historyFile); err != nil {
+	sessionDir := filepath.Join(r.sessionsDir, filepath.Base(sessionID))
+	recorder.SetSessionDir(sessionDir)
+	transcriptFile := filepath.Join(sessionDir, TranscriptFileName)
+	if err := recorder.LoadFromFile(transcriptFile); err != nil {
 		return nil, fmt.Errorf("read session history: %w", err)
 	}
 	return recorder.GetMessages(), nil

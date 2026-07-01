@@ -100,7 +100,7 @@ internal/adapters/model/
     providerkit/            #   provider 共用 HTTP/config 辅助
     copilot/                #   GitHub Copilot OAuth/token/HTTP 支撑
 internal/adapters/storage/
-  file/history/             #   HistoryRecorder、会话 metadata、历史文件读写
+  file/history/             #   append-only transcript、会话 metadata、历史投影和文件读写
                             #   agentcore 旧门面已删除，禁止恢复；直接使用 internal/domain 与 internal/ports/runtime
 internal/bootstrap/environment/ # init 命令运行环境初始化器（uv / bun）
 internal/bootstrap/runtimes/ #  默认 runtime engine 和 provider 注册

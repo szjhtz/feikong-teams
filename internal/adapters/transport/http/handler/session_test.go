@@ -83,11 +83,12 @@ func TestGetSessionReturnsEventsInHistoryOrder(t *testing.T) {
 		t.Fatalf("save metadata: %v", err)
 	}
 	recorder := eventlog.NewHistoryRecorder()
+	recorder.SetSessionDir(sessionDir)
 	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "run-1:user", message.Message{Role: message.RoleUser, Content: "你好"}))
 	recorder.RecordEvent(eventlog.Event{Type: eventlog.EventAssistantText, AgentName: "coordinator", Content: "你好！", Sequence: 42})
 	recorder.RecordEvent(runtimeevents.UserMessage("run-2", runtimeevents.TurnID("run-2", 1), "run-2:user", message.Message{Role: message.RoleUser, Content: "你是谁"}))
 	recorder.RecordEvent(eventlog.Event{Type: eventlog.EventAssistantText, AgentName: "coordinator", Content: "我是协调者", Sequence: 84})
-	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.HistoryFileName)); err != nil {
+	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.TranscriptFileName)); err != nil {
 		t.Fatalf("save history: %v", err)
 	}
 
@@ -143,44 +144,31 @@ func TestGetSessionReturnsEventsInHistoryOrder(t *testing.T) {
 	}
 }
 
-func TestHistoryLinesToChatEventsUsesEventSequenceAcrossMembers(t *testing.T) {
+func TestTranscriptToChatEventsUsesAppendOrder(t *testing.T) {
 	rt := newTestRuntime(t)
-	lines := []eventlog.HistoryLine{
+	transcript := []eventlog.TranscriptEvent{
 		{
-			MessageID:  "parent",
-			EventIndex: 0,
-			AgentName:  "coordinator",
-			StartTime:  time.Now(),
-			Event:      eventlog.MessageEvent{Type: eventlog.MsgTypeToolCall, Sequence: 10, ToolCall: &eventlog.ToolCallRecord{ID: "call-1", Ref: "tool_call:call-1", Name: "ask_fkagent_researcher"}},
+			ID:      "evt-1",
+			TS:      time.Now(),
+			Type:    eventlog.TranscriptToolCallStart,
+			Agent:   "coordinator",
+			Payload: eventlog.TranscriptPayload{ToolName: "ask_fkagent_researcher"},
 		},
 		{
-			MessageID:  "parent",
-			EventIndex: 1,
-			AgentName:  "coordinator",
-			StartTime:  time.Now(),
-			Event:      eventlog.MessageEvent{Type: eventlog.MsgTypeText, Sequence: 30, Content: "最终回复"},
-		},
-		{
-			MessageID:      "member",
-			EventIndex:     0,
-			AgentName:      "ask_fkagent_researcher",
-			MemberCallID:   "call-1",
-			MemberToolName: "ask_fkagent_researcher",
-			MemberName:     "researcher",
-			StartTime:      time.Now(),
-			Event:          eventlog.MessageEvent{Type: eventlog.MsgTypeText, Sequence: 20, Content: "成员结果"},
+			ID:      "evt-2",
+			TS:      time.Now(),
+			Type:    eventlog.TranscriptAssistantTextDelta,
+			Agent:   "coordinator",
+			Payload: eventlog.TranscriptPayload{Content: "最终回复"},
 		},
 	}
 
-	got := rt.historyLinesToChatEvents("session-1", lines)
+	got := rt.transcriptToChatEvents("session-1", transcript)
 	wantTypes := []string{
 		string(runtimeevents.EventToolCallStarted),
 		string(runtimeevents.EventAssistantText),
-		string(runtimeevents.EventToolCallCompleted),
-		string(runtimeevents.EventAssistantText),
 	}
-	wantContents := []string{"", "成员结果", "", "最终回复"}
-	wantSequences := []int64{10, 20, 10, 30}
+	wantContents := []string{"", "最终回复"}
 	if len(got) != len(wantTypes) {
 		t.Fatalf("expected %d events, got %#v", len(wantTypes), got)
 	}
@@ -190,69 +178,50 @@ func TestHistoryLinesToChatEventsUsesEventSequenceAcrossMembers(t *testing.T) {
 		}
 		content := ""
 		if raw, ok := got[i]["content"]; ok {
-			content = fmt.Sprint(raw)
+			content, _ = raw.(string)
 		}
 		if content != wantContents[i] {
 			t.Fatalf("event %d content = %q, want %q", i, content, wantContents[i])
 		}
-		if got[i]["sequence"] != wantSequences[i] {
-			t.Fatalf("event %d sequence = %#v, want %d", i, got[i]["sequence"], wantSequences[i])
+		if got[i]["sequence"] != int64(i+1) {
+			t.Fatalf("event %d sequence = %#v, want %d", i, got[i]["sequence"], i+1)
 		}
-	}
-	if got[1]["is_member_event"] != true {
-		t.Fatalf("expected second event to be member event, got %#v", got[1])
 	}
 }
 
-func TestHistoryLinesToChatEventsDoesNotMixSequencesAcrossTurns(t *testing.T) {
+func TestTranscriptToChatEventsProjectsCancellationInAppendOrder(t *testing.T) {
 	rt := newTestRuntime(t)
-	lines := []eventlog.HistoryLine{
+	transcript := []eventlog.TranscriptEvent{
 		{
-			MessageID: "user-1",
-			AgentName: "user",
-			StartTime: time.Now(),
-			Event:     eventlog.MessageEvent{Type: eventlog.MsgTypeText, Content: "你好"},
+			ID:      "evt-1",
+			TS:      time.Now(),
+			Type:    eventlog.TranscriptUserMessage,
+			Agent:   "user",
+			Payload: eventlog.TranscriptPayload{Content: "任务"},
 		},
 		{
-			MessageID: "assistant-1",
-			AgentName: "coordinator",
-			StartTime: time.Now(),
-			Event:     eventlog.MessageEvent{Type: eventlog.MsgTypeReasoning, Sequence: 5, Content: "第一轮思考"},
-		},
-		{
-			MessageID: "assistant-1",
-			AgentName: "coordinator",
-			StartTime: time.Now(),
-			Event:     eventlog.MessageEvent{Type: eventlog.MsgTypeText, Sequence: 25, Content: "第一轮回复"},
-		},
-		{
-			MessageID: "user-2",
-			AgentName: "user",
-			StartTime: time.Now(),
-			Event:     eventlog.MessageEvent{Type: eventlog.MsgTypeText, Content: "你好啊"},
-		},
-		{
-			MessageID: "assistant-2",
-			AgentName: "coordinator",
-			StartTime: time.Now(),
-			Event:     eventlog.MessageEvent{Type: eventlog.MsgTypeReasoning, Sequence: 5, Content: "第二轮思考"},
-		},
-		{
-			MessageID: "assistant-2",
-			AgentName: "coordinator",
-			StartTime: time.Now(),
-			Event:     eventlog.MessageEvent{Type: eventlog.MsgTypeText, Sequence: 14, Content: "第二轮回复"},
+			ID:      "evt-2",
+			TS:      time.Now(),
+			Type:    eventlog.TranscriptCancelled,
+			Agent:   "system",
+			Payload: eventlog.TranscriptPayload{Content: "任务已取消"},
 		},
 	}
 
-	got := rt.historyLinesToChatEvents("session-1", lines)
-	wantContents := []string{"你好", "第一轮思考", "第一轮回复", "你好啊", "第二轮思考", "第二轮回复"}
-	if len(got) != len(wantContents) {
-		t.Fatalf("expected %d events, got %#v", len(wantContents), got)
+	got := rt.transcriptToChatEvents("session-1", transcript)
+	wantTypes := []string{
+		string(runtimeevents.EventUserMessage),
+		string(runtimeevents.EventCancelled),
 	}
-	for i, want := range wantContents {
-		if got[i]["content"] != want {
-			t.Fatalf("event %d content = %#v, want %q", i, got[i]["content"], want)
+	if len(got) != len(wantTypes) {
+		t.Fatalf("expected %d events, got %#v", len(wantTypes), got)
+	}
+	for i, want := range wantTypes {
+		if fmt.Sprint(got[i]["type"]) != want {
+			t.Fatalf("event %d type = %#v, want %q; events=%#v", i, got[i]["type"], want, got)
+		}
+		if got[i]["sequence"] != int64(i+1) {
+			t.Fatalf("event %d sequence = %#v, want %d", i, got[i]["sequence"], i+1)
 		}
 	}
 }

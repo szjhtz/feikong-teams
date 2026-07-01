@@ -4,6 +4,9 @@ import (
 	domainevent "fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	"fkteams/internal/runtime/events"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -401,6 +404,96 @@ func TestHistoryRecorderDoesNotDuplicateToolEndAndToolRoleMessageEnd(t *testing.
 	}
 	if len(messages[0].Events) != 1 {
 		t.Fatalf("event count = %d, want 1: %#v", len(messages[0].Events), messages[0].Events)
+	}
+}
+
+func TestTranscriptRecorderAppendsEventsInWriteOrder(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+
+	recorder.RecordEvent(events.UserMessage("run-1", events.TurnID("run-1", 1), "msg-1", message.Message{Role: message.RoleUser, Content: "hello"}))
+	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "coordinator", Content: "world"})
+
+	transcript, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+	if err != nil {
+		t.Fatalf("load transcript: %v", err)
+	}
+	if len(transcript) != 2 {
+		t.Fatalf("event count = %d, want 2: %#v", len(transcript), transcript)
+	}
+	if transcript[0].Seq != 1 || transcript[1].Seq != 2 {
+		t.Fatalf("seqs = %d,%d want 1,2", transcript[0].Seq, transcript[1].Seq)
+	}
+	if transcript[0].Type != TranscriptUserMessage || transcript[1].Type != TranscriptAssistantTextDelta {
+		t.Fatalf("types = %s,%s", transcript[0].Type, transcript[1].Type)
+	}
+}
+
+func TestTranscriptRecorderExternalizesLongToolResults(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+	longResult := strings.Repeat("x", longToolResultChars+10)
+
+	recorder.RecordEvent(Event{Type: EventToolCallStarted, AgentName: "coordinator", ToolCallID: "call_1", ToolName: "fetch", ToolArgs: `{"url":"https://example.com"}`})
+	recorder.RecordEvent(Event{Type: EventToolCallCompleted, AgentName: "coordinator", ToolCallID: "call_1", ToolName: "fetch", Content: longResult})
+
+	transcript, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+	if err != nil {
+		t.Fatalf("load transcript: %v", err)
+	}
+	if len(transcript) != 2 {
+		t.Fatalf("event count = %d, want 2", len(transcript))
+	}
+	end := transcript[1]
+	if end.Payload.Result != "" || end.Payload.ResultRef == "" || !end.Payload.Truncated {
+		t.Fatalf("tool payload = %#v, want externalized result", end.Payload)
+	}
+	if _, err := os.Stat(filepath.Join(dir, end.Payload.ResultRef)); err != nil {
+		t.Fatalf("result artifact missing: %v", err)
+	}
+}
+
+func TestTranscriptRecorderWritesSubagentTranscriptSeparately(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+
+	recorder.RecordEvent(Event{Type: EventToolCallStarted, AgentName: "coordinator", ToolCallID: "call_1", ToolName: "ask_fkagent_researcher"})
+	recorder.RecordEvent(Event{
+		Type:           EventAssistantText,
+		AgentName:      "researcher",
+		Content:        "member result",
+		MemberCallID:   "call_1",
+		MemberToolName: "ask_fkagent_researcher",
+		MemberName:     "researcher",
+	})
+	recorder.RecordEvent(Event{Type: EventToolCallCompleted, AgentName: "coordinator", ToolCallID: "call_1", ToolName: "ask_fkagent_researcher", Content: "member result"})
+
+	main, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+	if err != nil {
+		t.Fatalf("load main transcript: %v", err)
+	}
+	if len(main) != 2 {
+		t.Fatalf("main transcript event count = %d, want parent tool start/end: %#v", len(main), main)
+	}
+	if main[0].Type != TranscriptToolCallStart || main[1].Type != TranscriptToolCallEnd {
+		t.Fatalf("main transcript types = %s,%s", main[0].Type, main[1].Type)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, subagentsDirName, "*.jsonl"))
+	if err != nil {
+		t.Fatalf("glob subagents: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("subagent transcript files = %#v, want one", matches)
+	}
+	sub, err := LoadTranscriptFromFile(matches[0])
+	if err != nil {
+		t.Fatalf("load subagent transcript: %v", err)
+	}
+	if len(sub) != 1 || sub[0].Type != TranscriptAssistantTextDelta || sub[0].Payload.Content != "member result" {
+		t.Fatalf("subagent transcript = %#v", sub)
 	}
 }
 

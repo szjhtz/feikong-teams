@@ -8,6 +8,72 @@ import (
 	"fkteams/internal/domain/message"
 )
 
+type TranscriptEventType string
+
+const (
+	TranscriptTurnStarted           TranscriptEventType = "turn_started"
+	TranscriptUserMessage           TranscriptEventType = "user_message"
+	TranscriptAssistantMessageStart TranscriptEventType = "assistant_message_start"
+	TranscriptAssistantReasoning    TranscriptEventType = "assistant_reasoning"
+	TranscriptAssistantTextDelta    TranscriptEventType = "assistant_text_delta"
+	TranscriptAssistantMessageEnd   TranscriptEventType = "assistant_message_end"
+	TranscriptToolCallStart         TranscriptEventType = "tool_call_start"
+	TranscriptToolCallEnd           TranscriptEventType = "tool_call_end"
+	TranscriptUsageReported         TranscriptEventType = "usage_reported"
+	TranscriptAskRequested          TranscriptEventType = "ask_requested"
+	TranscriptAskAnswered           TranscriptEventType = "ask_answered"
+	TranscriptSystemNotice          TranscriptEventType = "system_notice"
+	TranscriptError                 TranscriptEventType = "error"
+	TranscriptCancelled             TranscriptEventType = "cancelled"
+)
+
+type TranscriptEvent struct {
+	ID               string              `json:"id"`
+	Seq              int64               `json:"seq"`
+	TS               time.Time           `json:"ts"`
+	TurnID           string              `json:"turn_id,omitempty"`
+	Type             TranscriptEventType `json:"type"`
+	Agent            string              `json:"agent,omitempty"`
+	MessageID        string              `json:"message_id,omitempty"`
+	ToolCallID       string              `json:"tool_call_id,omitempty"`
+	ParentToolCallID string              `json:"parent_tool_call_id,omitempty"`
+	AgentRunID       string              `json:"agent_run_id,omitempty"`
+	Payload          TranscriptPayload   `json:"payload,omitempty"`
+}
+
+type TranscriptPayload struct {
+	Role             message.Role          `json:"role,omitempty"`
+	Content          string                `json:"content,omitempty"`
+	Detail           string                `json:"detail,omitempty"`
+	ReasoningContent string                `json:"reasoning_content,omitempty"`
+	ContentParts     []message.ContentPart `json:"content_parts,omitempty"`
+	ToolCall         *ToolCallRecord       `json:"tool_call,omitempty"`
+	ToolName         string                `json:"tool_name,omitempty"`
+	ToolArgs         string                `json:"tool_args,omitempty"`
+	Result           string                `json:"result,omitempty"`
+	ResultRef        string                `json:"result_ref,omitempty"`
+	Summary          string                `json:"summary,omitempty"`
+	Truncated        bool                  `json:"truncated,omitempty"`
+	OriginalChars    int                   `json:"original_chars,omitempty"`
+	Ask              *AskRecord            `json:"ask,omitempty"`
+	Usage            *UsageRecord          `json:"usage,omitempty"`
+	Error            *FriendlyError        `json:"error,omitempty"`
+	DisplayName      string                `json:"display_name,omitempty"`
+	Kind             string                `json:"kind,omitempty"`
+	Target           string                `json:"target,omitempty"`
+	Transcript       string                `json:"transcript,omitempty"`
+	AgentName        string                `json:"agent_name,omitempty"`
+}
+
+type ToolResultArtifact struct {
+	ID            string    `json:"id"`
+	ToolName      string    `json:"tool_name,omitempty"`
+	Content       string    `json:"content"`
+	Summary       string    `json:"summary,omitempty"`
+	OriginalChars int       `json:"original_chars"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type ToolCallRecord struct {
 	Ref         string `json:"ref,omitempty"`
 	ID          string `json:"id"`
@@ -42,20 +108,6 @@ type FriendlyError struct {
 	Message         string   `json:"message,omitempty"`
 	Suggestions     []string `json:"suggestions,omitempty"`
 	TechnicalDetail string   `json:"technical_detail,omitempty"`
-}
-
-type Line struct {
-	Type           string       `json:"type"`
-	MessageID      string       `json:"message_id"`
-	EventIndex     int          `json:"event_index"`
-	AgentName      string       `json:"agent_name"`
-	RunPath        string       `json:"run_path,omitempty"`
-	MemberCallID   string       `json:"member_call_id,omitempty"`
-	MemberToolName string       `json:"member_tool_name,omitempty"`
-	MemberName     string       `json:"member_name,omitempty"`
-	StartTime      time.Time    `json:"start_time"`
-	EndTime        time.Time    `json:"end_time"`
-	Event          MessageEvent `json:"event"`
 }
 
 type MsgEventType string

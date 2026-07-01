@@ -167,3 +167,66 @@ func TestAgentMessageToSchemaMessagesMarksCancelledAssistantOutput(t *testing.T)
 		t.Fatalf("content = %q, want cancellation marker", messages[0].Content)
 	}
 }
+
+func TestAgentMessageToCoreMessagesKeepsCoordinatorReasoningAndTools(t *testing.T) {
+	msg := domainhistory.AgentMessage{
+		AgentName: "coordinator",
+		Events: []domainhistory.MessageEvent{
+			{Type: domainhistory.MsgTypeReasoning, Content: "think"},
+			{Type: domainhistory.MsgTypeText, Content: "before"},
+			{Type: domainhistory.MsgTypeToolCall, ToolCall: &domainhistory.ToolCallRecord{
+				ID:        "call_1",
+				Name:      "fetch",
+				Arguments: `{"url":"https://example.com"}`,
+				Result:    "result",
+			}},
+			{Type: domainhistory.MsgTypeText, Content: "after"},
+		},
+	}
+
+	messages := agentMessageToCoreMessages(msg, 0)
+	if len(messages) != 4 {
+		t.Fatalf("message count = %d, want 4: %#v", len(messages), messages)
+	}
+	if messages[0].ReasoningContent != "think" || messages[0].Content != "before" {
+		t.Fatalf("first message = %#v, want reasoning and text", messages[0])
+	}
+	if len(messages[1].ToolCalls) != 1 || messages[1].ToolCalls[0].Function.Name != "fetch" {
+		t.Fatalf("tool call message = %#v", messages[1])
+	}
+	if messages[2].Role != domainmessage.RoleTool || messages[2].Content != "result" {
+		t.Fatalf("tool result message = %#v", messages[2])
+	}
+	if messages[3].Content != "after" {
+		t.Fatalf("final text = %#v", messages[3])
+	}
+}
+
+func TestAgentMessageToCoreMessagesKeepsOnlyMemberFinalText(t *testing.T) {
+	msg := domainhistory.AgentMessage{
+		AgentName:      "researcher",
+		MemberCallID:   "call_1",
+		MemberToolName: "ask_fkagent_researcher",
+		MemberName:     "researcher",
+		Events: []domainhistory.MessageEvent{
+			{Type: domainhistory.MsgTypeReasoning, Content: "member thinking"},
+			{Type: domainhistory.MsgTypeToolCall, ToolCall: &domainhistory.ToolCallRecord{
+				ID:     "call_inner",
+				Name:   "search",
+				Result: "raw search result",
+			}},
+			{Type: domainhistory.MsgTypeText, Content: "final member answer"},
+		},
+	}
+
+	messages := agentMessageToCoreMessages(msg, 0)
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1: %#v", len(messages), messages)
+	}
+	if messages[0].Content != "final member answer" {
+		t.Fatalf("content = %q, want final member answer", messages[0].Content)
+	}
+	if messages[0].ReasoningContent != "" || len(messages[0].ToolCalls) != 0 {
+		t.Fatalf("member context leaked internals: %#v", messages[0])
+	}
+}

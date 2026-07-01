@@ -122,8 +122,9 @@ func writeShareableSession(t *testing.T, rt *Runtime, sessionID, title string) {
 		t.Fatalf("save metadata: %v", err)
 	}
 	recorder := eventlog.NewHistoryRecorder()
+	recorder.SetSessionDir(sessionDir)
 	recorder.RecordEvent(runtimeevents.UserMessage("run-1", runtimeevents.TurnID("run-1", 1), "run-1:user", message.Message{Role: message.RoleUser, Content: "hello"}))
-	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.HistoryFileName)); err != nil {
+	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.TranscriptFileName)); err != nil {
 		t.Fatalf("save history: %v", err)
 	}
 }

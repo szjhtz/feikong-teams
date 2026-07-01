@@ -70,8 +70,8 @@ func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
 				status = meta.Status
 			}
 
-			// 获取历史事件日志大小和时间
-			histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
+			// 获取 transcript 大小和时间
+			histFile := filepath.Join(sessionDir, eventlog.TranscriptFileName)
 			var size int64
 			var modTime time.Time
 			if info, err := os.Stat(histFile); err == nil {
@@ -193,8 +193,8 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 		sessionDir := rt.sessionDirPath(sessionID)
 		meta, metaErr := eventlog.LoadMetadata(sessionDir)
 
-		histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
-		lines, err := eventlog.LoadLinesFromFile(histFile)
+		transcriptFile := filepath.Join(sessionDir, eventlog.TranscriptFileName)
+		transcript, err := eventlog.LoadTranscriptFromFile(transcriptFile)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				if !activeTask && metaErr != nil {
@@ -219,7 +219,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 			"session_id":    sessionID,
 			"current_agent": currentAgent,
 			"favorite":      favorite,
-			"events":        rt.historyLinesToChatEvents(sessionID, lines),
+			"events":        rt.transcriptToChatEvents(sessionID, transcript),
 			"active_task":   activeTask,
 		})
 	}
