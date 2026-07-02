@@ -5,6 +5,7 @@ import (
 	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/config"
 	"fmt"
+	"strings"
 
 	runtimeport "fkteams/internal/ports/runtime"
 )
@@ -24,9 +25,16 @@ func NewAgent(ctx context.Context, member config.TeamMember) (runtimeport.Agent,
 	return common.BuildAgent(ctx, common.Definition{
 		Name:          member.Name,
 		Description:   member.Description,
-		Instruction:   discussantPrompt,
+		Instruction:   instructionForMember(member),
 		Profile:       common.ProfileWorkspace,
 		Model:         chatModel,
 		EnableSummary: true,
 	})
+}
+
+func instructionForMember(member config.TeamMember) string {
+	if prompt := strings.TrimSpace(member.Prompt); prompt != "" {
+		return prompt
+	}
+	return discussantPrompt
 }

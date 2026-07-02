@@ -82,6 +82,7 @@ export interface TeamMemberConfig {
   name?: string;
   description?: string;
   model_id?: string;
+  prompt?: string;
 }
 
 export interface RoundtableConfig {

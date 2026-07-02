@@ -347,7 +347,7 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
                 const members = next.roundtable?.members || [];
                 next.roundtable = {
                   ...(next.roundtable || {}),
-                  members: [...members, { id: uniqueMemberID(members, "member"), name: "", description: "", model_id: modelIDs[0] || "" }],
+                  members: [...members, { id: uniqueMemberID(members, "member"), name: "", description: "", model_id: modelIDs[0] || "", prompt: "" }],
                 };
               })
             }
@@ -646,6 +646,9 @@ function RoundtableMemberEditor({
         <ModelSelect label="模型 ID" value={member.model_id} modelIDs={modelIDs} onChange={(value) => update({ model_id: value })} />
       </div>
       <TextField label="描述" value={member.description} onChange={(value) => update({ description: value })} />
+      <Field label="提示词（留空使用内置圆桌讨论提示词）">
+        <Textarea className="min-h-28 text-sm" value={member.prompt || ""} onChange={(event) => update({ prompt: event.target.value })} />
+      </Field>
     </ConfigCard>
   );
 }

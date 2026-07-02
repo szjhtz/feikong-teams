@@ -193,6 +193,7 @@ type TeamMember struct {
 	Name        string `toml:"name" json:"name"`
 	Description string `toml:"description" json:"description"`
 	ModelID     string `toml:"model_id" json:"model_id"` // 引用 models 中的 id
+	Prompt      string `toml:"prompt,omitempty" json:"prompt,omitempty"`
 }
 
 // Roundtable 圆桌讨论模式配置
@@ -544,6 +545,7 @@ func GenerateExample() error {
 					Name:        "Deepseek Chat",
 					Description: "深度求索聊天模型",
 					ModelID:     "fast",
+					Prompt:      "",
 				},
 			},
 			MaxIterations: 2,

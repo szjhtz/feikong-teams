@@ -39,12 +39,14 @@ id = "logic"
 name = "深度求索"
 description = "擅长逻辑分析"
 model_id = "deepseek"
+prompt = ""
 
 [[roundtable.members]]
 id = "creative"
 name = "克劳德"
 description = "擅长创意思维"
 model_id = "claude"
+prompt = "你是一个擅长创意思维的圆桌讨论者。请优先提出不同视角和替代方案。"
 ```
 
 成员字段：
@@ -55,6 +57,7 @@ model_id = "claude"
 | `name` | 展示名称 |
 | `description` | 能力描述 |
 | `model_id` | 引用 `[[models]].id` |
+| `prompt` | 可选自定义提示词，留空使用内置圆桌讨论者提示词 |
 
 ## 建议
 

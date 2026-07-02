@@ -98,13 +98,17 @@ id = "logic"
 name = "逻辑分析"
 description = "擅长结构化推理和反驳"
 model_id = "main"
+prompt = ""
 
 [[roundtable.members]]
 id = "creative"
 name = "创意视角"
 description = "擅长发散思考和补充方案"
 model_id = "fast"
+prompt = "你是一个擅长发散思考的圆桌讨论者。请优先补充不同视角和替代方案。"
 ```
+
+`prompt` 是可选字段，留空时使用内置圆桌讨论者提示词。
 
 ## 自定义智能体
 
