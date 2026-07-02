@@ -72,6 +72,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 				"status":       "queued",
 				"message":      "message queued",
 				"queue_kind":   queued.Kind,
+				"queue":        existing.QueueSnapshot(),
 				"queued_count": existing.QueuedCount(),
 			})
 			return
@@ -163,6 +164,7 @@ func (rt *Runtime) StreamSteerHandler() gin.HandlerFunc {
 			"status":       "queued",
 			"message":      "steering queued",
 			"queue_kind":   queued.Kind,
+			"queue":        stream.QueueSnapshot(),
 			"queued_count": stream.QueuedCount(),
 		})
 	}

@@ -7,7 +7,6 @@ import { cn } from "@/lib/cn";
 import { pushAppPath } from "@/lib/navigation";
 import { MessageList } from "./MessageList";
 import { chatMessageElementID } from "./dom";
-import { QueuePanel } from "./QueuePanel";
 import { ChatInput } from "./ChatInput";
 
 export function ChatPage() {
@@ -90,7 +89,6 @@ export function ChatPage() {
     <div className="relative flex h-full flex-col">
       <MessageList />
       <QuestionNavigator />
-      <QueuePanel />
       <ChatInput />
     </div>
   );

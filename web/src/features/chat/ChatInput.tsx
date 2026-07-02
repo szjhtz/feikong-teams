@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { chatPath, pushAppPath } from "@/lib/navigation";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 import { ChatComposer } from "./ChatComposer";
+import { QueuePanel } from "./QueuePanel";
 import type { ChatAttachmentDraft } from "@/types/chat";
 import type { ContentPartDTO } from "@/types/events";
 import type { FileEntry } from "@/types/files";
@@ -31,6 +32,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   const fileSuggestionCache = useRef(new Map<string, FileEntry[]>());
   const attachmentsRef = useRef<ChatAttachmentDraft[]>([]);
   const dockRef = useRef<HTMLDivElement | null>(null);
+  const streamSubscriptionRef = useRef("");
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -84,7 +86,9 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
     }
     try {
       if (queueing && targetSessionID) {
-        await sendSteering(targetSessionID, message, contents);
+        const result = await sendSteering(targetSessionID, message, contents);
+        if (Array.isArray(result.queue)) dispatch(chatActions.setQueue(result.queue));
+        ensureStreamSubscription(targetSessionID);
         return;
       }
       const result = await startStream({
@@ -109,11 +113,19 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
       pushAppPath(chatPath(result.session_id));
       dispatch(loadSessions());
       resetOffset(result.session_id);
-      void subscribe(result.session_id, 0);
+      ensureStreamSubscription(result.session_id, 0);
     } catch (error) {
       dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
       if (!queueing) dispatch(chatActions.setProcessing(false));
     }
+  }
+
+  function ensureStreamSubscription(id: string, initialOffset?: number) {
+    if (streamSubscriptionRef.current === id) return;
+    streamSubscriptionRef.current = id;
+    void subscribe(id, initialOffset).finally(() => {
+      if (streamSubscriptionRef.current === id) streamSubscriptionRef.current = "";
+    });
   }
 
   async function subscribe(id: string, initialOffset?: number) {
@@ -278,26 +290,29 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
         className,
       )}
     >
-      <ChatComposer
-        className="mx-auto max-w-4xl shadow-[0_12px_32px_hsl(218_30%_25%/0.12)]"
-        value={value}
-        mode={mode}
-        processing={isProcessing}
-        agents={agents}
-        selectedAgent={currentAgent}
-        fileSuggestions={fileSuggestions}
-        attachments={attachments}
-        referenceLoading={referenceLoading}
-        variant="dock"
-        onValueChange={setValue}
-        onModeChange={changeMode}
-        onReferenceQuery={queryReferences}
-        onFilesAdded={(files) => void addAttachments(files)}
-        onRemoveAttachment={removeAttachment}
-        onAgentChange={changeAgent}
-        onSubmit={() => void submit()}
-        onStop={() => void stop()}
-      />
+      <div className="mx-auto max-w-4xl">
+        <QueuePanel />
+        <ChatComposer
+          className="relative z-10 shadow-[0_12px_32px_hsl(218_30%_25%/0.12)]"
+          value={value}
+          mode={mode}
+          processing={isProcessing}
+          agents={agents}
+          selectedAgent={currentAgent}
+          fileSuggestions={fileSuggestions}
+          attachments={attachments}
+          referenceLoading={referenceLoading}
+          variant="dock"
+          onValueChange={setValue}
+          onModeChange={changeMode}
+          onReferenceQuery={queryReferences}
+          onFilesAdded={(files) => void addAttachments(files)}
+          onRemoveAttachment={removeAttachment}
+          onAgentChange={changeAgent}
+          onSubmit={() => void submit()}
+          onStop={() => void stop()}
+        />
+      </div>
     </div>
   );
 }

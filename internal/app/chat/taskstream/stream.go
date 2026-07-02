@@ -69,7 +69,7 @@ const (
 )
 
 type QueuedMessage struct {
-	ID          string                      `json:"id"`
+	ID          string                      `json:"queue_id"`
 	Kind        QueueKind                   `json:"kind"`
 	Text        string                      `json:"text,omitempty"`
 	Parts       []domainmessage.ContentPart `json:"parts,omitempty"`

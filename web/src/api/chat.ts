@@ -1,5 +1,5 @@
 import { post } from "./client";
-import type { ContentPartDTO } from "@/types/events";
+import type { ContentPartDTO, QueueItem } from "@/types/events";
 
 export interface StartStreamRequest {
   session_id?: string;
@@ -14,6 +14,7 @@ export interface StartStreamResponse {
   run_id?: string;
   status?: "processing" | "queued" | string;
   queue_kind?: string;
+  queue?: QueueItem[];
   queued_count?: number;
 }
 
@@ -26,5 +27,5 @@ export function stopStream(sessionID: string) {
 }
 
 export function sendSteering(sessionID: string, message: string, contents?: ContentPartDTO[]) {
-  return post<{ session_id: string }>("/api/fkteams/stream/steer", { session_id: sessionID, message, contents });
+  return post<StartStreamResponse>("/api/fkteams/stream/steer", { session_id: sessionID, message, contents });
 }
