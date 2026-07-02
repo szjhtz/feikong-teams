@@ -60,6 +60,7 @@ func GetConfigHandler() gin.HandlerFunc {
 		if resp.Agents.SSHVisitor.Password != "" {
 			resp.Agents.SSHVisitor.Password = sensitivePassword
 		}
+		resp.Agents.Items = agents.ConfigItems(cfg)
 
 		// 脱敏 Channels
 		if resp.Channels.QQ.AppSecret != "" {

@@ -176,18 +176,16 @@ list_agents
 
 **可用智能体列表**：
 
-始终可用的内置智能体：
+内置智能体和用户新增智能体统一由 `[[agents.items]]` 管理：
 
+- `@coordinator` - 协调者，直接处理常规任务并按需调度成员
 - `@coder` - 软件工程师，代码实现、调试、重构和验证
+- `@researcher` - 网络研究员，擅长检索、抓取和交叉验证时效信息
+- `@analyst` - 数据分析师，擅长使用 Excel、Python 脚本和文档处理工具
+- `@remote` - 远程运维专家，擅长通过 SSH 连接远程服务器
+- `@generalist` - 通用执行助手，综合命令、文件、搜索等工具完成任务
 
-需在配置文件 `[agents]` 中启用的智能体：
-
-- `@researcher` - 网络研究员，擅长检索、抓取和交叉验证时效信息（`researcher = true`）
-- `@analyst` - 数据分析师，擅长使用 Excel、Python 脚本和文档处理工具（`analyst = true`）
-- `@remote` - 远程运维专家，擅长通过 SSH 连接远程服务器（`[agents.ssh_visitor] enabled = true`）
-- `@generalist` - 通用执行助手，综合命令、文件、搜索等工具完成任务（`assistant = true`）
-
-此外，通过 `[[custom.agents]]` 定义的自定义智能体也会自动注册，可通过 `@智能体名` 使用。
+配置页可以查看内置智能体完整提示词、工具和描述，并可新增全局智能体。
 
 **提示**：输入 `@` 符号后会自动显示可用的智能体列表供选择。
 

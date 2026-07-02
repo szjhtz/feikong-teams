@@ -29,6 +29,7 @@ import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
 import type {
   AppConfig,
+  AgentConfig,
   ChannelDiscordConfig,
   ChannelQQConfig,
   ChannelWeixinConfig,
@@ -312,33 +313,89 @@ function ServerTab({ draft, updateDraft }: EditorProps) {
 function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
   const agents = draft.agents || {};
   const ssh = agents.ssh_visitor || {};
+  const agentItems = agents.items || [];
   const roundtable = draft.roundtable || {};
+  const tools = useAppSelector((state) => state.config.tools);
+  const toolOptions = useMemo(() => customToolOptions(tools, draft.custom?.mcp_servers || []), [draft.custom?.mcp_servers, tools]);
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-      <Panel>
-        <PanelHeader>
-          <SectionTitle icon={Brain} title="内置智能体" description="控制内置成员是否参与团队能力。" />
-        </PanelHeader>
-        <PanelBody className="space-y-4">
-          <ToggleField label="Researcher" checked={Boolean(agents.researcher)} onChange={(value) => updateDraft((next) => setAgents(next, { researcher: value }))} />
-          <ToggleField label="Assistant" checked={Boolean(agents.assistant)} onChange={(value) => updateDraft((next) => setAgents(next, { assistant: value }))} />
-          <ToggleField label="Analyst" checked={Boolean(agents.analyst)} onChange={(value) => updateDraft((next) => setAgents(next, { analyst: value }))} />
-          <div className="border-t border-border/70 pt-4">
-            <ToggleField
-              label="SSH Visitor"
-              checked={Boolean(ssh.enabled)}
-              onChange={(value) => updateDraft((next) => setSSHVisitor(next, { enabled: value }))}
-            />
-            <div className="mt-4 grid gap-3">
-              <TextField label="主机" value={ssh.host} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { host: value }))} />
-              <TextField label="用户名" value={ssh.username} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { username: value }))} />
-              <TextField label="密码" type="password" value={ssh.password} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { password: value }))} />
-            </div>
-          </div>
-        </PanelBody>
-      </Panel>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
       <Panel>
         <PanelHeader className="flex items-center justify-between">
+          <SectionTitle icon={Brain} title="智能体目录" description="查看和配置全局可调用智能体，内置智能体支持开关和覆盖配置。" />
+          <Button
+            variant="outline"
+            onClick={() =>
+              updateDraft((next) => {
+                const items = next.agents?.items || [];
+                next.agents = {
+                  ...(next.agents || {}),
+                  items: [
+                    ...items,
+                    {
+                      id: uniqueAgentID(items, "agent"),
+                      name: "",
+                      description: "",
+                      prompt: "",
+                      model_id: modelIDs[0] || "",
+                      tools: [],
+                      enabled: true,
+                    },
+                  ],
+                };
+              })
+            }
+          >
+            <Plus className="h-4 w-4" />
+            添加智能体
+          </Button>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          {agentItems.map((agent, index) => (
+            <ConfigCard
+              key={`${agent.id || "agent"}-${index}`}
+              title={agent.name || agent.id || "未命名智能体"}
+              aside={agent.builtin ? "内置智能体" : agent.model_id || "自定义智能体"}
+              onRemove={
+                agent.builtin
+                  ? undefined
+                  : () =>
+                      updateDraft((next) => {
+                        next.agents = { ...(next.agents || {}), items: (next.agents?.items || []).filter((_, itemIndex) => itemIndex !== index) };
+                      })
+              }
+            >
+              <AgentCatalogEditor
+                agent={agent}
+                modelIDs={modelIDs}
+                toolOptions={toolOptions}
+                onChange={(value) =>
+                  updateDraft((next) => {
+                    const items = [...(next.agents?.items || [])];
+                    items[index] = value;
+                    next.agents = { ...(next.agents || {}), items };
+                  })
+                }
+              />
+            </ConfigCard>
+          ))}
+          {agentItems.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">暂无智能体配置，重新加载配置会从后端获取内置智能体默认信息。</div>
+          ) : null}
+        </PanelBody>
+      </Panel>
+      <div className="space-y-4">
+        <Panel>
+          <PanelHeader>
+            <SectionTitle icon={Server} title="SSH 远程访问" description="remote 智能体和 ssh 工具使用这组连接信息。" />
+          </PanelHeader>
+          <PanelBody className="space-y-4">
+            <TextField label="主机" value={ssh.host} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { host: value }))} />
+            <TextField label="用户名" value={ssh.username} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { username: value }))} />
+            <TextField label="密码" type="password" value={ssh.password} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { password: value }))} />
+          </PanelBody>
+        </Panel>
+        <Panel>
+          <PanelHeader className="flex items-center justify-between">
           <SectionTitle icon={ListPlus} title="圆桌讨论" description="配置 roundtable 模式成员和最大迭代次数。" />
           <Button
             variant="outline"
@@ -371,6 +428,7 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
           ))}
         </PanelBody>
       </Panel>
+      </div>
     </div>
   );
 }
@@ -457,7 +515,7 @@ function CustomTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
 
       <Panel>
         <PanelHeader className="flex items-center justify-between">
-          <SectionTitle icon={Brain} title="自定义智能体" description="配置可全局调用的智能体、提示词和工具；团队模式也可以调度这些成员。" />
+          <SectionTitle icon={Brain} title="自定义会议成员" description="配置 custom 会议模式下由协调者调度的成员。" />
           <Button
             variant="outline"
             onClick={() =>
@@ -650,6 +708,44 @@ function RoundtableMemberEditor({
         <Textarea className="min-h-28 text-sm" value={member.prompt || ""} onChange={(event) => update({ prompt: event.target.value })} />
       </Field>
     </ConfigCard>
+  );
+}
+
+function AgentCatalogEditor({
+  agent,
+  modelIDs,
+  toolOptions,
+  onChange,
+}: {
+  agent: AgentConfig;
+  modelIDs: string[];
+  toolOptions: ToolSelectOption[];
+  onChange: (value: AgentConfig) => void;
+}) {
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge>{agent.builtin ? "内置" : "自定义"}</Badge>
+        {agent.team_member ? <Badge>团队成员</Badge> : null}
+        <Badge>{agent.enabled ? "已启用" : "已关闭"}</Badge>
+      </div>
+      <ToggleField label="启用智能体" checked={Boolean(agent.enabled)} onChange={(value) => onChange({ ...agent, enabled: value })} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <TextField
+          label="ID"
+          value={agent.id}
+          onChange={(value) => onChange({ ...agent, id: value })}
+          disabled={Boolean(agent.builtin)}
+        />
+        <TextField label="名称" value={agent.name} onChange={(value) => onChange({ ...agent, name: value })} />
+        <ModelSelect label="模型 ID（可选）" value={agent.model_id} modelIDs={["", ...modelIDs]} onChange={(value) => onChange({ ...agent, model_id: value })} />
+      </div>
+      <TextField label="描述" value={agent.description} onChange={(value) => onChange({ ...agent, description: value })} />
+      <ToolSelectField tools={agent.tools || []} options={toolOptions} onChange={(tools) => onChange({ ...agent, tools })} />
+      <Field label="系统提示词">
+        <Textarea className="min-h-56 text-sm" value={agent.prompt || ""} onChange={(event) => onChange({ ...agent, prompt: event.target.value })} />
+      </Field>
+    </div>
   );
 }
 
@@ -1006,16 +1102,18 @@ function TextField({
   onChange,
   placeholder,
   type = "text",
+  disabled,
 }: {
   label: string;
   value?: string;
   onChange: (value: string) => void;
   placeholder?: string;
   type?: "text" | "password";
+  disabled?: boolean;
 }) {
   return (
     <Field label={label}>
-      <Input type={type} value={value || ""} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      <Input type={type} value={value || ""} placeholder={placeholder} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
     </Field>
   );
 }
@@ -1314,6 +1412,7 @@ function normalizeConfig(config: AppConfig): AppConfig {
   next.server.auth = next.server.auth || {};
   next.memory = next.memory || {};
   next.agents = next.agents || {};
+  next.agents.items = next.agents.items || [];
   next.agents.ssh_visitor = next.agents.ssh_visitor || {};
   next.channels = next.channels || {};
   next.channels.qq = next.channels.qq || {};
@@ -1351,7 +1450,7 @@ function uniqueMemberID(members: TeamMemberConfig[], base: string) {
   return uniqueID(base, used);
 }
 
-function uniqueAgentID(agents: CustomAgentConfig[], base: string) {
+function uniqueAgentID(agents: AgentConfig[], base: string) {
   const used = new Set(agents.map((agent) => agent.id));
   return uniqueID(base, used);
 }

@@ -13,6 +13,10 @@ type AgentInfoResponse struct {
 	Description string   `json:"description"`
 	Aliases     []string `json:"aliases,omitempty"`
 	Builtin     bool     `json:"builtin,omitempty"`
+	TeamMember  bool     `json:"team_member,omitempty"`
+	Prompt      string   `json:"prompt,omitempty"`
+	ModelID     string   `json:"model_id,omitempty"`
+	Tools       []string `json:"tools,omitempty"`
 }
 
 // GetAgentsHandler 获取所有可用智能体
@@ -36,6 +40,10 @@ func (rt *Runtime) GetAgentsHandler() gin.HandlerFunc {
 				Description: agent.Description,
 				Aliases:     agent.Aliases,
 				Builtin:     agent.Builtin,
+				TeamMember:  agent.TeamMember,
+				Prompt:      agent.Prompt,
+				ModelID:     agent.ModelID,
+				Tools:       agent.ToolNames,
 			})
 		}
 

@@ -80,20 +80,30 @@ type Server struct {
 
 // ==================== 智能体 ====================
 
-// SSHVisitor SSH 远程访问智能体配置
+// SSHVisitor SSH 远程访问能力配置。
 type SSHVisitor struct {
-	Enabled  bool   `toml:"enabled" json:"enabled"`
 	Host     string `toml:"host" json:"host"`
 	Username string `toml:"username" json:"username"`
 	Password string `toml:"password" json:"password"`
 }
 
-// Agents 内置智能体开关
+// AgentConfig 描述一个可全局调用的智能体配置。
+type AgentConfig struct {
+	ID          string   `toml:"id" json:"id"`
+	Name        string   `toml:"name" json:"name"`
+	Description string   `toml:"description" json:"description"`
+	Prompt      string   `toml:"prompt" json:"prompt"`
+	ModelID     string   `toml:"model_id,omitempty" json:"model_id,omitempty"`
+	Tools       []string `toml:"tools,omitempty" json:"tools"`
+	Enabled     bool     `toml:"enabled" json:"enabled"`
+	Builtin     bool     `toml:"-" json:"builtin,omitempty"`
+	TeamMember  bool     `toml:"-" json:"team_member,omitempty"`
+}
+
+// Agents 全局智能体目录配置。
 type Agents struct {
-	Researcher bool       `toml:"researcher" json:"researcher"`
-	Assistant  bool       `toml:"assistant" json:"assistant"`
-	Analyst    bool       `toml:"analyst" json:"analyst"`
-	SSHVisitor SSHVisitor `toml:"ssh_visitor" json:"ssh_visitor"`
+	Items      []AgentConfig `toml:"items" json:"items"`
+	SSHVisitor SSHVisitor    `toml:"ssh_visitor" json:"ssh_visitor"`
 }
 
 // ==================== 通道 ====================
@@ -204,15 +214,8 @@ type Roundtable struct {
 
 // ==================== 自定义模式 ====================
 
-// CustomAgent 自定义智能体配置
-type CustomAgent struct {
-	ID          string   `toml:"id" json:"id"`
-	Name        string   `toml:"name" json:"name"`
-	Description string   `toml:"description" json:"description"`
-	Prompt      string   `toml:"prompt" json:"prompt"`
-	ModelID     string   `toml:"model_id" json:"model_id"` // 引用 models 中的 id
-	Tools       []string `toml:"tools,omitempty" json:"tools"`
-}
+// CustomAgent 自定义会议模式智能体配置。
+type CustomAgent = AgentConfig
 
 // MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
 type MCPServer struct {
@@ -503,11 +506,57 @@ func GenerateExample() error {
 			APIKeys: []string{"sk-fkteams-your-api-key"},
 		},
 		Agents: Agents{
-			Researcher: true,
-			Assistant:  true,
-			Analyst:    false,
+			Items: []AgentConfig{
+				{
+					ID:          "coordinator",
+					Name:        "协调者",
+					Description: "核心工程智能体，直接完成常规工程任务，并按需指派专业成员。",
+					Prompt:      "",
+					Tools:       []string{"todo", "file", "command", "scheduler", "ask"},
+					Enabled:     true,
+				},
+				{
+					ID:          "coder",
+					Name:        "代码工程师",
+					Description: "软件工程师，负责代码实现、调试、重构和工程验证。",
+					Prompt:      "",
+					Tools:       []string{"file", "command"},
+					Enabled:     true,
+				},
+				{
+					ID:          "researcher",
+					Name:        "研究员",
+					Description: "网络研究员，负责检索、抓取、交叉验证和整理时效信息。",
+					Prompt:      "",
+					Tools:       []string{"search", "fetch"},
+					Enabled:     true,
+				},
+				{
+					ID:          "analyst",
+					Name:        "数据分析师",
+					Description: "数据分析师，负责使用表格、脚本和文档工具提取洞察。",
+					Prompt:      "",
+					Tools:       []string{"todo", "excel", "file", "uv", "doc"},
+					Enabled:     false,
+				},
+				{
+					ID:          "remote",
+					Name:        "远程运维",
+					Description: "远程运维专家，负责通过 SSH 管理服务器、执行命令和传输文件。",
+					Prompt:      "",
+					Tools:       []string{"ssh"},
+					Enabled:     false,
+				},
+				{
+					ID:          "generalist",
+					Name:        "通用助手",
+					Description: "通用执行助手，负责综合命令、文件、搜索和文档工具完成开放任务。",
+					Prompt:      "",
+					Tools:       []string{"command", "file", "search", "fetch", "ask", "doc"},
+					Enabled:     false,
+				},
+			},
 			SSHVisitor: SSHVisitor{
-				Enabled:  false,
 				Host:     "",
 				Username: "",
 				Password: "",

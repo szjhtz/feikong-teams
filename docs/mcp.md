@@ -44,7 +44,7 @@ transport = "stdio"
 ## 在自定义智能体中使用
 
 ```toml
-[[custom.agents]]
+[[agents.items]]
 id = "data"
 name = "数据处理专家"
 description = "专门处理数据相关任务"
@@ -55,12 +55,13 @@ tools = [
   "mcp-filesystem",
   "mcp-postgres",
 ]
+enabled = true
 ```
 
 MCP 工具命名规则：
 
 - 服务 `id = "filesystem"` 对应工具名 `mcp-filesystem`。
-- 自定义智能体 `tools` 中填写完整工具名。
+- 智能体 `tools` 中填写完整工具名。
 - `env` 只属于当前 `[[custom.mcp_servers]]`，不会和其他 MCP 服务混用。
 
 ## 常用 stdio 示例

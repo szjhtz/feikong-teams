@@ -5,14 +5,15 @@ import (
 	"fkteams/internal/app/agent/catalog/analyst"
 	assistantagent "fkteams/internal/app/agent/catalog/assistant"
 	"fkteams/internal/app/agent/catalog/coder"
+	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/agent/catalog/coordinator"
 	"fkteams/internal/app/agent/catalog/custom"
 	"fkteams/internal/app/agent/catalog/researcher"
 	"fkteams/internal/app/agent/catalog/visitor"
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
+	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
-	"log"
 	"sync"
 )
 
@@ -24,6 +25,10 @@ type AgentInfo struct {
 	Aliases     []string
 	Builtin     bool
 	TeamMember  bool
+	Enabled     bool
+	Prompt      string
+	ModelID     string
+	ToolNames   []string
 	Creator     func(ctx context.Context) (runtimeport.Agent, error)
 }
 
@@ -191,108 +196,286 @@ func Reload(ctx context.Context) error {
 	return nil
 }
 
-func buildRegistry() []AgentInfo {
+// NewBuiltinAgent 按当前配置创建内置智能体，并允许注入额外工具。
+func NewBuiltinAgent(ctx context.Context, id string, extraTools ...runtimeport.Tool) (runtimeport.Agent, error) {
 	cfg := config.Get()
-
-	type agentCreator struct {
-		name        string
-		displayName string
-		description string
-		aliases     []string
-		teamMember  bool
-		creator     func(ctx context.Context) (runtimeport.Agent, error)
-	}
-
-	creators := []agentCreator{
-		{name: "coordinator", displayName: "协调者", description: "核心工程智能体，直接完成常规工程任务，并按需指派专业成员。", aliases: []string{"小队长"}, creator: func(ctx context.Context) (runtimeport.Agent, error) {
-			return coordinator.NewAgent(ctx)
-		}},
-		{name: "coder", displayName: "代码工程师", description: "软件工程师，负责代码实现、调试、重构和工程验证。", aliases: []string{"小码"}, teamMember: true, creator: coder.NewAgent},
-	}
-
-	if cfg.Agents.Researcher {
-		creators = append(creators, agentCreator{name: "researcher", displayName: "研究员", description: "网络研究员，负责检索、抓取、交叉验证和整理时效信息。", aliases: []string{"小搜"}, teamMember: true, creator: researcher.NewAgent})
-	}
-	if cfg.Agents.Analyst {
-		creators = append(creators, agentCreator{name: "analyst", displayName: "数据分析师", description: "数据分析师，负责使用表格、脚本和文档工具提取洞察。", aliases: []string{"小析"}, teamMember: true, creator: analyst.NewAgent})
-	}
-	if cfg.Agents.SSHVisitor.Enabled {
-		creators = append(creators, agentCreator{name: "remote", displayName: "远程运维", description: "远程运维专家，负责通过 SSH 管理服务器、执行命令和传输文件。", aliases: []string{"小访", "visitor"}, teamMember: true, creator: visitor.NewAgent})
-	}
-	if cfg.Agents.Assistant {
-		creators = append(creators, agentCreator{name: "generalist", displayName: "通用助手", description: "通用执行助手，负责综合命令、文件、搜索和文档工具完成开放任务。", aliases: []string{"小助", "assistant"}, teamMember: true, creator: assistantagent.NewAgent})
-	}
-
-	entries := make([]AgentInfo, 0, len(creators)+len(cfg.Custom.Agents))
-	for _, c := range creators {
-		entries = append(entries, AgentInfo{
-			Name:        c.name,
-			DisplayName: c.displayName,
-			Description: c.description,
-			Aliases:     append([]string(nil), c.aliases...),
-			Builtin:     true,
-			TeamMember:  c.teamMember,
-			Creator:     c.creator,
-		})
-	}
-	return appendCustomAgents(entries, cfg)
-}
-
-func appendCustomAgents(entries []AgentInfo, cfg *config.Config) []AgentInfo {
-	if len(cfg.Custom.Agents) == 0 {
-		return entries
-	}
-
-	existingNames := make(map[string]bool, len(entries))
-	for _, info := range entries {
-		existingNames[info.Name] = true
-	}
-
-	for _, agentCfg := range cfg.Custom.Agents {
-		agentID := agentCfg.ID
-		if agentID == "" {
-			agentID = agentCfg.Name
-		}
-		if agentID == "" || agentCfg.Name == "" {
+	for _, item := range ConfigItems(cfg) {
+		if item.ID != id {
 			continue
 		}
-		if existingNames[agentID] {
-			log.Printf("[agent] 自定义智能体 %q 与已有智能体 ID 重复，不建议使用相同 ID", agentID)
+		if !item.Enabled {
+			return nil, fmt.Errorf("agent %s is disabled", id)
 		}
+		for _, spec := range builtinAgentSpecs() {
+			if spec.id != id {
+				continue
+			}
+			def := spec.definition(cfg)
+			applyAgentConfig(&def, item)
+			def.Tools = append(def.Tools, extraTools...)
+			return buildConfiguredDefinition(ctx, cfg, def, item)
+		}
+		return nil, fmt.Errorf("agent %s is not builtin", id)
+	}
+	return nil, fmt.Errorf("agent %s not found", id)
+}
 
-		agentCfg := agentCfg
-		capturedAgentID := agentID
-		entries = append(entries, AgentInfo{
-			Name:        capturedAgentID,
-			DisplayName: agentCfg.Name,
-			Description: agentCfg.Description,
-			TeamMember:  true,
-			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
-				mc := config.Get().ResolveModel(agentCfg.ModelID)
-				var model custom.Model
-				if mc != nil {
-					model = custom.Model{
-						Provider: mc.Provider,
-						Name:     mc.Model,
-						APIKey:   mc.APIKey,
-						BaseURL:  mc.BaseURL,
-					}
-				}
-				return custom.NewAgent(ctx, custom.Config{
-					Name:        capturedAgentID,
-					Description: agentCfg.Description,
-					Prompt:      agentCfg.Prompt,
-					Model:       model,
-					ToolNames:   agentCfg.Tools,
-				})
-			},
-		})
-		existingNames[agentID] = true
+func buildRegistry() []AgentInfo {
+	cfg := config.Get()
+	configs := ConfigItems(cfg)
+	entries := make([]AgentInfo, 0, len(configs))
+	for _, agentCfg := range configs {
+		if !agentCfg.Enabled {
+			continue
+		}
+		info := agentInfoFromConfig(cfg, agentCfg)
+		if info.Name == "" || info.Creator == nil {
+			continue
+		}
+		entries = append(entries, info)
 	}
 	return entries
 }
 
+type builtinAgentSpec struct {
+	id               string
+	displayName      string
+	aliases          []string
+	teamMember       bool
+	enabledByDefault bool
+	definition       func(*config.Config) common.Definition
+}
+
+func builtinAgentSpecs() []builtinAgentSpec {
+	return []builtinAgentSpec{
+		{
+			id:               "coordinator",
+			displayName:      "协调者",
+			aliases:          []string{"小队长"},
+			enabledByDefault: true,
+			definition: func(*config.Config) common.Definition {
+				return coordinator.DefaultDefinition()
+			},
+		},
+		{
+			id:               "coder",
+			displayName:      "代码工程师",
+			aliases:          []string{"小码"},
+			teamMember:       true,
+			enabledByDefault: true,
+			definition: func(*config.Config) common.Definition {
+				return coder.DefaultDefinition()
+			},
+		},
+		{
+			id:               "researcher",
+			displayName:      "研究员",
+			aliases:          []string{"小搜"},
+			teamMember:       true,
+			enabledByDefault: true,
+			definition: func(*config.Config) common.Definition {
+				return researcher.DefaultDefinition()
+			},
+		},
+		{
+			id:          "analyst",
+			displayName: "数据分析师",
+			aliases:     []string{"小析"},
+			teamMember:  true,
+			definition: func(*config.Config) common.Definition {
+				return analyst.DefaultDefinition()
+			},
+		},
+		{
+			id:          "remote",
+			displayName: "远程运维",
+			aliases:     []string{"小访", "visitor"},
+			teamMember:  true,
+			definition: func(cfg *config.Config) common.Definition {
+				return visitor.DefaultDefinition(cfg.Agents.SSHVisitor.Host, cfg.Agents.SSHVisitor.Username)
+			},
+		},
+		{
+			id:          "generalist",
+			displayName: "通用助手",
+			aliases:     []string{"小助", "assistant"},
+			teamMember:  true,
+			definition: func(*config.Config) common.Definition {
+				return assistantagent.DefaultDefinition()
+			},
+		},
+	}
+}
+
+func ConfigItems(cfg *config.Config) []config.AgentConfig {
+	if cfg == nil {
+		cfg = config.Get()
+	}
+	overrides := make(map[string]config.AgentConfig, len(cfg.Agents.Items))
+	for _, item := range cfg.Agents.Items {
+		if item.ID == "" {
+			continue
+		}
+		overrides[item.ID] = item
+	}
+
+	result := make([]config.AgentConfig, 0, len(builtinAgentSpecs())+len(cfg.Agents.Items))
+	seen := make(map[string]bool, len(cfg.Agents.Items))
+	for _, spec := range builtinAgentSpecs() {
+		def := spec.definition(cfg)
+		item := config.AgentConfig{
+			ID:          spec.id,
+			Name:        spec.displayName,
+			Description: def.Description,
+			Prompt:      def.Instruction,
+			Tools:       append([]string(nil), def.ToolNames...),
+			Enabled:     spec.enabledByDefault,
+			Builtin:     true,
+			TeamMember:  spec.teamMember,
+		}
+		if override, ok := overrides[spec.id]; ok {
+			item = mergeAgentConfig(item, override)
+		}
+		result = append(result, item)
+		seen[spec.id] = true
+	}
+	for _, item := range cfg.Agents.Items {
+		if item.ID == "" || seen[item.ID] {
+			continue
+		}
+		item.Builtin = false
+		item.TeamMember = true
+		result = append(result, item)
+		seen[item.ID] = true
+	}
+	return result
+}
+
+func mergeAgentConfig(base, override config.AgentConfig) config.AgentConfig {
+	base.ID = override.ID
+	base.Enabled = override.Enabled
+	if override.Name != "" {
+		base.Name = override.Name
+	}
+	if override.Description != "" {
+		base.Description = override.Description
+	}
+	if override.Prompt != "" {
+		base.Prompt = override.Prompt
+	}
+	if override.ModelID != "" {
+		base.ModelID = override.ModelID
+	}
+	if override.Tools != nil {
+		base.Tools = append([]string(nil), override.Tools...)
+	}
+	return base
+}
+
+func agentInfoFromConfig(cfg *config.Config, agentCfg config.AgentConfig) AgentInfo {
+	for _, spec := range builtinAgentSpecs() {
+		if spec.id != agentCfg.ID {
+			continue
+		}
+		def := spec.definition(cfg)
+		applyAgentConfig(&def, agentCfg)
+		return AgentInfo{
+			Name:        agentCfg.ID,
+			DisplayName: agentCfg.Name,
+			Description: agentCfg.Description,
+			Aliases:     append([]string(nil), spec.aliases...),
+			Builtin:     true,
+			TeamMember:  spec.teamMember,
+			Enabled:     agentCfg.Enabled,
+			Prompt:      def.Instruction,
+			ModelID:     agentCfg.ModelID,
+			ToolNames:   append([]string(nil), def.ToolNames...),
+			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
+				return buildConfiguredDefinition(ctx, cfg, def, agentCfg)
+			},
+		}
+	}
+	return customAgentInfo(cfg, agentCfg)
+}
+
+func applyAgentConfig(def *common.Definition, cfg config.AgentConfig) {
+	def.Name = cfg.ID
+	if cfg.Description != "" {
+		def.Description = cfg.Description
+	}
+	if cfg.Prompt != "" {
+		def.Instruction = cfg.Prompt
+	}
+	if cfg.Tools != nil {
+		def.ToolNames = append([]string(nil), cfg.Tools...)
+	}
+}
+
+func buildConfiguredDefinition(ctx context.Context, cfg *config.Config, def common.Definition, agentCfg config.AgentConfig) (runtimeport.Agent, error) {
+	if agentCfg.ModelID != "" {
+		modelCfg := cfg.ResolveModel(agentCfg.ModelID)
+		if modelCfg == nil {
+			return nil, fmt.Errorf("model_id %q not found for agent %s", agentCfg.ModelID, agentCfg.ID)
+		}
+		chatModel, err := common.NewChatModelWithConfig(ctx, &modelregistry.Config{
+			Provider: modelregistry.Type(modelCfg.Provider),
+			APIKey:   modelCfg.APIKey,
+			BaseURL:  modelCfg.BaseURL,
+			Model:    modelCfg.Model,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create chat model: %w", err)
+		}
+		def.Model = chatModel
+	}
+	return common.BuildAgent(ctx, def)
+}
+
+func customAgentInfo(cfg *config.Config, agentCfg config.AgentConfig) AgentInfo {
+	agentID := agentCfg.ID
+	if agentID == "" {
+		agentID = agentCfg.Name
+	}
+	if agentID == "" || agentCfg.Name == "" {
+		return AgentInfo{}
+	}
+	agentCfg.ID = agentID
+	return AgentInfo{
+		Name:        agentID,
+		DisplayName: agentCfg.Name,
+		Description: agentCfg.Description,
+		TeamMember:  true,
+		Enabled:     agentCfg.Enabled,
+		Prompt:      agentCfg.Prompt,
+		ModelID:     agentCfg.ModelID,
+		ToolNames:   append([]string(nil), agentCfg.Tools...),
+		Creator: func(ctx context.Context) (runtimeport.Agent, error) {
+			return custom.NewAgent(ctx, custom.Config{
+				Name:        agentID,
+				Description: agentCfg.Description,
+				Prompt:      agentCfg.Prompt,
+				Model:       resolveCustomModel(cfg, agentCfg),
+				ToolNames:   agentCfg.Tools,
+			})
+		},
+	}
+}
+
+func resolveCustomModel(cfg *config.Config, agent config.AgentConfig) custom.Model {
+	mc := cfg.ResolveModel(agent.ModelID)
+	if mc == nil {
+		return custom.Model{}
+	}
+	return custom.Model{
+		Provider: mc.Provider,
+		Name:     mc.Model,
+		APIKey:   mc.APIKey,
+		BaseURL:  mc.BaseURL,
+	}
+}
+
 func cloneAgentInfo(info AgentInfo) *AgentInfo {
 	info.Aliases = append([]string(nil), info.Aliases...)
+	info.ToolNames = append([]string(nil), info.ToolNames...)
 	return &info
 }

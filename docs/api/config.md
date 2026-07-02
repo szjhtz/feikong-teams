@@ -7,6 +7,7 @@
 - `models[].api_key` 永远返回空字符串，并用 `models[].has_api_key` 标识是否已配置。
 - `server.auth.password`、`server.auth.secret`、`agents.ssh_visitor.password`、`channels.qq.app_secret` 返回 `"***"`。
 - `channels.discord.token` 只保留末 4 位。
+- `agents.items` 返回合并后的全局智能体目录，包含内置智能体的名称、描述、工具和提示词。
 
 **成功响应**：
 

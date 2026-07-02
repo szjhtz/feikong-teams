@@ -1,10 +1,10 @@
 # 自定义智能体使用指南
 
-自定义智能体在 `~/.fkteams/config/config.toml` 的 `[[custom.agents]]` 中定义。保存配置后会注册到全局智能体目录，可用于：
+自定义智能体在 `~/.fkteams/config/config.toml` 的 `[[agents.items]]` 中定义。保存配置后会注册到全局智能体目录，可用于：
 
 - 在聊天中通过 `@智能体ID` 指定单个智能体。
 - 通过 `fkteams agent -n <智能体ID>` 单独运行。
-- 在 `custom` 模式中由协调者调度多个自定义智能体协作。
+- 在团队模式中由协调者按需调度。
 
 ## 配置示例
 
@@ -18,15 +18,7 @@ base_url = "https://api.openai.com/v1"
 api_key = "your_api_key"
 model = "gpt-5"
 
-[custom.moderator]
-id = "moderator"
-name = "协调者"
-description = "负责协调团队成员完成任务"
-prompt = "你是一个经验丰富的协调者，负责根据任务需求合理分配给团队成员。"
-model_id = "main"
-tools = []
-
-[[custom.agents]]
+[[agents.items]]
 id = "frontend"
 name = "前端开发专家"
 description = "专注于前端开发的智能体"
@@ -35,6 +27,7 @@ prompt = """你是一个专业的前端开发工程师。
 你擅长 React、TypeScript、CSS 和前端工程化。
 """
 tools = ["command", "file", "search"]
+enabled = true
 ```
 
 ## 字段说明
@@ -47,8 +40,11 @@ tools = ["command", "file", "search"]
 | `prompt` | 系统提示词 |
 | `model_id` | 引用 `[[models]].id` |
 | `tools` | 工具列表，可包含内置工具和 `mcp-<server_id>` |
+| `enabled` | 是否启用该智能体 |
 
 `id` 是引用标识，应保持稳定；`name` 只是展示名称，可以按需要调整。
+
+`custom.moderator` 和 `custom.agents` 只用于 `custom` 会议模式，不再作为全局智能体目录入口。
 
 ## 运行方式
 

@@ -6,8 +6,8 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 )
 
-func NewAgent(ctx context.Context, agentTools ...runtimeport.Tool) (runtimeport.Agent, error) {
-	return common.BuildAgent(ctx, common.Definition{
+func DefaultDefinition(agentTools ...runtimeport.Tool) common.Definition {
+	return common.Definition{
 		Name:        "coordinator",
 		Description: "核心工程智能体，直接完成常规工程任务，并按需指派专业成员。",
 		Instruction: coordinatorPrompt,
@@ -17,5 +17,9 @@ func NewAgent(ctx context.Context, agentTools ...runtimeport.Tool) (runtimeport.
 		},
 		ToolNames: []string{"todo", "file", "command", "scheduler", "ask"},
 		Tools:     agentTools,
-	})
+	}
+}
+
+func NewAgent(ctx context.Context, agentTools ...runtimeport.Tool) (runtimeport.Agent, error) {
+	return common.BuildAgent(ctx, DefaultDefinition(agentTools...))
 }

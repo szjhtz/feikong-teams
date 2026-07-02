@@ -17,6 +17,10 @@ export interface AgentInfo {
   role?: string;
   aliases?: string[];
   builtin?: boolean;
+  team_member?: boolean;
+  prompt?: string;
+  model_id?: string;
+  tools?: string[];
 }
 
 export interface ProviderInfo {

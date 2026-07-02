@@ -31,16 +31,25 @@ export interface ServerConfig {
 }
 
 export interface SSHVisitorConfig {
-  enabled?: boolean;
   host?: string;
   username?: string;
   password?: string;
 }
 
+export interface AgentConfig {
+  id?: string;
+  name?: string;
+  description?: string;
+  prompt?: string;
+  model_id?: string;
+  tools?: string[];
+  enabled?: boolean;
+  builtin?: boolean;
+  team_member?: boolean;
+}
+
 export interface AgentsConfig {
-  researcher?: boolean;
-  assistant?: boolean;
-  analyst?: boolean;
+  items?: AgentConfig[];
   ssh_visitor?: SSHVisitorConfig;
 }
 
@@ -90,14 +99,7 @@ export interface RoundtableConfig {
   max_iterations?: number;
 }
 
-export interface CustomAgentConfig {
-  id?: string;
-  name?: string;
-  description?: string;
-  prompt?: string;
-  model_id?: string;
-  tools?: string[];
-}
+export type CustomAgentConfig = AgentConfig;
 
 export interface MCPServerConfig {
   id?: string;

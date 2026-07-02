@@ -4,7 +4,6 @@ package agent
 import (
 	"context"
 	"fkteams/internal/app/agent/catalog"
-	"fkteams/internal/app/agent/catalog/coordinator"
 	"fkteams/internal/app/agent/catalog/custom"
 	"fkteams/internal/app/agent/catalog/deep"
 	"fkteams/internal/app/agent/catalog/discussant"
@@ -128,7 +127,7 @@ func CreateTeamRunner(ctx context.Context) (runtimeport.Runner, error) {
 		return nil, fmt.Errorf("创建成员工具失败: %w", err)
 	}
 
-	coordinatorAgent, err := coordinator.NewAgent(ctx, agentTools...)
+	coordinatorAgent, err := agents.NewBuiltinAgent(ctx, "coordinator", agentTools...)
 	if err != nil {
 		return nil, fmt.Errorf("创建 coordinator 智能体失败: %w", err)
 	}

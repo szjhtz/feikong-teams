@@ -136,19 +136,16 @@ fkteams -r "20260302_091249" -q "继续上次的分析"  # 恢复后直接查询
 
 ## 四、单智能体模式（`agent` 子命令）
 
-### 内置智能体（始终可用）
-
-| 名称 | 角色 |
-|------|------|
-| `coder` | 软件工程师，代码实现、调试、重构 |
-### 可选智能体（需在配置中启用）
+### 智能体目录
 
 | 名称 | 配置项 | 角色 |
 |------|--------|------|
-| `researcher` | `[agents] researcher = true` | DuckDuckGo 网络搜索 |
-| `analyst` | `[agents] analyst = true` | 数据分析（Excel、Python、文档） |
-| `remote` | `[agents.ssh_visitor] enabled = true` | SSH 远程服务器访问 |
-| `generalist` | `[agents] assistant = true` | 通用执行助手，支持多工具任务 |
+| `coordinator` | `[[agents.items]] id = "coordinator"` | 协调者 |
+| `coder` | `[[agents.items]] id = "coder"` | 软件工程师，代码实现、调试、重构 |
+| `researcher` | `[[agents.items]] id = "researcher"` | DuckDuckGo 网络搜索 |
+| `analyst` | `[[agents.items]] id = "analyst"` | 数据分析（Excel、Python、文档） |
+| `remote` | `[[agents.items]] id = "remote"` + `[agents.ssh_visitor]` | SSH 远程服务器访问 |
+| `generalist` | `[[agents.items]] id = "generalist"` | 通用执行助手，支持多工具任务 |
 
 ### agent 命令用法
 
@@ -316,14 +313,15 @@ base_url = "https://api.openai.com/v1"
 api_key  = "sk-..."
 model    = "gpt-4o"
 
-# 智能体开关
-[agents]
-researcher = true
-assistant = true
-analyst   = false
+# 智能体目录
+[[agents.items]]
+id = "researcher"
+name = "研究员"
+description = "网络研究员"
+tools = ["search", "fetch"]
+enabled = true
 
 [agents.ssh_visitor]
-enabled  = false
 host     = "ip:port"
 username = "user"
 password = "pass"
