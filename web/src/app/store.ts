@@ -97,8 +97,8 @@ const chatSlice = createSlice({
         const eventExists = state.messages.some((item) => item.role === "user" && item.events.some((messageEvent) => sameEventIdentity(messageEvent, event)));
         if (eventExists) return;
         const mergeTarget = content
-          ? findMergeableUserMessage(state.messages, content)
-          : findMergeableUserAttachmentMessage(state.messages, contentParts);
+          ? findMergeableLocalUserMessage(state.messages, content)
+          : findMergeableLocalUserAttachmentMessage(state.messages, contentParts);
         if (mergeTarget) {
           mergeTarget.createdAt = mergeTarget.createdAt || event.created_at;
           mergeTarget.contentParts = mergeTarget.contentParts?.length ? mergeTarget.contentParts : contentParts;
@@ -207,24 +207,30 @@ function friendlyEventMessage(event: ChatEvent) {
   return String(event.display_error || event.error_title || event.error || event.content || event.message || "请求失败");
 }
 
-function findMergeableUserMessage(messages: ChatViewMessage[], content: string) {
+function findMergeableLocalUserMessage(messages: ChatViewMessage[], content: string) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== "user") return undefined;
+    if (!hasLocalUserEvent(message)) return undefined;
     if (message.content === content) return message;
   }
   return undefined;
 }
 
-function findMergeableUserAttachmentMessage(messages: ChatViewMessage[], contentParts: ContentPartDTO[]) {
+function findMergeableLocalUserAttachmentMessage(messages: ChatViewMessage[], contentParts: ContentPartDTO[]) {
   if (!contentParts.length) return undefined;
   const signature = contentPartsSignature(contentParts);
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== "user") return undefined;
+    if (!hasLocalUserEvent(message)) return undefined;
     if (contentPartsSignature(message.contentParts || []) === signature) return message;
   }
   return undefined;
+}
+
+function hasLocalUserEvent(message: ChatViewMessage) {
+  return (message.events || []).some((event) => event.type === "user_message" && event.event_id?.startsWith("local:"));
 }
 
 function contentPartsSignature(parts: ContentPartDTO[]) {

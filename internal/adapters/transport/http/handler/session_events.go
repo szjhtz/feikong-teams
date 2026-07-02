@@ -36,6 +36,7 @@ func (rt *Runtime) transcriptRecordsToChatEvents(sessionID string, transcript []
 			if item.Summary != "" {
 				payload["summary"] = item.Summary
 			}
+			attachTranscriptErrorPayload(payload, item)
 			if item.Truncated {
 				payload["truncated"] = true
 				payload["original_chars"] = item.OriginalChars
@@ -47,6 +48,28 @@ func (rt *Runtime) transcriptRecordsToChatEvents(sessionID string, transcript []
 		}
 	}
 	return result
+}
+
+func attachTranscriptErrorPayload(payload map[string]any, item eventlog.TranscriptEvent) {
+	if item.Type != eventlog.TranscriptError || item.Error == nil {
+		return
+	}
+	if item.Error.Code != "" {
+		payload["error_code"] = item.Error.Code
+	}
+	if item.Error.Title != "" {
+		payload["error_title"] = item.Error.Title
+	}
+	if item.Error.Message != "" {
+		payload["display_error"] = item.Error.Message
+		payload["message"] = item.Error.Message
+	}
+	if item.Error.TechnicalDetail != "" {
+		payload["technical_error"] = item.Error.TechnicalDetail
+	}
+	if len(item.Error.Suggestions) > 0 {
+		payload["error_suggestions"] = append([]string(nil), item.Error.Suggestions...)
+	}
 }
 
 func attachTranscriptMember(event *events.Event, metadata *eventlog.SubagentMetadata) {
@@ -146,6 +169,7 @@ func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string
 		base.Type = events.EventError
 		base.Content = item.Content
 		if item.Error != nil {
+			base.Content = firstNonEmpty(item.Error.Message, item.Content)
 			base.Error = item.Error.Message
 		}
 		return []events.Event{base}
@@ -156,6 +180,15 @@ func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string
 	default:
 		return nil
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func attachTranscriptToolCall(event *events.Event, item eventlog.TranscriptEvent) {

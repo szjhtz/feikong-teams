@@ -294,6 +294,57 @@ func TestTranscriptToChatEventsUsesAppendOrder(t *testing.T) {
 	}
 }
 
+func TestTranscriptToChatEventsKeepsFriendlyErrorPayload(t *testing.T) {
+	rt := newTestRuntime(t)
+	transcript := []eventlog.TranscriptEvent{
+		{
+			ID:      "msg-1",
+			At:      time.Now(),
+			Type:    eventlog.TranscriptUserMessage,
+			Content: "你好",
+		},
+		{
+			ID:      "err-1",
+			At:      time.Now(),
+			Type:    eventlog.TranscriptError,
+			Agent:   "coordinator",
+			Content: "当前模型不支持图片输入",
+			Error: &eventlog.FriendlyError{
+				Code:            "model_unsupported_image_input",
+				Title:           "当前模型不支持图片输入",
+				Message:         "这次消息里包含图片，但当前模型不支持图片输入。",
+				Suggestions:     []string{"切换到支持视觉输入的模型后重试。"},
+				TechnicalDetail: "deepseek does not support image_url type",
+			},
+		},
+		{
+			ID:      "msg-2",
+			At:      time.Now(),
+			Type:    eventlog.TranscriptUserMessage,
+			Content: "继续",
+		},
+	}
+
+	got := rt.transcriptToChatEvents("session-1", transcript)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 events, got %#v", got)
+	}
+	errorEvent := got[1]
+	if fmt.Sprint(errorEvent["type"]) != string(runtimeevents.EventError) {
+		t.Fatalf("error event type = %#v, want %q", errorEvent["type"], runtimeevents.EventError)
+	}
+	requireMapValue(t, errorEvent, "error_code", "model_unsupported_image_input")
+	requireMapValue(t, errorEvent, "error_title", "当前模型不支持图片输入")
+	requireMapValue(t, errorEvent, "display_error", "这次消息里包含图片，但当前模型不支持图片输入。")
+	requireMapValue(t, errorEvent, "technical_error", "deepseek does not support image_url type")
+	if suggestions, ok := errorEvent["error_suggestions"].([]string); !ok || len(suggestions) != 1 {
+		t.Fatalf("error_suggestions = %#v, want one suggestion", errorEvent["error_suggestions"])
+	}
+	if errorEvent["sequence"] != int64(2) {
+		t.Fatalf("error sequence = %#v, want 2", errorEvent["sequence"])
+	}
+}
+
 func TestTranscriptToChatEventsProjectsCancellationInAppendOrder(t *testing.T) {
 	rt := newTestRuntime(t)
 	transcript := []eventlog.TranscriptEvent{

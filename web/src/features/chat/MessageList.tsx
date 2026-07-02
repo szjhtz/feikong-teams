@@ -46,6 +46,15 @@ interface AskToolAnchor {
 
 type AskAnsweredHandler = (ask: AskActivity, selected: string[], freeText: string) => void;
 
+interface ErrorActivity {
+  id: string;
+  order: number;
+  title?: string;
+  message: string;
+  suggestions?: string[];
+  technicalDetail?: string;
+}
+
 type MessageRenderPart =
   | { type: "reasoning"; content: string; key?: string; streaming?: boolean }
   | { type: "text"; content: string; key?: string; streaming?: boolean }
@@ -64,7 +73,8 @@ type TimelineItem =
   | { kind: "message"; node: TimelineMessageNode; order: number }
   | { kind: "member"; member: MemberActivity; order: number }
   | { kind: "tool"; part: Extract<MessageRenderPart, { type: "tool" }>; order: number }
-  | { kind: "ask"; ask: AskActivity; order: number };
+  | { kind: "ask"; ask: AskActivity; order: number }
+  | { kind: "error"; error: ErrorActivity; order: number };
 
 interface TimelineModel {
   items: TimelineItem[];
@@ -98,6 +108,11 @@ export function MessageList() {
     () => buildTimelineModel(messages, displayEvents, submittedAskIDs, isProcessing),
     [messages, displayEvents, submittedAskIDs, isProcessing],
   );
+  const hasMatchingTimelineError = timeline.items.some((item) => (
+    item.kind === "error"
+    && item.error.message === error
+    && item.error.title === errorTitle
+  ));
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
@@ -206,6 +221,19 @@ export function MessageList() {
                 </div>
               );
             }
+            if (item.kind === "error") {
+              return (
+                <div key={`error-${item.error.id}`} className={spacing}>
+                  <ErrorNotice
+                    title={item.error.title}
+                    message={item.error.message}
+                    suggestions={item.error.suggestions}
+                    technicalDetail={item.error.technicalDetail}
+                    className="mt-0"
+                  />
+                </div>
+              );
+            }
             const { message, parts, showAgentLabel } = item.node;
             if (message.hidden) return null;
             return (
@@ -259,7 +287,7 @@ export function MessageList() {
               </div>
             </div>
           ) : null}
-          {error ? (
+          {error && !hasMatchingTimelineError ? (
             <ErrorNotice
               title={errorTitle}
               message={error}
@@ -289,15 +317,17 @@ function ErrorNotice({
   message,
   suggestions,
   technicalDetail,
+  className,
 }: {
   title?: string;
   message: string;
   suggestions?: string[];
   technicalDetail?: string;
+  className?: string;
 }) {
   const showTechnical = Boolean(technicalDetail && technicalDetail !== message);
   return (
-    <div className="sketch-surface mt-4 rounded-md border-destructive/45 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+    <div className={cn("sketch-surface rounded-md border-destructive/45 bg-destructive/5 px-4 py-3 text-sm text-destructive", className ?? "mt-4")}>
       {title ? <div className="font-semibold">{title}</div> : null}
       <div className={title ? "mt-1 text-destructive/90" : "text-destructive/90"}>{message}</div>
       {suggestions?.length ? (
@@ -1098,6 +1128,7 @@ function buildTimelineModel(
   const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
   const askToolAnchors = collectAskToolAnchors(displayEvents);
   const askActivities = collectAskActivities(displayEvents, submittedAskIDs, askToolAnchors);
+  const errorActivities = collectErrorActivities(displayEvents, eventOrders);
   const memberActivities = collectMemberActivities(displayEvents, isProcessing, askActivities);
   const memberLookup = buildMemberLookup(memberActivities);
   const attachedMemberIDs = new Set<string>();
@@ -1147,7 +1178,7 @@ function buildTimelineModel(
   const timelineTools = trailingTools.filter((part): part is Extract<MessageRenderPart, { type: "tool" }> => part.type === "tool");
   const inlineAskIDs = unionSets(collectInlineAskIDsFromMessageNodes(messageNodes), collectInlineAskIDsFromMembers(memberActivities));
   const timelineAsks = askActivities.filter((ask) => !ask.memberID && !inlineAskIDs.has(ask.id));
-  const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools, timelineAsks);
+  const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools, timelineAsks, errorActivities);
   markFinalAssistantCopyActions(items, isProcessing);
   const timelineMessages = items.filter((item) => item.kind === "message").map((item) => item.node.message);
   const agentLabelMessageIDs = visibleAgentLabelMessageIDs(timelineMessages);
@@ -1263,6 +1294,7 @@ function orderedTimelineItems(
   members: MemberActivity[],
   tools: Array<Extract<MessageRenderPart, { type: "tool" }>>,
   asks: AskActivity[],
+  errors: ErrorActivity[],
 ): TimelineItem[] {
   const items: TimelineItem[] = [];
   for (const node of messages) {
@@ -1276,6 +1308,9 @@ function orderedTimelineItems(
   }
   for (const ask of asks) {
     items.push({ kind: "ask", ask, order: ask.order ?? Number.MAX_SAFE_INTEGER });
+  }
+  for (const error of errors) {
+    items.push({ kind: "error", error, order: error.order });
   }
   return items.sort((left, right) => {
     if (left.order !== right.order) return left.order - right.order;
@@ -1294,8 +1329,10 @@ function timelineKindPriority(kind: TimelineItem["kind"]) {
       return 2;
     case "member":
       return 3;
-    default:
+    case "error":
       return 4;
+    default:
+      return 5;
   }
 }
 
@@ -1306,8 +1343,10 @@ function timelineItemSpacingClass(items: TimelineItem[], index: number) {
   if (!previous || !current) return "mt-6";
   if (current.kind === "tool") return previous.kind === "message" ? "mt-2" : "mt-2";
   if (current.kind === "ask") return previous.kind === "tool" ? "mt-2" : "mt-3";
+  if (current.kind === "error") return previous.kind === "message" ? "mt-4" : "mt-3";
   if (previous.kind === "tool" && current.kind === "message") return "mt-5";
   if (previous.kind === "ask" && current.kind === "message") return "mt-5";
+  if (previous.kind === "error" && current.kind === "message") return "mt-6";
   if (current.kind === "member" || previous.kind === "member") return "mt-3";
   return "mt-6";
 }
@@ -1352,6 +1391,33 @@ function eventOrderMap(events: ChatEvent[]) {
     if (!result.has(key)) result.set(key, index);
   });
   return result;
+}
+
+function collectErrorActivities(events: ChatEvent[], eventOrders: Map<string, number>) {
+  const result: ErrorActivity[] = [];
+  for (const event of events) {
+    if (event.type !== "error") continue;
+    const message = errorEventMessage(event);
+    if (!message.trim()) continue;
+    const id = event.event_id || eventDisplayKey(event);
+    result.push({
+      id,
+      order: eventOrders.get(eventDisplayKey(event)) ?? Number.MAX_SAFE_INTEGER,
+      title: stringValue(event.error_title),
+      message,
+      suggestions: Array.isArray(event.error_suggestions) ? event.error_suggestions : undefined,
+      technicalDetail: stringValue(event.technical_error || event.error || event.content || event.message),
+    });
+  }
+  return result;
+}
+
+function errorEventMessage(event: ChatEvent) {
+  return stringValue(event.display_error || event.error_title || event.error || event.content || event.message) || "请求失败";
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : "";
 }
 
 function mapMembersByMessageID(members: MemberActivity[]) {
