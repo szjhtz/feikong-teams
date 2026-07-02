@@ -271,13 +271,20 @@ function SkillGrid({
         const installed = installedSlugs.has(skill.slug);
         const selected = selectedSlug === skill.slug;
         return (
-          <button
+          <div
             key={skill.slug}
+            role="button"
+            tabIndex={0}
             className={cn(
-              "group flex min-h-44 flex-col rounded-xl border bg-card/65 p-4 text-left transition-[background,border-color,box-shadow]",
+              "group flex min-h-44 cursor-pointer flex-col rounded-xl border bg-card/65 p-4 text-left transition-[background,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               selected ? "border-primary/60 bg-primary/5 shadow-[2px_3px_0_hsl(214_45%_30%/0.12)]" : "border-border/75 hover:bg-accent/45",
             )}
             onClick={() => void onSelect(skill)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              void onSelect(skill);
+            }}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -325,7 +332,7 @@ function SkillGrid({
                 )}
               </div>
             </div>
-          </button>
+          </div>
         );
       })}
     </div>

@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [canShareSession]);
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-background/95 text-foreground">
+    <div className="flex h-[var(--app-viewport-height,100dvh)] overflow-hidden bg-background/95 text-foreground">
       <Sidebar />
       <main className="relative flex min-w-0 flex-1 flex-col">
         <header className="sketch-rule flex h-14 shrink-0 items-center justify-between border-b bg-background/82 px-3 backdrop-blur sm:px-5">

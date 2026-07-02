@@ -229,9 +229,9 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
 
   return (
     <Panel>
-      <PanelHeader className="flex items-center justify-between">
-        <SectionTitle icon={Bot} title="模型池" description="模型通过稳定 ID 被智能体、圆桌和自定义配置引用。" />
+      <SectionHeader icon={Bot} title="模型池" description="模型通过稳定 ID 被智能体、圆桌和自定义配置引用。">
         <Button
+          className="w-full sm:w-auto"
           variant="outline"
           onClick={() =>
             updateDraft((next) => {
@@ -253,7 +253,7 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
           <Plus className="h-4 w-4" />
           添加模型
         </Button>
-      </PanelHeader>
+      </SectionHeader>
       <PanelBody className="grid gap-4 xl:grid-cols-2">
         {models.map((model, index) => (
           <ConfigCard
@@ -489,9 +489,9 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
   const toolOptions = useMemo(() => buildToolOptions(tools, draft.tools?.mcp_servers || []), [draft.tools?.mcp_servers, tools]);
   return (
     <Panel>
-      <PanelHeader className="flex items-center justify-between">
-        <SectionTitle icon={Brain} title="智能体目录" description="查看和配置全局可调用智能体，内置智能体支持开关和覆盖配置。" />
+      <SectionHeader icon={Brain} title="智能体目录" description="查看和配置全局可调用智能体，内置智能体支持开关和覆盖配置。">
         <Button
+          className="w-full sm:w-auto"
           variant="outline"
           onClick={() =>
             updateDraft((next) => {
@@ -517,7 +517,7 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
           <Plus className="h-4 w-4" />
           添加智能体
         </Button>
-      </PanelHeader>
+      </SectionHeader>
       <PanelBody className="grid gap-4 xl:grid-cols-2">
         {agentItems.map((agent, index) => (
           <ConfigCard
@@ -559,9 +559,9 @@ function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { modelID
   const roundtable = draft.roundtable || {};
   return (
     <Panel>
-      <PanelHeader className="flex items-center justify-between">
-        <SectionTitle icon={ListPlus} title="圆桌讨论" description="配置 roundtable 模式成员和最大迭代次数。" />
+      <SectionHeader icon={ListPlus} title="圆桌讨论" description="配置 roundtable 模式成员和最大迭代次数。">
         <Button
+          className="w-full sm:w-auto"
           variant="outline"
           onClick={() =>
             updateDraft((next) => {
@@ -576,7 +576,7 @@ function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { modelID
           <Plus className="h-4 w-4" />
           添加成员
         </Button>
-      </PanelHeader>
+      </SectionHeader>
       <PanelBody className="grid gap-4 xl:grid-cols-2">
         <div className="xl:col-span-2">
           <NumberField
@@ -720,9 +720,9 @@ function ToolsTab({ draft, updateDraft }: EditorProps) {
         </PanelBody>
       </Panel>
       <Panel>
-        <PanelHeader className="flex items-center justify-between">
-          <SectionTitle icon={Cable} title="MCP 工具" description="配置 HTTP 或 stdio MCP 服务，启用后可在智能体工具中选择。" />
+        <SectionHeader icon={Cable} title="MCP 工具" description="配置 HTTP 或 stdio MCP 服务，启用后可在智能体工具中选择。">
           <Button
+            className="w-full sm:w-auto"
             variant="outline"
             onClick={() =>
               updateDraft((next) => {
@@ -740,7 +740,7 @@ function ToolsTab({ draft, updateDraft }: EditorProps) {
             <Plus className="h-4 w-4" />
             添加 MCP
           </Button>
-        </PanelHeader>
+        </SectionHeader>
         <PanelBody className="grid gap-4 xl:grid-cols-2">
           {mcpServers.map((server, index) => (
             <MCPServerEditor key={index} server={server} index={index} updateDraft={updateDraft} />
@@ -1213,15 +1213,34 @@ function ConfigCard({
 
 function SectionTitle({ icon: Icon, title, description }: { icon: typeof Bot; title: string; description: string }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex min-w-0 items-start gap-3">
       <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card/75">
         <Icon className="h-4 w-4" />
       </div>
-      <div>
+      <div className="min-w-0">
         <div className="font-semibold">{title}</div>
-        <div className="mt-1 text-sm text-muted-foreground">{description}</div>
+        <div className="mt-1 text-sm leading-6 text-muted-foreground">{description}</div>
       </div>
     </div>
+  );
+}
+
+function SectionHeader({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: typeof Bot;
+  title: string;
+  description: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <PanelHeader className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <SectionTitle icon={icon} title={title} description={description} />
+      {children ? <div className="flex shrink-0 sm:justify-end">{children}</div> : null}
+    </PanelHeader>
   );
 }
 

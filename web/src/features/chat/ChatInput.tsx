@@ -30,6 +30,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   const referenceRequestID = useRef(0);
   const fileSuggestionCache = useRef(new Map<string, FileEntry[]>());
   const attachmentsRef = useRef<ChatAttachmentDraft[]>([]);
+  const dockRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -38,6 +39,25 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   useEffect(() => () => {
     for (const attachment of attachmentsRef.current) revokeAttachmentPreview(attachment);
   }, []);
+
+  useEffect(() => {
+    if (variant !== "dock") return;
+    const dock = dockRef.current;
+    if (!dock) return;
+    const updateHeight = () => {
+      document.documentElement.style.setProperty("--chat-dock-height", `${dock.offsetHeight}px`);
+    };
+    const observer = new ResizeObserver(updateHeight);
+
+    updateHeight();
+    observer.observe(dock);
+    window.addEventListener("resize", updateHeight);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateHeight);
+      document.documentElement.style.removeProperty("--chat-dock-height");
+    };
+  }, [variant]);
 
   async function submit() {
     const message = value.trim();
@@ -251,7 +271,13 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   }
 
   return (
-    <div className={cn("bg-transparent px-3 pb-3 pt-2 sm:px-6 sm:pb-5", className)}>
+    <div
+      ref={dockRef}
+      className={cn(
+        "fixed inset-x-0 bottom-[var(--app-keyboard-inset-bottom,0px)] z-30 bg-transparent px-3 pb-3 pt-2 md:static md:z-auto md:px-6 md:pb-5",
+        className,
+      )}
+    >
       <ChatComposer
         className="mx-auto max-w-4xl shadow-[0_12px_32px_hsl(218_30%_25%/0.12)]"
         value={value}

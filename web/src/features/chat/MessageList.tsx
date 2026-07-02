@@ -177,7 +177,11 @@ export function MessageList() {
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} className="chat-scroll chat-thread-scroll h-full overflow-x-hidden overflow-y-auto px-3 py-5 sm:px-6 sm:py-8" onScroll={handleScroll}>
+      <div
+        ref={scrollRef}
+        className="chat-scroll chat-thread-scroll h-full overflow-x-hidden overflow-y-auto px-3 pb-[calc(var(--chat-dock-height,10rem)+1rem)] pt-5 sm:px-6 sm:pt-8 md:pb-8"
+        onScroll={handleScroll}
+      >
         <div className="mx-auto w-full max-w-4xl">
           {timeline.items.map((item, index) => {
             const spacing = timelineItemSpacingClass(timeline.items, index);
@@ -300,7 +304,7 @@ export function MessageList() {
       </div>
       {showJumpToBottom ? (
         <button
-          className="absolute bottom-4 left-1/2 z-20 flex h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground"
+          className="absolute bottom-[calc(var(--chat-dock-height,10rem)+1rem)] left-1/2 z-40 flex h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground md:bottom-4 md:z-20"
           type="button"
           onClick={jumpToBottom}
         >
