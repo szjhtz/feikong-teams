@@ -212,6 +212,110 @@ type Roundtable struct {
 	MaxIterations int          `toml:"max_iterations" json:"max_iterations"`
 }
 
+// DeepPlanning 配置 Deep 模式的内建计划能力。
+type DeepPlanning struct {
+	Enabled bool `toml:"enabled" json:"enabled"`
+}
+
+// DeepWorkspace 配置 Deep 模式的工作区文件能力。
+type DeepWorkspace struct {
+	Enabled bool `toml:"enabled" json:"enabled"`
+}
+
+// DeepShell 配置 Deep 模式的命令执行能力。
+type DeepShell struct {
+	Enabled   bool   `toml:"enabled" json:"enabled"`
+	Streaming bool   `toml:"streaming" json:"streaming"`
+	Timeout   string `toml:"timeout,omitempty" json:"timeout,omitempty"`
+}
+
+// DeepDelegation 配置 Deep 模式对子智能体的任务委派能力。
+type DeepDelegation struct {
+	GeneralAgent        bool   `toml:"general_agent" json:"general_agent"`
+	TaskToolDescription string `toml:"task_tool_description,omitempty" json:"task_tool_description,omitempty"`
+}
+
+// DeepContext 配置 Deep 模式使用的项目上下文增强。
+type DeepContext struct {
+	Summary  bool `toml:"summary" json:"summary"`
+	AgentsMD bool `toml:"agents_md" json:"agents_md"`
+}
+
+// DeepOutput 配置 Deep 模式的运行输出。
+type DeepOutput struct {
+	Key string `toml:"key,omitempty" json:"key,omitempty"`
+}
+
+// Deep 配置深度智能体模式。
+type Deep struct {
+	Instruction   string         `toml:"instruction,omitempty" json:"instruction,omitempty"`
+	MaxIterations int            `toml:"max_iterations" json:"max_iterations"`
+	Planning      DeepPlanning   `toml:"planning" json:"planning"`
+	Workspace     DeepWorkspace  `toml:"workspace" json:"workspace"`
+	Shell         DeepShell      `toml:"shell" json:"shell"`
+	Delegation    DeepDelegation `toml:"delegation" json:"delegation"`
+	Context       DeepContext    `toml:"context" json:"context"`
+	Output        DeepOutput     `toml:"output" json:"output"`
+	ExtraTools    []string       `toml:"extra_tools,omitempty" json:"extra_tools,omitempty"`
+}
+
+func DefaultDeep() Deep {
+	return Deep{
+		MaxIterations: 20,
+		Planning: DeepPlanning{
+			Enabled: true,
+		},
+		Workspace: DeepWorkspace{
+			Enabled: true,
+		},
+		Shell: DeepShell{
+			Enabled: true,
+			Timeout: "30s",
+		},
+		Delegation: DeepDelegation{
+			GeneralAgent: true,
+		},
+		Context: DeepContext{
+			Summary:  true,
+			AgentsMD: true,
+		},
+		ExtraTools: []string{"doc", "search", "fetch", "ask"},
+	}
+}
+
+func (d Deep) WithDefaults() Deep {
+	defaults := DefaultDeep()
+	if d.isZero() {
+		return defaults
+	}
+	if d.MaxIterations == 0 {
+		d.MaxIterations = defaults.MaxIterations
+	}
+	if d.Shell.Timeout == "" {
+		d.Shell.Timeout = defaults.Shell.Timeout
+	}
+	if d.ExtraTools == nil {
+		d.ExtraTools = defaults.ExtraTools
+	}
+	return d
+}
+
+func (d Deep) isZero() bool {
+	return d.Instruction == "" &&
+		d.MaxIterations == 0 &&
+		!d.Planning.Enabled &&
+		!d.Workspace.Enabled &&
+		!d.Shell.Enabled &&
+		!d.Shell.Streaming &&
+		d.Shell.Timeout == "" &&
+		!d.Delegation.GeneralAgent &&
+		d.Delegation.TaskToolDescription == "" &&
+		!d.Context.Summary &&
+		!d.Context.AgentsMD &&
+		d.Output.Key == "" &&
+		len(d.ExtraTools) == 0
+}
+
 // MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
 type MCPServer struct {
 	ID          string            `toml:"id" json:"id"`
@@ -249,6 +353,7 @@ type Config struct {
 	Agents     Agents        `toml:"agents" json:"agents"`
 	Channels   Channels      `toml:"channels" json:"channels"`
 	Roundtable Roundtable    `toml:"roundtable" json:"roundtable"`
+	Deep       Deep          `toml:"deep" json:"deep"`
 	Tools      ToolSettings  `toml:"tools" json:"tools"`
 }
 
@@ -316,6 +421,16 @@ func (c *Config) ValidateRoundtable() error {
 	}
 	if c.Roundtable.MaxIterations < 0 {
 		return fmt.Errorf("roundtable.max_iterations must be >= 0")
+	}
+	return nil
+}
+
+func (c *Config) ValidateDeep() error {
+	if c == nil {
+		return nil
+	}
+	if c.Deep.MaxIterations < 0 {
+		return fmt.Errorf("deep.max_iterations must be >= 0")
 	}
 	return nil
 }
@@ -602,6 +717,7 @@ func GenerateExample() error {
 			},
 			MaxIterations: 2,
 		},
+		Deep: DefaultDeep(),
 		Tools: ToolSettings{
 			MCPServers: []MCPServer{
 				{

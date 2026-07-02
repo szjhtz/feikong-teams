@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Database,
   KeyRound,
+  Layers,
   ListPlus,
   MessageSquare,
   Plus,
@@ -34,6 +35,7 @@ import type {
   ChannelDiscordConfig,
   ChannelQQConfig,
   ChannelWeixinConfig,
+  DeepConfig,
   MCPServerConfig,
   ModelConfig,
   ServerAuthConfig,
@@ -41,13 +43,14 @@ import type {
   ToolInfo,
 } from "@/types/config";
 
-type ConfigTab = "models" | "server" | "agents" | "roundtable" | "memory" | "channels" | "tools" | "other";
+type ConfigTab = "models" | "server" | "agents" | "roundtable" | "deep" | "memory" | "channels" | "tools" | "other";
 
 const tabs: Array<{ key: ConfigTab; label: string; icon: typeof Bot }> = [
   { key: "models", label: "模型", icon: Bot },
   { key: "server", label: "服务", icon: Server },
   { key: "agents", label: "智能体", icon: Brain },
   { key: "roundtable", label: "圆桌", icon: ListPlus },
+  { key: "deep", label: "Deep", icon: Layers },
   { key: "memory", label: "记忆", icon: Database },
   { key: "channels", label: "通道", icon: MessageSquare },
   { key: "tools", label: "工具", icon: Wrench },
@@ -162,6 +165,7 @@ export function ConfigPanel() {
         {activeTab === "server" ? <ServerTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "agents" ? <AgentsTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
         {activeTab === "roundtable" ? <RoundtableTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
+        {activeTab === "deep" ? <DeepTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "memory" ? <MemoryTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "channels" ? <ChannelsTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "tools" ? <ToolsTab draft={draft} updateDraft={updateDraft} /> : null}
@@ -579,6 +583,76 @@ function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { modelID
         ))}
       </PanelBody>
     </Panel>
+  );
+}
+
+function DeepTab({ draft, updateDraft }: EditorProps) {
+  const deep = draft.deep || {};
+  const tools = useAppSelector((state) => state.config.tools);
+  const toolOptions = useMemo(() => buildToolOptions(tools, draft.tools?.mcp_servers || []), [draft.tools?.mcp_servers, tools]);
+
+  function update(patch: DeepConfig) {
+    updateDraft((next) => {
+      next.deep = mergeDeepConfig(next.deep || {}, patch);
+    });
+  }
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <Panel>
+        <PanelHeader>
+          <SectionTitle icon={Layers} title="Deep 智能体" description="配置 deep 模式的计划、工作区、命令、委派和上下文能力。" />
+        </PanelHeader>
+        <PanelBody className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <NumberField
+              label="最大迭代次数"
+              value={deep.max_iterations}
+              min={0}
+              onChange={(value) => update({ max_iterations: value })}
+            />
+            <TextField label="输出 Key（可选）" value={deep.output?.key} onChange={(value) => update({ output: { key: value } })} />
+          </div>
+          <Field label="系统提示词（留空使用内置 Deep 提示词）">
+            <Textarea className="min-h-72 text-sm" value={deep.instruction || ""} onChange={(event) => update({ instruction: event.target.value })} />
+          </Field>
+          <ToolSelectField tools={deep.extra_tools || []} options={toolOptions} onChange={(extraTools) => update({ extra_tools: extraTools })} />
+        </PanelBody>
+      </Panel>
+
+      <div className="space-y-4">
+        <Panel>
+          <PanelHeader>
+            <SectionTitle icon={Check} title="内建能力" description="启用 deep 模式自身的执行能力。" />
+          </PanelHeader>
+          <PanelBody className="space-y-3">
+            <ToggleField label="计划清单" checked={Boolean(deep.planning?.enabled)} onChange={(value) => update({ planning: { enabled: value } })} />
+            <ToggleField label="工作区文件" checked={Boolean(deep.workspace?.enabled)} onChange={(value) => update({ workspace: { enabled: value } })} />
+            <ToggleField label="Shell 命令" checked={Boolean(deep.shell?.enabled)} onChange={(value) => update({ shell: { enabled: value } })} />
+            <ToggleField label="流式 Shell（支持时生效）" checked={Boolean(deep.shell?.streaming)} onChange={(value) => update({ shell: { streaming: value } })} />
+            <TextField label="Shell 超时" value={deep.shell?.timeout} placeholder="30s" onChange={(value) => update({ shell: { timeout: value } })} />
+          </PanelBody>
+        </Panel>
+
+        <Panel>
+          <PanelHeader>
+            <SectionTitle icon={Bot} title="委派与上下文" description="控制 deep 模式如何调用子智能体和读取项目上下文。" />
+          </PanelHeader>
+          <PanelBody className="space-y-3">
+            <ToggleField label="通用子智能体" checked={Boolean(deep.delegation?.general_agent)} onChange={(value) => update({ delegation: { general_agent: value } })} />
+            <ToggleField label="摘要上下文" checked={Boolean(deep.context?.summary)} onChange={(value) => update({ context: { summary: value } })} />
+            <ToggleField label="AGENTS.md 上下文" checked={Boolean(deep.context?.agents_md)} onChange={(value) => update({ context: { agents_md: value } })} />
+            <Field label="任务工具描述（可选）">
+              <Textarea
+                className="min-h-28 text-sm"
+                value={deep.delegation?.task_tool_description || ""}
+                onChange={(event) => update({ delegation: { task_tool_description: event.target.value } })}
+              />
+            </Field>
+          </PanelBody>
+        </Panel>
+      </div>
+    </div>
   );
 }
 
@@ -1535,6 +1609,19 @@ function setWeixin(config: AppConfig, patch: Partial<ChannelWeixinConfig>) {
   config.channels = { ...(config.channels || {}), weixin: { ...(config.channels?.weixin || {}), ...patch } };
 }
 
+function mergeDeepConfig(current: DeepConfig, patch: DeepConfig): DeepConfig {
+  return {
+    ...current,
+    ...patch,
+    planning: patch.planning ? { ...(current.planning || {}), ...patch.planning } : current.planning,
+    workspace: patch.workspace ? { ...(current.workspace || {}), ...patch.workspace } : current.workspace,
+    shell: patch.shell ? { ...(current.shell || {}), ...patch.shell } : current.shell,
+    delegation: patch.delegation ? { ...(current.delegation || {}), ...patch.delegation } : current.delegation,
+    context: patch.context ? { ...(current.context || {}), ...patch.context } : current.context,
+    output: patch.output ? { ...(current.output || {}), ...patch.output } : current.output,
+  };
+}
+
 function normalizeConfig(config: AppConfig): AppConfig {
   const next = clone(config);
   next.models = next.models || [];
@@ -1550,9 +1637,40 @@ function normalizeConfig(config: AppConfig): AppConfig {
   next.openai_api = next.openai_api || {};
   next.roundtable = next.roundtable || {};
   next.roundtable.members = next.roundtable.members || [];
+  next.deep = normalizeDeepConfig(next.deep || {});
   next.tools = next.tools || {};
   next.tools.mcp_servers = next.tools.mcp_servers || [];
   return next;
+}
+
+function normalizeDeepConfig(deep: DeepConfig): DeepConfig {
+  return {
+    instruction: deep.instruction || "",
+    max_iterations: deep.max_iterations ?? 20,
+    planning: {
+      enabled: deep.planning?.enabled ?? true,
+    },
+    workspace: {
+      enabled: deep.workspace?.enabled ?? true,
+    },
+    shell: {
+      enabled: deep.shell?.enabled ?? true,
+      streaming: deep.shell?.streaming ?? false,
+      timeout: deep.shell?.timeout || "30s",
+    },
+    delegation: {
+      general_agent: deep.delegation?.general_agent ?? true,
+      task_tool_description: deep.delegation?.task_tool_description || "",
+    },
+    context: {
+      summary: deep.context?.summary ?? true,
+      agents_md: deep.context?.agents_md ?? true,
+    },
+    output: {
+      key: deep.output?.key || "",
+    },
+    extra_tools: deep.extra_tools || ["doc", "search", "fetch", "ask"],
+  };
 }
 
 function clone<T>(value: T): T {

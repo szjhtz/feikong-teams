@@ -99,6 +99,46 @@ export interface RoundtableConfig {
   max_iterations?: number;
 }
 
+export interface DeepPlanningConfig {
+  enabled?: boolean;
+}
+
+export interface DeepWorkspaceConfig {
+  enabled?: boolean;
+}
+
+export interface DeepShellConfig {
+  enabled?: boolean;
+  streaming?: boolean;
+  timeout?: string;
+}
+
+export interface DeepDelegationConfig {
+  general_agent?: boolean;
+  task_tool_description?: string;
+}
+
+export interface DeepContextConfig {
+  summary?: boolean;
+  agents_md?: boolean;
+}
+
+export interface DeepOutputConfig {
+  key?: string;
+}
+
+export interface DeepConfig {
+  instruction?: string;
+  max_iterations?: number;
+  planning?: DeepPlanningConfig;
+  workspace?: DeepWorkspaceConfig;
+  shell?: DeepShellConfig;
+  delegation?: DeepDelegationConfig;
+  context?: DeepContextConfig;
+  output?: DeepOutputConfig;
+  extra_tools?: string[];
+}
+
 export interface MCPServerConfig {
   id?: string;
   name?: string;
@@ -139,6 +179,7 @@ export interface AppConfig {
   memory?: MemoryConfig;
   openai_api?: OpenAIAPIConfig;
   roundtable?: RoundtableConfig;
+  deep?: DeepConfig;
   tools?: ToolSettingsConfig;
   [key: string]: unknown;
 }

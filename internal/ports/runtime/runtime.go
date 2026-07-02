@@ -47,6 +47,40 @@ type ModelRetryConfig struct {
 	ShouldRetry func(ctx context.Context, retryCtx *RetryContext) *RetryDecision
 }
 
+// DeepPlanningConfig 描述深度智能体的计划能力。
+type DeepPlanningConfig struct {
+	Enabled bool
+}
+
+// DeepWorkspaceConfig 描述深度智能体的工作区文件能力。
+type DeepWorkspaceConfig struct {
+	Enabled bool
+}
+
+// DeepShellConfig 描述深度智能体的命令执行能力。
+type DeepShellConfig struct {
+	Enabled   bool
+	Streaming bool
+	Timeout   time.Duration
+}
+
+// DeepDelegationConfig 描述深度智能体的子任务委派能力。
+type DeepDelegationConfig struct {
+	GeneralAgent        bool
+	TaskToolDescription string
+}
+
+// DeepContextConfig 描述深度智能体的项目上下文能力。
+type DeepContextConfig struct {
+	Summary  bool
+	AgentsMD bool
+}
+
+// DeepOutputConfig 描述深度智能体的输出写入能力。
+type DeepOutputConfig struct {
+	Key string
+}
+
 // ChatAgentConfig 是创建单模型工具智能体的 runtime 无关配置。
 type ChatAgentConfig struct {
 	Name               string
@@ -102,12 +136,19 @@ func (cfg *LoopAgentConfig) Validate() error {
 type DeepAgentConfig struct {
 	Name               string
 	Description        string
+	Instruction        string
 	Model              ChatModel
 	Tools              []Tool
 	SubAgents          []Agent
 	Middlewares        []AgentMiddleware
 	ModelRetryConfig   *ModelRetryConfig
 	MaxIterations      int
+	Planning           DeepPlanningConfig
+	Workspace          DeepWorkspaceConfig
+	Shell              DeepShellConfig
+	Delegation         DeepDelegationConfig
+	Context            DeepContextConfig
+	Output             DeepOutputConfig
 	EmitInternalEvents bool
 }
 
