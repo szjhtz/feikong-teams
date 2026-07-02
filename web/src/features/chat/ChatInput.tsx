@@ -251,7 +251,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   }
 
   return (
-    <div className={cn("bg-transparent px-6 pb-5 pt-2", className)}>
+    <div className={cn("bg-transparent px-3 pb-3 pt-2 sm:px-6 sm:pb-5", className)}>
       <ChatComposer
         className="mx-auto max-w-4xl shadow-[0_12px_32px_hsl(218_30%_25%/0.12)]"
         value={value}

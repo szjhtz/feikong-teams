@@ -98,8 +98,8 @@ export function ChatPage() {
 
 function ChatSessionLoading() {
   return (
-    <div className="flex h-full items-center justify-center px-6">
-      <div className="sketch-surface flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl px-8 py-9 text-center">
+    <div className="flex h-full items-center justify-center px-3 sm:px-6">
+      <div className="sketch-surface flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl px-6 py-8 text-center sm:px-8 sm:py-9">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
           <span className="h-2 w-2 animate-pulse rounded-full bg-primary/70 [animation-delay:120ms]" />
@@ -218,11 +218,11 @@ function ChatHome() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center px-6 pb-10 pt-20">
+    <div className="flex h-full items-center justify-center px-3 pb-6 pt-8 sm:px-6 sm:pb-10 sm:pt-20">
       <div className="w-full max-w-4xl">
-        <div className="mb-9 flex items-center justify-center gap-4 text-center">
-          <img className="h-12 w-12 shrink-0 drop-shadow-sm md:h-14 md:w-14" src="/assets/fkteams-logo.svg" alt="" />
-          <h1 className="text-4xl font-semibold tracking-normal text-foreground md:text-5xl">
+        <div className="mb-6 flex flex-col items-center justify-center gap-3 text-center sm:mb-9 sm:flex-row sm:gap-4">
+          <img className="h-10 w-10 shrink-0 drop-shadow-sm sm:h-12 sm:w-12 md:h-14 md:w-14" src="/assets/fkteams-logo.svg" alt="" />
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground sm:text-4xl md:text-5xl">
             {greeting()}，非空小队
           </h1>
         </div>

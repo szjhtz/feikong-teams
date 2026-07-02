@@ -29,10 +29,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [canShareSession]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background/95 text-foreground">
+    <div className="flex h-[100dvh] overflow-hidden bg-background/95 text-foreground">
       <Sidebar />
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <header className="sketch-rule flex h-14 shrink-0 items-center justify-between border-b bg-background/82 px-5 backdrop-blur">
+        <header className="sketch-rule flex h-14 shrink-0 items-center justify-between border-b bg-background/82 px-3 backdrop-blur sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <Button
               className="md:hidden"
@@ -43,13 +43,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-4 w-4" />
             </Button>
-            <div className="min-w-0 text-base font-semibold">
-              <span className="truncate">{title}</span>
+            <div className="min-w-0 truncate text-base font-semibold">
+              {title}
             </div>
           </div>
           {canShareSession ? (
             <button
-              className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+              className="flex h-9 w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               aria-label="分享会话"
               title="分享会话"
               type="button"
@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setShareOpen(false)}
       />
       {toast ? (
-        <div className="sketch-surface fixed bottom-4 right-4 z-50 rounded-md px-4 py-3 text-sm">
+        <div className="sketch-surface fixed bottom-4 left-4 right-4 z-50 rounded-md px-4 py-3 text-sm sm:left-auto sm:w-auto">
           {toast}
         </div>
       ) : null}

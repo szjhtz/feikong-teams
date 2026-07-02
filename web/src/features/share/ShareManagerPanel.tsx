@@ -143,7 +143,7 @@ export function ShareManagerPanel() {
   }, []);
 
   return (
-    <div className="chat-scroll h-full overflow-auto p-6">
+    <div className="chat-scroll h-full overflow-auto p-3 sm:p-6">
       <div className="mx-auto flex max-w-7xl flex-col gap-4">
         <Panel>
           <PanelHeader className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -154,14 +154,14 @@ export function ShareManagerPanel() {
               </div>
               <div className="mt-1 text-sm text-muted-foreground">管理已经创建的会话分享和文件分享，复制访问地址或撤销公开访问。</div>
             </div>
-            <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 xl:w-[520px]">
+            <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] xl:w-[520px]">
               <Input
                 className="min-w-0"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 placeholder="搜索分享标题、会话、文件或 ID"
               />
-              <Button className="min-w-20 whitespace-nowrap" variant="outline" onClick={() => void load()} disabled={loading}>
+              <Button className="min-w-20 justify-center whitespace-nowrap" variant="outline" onClick={() => void load()} disabled={loading}>
                 <RefreshCcw className="h-4 w-4" />
                 刷新
               </Button>
@@ -456,7 +456,7 @@ function ShareDeleteDialog({
   if (!share) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-6 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="share-delete-title"
@@ -464,7 +464,7 @@ function ShareDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface w-full max-w-md rounded-2xl bg-card/95 p-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-auto rounded-2xl bg-card/95 p-4 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />
@@ -506,7 +506,7 @@ function FileShareDeleteDialog({
   const title = share.file_path || share.file_paths?.[0] || previewLinkID(share);
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-6 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="file-share-delete-title"
@@ -514,7 +514,7 @@ function FileShareDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface w-full max-w-md rounded-2xl bg-card/95 p-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-auto rounded-2xl bg-card/95 p-4 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />

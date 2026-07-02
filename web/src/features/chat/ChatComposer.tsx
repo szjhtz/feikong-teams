@@ -250,8 +250,8 @@ export function ChatComposer({
   return (
     <div
       className={cn(
-        "sketch-surface relative w-full rounded-2xl bg-card/95 p-4",
-        isHero ? "p-5" : "p-3",
+        "sketch-surface relative w-full rounded-xl bg-card/95 p-3 sm:rounded-2xl sm:p-4",
+        isHero ? "p-4 sm:p-5" : "p-3",
         className,
       )}
     >
@@ -311,7 +311,7 @@ export function ChatComposer({
           onActiveIndexChange={setActiveReferenceIndex}
         />
       ) : null}
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <input
             ref={fileInputRef}
@@ -327,7 +327,7 @@ export function ChatComposer({
             <AgentTargetChip agent={selectedAgent} agentInfo={selectedAgentInfo} onClear={() => onAgentChange?.("")} />
           ) : null}
         </div>
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <ModePicker
             mode={mode}
             selectedAgent={selectedAgent}
@@ -390,7 +390,7 @@ function AttachmentPreviewList({
           <div
             key={attachment.id}
             className={cn(
-              "group relative flex h-16 w-44 shrink-0 items-center gap-2 rounded-xl border border-border/80 bg-background/55 p-1.5 transition-colors hover:bg-muted/35",
+              "group relative flex h-16 w-40 shrink-0 items-center gap-2 rounded-xl border border-border/80 bg-background/55 p-1.5 transition-colors hover:bg-muted/35 sm:w-44",
               attachment.status === "error" && "border-destructive/45 bg-destructive/5 hover:bg-destructive/10",
             )}
           >
@@ -503,7 +503,7 @@ function ReferenceMenu({
   return (
     <div
       ref={menuRef}
-      className="sketch-surface absolute bottom-[calc(100%+0.75rem)] left-0 z-40 max-h-64 w-[min(32rem,100%)] overflow-y-auto rounded-xl bg-card p-1.5 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]"
+      className="sketch-surface absolute bottom-[calc(100%+0.75rem)] left-0 z-40 max-h-64 w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-xl bg-card p-1.5 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]"
     >
       {isFile ? (
         <>
@@ -559,7 +559,7 @@ function ReferenceMenu({
 
 function AgentTargetChip({ agent, agentInfo, onClear }: { agent: string; agentInfo?: AgentInfo; onClear: () => void }) {
   return (
-    <span className="group inline-flex h-9 max-w-[15rem] items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted/65 hover:text-foreground">
+    <span className="group inline-flex h-9 max-w-[10rem] items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted/65 hover:text-foreground sm:max-w-[15rem]">
       <span className="relative h-4 w-4 shrink-0">
         <Bot className="absolute inset-0 h-4 w-4 text-muted-foreground/80 transition-opacity group-hover:opacity-0" />
         <button
@@ -633,15 +633,15 @@ function ModePicker({
   }, [onOpenChange, open]);
 
   return (
-    <div ref={menuRef} className="relative">
+    <div ref={menuRef} className="relative min-w-0">
       <button
-        className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-0"
+        className="inline-flex h-9 max-w-[11rem] items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-0 sm:max-w-[15rem]"
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
       >
-        <span>{label}</span>
+        <span className="min-w-0 truncate">{label}</span>
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (

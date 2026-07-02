@@ -176,7 +176,7 @@ export function SchedulePanel() {
   }, []);
 
   return (
-    <div className="chat-scroll h-full overflow-auto p-6">
+    <div className="chat-scroll h-full overflow-auto p-3 sm:p-6">
       <div className="mx-auto flex max-w-7xl flex-col gap-4">
         <Panel>
           <PanelHeader className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -187,13 +187,13 @@ export function SchedulePanel() {
               </div>
               <div className="mt-1 text-sm text-muted-foreground">查看计划任务状态、执行结果和历史记录。</div>
             </div>
-            <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-2 xl:w-[640px]">
+            <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] xl:w-[640px]">
               <Input className="min-w-0" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索任务内容、ID 或状态" />
-              <Button className="min-w-24 whitespace-nowrap" onClick={startCreate}>
+              <Button className="min-w-24 justify-center whitespace-nowrap" onClick={startCreate}>
                 <Plus className="h-4 w-4" />
                 新建任务
               </Button>
-              <Button className="min-w-20 whitespace-nowrap" variant="outline" onClick={() => void load()} disabled={loading}>
+              <Button className="min-w-20 justify-center whitespace-nowrap" variant="outline" onClick={() => void load()} disabled={loading}>
                 <RefreshCcw className="h-4 w-4" />
                 刷新
               </Button>

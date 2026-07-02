@@ -82,7 +82,7 @@ export function SessionShareDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-6 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="session-share-title"
@@ -90,7 +90,7 @@ export function SessionShareDialog({
         if (event.target === event.currentTarget && !creating) onClose();
       }}
     >
-      <div className="sketch-surface w-full max-w-lg rounded-2xl bg-card/95 p-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-auto rounded-2xl bg-card/95 p-4 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
             <Share2 className="h-4 w-4" />

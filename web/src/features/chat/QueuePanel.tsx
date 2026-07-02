@@ -21,20 +21,20 @@ export function QueuePanel() {
   }
 
   return (
-    <div className="relative z-10 -mb-2 bg-transparent px-6 pb-0 pt-2">
-      <div className="mx-auto max-w-4xl overflow-hidden rounded-[1.35rem] border border-border/55 bg-card/85 px-5 py-3 shadow-[0_10px_30px_hsl(218_30%_25%/0.06)] backdrop-blur">
+    <div className="relative z-10 -mb-2 bg-transparent px-3 pb-0 pt-2 sm:px-6">
+      <div className="mx-auto max-w-4xl overflow-hidden rounded-2xl border border-border/55 bg-card/85 px-3 py-3 shadow-[0_10px_30px_hsl(218_30%_25%/0.06)] backdrop-blur sm:rounded-[1.35rem] sm:px-5">
         {queue.map((item, index) => (
           <div
             key={item.queue_id}
             className={cn(
-              "group relative flex min-h-10 items-center gap-3",
+              "group relative flex min-h-10 items-center gap-2 sm:gap-3",
               index > 0 && "pt-1.5",
               index < queue.length - 1 && "pb-1.5",
             )}
           >
             <CornerDownRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
             <Input
-              className="h-8 flex-1 border-0 bg-transparent px-0 text-base font-semibold text-muted-foreground shadow-none focus-visible:ring-0"
+              className="h-8 min-w-0 flex-1 border-0 bg-transparent px-0 text-base font-semibold text-muted-foreground shadow-none focus-visible:ring-0"
               defaultValue={queueItemText(item)}
               onBlur={(event) => refresh(updateQueueItem(sessionID, item.queue_id, event.target.value))}
             />

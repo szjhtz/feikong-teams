@@ -77,17 +77,25 @@ export function Sidebar() {
     return () => document.removeEventListener("pointerdown", closeMenuOnOutsidePointer);
   }, [openMenuID]);
 
+  function closeMobileSidebar() {
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      dispatch(appActions.setSidebarOpen(false));
+    }
+  }
+
   function handleNewSession() {
     setOpenMenuID("");
     dispatch(appActions.setActivePanel("chat"));
     dispatch(chatActions.setActiveSession(""));
     dispatch(chatActions.clearMessages());
     pushAppPath(chatPath());
+    closeMobileSidebar();
   }
 
   function switchPanel(panel: (typeof panels)[number]) {
     dispatch(appActions.setActivePanel(panel.key));
     pushAppPath(panelPath(panel.key));
+    closeMobileSidebar();
   }
 
   function openSession(sessionID: string) {
@@ -95,6 +103,7 @@ export function Sidebar() {
     dispatch(appActions.setActivePanel("chat"));
     dispatch(chatActions.setActiveSession(sessionID));
     pushAppPath(chatPath(sessionID));
+    closeMobileSidebar();
   }
 
   async function toggleFavorite(session: { session_id: string; favorite?: boolean }) {
@@ -143,10 +152,20 @@ export function Sidebar() {
 
   return (
     <>
+      {sidebarOpen ? (
+        <button
+          className="fixed inset-0 z-30 bg-foreground/15 backdrop-blur-[1px] md:hidden"
+          type="button"
+          aria-label="关闭导航"
+          onClick={() => dispatch(appActions.setSidebarOpen(false))}
+        />
+      ) : null}
       <aside
         className={cn(
-          "sketch-rule flex h-screen shrink-0 flex-col border-r bg-sidebar/95 text-sidebar-foreground transition-[width]",
-          sidebarOpen ? "w-[292px]" : "w-16",
+          "sketch-rule fixed inset-y-0 left-0 z-40 flex h-[100dvh] shrink-0 flex-col border-r bg-sidebar/95 text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
+          sidebarOpen
+            ? "w-[min(292px,calc(100vw-3rem))] translate-x-0 shadow-[12px_0_32px_hsl(218_30%_20%/0.16)] md:w-[292px] md:shadow-none"
+            : "w-[min(292px,calc(100vw-3rem))] -translate-x-full md:w-16 md:translate-x-0",
         )}
       >
       <div
@@ -232,12 +251,12 @@ export function Sidebar() {
                         </div>
                         <div className="mt-1 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
                           <span className="truncate">{formatTime(session.mod_time || session.updated_at)}</span>
-	                          {session.status ? (
-	                            <>
-	                              <span>·</span>
-	                              <span className="truncate">{sessionStatusLabel(session.status)}</span>
-	                            </>
-	                          ) : null}
+                          {session.status ? (
+                            <>
+                              <span>·</span>
+                              <span className="truncate">{sessionStatusLabel(session.status)}</span>
+                            </>
+                          ) : null}
                         </div>
                       </button>
                       <button
@@ -316,7 +335,7 @@ function SessionDeleteDialog({
   if (!session) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-6 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="session-delete-title"
@@ -368,13 +387,13 @@ function SessionSearchDialog({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 bg-foreground/10 px-4 pt-20 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 bg-foreground/10 px-3 pt-16 backdrop-blur-[1px] sm:px-4 sm:pt-20"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="mx-auto flex max-h-[68vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_50px_hsl(218_30%_20%/0.18)]">
-        <div className="flex h-16 items-center gap-3 border-b border-border/70 px-5">
+      <div className="mx-auto flex max-h-[78vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_50px_hsl(218_30%_20%/0.18)] sm:max-h-[68vh]">
+        <div className="flex h-14 items-center gap-3 border-b border-border/70 px-4 sm:h-16 sm:px-5">
           <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
           <Input
             autoFocus
@@ -384,7 +403,7 @@ function SessionSearchDialog({
               if (event.key === "Escape") onClose();
             }}
             placeholder="搜索会话"
-            className="h-10 border-0 bg-transparent px-0 text-lg shadow-none focus-visible:ring-0"
+            className="h-10 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0 sm:text-lg"
           />
           <button className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClose} aria-label="关闭搜索">
             <X className="h-5 w-5" />
@@ -399,7 +418,7 @@ function SessionSearchDialog({
                 <button
                   key={session.session_id}
                   className={cn(
-                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left text-base transition-colors hover:bg-muted/60",
+                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-base transition-colors hover:bg-muted/60 sm:px-4",
                     activeSessionID === session.session_id && "bg-muted",
                   )}
                   onClick={() => onSelect(session.session_id)}

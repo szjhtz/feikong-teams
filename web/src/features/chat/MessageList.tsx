@@ -177,7 +177,7 @@ export function MessageList() {
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} className="chat-scroll chat-thread-scroll h-full overflow-x-hidden overflow-y-auto px-6 py-8" onScroll={handleScroll}>
+      <div ref={scrollRef} className="chat-scroll chat-thread-scroll h-full overflow-x-hidden overflow-y-auto px-3 py-5 sm:px-6 sm:py-8" onScroll={handleScroll}>
         <div className="mx-auto w-full max-w-4xl">
           {timeline.items.map((item, index) => {
             const spacing = timelineItemSpacingClass(timeline.items, index);
@@ -403,10 +403,10 @@ function MessageRow({
     const attachments = messageAttachmentParts(message.contentParts);
     return (
       <article id={chatMessageElementID(message.id)} className="message-row group flex w-full scroll-mt-8 flex-col items-end gap-2">
-        <div className="flex max-w-[78%] flex-col items-end gap-2">
+        <div className="flex max-w-[92%] flex-col items-end gap-2 sm:max-w-[78%]">
           {attachments.length ? <UserAttachmentPills attachments={attachments} /> : null}
           {message.content.trim() ? (
-            <div className="rounded-2xl bg-muted px-5 py-4 text-lg leading-8 text-foreground">
+            <div className="rounded-2xl bg-muted px-4 py-3 text-base leading-7 text-foreground sm:px-5 sm:py-4 sm:text-lg sm:leading-8">
               <div className="whitespace-pre-wrap">{message.content}</div>
             </div>
           ) : null}
@@ -467,7 +467,7 @@ function UserImagePill({ part, index }: { part: ContentPartDTO; index: number })
     : part.url || "";
   const label = imagePartLabel(part, index);
   return (
-    <div className="flex h-12 max-w-[13rem] items-center gap-2 rounded-xl border border-border/70 bg-muted px-2 py-1.5 text-sm text-foreground">
+    <div className="flex h-12 max-w-[10.5rem] items-center gap-2 rounded-xl border border-border/70 bg-muted px-2 py-1.5 text-sm text-foreground sm:max-w-[13rem]">
       <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-background/60">
         {src ? <img className="h-full w-full object-cover" src={src} alt={label} /> : null}
       </div>
@@ -485,7 +485,7 @@ function UserImagePill({ part, index }: { part: ContentPartDTO; index: number })
 function UserFilePill({ part }: { part: ContentPartDTO }) {
   const label = part.name || part.url || part.text || "附件";
   return (
-    <div className="flex h-12 max-w-[13rem] items-center gap-2 rounded-xl border border-border/70 bg-muted px-3 py-1.5 text-sm text-foreground">
+    <div className="flex h-12 max-w-[10.5rem] items-center gap-2 rounded-xl border border-border/70 bg-muted px-3 py-1.5 text-sm text-foreground sm:max-w-[13rem]">
       <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate font-medium">{label}</span>
     </div>
@@ -561,7 +561,7 @@ function MessagePart({
       </div>
     );
   }
-  return <MarkdownContent className="text-lg leading-9" content={part.content} />;
+  return <MarkdownContent className="text-base leading-8 sm:text-lg sm:leading-9" content={part.content} />;
 }
 
 function ReasoningBlock({ content, disclosureID }: { content: string; disclosureID: string }) {
@@ -999,8 +999,8 @@ function AskPanel({
   }
 
   return (
-    <section className="sketch-surface rounded-xl bg-card/95 px-4 py-4 shadow-[0_10px_24px_hsl(218_30%_25%/0.1)]">
-      <div className="mb-3 flex items-start gap-3">
+    <section className="sketch-surface rounded-xl bg-card/95 px-3 py-3 shadow-[0_10px_24px_hsl(218_30%_25%/0.1)] sm:px-4 sm:py-4">
+      <div className="mb-3 flex items-start gap-2 sm:gap-3">
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted-foreground">{askTitle(ask)}</div>
@@ -1063,8 +1063,8 @@ function AskPanel({
 function AskRecord({ ask }: { ask: AskActivity }) {
   const answer = askResponseSummary(ask.selected, ask.freeText);
   return (
-    <section className="rounded-xl border border-primary/20 bg-card/70 px-4 py-4 shadow-[1px_2px_0_hsl(218_32%_30%/0.06)]">
-      <div className="flex items-start gap-3">
+    <section className="rounded-xl border border-primary/20 bg-card/70 px-3 py-3 shadow-[1px_2px_0_hsl(218_32%_30%/0.06)] sm:px-4 sm:py-4">
+      <div className="flex items-start gap-2 sm:gap-3">
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted-foreground">{askTitle(ask)}</div>

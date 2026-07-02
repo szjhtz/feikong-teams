@@ -145,7 +145,7 @@ export function SkillPanel() {
   }, []);
 
   return (
-    <div className="chat-scroll h-full overflow-auto p-6">
+    <div className="chat-scroll h-full overflow-auto p-3 sm:p-6">
       <div className="mx-auto flex max-w-7xl flex-col gap-4">
         <Panel>
           <PanelHeader className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -156,7 +156,7 @@ export function SkillPanel() {
               </div>
               <div className="mt-1 text-sm text-muted-foreground">管理本地技能，搜索市场技能，并直接查看技能文件内容。</div>
             </div>
-            <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-2 xl:w-[560px]">
+            <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] xl:w-[560px]">
               <Input
                 className="min-w-0"
                 value={keyword}
@@ -166,11 +166,11 @@ export function SkillPanel() {
                 }}
                 placeholder="搜索技能市场"
               />
-              <Button className="min-w-20 whitespace-nowrap" onClick={() => void search()} disabled={searching || !keyword.trim()}>
+              <Button className="min-w-20 justify-center whitespace-nowrap" onClick={() => void search()} disabled={searching || !keyword.trim()}>
                 <Search className="h-4 w-4" />
                 搜索
               </Button>
-              <Button className="min-w-20 whitespace-nowrap" variant="outline" onClick={() => void loadLocal()} disabled={loadingLocal}>
+              <Button className="min-w-20 justify-center whitespace-nowrap" variant="outline" onClick={() => void loadLocal()} disabled={loadingLocal}>
                 <RefreshCcw className="h-4 w-4" />
                 刷新
               </Button>

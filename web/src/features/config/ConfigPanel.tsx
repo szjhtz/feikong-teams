@@ -121,7 +121,7 @@ export function ConfigPanel() {
 
   if (!draft) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
+      <div className="flex h-full items-center justify-center p-3 sm:p-6">
         <Panel className="w-full max-w-sm">
           <PanelBody className="py-10 text-center text-muted-foreground">{loading ? "正在加载配置" : "暂无配置"}</PanelBody>
         </Panel>
@@ -130,7 +130,7 @@ export function ConfigPanel() {
   }
 
   return (
-    <div className="chat-scroll h-full overflow-auto p-6">
+    <div className="chat-scroll h-full overflow-auto p-3 sm:p-6">
       <div className="mx-auto flex max-w-7xl flex-col gap-4">
         <Panel>
           <PanelHeader className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">

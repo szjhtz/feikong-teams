@@ -503,4 +503,40 @@
     overflow-wrap: anywhere;
     vertical-align: top;
   }
+
+  @media (max-width: 640px) {
+    .prose h1 {
+      font-size: 1.35em;
+    }
+
+    .prose h2 {
+      font-size: 1.2em;
+    }
+
+    .prose ul,
+    .prose ol {
+      padding-left: 1.25em;
+    }
+
+    .prose blockquote {
+      padding-left: 0.75rem;
+    }
+
+    .message-prose {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .message-prose table {
+      display: block;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .message-prose th,
+    .message-prose td {
+      white-space: normal;
+      min-width: 7rem;
+    }
+  }
 }
