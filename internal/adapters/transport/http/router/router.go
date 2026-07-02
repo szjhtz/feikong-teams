@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"path"
+	"strings"
 
 	"fkteams/internal/adapters/transport/http/handler"
 	"fkteams/internal/adapters/transport/http/middleware"
@@ -252,6 +254,7 @@ func InitWithRuntime(state *appstate.State, runtime *handler.Runtime) (*gin.Engi
 	})
 
 	registerAPIRoutesWithRuntime(r, authEnabled, state, runtime)
+	r.NoRoute(spaFallback(webFS))
 	return r, nil
 }
 
@@ -271,6 +274,32 @@ func serveHTML(c *gin.Context, webFS fs.FS) {
 	}
 	c.Header("Cache-Control", "no-cache")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+}
+
+func spaFallback(webFS fs.FS) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !shouldServeSPA(c.Request) {
+			c.String(http.StatusNotFound, "Page not found")
+			return
+		}
+		serveHTML(c, webFS)
+	}
+}
+
+func shouldServeSPA(request *http.Request) bool {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		return false
+	}
+
+	requestPath := request.URL.Path
+	if requestPath == "/ws" ||
+		strings.HasPrefix(requestPath, "/api/") ||
+		strings.HasPrefix(requestPath, "/v1/") ||
+		strings.HasPrefix(requestPath, "/assets/") {
+		return false
+	}
+
+	return path.Ext(path.Base(requestPath)) == ""
 }
 
 // InitAPI 初始化纯 API 路由（无 Web 界面）

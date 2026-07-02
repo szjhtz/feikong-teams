@@ -133,6 +133,60 @@ func TestChatDeepLinkServesSPAEntry(t *testing.T) {
 	}
 }
 
+func TestSPAFallbackServesClientRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.NoRoute(spaFallback(web.GetFS()))
+
+	for _, target := range []string{
+		"/login",
+		"/settings/profile",
+	} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		engine.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("expected status %d for %s, got %d", http.StatusOK, target, recorder.Code)
+		}
+		if got := recorder.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
+			t.Fatalf("expected html content type for %s, got %q", target, got)
+		}
+		if body := recorder.Body.String(); !strings.Contains(body, `id="root"`) {
+			t.Fatalf("expected SPA entry body for %s, got %q", target, body)
+		}
+	}
+}
+
+func TestSPAFallbackSkipsAPIAssetsAndNonGETRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.NoRoute(spaFallback(web.GetFS()))
+
+	tests := []struct {
+		method string
+		target string
+	}{
+		{method: http.MethodGet, target: "/api/fkteams/missing"},
+		{method: http.MethodGet, target: "/v1/missing"},
+		{method: http.MethodGet, target: "/assets/missing.js"},
+		{method: http.MethodPost, target: "/login"},
+	}
+
+	for _, tt := range tests {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(tt.method, tt.target, nil)
+		engine.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("expected status %d for %s %s, got %d", http.StatusNotFound, tt.method, tt.target, recorder.Code)
+		}
+		if got := recorder.Body.String(); strings.Contains(got, `id="root"`) {
+			t.Fatalf("expected non-SPA response for %s %s", tt.method, tt.target)
+		}
+	}
+}
+
 func TestServeAssetsUsesImmutableCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
