@@ -16,12 +16,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const sessions = useAppSelector((state) => state.sessions.items);
   const title = resolveTitle(activePanel, activeSessionID, sessions);
   const activeSession = sessions.find((item) => item.session_id === activeSessionID);
+  const canShareSession = activePanel === "chat" && Boolean(activeSessionID);
 
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => dispatch(appActions.showToast(undefined)), 2000);
     return () => window.clearTimeout(timer);
   }, [dispatch, toast]);
+
+  useEffect(() => {
+    if (!canShareSession) setShareOpen(false);
+  }, [canShareSession]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background/95 text-foreground">
@@ -42,16 +47,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="truncate">{title}</span>
             </div>
           </div>
-          <button
-            className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-            aria-label="分享会话"
-            title="分享会话"
-            type="button"
-            onClick={() => setShareOpen(true)}
-            disabled={activePanel !== "chat" || !activeSessionID}
-          >
-            <Share2 className="h-4 w-4" />
-          </button>
+          {canShareSession ? (
+            <button
+              className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+              aria-label="分享会话"
+              title="分享会话"
+              type="button"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
+          ) : null}
         </header>
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </main>

@@ -30,9 +30,12 @@ func GetProviderModelsHandler() gin.HandlerFunc {
 func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			Provider string `json:"provider"`
-			BaseURL  string `json:"base_url"`
-			APIKey   string `json:"api_key"`
+			Provider     string `json:"provider"`
+			BaseURL      string `json:"base_url"`
+			APIKey       string `json:"api_key"`
+			ModelID      string `json:"model_id"`
+			OriginalID   string `json:"original_id"`
+			ExtraHeaders string `json:"extra_headers"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "参数错误: "+err.Error())
@@ -43,16 +46,11 @@ func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 前端传入的 APIKey 为空时，从已保存配置中按 base_url 还原真实密钥
 		apiKey := req.APIKey
-		if apiKey == "" && req.BaseURL != "" {
-			for _, m := range config.Get().Models {
-				if m.BaseURL == req.BaseURL && m.APIKey != "" {
-					apiKey = m.APIKey
-					break
-				}
-			}
+		if apiKey == "" {
+			apiKey = restoredModelAPIKey(config.Get(), req.ModelID, req.OriginalID, req.BaseURL)
 		}
+		modelCfg := config.ModelConfig{ExtraHeaders: req.ExtraHeaders}
 
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 		defer cancel()
@@ -64,9 +62,10 @@ func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 		}
 
 		models, err := registry.ListModels(ctx, &providers.Config{
-			Provider: providers.Type(req.Provider),
-			BaseURL:  req.BaseURL,
-			APIKey:   apiKey,
+			Provider:     providers.Type(req.Provider),
+			BaseURL:      req.BaseURL,
+			APIKey:       apiKey,
+			ExtraHeaders: modelCfg.ParseExtraHeaders(),
 		})
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
@@ -75,4 +74,37 @@ func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 
 		OK(c, models)
 	}
+}
+
+func restoredModelAPIKey(cfg *config.Config, modelID, originalID, baseURL string) string {
+	if cfg == nil {
+		return ""
+	}
+	if originalID != "" {
+		if key := modelAPIKeyByID(cfg, originalID); key != "" {
+			return key
+		}
+	}
+	if modelID != "" {
+		if key := modelAPIKeyByID(cfg, modelID); key != "" {
+			return key
+		}
+	}
+	if baseURL != "" {
+		for _, m := range cfg.Models {
+			if m.BaseURL == baseURL && m.APIKey != "" {
+				return m.APIKey
+			}
+		}
+	}
+	return ""
+}
+
+func modelAPIKeyByID(cfg *config.Config, id string) string {
+	for _, m := range cfg.Models {
+		if m.ID == id && m.APIKey != "" {
+			return m.APIKey
+		}
+	}
+	return ""
 }

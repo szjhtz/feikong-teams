@@ -3,6 +3,7 @@ import {
   Brain,
   Cable,
   Check,
+  ChevronDown,
   Database,
   KeyRound,
   ListPlus,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getConfig, getToolCatalog, saveConfig } from "@/api/config";
+import { listProviderModels } from "@/api/providers";
 import { configActions, appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
@@ -171,6 +173,44 @@ export function ConfigPanel() {
 
 function ModelsTab({ draft, updateDraft }: EditorProps) {
   const models = draft.models || [];
+  const [modelLookup, setModelLookup] = useState<Record<number, ModelLookupState>>({});
+
+  async function loadProviderModels(model: ModelConfig, index: number) {
+    if (!model.provider) {
+      setModelLookup((current) => ({ ...current, [index]: { error: "请先选择提供商" } }));
+      return;
+    }
+    setModelLookup((current) => ({ ...current, [index]: { ...current[index], loading: true, error: undefined } }));
+    try {
+      const result = await listProviderModels({
+        provider: model.provider,
+        base_url: model.base_url,
+        api_key: model.api_key,
+        model_id: model.id,
+        original_id: model.original_id,
+        extra_headers: model.extra_headers,
+      });
+      const providerModels = result.map((item) => item.id).filter(Boolean);
+      setModelLookup((current) => ({
+        ...current,
+        [index]: {
+          loading: false,
+          models: providerModels,
+          error: providerModels.length ? undefined : "供应商没有返回可用模型",
+        },
+      }));
+    } catch (error) {
+      setModelLookup((current) => ({
+        ...current,
+        [index]: {
+          ...current[index],
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      }));
+    }
+  }
+
   return (
     <Panel>
       <PanelHeader className="flex items-center justify-between">
@@ -219,7 +259,13 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
                 options={["openai", "deepseek", "claude", "ollama", "ark", "gemini", "qwen", "openrouter", "copilot"]}
                 onChange={(value) => updateModel(updateDraft, index, { provider: value })}
               />
-              <TextField label="模型" value={model.model} onChange={(value) => updateModel(updateDraft, index, { model: value })} />
+              <ModelNameField
+                index={index}
+                model={model}
+                state={modelLookup[index]}
+                onChange={(value) => updateModel(updateDraft, index, { model: value })}
+                onLoad={() => void loadProviderModels(model, index)}
+              />
               <TextField label="Base URL" value={model.base_url} onChange={(value) => updateModel(updateDraft, index, { base_url: value })} />
               <TextField
                 label={model.has_api_key ? "API Key（已配置，留空不修改）" : "API Key"}
@@ -241,6 +287,119 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
         {!models.length ? <EmptyState title="暂无模型配置" description="添加一个 chat 用途模型后即可开始使用。" /> : null}
       </PanelBody>
     </Panel>
+  );
+}
+
+interface ModelLookupState {
+  loading?: boolean;
+  models?: string[];
+  error?: string;
+}
+
+function ModelNameField({
+  index,
+  model,
+  state,
+  onChange,
+  onLoad,
+}: {
+  index: number;
+  model: ModelConfig;
+  state?: ModelLookupState;
+  onChange: (value: string) => void;
+  onLoad: () => void;
+}) {
+  const providerModels = state?.models || [];
+  const [open, setOpen] = useState(false);
+  const [filtering, setFiltering] = useState(false);
+  const filteredModels = providerModels.filter((name) => {
+    const query = (model.model || "").trim().toLowerCase();
+    return !query || name.toLowerCase().includes(query);
+  });
+  const visibleModels = filtering ? filteredModels : providerModels;
+
+  useEffect(() => {
+    if (!providerModels.length) {
+      setOpen(false);
+      return;
+    }
+    setFiltering(false);
+    setOpen(true);
+  }, [providerModels.length]);
+
+  return (
+    <Field label="模型">
+      <div className="relative">
+        <Input
+          className="pr-20"
+          value={model.model || ""}
+          placeholder="gpt-5"
+          onChange={(event) => {
+            onChange(event.target.value);
+            setFiltering(true);
+            if (providerModels.length) setOpen(true);
+          }}
+          onFocus={() => {
+            if (providerModels.length) {
+              setFiltering(false);
+              setOpen(true);
+            }
+          }}
+          onBlur={() => {
+            window.setTimeout(() => setOpen(false), 120);
+          }}
+        />
+        {providerModels.length ? (
+          <button
+            type="button"
+            className="absolute right-8 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+            aria-label="展开供应商模型"
+            title="展开供应商模型"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              setFiltering(false);
+              setOpen((value) => !value);
+            }}
+          >
+            <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground disabled:pointer-events-none disabled:opacity-45"
+          aria-label="获取供应商模型"
+          title="获取供应商模型"
+          onClick={onLoad}
+          disabled={state?.loading || !model.provider}
+        >
+          <RefreshCcw className={cn("h-4 w-4", state?.loading && "animate-spin")} />
+        </button>
+        {open && providerModels.length ? (
+          <div className="sketch-surface absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 max-h-56 space-y-1 overflow-y-auto rounded-xl bg-card p-2 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]">
+            {visibleModels.length ? visibleModels.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={cn(
+                  "flex w-full items-center rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/70",
+                  model.model === name && "bg-primary/10 text-primary",
+                )}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(name);
+                  setOpen(false);
+                }}
+              >
+                <span className="min-w-0 truncate">{name}</span>
+              </button>
+            )) : (
+              <div className="px-3 py-3 text-sm text-muted-foreground">没有匹配的模型</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+      {state?.error ? <div className="text-xs text-destructive">{state.error}</div> : null}
+    </Field>
   );
 }
 
@@ -1075,19 +1234,56 @@ function SelectField({
   options: string[];
   onChange: (value: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const selected = value ?? options[0] ?? "";
   return (
     <Field label={label}>
-      <select
-        className="sketch-inset flex h-9 w-full rounded-md px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        value={value || options[0] || ""}
-        onChange={(event) => onChange(event.target.value)}
+      <div
+        className="relative"
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 120);
+        }}
       >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+        <button
+          type="button"
+          className={cn(
+            "sketch-inset flex h-9 w-full items-center justify-between gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            open && "ring-2 ring-ring",
+          )}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <span className={cn("min-w-0 truncate", !selected && "text-muted-foreground")}>{selected || "未选择"}</span>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        </button>
+        {open ? (
+          <div
+            className="sketch-surface absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 max-h-56 space-y-1 overflow-y-auto rounded-xl bg-card p-2 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]"
+            role="listbox"
+          >
+            {options.map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="option"
+                aria-selected={selected === option}
+                className={cn(
+                  "flex w-full items-center rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/70",
+                  selected === option && "bg-primary/10 text-primary",
+                )}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(option);
+                  setOpen(false);
+                }}
+              >
+                <span className={cn("min-w-0 truncate", !option && "text-muted-foreground")}>{option || "未选择"}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </Field>
   );
 }

@@ -29,3 +29,7 @@ export interface ProviderInfo {
   base_url?: string;
   models?: string[];
 }
+
+export interface ModelInfo {
+  id: string;
+}
