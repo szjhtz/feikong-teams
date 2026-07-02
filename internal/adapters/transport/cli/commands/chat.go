@@ -152,8 +152,6 @@ func createModeRunner(ctx context.Context, mode cliruntime.WorkMode) (runtimepor
 		return appagent.CreateDeepAgentsRunner(ctx)
 	case cliruntime.ModeGroup:
 		return appagent.CreateLoopAgentRunner(ctx)
-	case cliruntime.ModeCustom:
-		return appagent.CreateCustomRunner(ctx)
 	default:
 		return nil, nil
 	}

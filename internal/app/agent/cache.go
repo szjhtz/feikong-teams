@@ -11,7 +11,6 @@ import (
 const (
 	ModeTeam       = "team"
 	ModeRoundtable = "roundtable"
-	ModeCustom     = "custom"
 	ModeDeep       = "deep"
 )
 
@@ -100,10 +99,6 @@ func resolveFactory(ctx context.Context, mode, agentName string, fallbackToTeam 
 	case ModeRoundtable:
 		return mode, func() (runtimeport.Runner, error) {
 			return CreateLoopAgentRunner(ctx)
-		}, nil
-	case ModeCustom:
-		return mode, func() (runtimeport.Runner, error) {
-			return CreateCustomRunner(ctx)
 		}, nil
 	case ModeDeep:
 		return mode, func() (runtimeport.Runner, error) {

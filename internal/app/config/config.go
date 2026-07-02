@@ -114,7 +114,7 @@ type ChannelQQ struct {
 	AppID     string `toml:"app_id" json:"app_id"`
 	AppSecret string `toml:"app_secret" json:"app_secret"`
 	Sandbox   bool   `toml:"sandbox" json:"sandbox"`
-	Mode      string `toml:"mode" json:"mode"` // 运行模式: team(默认), deep, roundtable, custom, agent
+	Mode      string `toml:"mode" json:"mode"` // 运行模式: team(默认), deep, roundtable, agent
 	AgentID   string `toml:"agent_id,omitempty" json:"agent_id,omitempty"`
 }
 
@@ -123,7 +123,7 @@ type ChannelDiscord struct {
 	Enabled   bool   `toml:"enabled" json:"enabled"`
 	Token     string `toml:"token" json:"token"`
 	AllowFrom string `toml:"allow_from" json:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
-	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom, agent
+	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, agent
 	AgentID   string `toml:"agent_id,omitempty" json:"agent_id,omitempty"`
 }
 
@@ -134,7 +134,7 @@ type ChannelWeixin struct {
 	CredPath  string `toml:"cred_path" json:"cred_path"`   // 凭证存储路径（可选）
 	LogLevel  string `toml:"log_level" json:"log_level"`   // 日志级别: debug, info, warn, error, silent
 	AllowFrom string `toml:"allow_from" json:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
-	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom, agent
+	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, agent
 	AgentID   string `toml:"agent_id,omitempty" json:"agent_id,omitempty"`
 }
 
@@ -212,11 +212,6 @@ type Roundtable struct {
 	MaxIterations int          `toml:"max_iterations" json:"max_iterations"`
 }
 
-// ==================== 自定义模式 ====================
-
-// CustomAgent 自定义会议模式智能体配置。
-type CustomAgent = AgentConfig
-
 // MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
 type MCPServer struct {
 	ID          string            `toml:"id" json:"id"`
@@ -231,11 +226,9 @@ type MCPServer struct {
 	Transport   string            `toml:"transport" json:"transport"`
 }
 
-// Custom 自定义会议模式配置
-type Custom struct {
-	Moderator  CustomAgent   `toml:"moderator" json:"moderator"`
-	Agents     []CustomAgent `toml:"agents" json:"agents"`
-	MCPServers []MCPServer   `toml:"mcp_servers" json:"mcp_servers"`
+// ToolSettings 工具配置。
+type ToolSettings struct {
+	MCPServers []MCPServer `toml:"mcp_servers" json:"mcp_servers"`
 }
 
 // ==================== OpenAI 兼容 API ====================
@@ -256,7 +249,7 @@ type Config struct {
 	Agents     Agents        `toml:"agents" json:"agents"`
 	Channels   Channels      `toml:"channels" json:"channels"`
 	Roundtable Roundtable    `toml:"roundtable" json:"roundtable"`
-	Custom     Custom        `toml:"custom" json:"custom"`
+	Tools      ToolSettings  `toml:"tools" json:"tools"`
 }
 
 // ResolveModel 通过稳定 ID 查找模型配置，空 ID 返回默认对话模型。
@@ -313,6 +306,16 @@ func (c *Config) ValidateModels() error {
 	}
 	if _, ok := uses[ModelUseChat]; !ok {
 		return fmt.Errorf("model use_for %q is required", ModelUseChat)
+	}
+	return nil
+}
+
+func (c *Config) ValidateRoundtable() error {
+	if c == nil {
+		return nil
+	}
+	if c.Roundtable.MaxIterations < 0 {
+		return fmt.Errorf("roundtable.max_iterations must be >= 0")
 	}
 	return nil
 }
@@ -599,24 +602,7 @@ func GenerateExample() error {
 			},
 			MaxIterations: 2,
 		},
-		Custom: Custom{
-			Moderator: CustomAgent{
-				ID:          "moderator",
-				Name:        "协调者名称",
-				Description: "协调者描述",
-				Prompt:      "你是一个公正的协调者，负责引导讨论并调度成员协作。",
-				ModelID:     "main",
-			},
-			Agents: []CustomAgent{
-				{
-					ID:          "assistant",
-					Name:        "智能体名称",
-					Description: "智能体描述",
-					Prompt:      "你是一个有帮助的助手。",
-					ModelID:     "main",
-					Tools:       []string{"command", "mcp-服务名称"},
-				},
-			},
+		Tools: ToolSettings{
 			MCPServers: []MCPServer{
 				{
 					ID:          "remote_mcp",

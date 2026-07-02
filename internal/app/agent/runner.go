@@ -4,10 +4,8 @@ package agent
 import (
 	"context"
 	"fkteams/internal/app/agent/catalog"
-	"fkteams/internal/app/agent/catalog/custom"
 	"fkteams/internal/app/agent/catalog/deep"
 	"fkteams/internal/app/agent/catalog/discussant"
-	"fkteams/internal/app/agent/catalog/moderator"
 	"fkteams/internal/app/agent/catalog/tasker"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/config"
@@ -73,20 +71,6 @@ func agentDisplayNamesByName(ctx context.Context) map[string]string {
 		result[info.Name] = info.DisplayName
 	}
 	return result
-}
-
-// resolveCustomModel 从配置文件解析自定义智能体的模型配置
-func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Model {
-	mc := cfg.ResolveModel(agent.ModelID)
-	if mc == nil {
-		return custom.Model{}
-	}
-	return custom.Model{
-		Provider: mc.Provider,
-		Name:     mc.Model,
-		APIKey:   mc.APIKey,
-		BaseURL:  mc.BaseURL,
-	}
 }
 
 // newRunner 用共享配置创建 Runner
@@ -177,117 +161,6 @@ func CreateLoopAgentRunner(ctx context.Context) (runtimeport.Runner, error) {
 	}
 
 	return newRunner(ctx, loopAgent)
-}
-
-// CreateCustomRunner 创建自定义会议模式 Runner，使用主持人 ChatModelAgent + AgentTool 协作。
-func CreateCustomRunner(ctx context.Context) (runtimeport.Runner, error) {
-	cfg := config.Get()
-
-	var moderatorAgent runtimeport.Agent
-	var subAgents []runtimeport.Agent
-	var err error
-
-	for _, customAgent := range cfg.Custom.Agents {
-		agent, err := custom.NewAgent(ctx, custom.Config{
-			Name:        customAgent.Name,
-			Description: customAgent.Description,
-			Prompt:      customAgent.Prompt,
-			Model:       resolveCustomModel(cfg, customAgent),
-			ToolNames:   customAgent.Tools,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("创建自定义智能体 %s 失败: %w", customAgent.Name, err)
-		}
-		subAgents = append(subAgents, agent)
-	}
-
-	agentTools, err := buildAgentTools(ctx, subAgents)
-	if err != nil {
-		return nil, fmt.Errorf("创建成员工具失败: %w", err)
-	}
-	if cfg.Custom.Moderator.Name != "" {
-		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
-			Name:        cfg.Custom.Moderator.Name,
-			Description: cfg.Custom.Moderator.Description,
-			Prompt:      customModeratorPrompt(cfg.Custom.Moderator.Prompt),
-			Model:       resolveCustomModel(cfg, cfg.Custom.Moderator),
-			ToolNames:   cfg.Custom.Moderator.Tools,
-			Tools:       agentTools,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("创建自定义主持人失败: %w", err)
-		}
-	} else {
-		moderatorAgent, err = moderator.NewAgent(ctx, agentTools...)
-		if err != nil {
-			return nil, fmt.Errorf("创建主持人失败: %w", err)
-		}
-	}
-
-	return newRunner(ctx, moderatorAgent)
-}
-
-func customModeratorPrompt(systemPrompt string) string {
-	if systemPrompt == "" {
-		systemPrompt = "你是一个公正的主持人，负责根据任务需求协调成员协作。"
-	}
-	return systemPrompt + `
-
----
-
-## 子智能体工具
-可用的成员已经作为工具提供。需要成员执行任务、补充观点或发言时，调用对应工具，并在 request 中写明目标、上下文和期望输出。
-成员返回后，由你负责整理、追问下一位成员或形成最终结论。`
-}
-
-// PrintCustomAgentsInfo 打印自定义模式的智能体信息
-func PrintCustomAgentsInfo(ctx context.Context) error {
-	cfg := config.Get()
-
-	var moderatorAgent runtimeport.Agent
-	var subAgents []runtimeport.Agent
-	var err error
-
-	if cfg.Custom.Moderator.Name != "" {
-		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
-			Name:        cfg.Custom.Moderator.Name,
-			Description: cfg.Custom.Moderator.Description,
-			Prompt:      cfg.Custom.Moderator.Prompt,
-			Model:       resolveCustomModel(cfg, cfg.Custom.Moderator),
-			ToolNames:   cfg.Custom.Moderator.Tools,
-		})
-		if err != nil {
-			return fmt.Errorf("创建自定义主持人失败: %w", err)
-		}
-	} else {
-		moderatorAgent, err = moderator.NewAgent(ctx)
-		if err != nil {
-			return fmt.Errorf("创建主持人失败: %w", err)
-		}
-	}
-
-	for _, customAgent := range cfg.Custom.Agents {
-		agent, err := custom.NewAgent(ctx, custom.Config{
-			Name:        customAgent.Name,
-			Description: customAgent.Description,
-			Prompt:      customAgent.Prompt,
-			Model:       resolveCustomModel(cfg, customAgent),
-			ToolNames:   customAgent.Tools,
-		})
-		if err != nil {
-			return fmt.Errorf("创建自定义智能体 %s 失败: %w", customAgent.Name, err)
-		}
-		subAgents = append(subAgents, agent)
-	}
-
-	fmt.Printf("本次讨论的主持人: %s\n", moderatorAgent.Name())
-	fmt.Printf("本次讨论的成员有: ")
-	var names []string
-	for _, subAgent := range subAgents {
-		names = append(names, subAgent.Name())
-	}
-	fmt.Println(strings.Join(names, ", "))
-	return nil
 }
 
 // PrintLoopAgentsInfo 打印多智能体讨论模式的智能体信息

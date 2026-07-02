@@ -167,8 +167,6 @@ func runtimeModeName(mode WorkMode) string {
 		return "深度模式"
 	case ModeGroup:
 		return "多智能体讨论模式"
-	case ModeCustom:
-		return "自定义会议模式"
 	default:
 		return "团队模式"
 	}

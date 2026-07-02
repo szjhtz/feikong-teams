@@ -3,9 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
-	"fkteams/internal/app/agent/catalog/custom"
 	"fkteams/internal/app/agent/catalog/toolmeta"
-	"fkteams/internal/app/config"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	"strings"
@@ -91,39 +89,6 @@ func TestCreateAgentRunnerPropagatesRuntimeError(t *testing.T) {
 
 	if _, err := CreateAgentRunner(ctx, runnerTestAgent{name: "agent"}); err == nil || !strings.Contains(err.Error(), "runner failed") {
 		t.Fatalf("CreateAgentRunner error = %v, want runtime error", err)
-	}
-}
-
-func TestResolveCustomModel(t *testing.T) {
-	cfg := &config.Config{
-		Models: []config.ModelConfig{
-			{ID: "main", Name: "主力模型", UseFor: []string{config.ModelUseChat}, Provider: "openai", Model: "gpt-default", APIKey: "default-key", BaseURL: "https://default.example"},
-			{ID: "fast", Name: "快速模型", Provider: "deepseek", Model: "deepseek-chat", APIKey: "fast-key", BaseURL: "https://fast.example"},
-		},
-	}
-
-	got := resolveCustomModel(cfg, config.CustomAgent{ModelID: "fast"})
-	if got.Provider != "deepseek" || got.Name != "deepseek-chat" || got.APIKey != "fast-key" || got.BaseURL != "https://fast.example" {
-		t.Fatalf("resolved custom model = %#v", got)
-	}
-
-	if missing := resolveCustomModel(cfg, config.CustomAgent{ModelID: "missing"}); missing != (custom.Model{}) {
-		t.Fatalf("missing model = %#v, want zero value", missing)
-	}
-}
-
-func TestCustomModeratorPromptUsesDefaultAndAppendsToolSection(t *testing.T) {
-	got := customModeratorPrompt("")
-	if !strings.Contains(got, "你是一个公正的主持人") {
-		t.Fatalf("prompt = %q, want default prompt", got)
-	}
-	if !strings.Contains(got, "## 子智能体工具") {
-		t.Fatalf("prompt = %q, want sub-agent tool section", got)
-	}
-
-	custom := customModeratorPrompt("自定义主持人")
-	if !strings.HasPrefix(custom, "自定义主持人") || !strings.Contains(custom, "## 子智能体工具") {
-		t.Fatalf("custom prompt = %q", custom)
 	}
 }
 

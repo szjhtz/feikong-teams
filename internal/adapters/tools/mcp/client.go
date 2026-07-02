@@ -21,9 +21,9 @@ type MCPClient struct {
 
 func setupMCPClients(ctx context.Context) ([]MCPClient, error) {
 	cfg := config.Get()
-	clients := make([]MCPClient, 0, len(cfg.Custom.MCPServers))
+	clients := make([]MCPClient, 0, len(cfg.Tools.MCPServers))
 
-	for _, server := range cfg.Custom.MCPServers {
+	for _, server := range cfg.Tools.MCPServers {
 		if !server.Enabled {
 			log.Printf("Skipping disabled MCP server: %s", serverDisplayName(server))
 			continue

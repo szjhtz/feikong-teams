@@ -1,11 +1,11 @@
 # MCP 工具集成指南
 
-fkteams 可以通过 MCP 接入外部工具和数据源。MCP 服务在 `~/.fkteams/config/config.toml` 的 `[[custom.mcp_servers]]` 中配置。
+fkteams 可以通过 MCP 接入外部工具和数据源。MCP 服务在 `~/.fkteams/config/config.toml` 的 `[[tools.mcp_servers]]` 中配置。
 
 ## 配置示例
 
 ```toml
-[[custom.mcp_servers]]
+[[tools.mcp_servers]]
 id = "filesystem"
 name = "文件系统"
 description = "文件系统操作工具"
@@ -14,7 +14,7 @@ timeout = "30s"
 url = "http://127.0.0.1:3000/mcp"
 transport = "http"
 
-[[custom.mcp_servers]]
+[[tools.mcp_servers]]
 id = "postgres"
 name = "PostgreSQL"
 description = "数据库查询工具"
@@ -62,12 +62,12 @@ MCP 工具命名规则：
 
 - 服务 `id = "filesystem"` 对应工具名 `mcp-filesystem`。
 - 智能体 `tools` 中填写完整工具名。
-- `env` 只属于当前 `[[custom.mcp_servers]]`，不会和其他 MCP 服务混用。
+- `env` 只属于当前 `[[tools.mcp_servers]]`，不会和其他 MCP 服务混用。
 
 ## 常用 stdio 示例
 
 ```toml
-[[custom.mcp_servers]]
+[[tools.mcp_servers]]
 id = "github"
 name = "GitHub"
 description = "GitHub API 工具"
@@ -78,7 +78,7 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "your_github_token" }
 transport = "stdio"
 
-[[custom.mcp_servers]]
+[[tools.mcp_servers]]
 id = "brave-search"
 name = "Brave Search"
 description = "Brave 搜索工具"

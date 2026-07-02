@@ -234,7 +234,7 @@ type sessionModeSwitcher struct {
 }
 
 // SwitchMode 切换工作模式
-// 如果当前处于 @agent 单智能体模式，恢复到切换前的工作模式；否则循环切换（team → deep → group → custom → team）
+// 如果当前处于 @agent 单智能体模式，恢复到切换前的工作模式；否则循环切换（team → deep → group → team）
 func (m *sessionModeSwitcher) SwitchMode() (string, error) {
 	var newMode WorkMode
 
@@ -248,8 +248,6 @@ func (m *sessionModeSwitcher) SwitchMode() (string, error) {
 		case ModeDeep:
 			newMode = ModeGroup
 		case ModeGroup:
-			newMode = ModeCustom
-		case ModeCustom:
 			newMode = ModeTeam
 		default:
 			newMode = ModeTeam

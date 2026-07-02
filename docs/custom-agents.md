@@ -44,8 +44,6 @@ enabled = true
 
 `id` 是引用标识，应保持稳定；`name` 只是展示名称，可以按需要调整。
 
-`custom.moderator` 和 `custom.agents` 只用于 `custom` 会议模式，不再作为全局智能体目录入口。
-
 ## 运行方式
 
 ```bash
@@ -54,9 +52,6 @@ fkteams agent -n frontend -q "帮我创建一个 React 项目"
 
 # 交互模式
 fkteams agent -n frontend
-
-# 自定义协作模式
-fkteams -m custom -q "让多个专家协作完成任务"
 ```
 
 ## 工具选择

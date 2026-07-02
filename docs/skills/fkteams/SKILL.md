@@ -56,7 +56,6 @@ fkteams web
 fkteams              # 默认：团队模式（coordinator 协调多智能体）
 fkteams -m deep      # 深度分析模式
 fkteams -m group     # 多智能体讨论模式（圆桌）
-fkteams -m custom    # 自定义会议模式
 fkteams --temporary  # 临时会话，不保存历史
 ```
 
@@ -102,7 +101,7 @@ fkteams -r "20260302_091249" -q "继续上次的分析"  # 恢复后直接查询
 
 | 参数 | 简写 | 说明 |
 |------|------|------|
-| `--mode` | `-m` | 工作模式：`team`（默认）/ `deep` / `group` / `custom` |
+| `--mode` | `-m` | 工作模式：`team`（默认）/ `deep` / `group` |
 | `--query` | `-q` | 直接查询模式，执行后退出 |
 | `--resume` | `-r` | 恢复指定会话 ID |
 | `--temporary` | `--temp` | 临时会话，不保存历史 |

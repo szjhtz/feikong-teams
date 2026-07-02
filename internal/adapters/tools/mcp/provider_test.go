@@ -60,7 +60,7 @@ func TestProviderUsesCacheAndClearsCache(t *testing.T) {
 func TestProviderReturnsEmptyGroupsWithNoEnabledServers(t *testing.T) {
 	t.Setenv("FEIKONG_APP_DIR", t.TempDir())
 	if err := config.Save(&config.Config{
-		Custom: config.Custom{
+		Tools: config.ToolSettings{
 			MCPServers: []config.MCPServer{
 				{ID: "disabled", Name: "Disabled", Enabled: false, Transport: "stdio"},
 			},
@@ -81,7 +81,7 @@ func TestProviderReturnsEmptyGroupsWithNoEnabledServers(t *testing.T) {
 func TestSetupMCPClientsRejectsUnsupportedTransport(t *testing.T) {
 	t.Setenv("FEIKONG_APP_DIR", t.TempDir())
 	if err := config.Save(&config.Config{
-		Custom: config.Custom{
+		Tools: config.ToolSettings{
 			MCPServers: []config.MCPServer{
 				{ID: "bad", Name: "Bad", Enabled: true, Transport: "pipe"},
 			},

@@ -47,9 +47,6 @@ fkteams
 # 启动深度分析模式
 fkteams -m deep
 
-# 启动自定义会议模式
-fkteams -m custom
-
 # 启动多智能体讨论模式
 fkteams -m group
 ```
@@ -71,9 +68,6 @@ go run ./cmd/fkteams web
 # 启动深度分析模式
 ./release/fkteams_darwin_arm64 -m deep
 
-# 启动自定义会议模式
-./release/fkteams_darwin_arm64 -m custom
-
 # 启动多智能体讨论模式
 ./release/fkteams_darwin_arm64 -m group
 ```
@@ -93,7 +87,7 @@ go run ./cmd/fkteams web
 
 1. 启动 Web 服务：`./fkteams web`
 2. 浏览器访问：`http://localhost:23456`
-3. 在界面中选择工作模式（团队模式/深度模式/自定义模式/讨论模式）
+3. 在界面中选择工作模式（团队模式/深度模式/圆桌讨论模式）
 4. 开始对话，实时查看 AI 回复和工具执行过程
 5. 使用"管理历史"功能搜索、导出、管理历史对话
 
@@ -140,7 +134,7 @@ go run ./cmd/fkteams web
 | `help`                          | 显示帮助信息                                          |
 | `list_agents`                   | 列出所有可用的智能体                                  |
 | `@智能体名 [查询内容]`          | 切换到指定智能体并可选执行查询                        |
-| `switch_work_mode`              | 切换工作模式（团队模式/深度模式/自定义模式/讨论模式） |
+| `switch_work_mode`              | 切换工作模式（团队模式/深度模式/圆桌讨论模式） |
 | `save_chat_history`             | 保存聊天历史到当前会话文件                            |
 | `list_chat_history`             | 列出所有可用的聊天历史会话                            |
 | `load_chat_history`             | 选择并加载聊天历史会话                                |
@@ -286,7 +280,7 @@ cat error.log | ./fkteams agent -n coder -q "分析这个错误日志"
 
 | 参数        | 简写 | 说明                                                                           |
 | ----------- | ---- | ------------------------------------------------------------------------------ |
-| `--mode`    | `-m` | 工作模式: `team`（团队）、`deep`（深度）、`group`（讨论）或 `custom`（自定义） |
+| `--mode`    | `-m` | 工作模式: `team`（团队）、`deep`（深度）或 `group`（讨论） |
 | `--query`   | `-q` | 直接查询模式，执行完查询后退出                                                 |
 | `--resume`  | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用                                     |
 | `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令                             |

@@ -38,10 +38,9 @@ func ExtractAgentMention(input string) (agentName string, query string) {
 type WorkMode string
 
 const (
-	ModeTeam   WorkMode = "team"
-	ModeDeep   WorkMode = "deep"
-	ModeGroup  WorkMode = "group"
-	ModeCustom WorkMode = "custom"
+	ModeTeam  WorkMode = "team"
+	ModeDeep  WorkMode = "deep"
+	ModeGroup WorkMode = "group"
 )
 
 // String 返回模式字符串
@@ -58,8 +57,6 @@ func (m WorkMode) GetPromptPrefix() string {
 		return "深度模式> "
 	case ModeGroup:
 		return "多智能体讨论模式> "
-	case ModeCustom:
-		return "自定义会议模式> "
 	default:
 		return "未知模式> "
 	}
@@ -74,8 +71,6 @@ func ParseWorkMode(mode string) WorkMode {
 		return ModeDeep
 	case "group":
 		return ModeGroup
-	case "custom":
-		return ModeCustom
 	default:
 		return ModeTeam
 	}

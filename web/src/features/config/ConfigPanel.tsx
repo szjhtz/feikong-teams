@@ -12,7 +12,6 @@ import {
   Save,
   Search,
   Server,
-  Settings2,
   Trash2,
   Wrench,
   X,
@@ -33,7 +32,6 @@ import type {
   ChannelDiscordConfig,
   ChannelQQConfig,
   ChannelWeixinConfig,
-  CustomAgentConfig,
   MCPServerConfig,
   ModelConfig,
   ServerAuthConfig,
@@ -41,15 +39,15 @@ import type {
   ToolInfo,
 } from "@/types/config";
 
-type ConfigTab = "models" | "server" | "agents" | "memory" | "channels" | "custom" | "tools" | "other";
+type ConfigTab = "models" | "server" | "agents" | "roundtable" | "memory" | "channels" | "tools" | "other";
 
 const tabs: Array<{ key: ConfigTab; label: string; icon: typeof Bot }> = [
   { key: "models", label: "模型", icon: Bot },
   { key: "server", label: "服务", icon: Server },
   { key: "agents", label: "智能体", icon: Brain },
+  { key: "roundtable", label: "圆桌", icon: ListPlus },
   { key: "memory", label: "记忆", icon: Database },
   { key: "channels", label: "通道", icon: MessageSquare },
-  { key: "custom", label: "自定义", icon: Settings2 },
   { key: "tools", label: "工具", icon: Wrench },
   { key: "other", label: "其他", icon: Cable },
 ];
@@ -161,10 +159,10 @@ export function ConfigPanel() {
         {activeTab === "models" ? <ModelsTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "server" ? <ServerTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "agents" ? <AgentsTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
+        {activeTab === "roundtable" ? <RoundtableTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
         {activeTab === "memory" ? <MemoryTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "channels" ? <ChannelsTab draft={draft} updateDraft={updateDraft} /> : null}
-        {activeTab === "custom" ? <CustomTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
-        {activeTab === "tools" ? <ToolsTab /> : null}
+        {activeTab === "tools" ? <ToolsTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "other" ? <OtherTab draft={draft} toolsCount={tools.length} /> : null}
       </div>
     </div>
@@ -312,112 +310,116 @@ function ServerTab({ draft, updateDraft }: EditorProps) {
 function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
   const agents = draft.agents || {};
   const agentItems = agents.items || [];
-  const roundtable = draft.roundtable || {};
   const tools = useAppSelector((state) => state.config.tools);
-  const toolOptions = useMemo(() => customToolOptions(tools, draft.custom?.mcp_servers || []), [draft.custom?.mcp_servers, tools]);
+  const toolOptions = useMemo(() => buildToolOptions(tools, draft.tools?.mcp_servers || []), [draft.tools?.mcp_servers, tools]);
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
-      <Panel>
-        <PanelHeader className="flex items-center justify-between">
-          <SectionTitle icon={Brain} title="智能体目录" description="查看和配置全局可调用智能体，内置智能体支持开关和覆盖配置。" />
-          <Button
-            variant="outline"
-            onClick={() =>
-              updateDraft((next) => {
-                const items = next.agents?.items || [];
-                next.agents = {
-                  ...(next.agents || {}),
-                  items: [
-                    ...items,
-                    {
-                      id: uniqueAgentID(items, "agent"),
-                      name: "",
-                      description: "",
-                      prompt: "",
-                      model_id: modelIDs[0] || "",
-                      tools: [],
-                      enabled: true,
-                    },
-                  ],
-                };
-              })
+    <Panel>
+      <PanelHeader className="flex items-center justify-between">
+        <SectionTitle icon={Brain} title="智能体目录" description="查看和配置全局可调用智能体，内置智能体支持开关和覆盖配置。" />
+        <Button
+          variant="outline"
+          onClick={() =>
+            updateDraft((next) => {
+              const items = next.agents?.items || [];
+              next.agents = {
+                ...(next.agents || {}),
+                items: [
+                  ...items,
+                  {
+                    id: uniqueAgentID(items, "agent"),
+                    name: "",
+                    description: "",
+                    prompt: "",
+                    model_id: modelIDs[0] || "",
+                    tools: [],
+                    enabled: true,
+                  },
+                ],
+              };
+            })
+          }
+        >
+          <Plus className="h-4 w-4" />
+          添加智能体
+        </Button>
+      </PanelHeader>
+      <PanelBody className="grid gap-4 xl:grid-cols-2">
+        {agentItems.map((agent, index) => (
+          <ConfigCard
+            key={`${agent.id || "agent"}-${index}`}
+            title={agent.name || agent.id || "未命名智能体"}
+            aside={agent.builtin ? "内置智能体" : agent.model_id || "自定义智能体"}
+            onRemove={
+              agent.builtin
+                ? undefined
+                : () =>
+                    updateDraft((next) => {
+                      next.agents = { ...(next.agents || {}), items: (next.agents?.items || []).filter((_, itemIndex) => itemIndex !== index) };
+                    })
             }
           >
-            <Plus className="h-4 w-4" />
-            添加智能体
-          </Button>
-        </PanelHeader>
-        <PanelBody className="grid gap-4">
-          {agentItems.map((agent, index) => (
-            <ConfigCard
-              key={`${agent.id || "agent"}-${index}`}
-              title={agent.name || agent.id || "未命名智能体"}
-              aside={agent.builtin ? "内置智能体" : agent.model_id || "自定义智能体"}
-              onRemove={
-                agent.builtin
-                  ? undefined
-                  : () =>
-                      updateDraft((next) => {
-                        next.agents = { ...(next.agents || {}), items: (next.agents?.items || []).filter((_, itemIndex) => itemIndex !== index) };
-                      })
+            <AgentCatalogEditor
+              agent={agent}
+              modelIDs={modelIDs}
+              toolOptions={toolOptions}
+              onChange={(value) =>
+                updateDraft((next) => {
+                  const items = [...(next.agents?.items || [])];
+                  items[index] = value;
+                  next.agents = { ...(next.agents || {}), items };
+                })
               }
-            >
-              <AgentCatalogEditor
-                agent={agent}
-                modelIDs={modelIDs}
-                toolOptions={toolOptions}
-                onChange={(value) =>
-                  updateDraft((next) => {
-                    const items = [...(next.agents?.items || [])];
-                    items[index] = value;
-                    next.agents = { ...(next.agents || {}), items };
-                  })
-                }
-              />
-            </ConfigCard>
-          ))}
-          {agentItems.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">暂无智能体配置，重新加载配置会从后端获取内置智能体默认信息。</div>
-          ) : null}
-        </PanelBody>
-      </Panel>
-      <div className="space-y-4">
-        <Panel>
-          <PanelHeader className="flex items-center justify-between">
-          <SectionTitle icon={ListPlus} title="圆桌讨论" description="配置 roundtable 模式成员和最大迭代次数。" />
-          <Button
-            variant="outline"
-            onClick={() =>
-              updateDraft((next) => {
-                const members = next.roundtable?.members || [];
-                next.roundtable = {
-                  ...(next.roundtable || {}),
-                  members: [...members, { id: uniqueMemberID(members, "member"), name: "", description: "", model_id: modelIDs[0] || "", prompt: "" }],
-                };
-              })
-            }
-          >
-            <Plus className="h-4 w-4" />
-            添加成员
-          </Button>
-        </PanelHeader>
-        <PanelBody className="space-y-4">
+            />
+          </ConfigCard>
+        ))}
+        {agentItems.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground xl:col-span-2">暂无智能体配置，重新加载配置会从后端获取内置智能体默认信息。</div>
+        ) : null}
+      </PanelBody>
+    </Panel>
+  );
+}
+
+function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
+  const roundtable = draft.roundtable || {};
+  return (
+    <Panel>
+      <PanelHeader className="flex items-center justify-between">
+        <SectionTitle icon={ListPlus} title="圆桌讨论" description="配置 roundtable 模式成员和最大迭代次数。" />
+        <Button
+          variant="outline"
+          onClick={() =>
+            updateDraft((next) => {
+              const members = next.roundtable?.members || [];
+              next.roundtable = {
+                ...(next.roundtable || {}),
+                members: [...members, { id: uniqueMemberID(members, "member"), name: "", description: "", model_id: modelIDs[0] || "", prompt: "" }],
+              };
+            })
+          }
+        >
+          <Plus className="h-4 w-4" />
+          添加成员
+        </Button>
+      </PanelHeader>
+      <PanelBody className="grid gap-4 xl:grid-cols-2">
+        <div className="xl:col-span-2">
           <NumberField
             label="最大迭代次数"
             value={roundtable.max_iterations}
+            min={0}
             onChange={(value) =>
               updateDraft((next) => {
                 next.roundtable = { ...(next.roundtable || {}), max_iterations: value };
               })
             }
           />
-          {(roundtable.members || []).map((member, index) => (
-            <RoundtableMemberEditor key={index} member={member} index={index} modelIDs={modelIDs} updateDraft={updateDraft} />
-          ))}
-        </PanelBody>
-      </Panel>
-      </div>
-    </div>
+        </div>
+        {(roundtable.members || []).map((member, index) => (
+          <RoundtableMemberEditor key={index} member={member} index={index} modelIDs={modelIDs} updateDraft={updateDraft} />
+        ))}
+      </PanelBody>
+    </Panel>
   );
 }
 
@@ -476,103 +478,36 @@ function ChannelsTab({ draft, updateDraft }: EditorProps) {
   );
 }
 
-function CustomTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
-  const custom = draft.custom || {};
-  const moderator = custom.moderator || {};
+function ToolsTab({ draft, updateDraft }: EditorProps) {
   const tools = useAppSelector((state) => state.config.tools);
-  const toolOptions = useMemo(() => customToolOptions(tools, custom.mcp_servers || []), [custom.mcp_servers, tools]);
+  const builtinTools = tools.filter((tool) => tool.builtin !== false);
+  const mcpTools = tools.filter((tool) => tool.builtin === false);
+  const mcpServers = draft.tools?.mcp_servers || [];
   return (
     <div className="space-y-4">
       <Panel>
         <PanelHeader>
-          <SectionTitle icon={Bot} title="协调者" description="自定义团队模式下负责调度成员协作的智能体。" />
+          <SectionTitle icon={Wrench} title="内置工具" description={`${builtinTools.length} 个内置工具组，可用于智能体工具配置。`} />
         </PanelHeader>
-        <PanelBody>
-          <CustomAgentEditor
-            agent={moderator}
-            modelIDs={modelIDs}
-            toolOptions={toolOptions}
-            onChange={(value) =>
-              updateDraft((next) => {
-                next.custom = { ...(next.custom || {}), moderator: value };
-              })
-            }
-          />
-        </PanelBody>
-      </Panel>
-
-      <Panel>
-        <PanelHeader className="flex items-center justify-between">
-          <SectionTitle icon={Brain} title="自定义会议成员" description="配置 custom 会议模式下由协调者调度的成员。" />
-          <Button
-            variant="outline"
-            onClick={() =>
-              updateDraft((next) => {
-                next.custom = {
-                  ...(next.custom || {}),
-                  agents: [
-                    ...(next.custom?.agents || []),
-                    {
-                      id: uniqueAgentID(next.custom?.agents || [], "agent"),
-                      name: "",
-                      description: "",
-                      prompt: "",
-                      model_id: modelIDs[0] || "",
-                      tools: [],
-                    },
-                  ],
-                };
-              })
-            }
-          >
-            <Plus className="h-4 w-4" />
-            添加智能体
-          </Button>
-        </PanelHeader>
-        <PanelBody className="grid gap-4 xl:grid-cols-2">
-          {(custom.agents || []).map((agent, index) => (
-            <ConfigCard
-              key={index}
-              title={agent.name || "未命名智能体"}
-              aside={agent.model_id || "model_id"}
-              onRemove={() =>
-                updateDraft((next) => {
-                  next.custom = {
-                    ...(next.custom || {}),
-                    agents: (next.custom?.agents || []).filter((_, itemIndex) => itemIndex !== index),
-                  };
-                })
-              }
-            >
-              <CustomAgentEditor
-                agent={agent}
-                modelIDs={modelIDs}
-                toolOptions={toolOptions}
-                onChange={(value) =>
-                  updateDraft((next) => {
-                    const agents = [...(next.custom?.agents || [])];
-                    agents[index] = value;
-                    next.custom = { ...(next.custom || {}), agents };
-                  })
-                }
-              />
-            </ConfigCard>
+        <PanelBody className="grid gap-3 xl:grid-cols-2">
+          {builtinTools.map((tool) => (
+            <ToolInfoCard key={tool.name} tool={tool} />
           ))}
         </PanelBody>
       </Panel>
-
       <Panel>
         <PanelHeader className="flex items-center justify-between">
-          <SectionTitle icon={Cable} title="MCP 服务" description="配置 HTTP 或 stdio MCP 服务。" />
+          <SectionTitle icon={Cable} title="MCP 工具" description="配置 HTTP 或 stdio MCP 服务，启用后可在智能体工具中选择。" />
           <Button
             variant="outline"
             onClick={() =>
               updateDraft((next) => {
-                next.custom = {
-                  ...(next.custom || {}),
+                const servers = next.tools?.mcp_servers || [];
+                next.tools = {
+                  ...(next.tools || {}),
                   mcp_servers: [
-                    ...(next.custom?.mcp_servers || []),
-                    { id: uniqueMCPServerID(next.custom?.mcp_servers || [], "mcp"), name: "", description: "", enabled: false, timeout: "30s", transport: "http", url: "" },
+                    ...servers,
+                    { id: uniqueMCPServerID(servers, "mcp"), name: "", description: "", enabled: false, timeout: "30s", transport: "http", url: "" },
                   ],
                 };
               })
@@ -583,55 +518,60 @@ function CustomTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
           </Button>
         </PanelHeader>
         <PanelBody className="grid gap-4 xl:grid-cols-2">
-          {(custom.mcp_servers || []).map((server, index) => (
+          {mcpServers.map((server, index) => (
             <MCPServerEditor key={index} server={server} index={index} updateDraft={updateDraft} />
           ))}
+          {mcpServers.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground xl:col-span-2">暂无 MCP 服务配置。</div>
+          ) : null}
         </PanelBody>
       </Panel>
+      {mcpTools.length ? (
+        <Panel>
+          <PanelHeader>
+            <SectionTitle icon={Cable} title="已加载 MCP 工具" description={`${mcpTools.length} 个来自已启用 MCP 服务的工具组。`} />
+          </PanelHeader>
+          <PanelBody className="grid gap-3 xl:grid-cols-2">
+            {mcpTools.map((tool) => (
+              <ToolInfoCard key={tool.name} tool={tool} />
+            ))}
+          </PanelBody>
+        </Panel>
+      ) : null}
     </div>
   );
 }
 
-function ToolsTab() {
-  const tools = useAppSelector((state) => state.config.tools);
+function ToolInfoCard({ tool }: { tool: ToolInfo }) {
   return (
-    <Panel>
-      <PanelHeader>
-        <SectionTitle icon={Wrench} title="工具目录" description={`${tools.length} 个工具组，可用于自定义智能体工具配置。`} />
-      </PanelHeader>
-      <PanelBody className="grid gap-3 xl:grid-cols-2">
-        {tools.map((tool) => (
-          <div key={tool.name} className="rounded-xl border border-border/75 bg-card/65 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="font-medium">{tool.display_name || tool.name}</div>
-              <div className="flex gap-1">
-                {tool.read_only ? <Badge>只读</Badge> : null}
-                {tool.destructive ? <Badge>破坏性</Badge> : null}
-                <Badge>{tool.category || "tool"}</Badge>
-              </div>
-            </div>
-            <div className="mt-2 text-sm text-muted-foreground">{tool.description || "暂无描述"}</div>
-            {tool.included_tools?.length ? (
-              <div className="mt-3 flex flex-wrap gap-1">
-                {tool.included_tools.map((name) => (
-                  <Badge key={name}>{name}</Badge>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </PanelBody>
-    </Panel>
+    <div className="rounded-xl border border-border/75 bg-card/65 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-medium">{tool.display_name || tool.name}</div>
+        <div className="flex gap-1">
+          {tool.read_only ? <Badge>只读</Badge> : null}
+          {tool.destructive ? <Badge>破坏性</Badge> : null}
+          <Badge>{tool.category || "tool"}</Badge>
+        </div>
+      </div>
+      <div className="mt-2 text-sm text-muted-foreground">{tool.description || "暂无描述"}</div>
+      {tool.included_tools?.length ? (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {tool.included_tools.map((name) => (
+            <Badge key={name}>{name}</Badge>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function OtherTab({ draft, toolsCount }: { draft: AppConfig; toolsCount: number }) {
-  const known = new Set(["models", "server", "agents", "custom", "channels", "memory", "openai_api", "roundtable"]);
+  const known = new Set(["models", "server", "agents", "tools", "channels", "memory", "openai_api", "roundtable"]);
   const unknownKeys = Object.keys(draft).filter((key) => !known.has(key));
   return (
     <Panel>
       <PanelHeader>
-        <SectionTitle icon={Settings2} title="其他信息" description="当前页面会保留未知顶层配置，但不提供原始文本编辑入口。" />
+        <SectionTitle icon={Cable} title="其他信息" description="当前页面会保留未知顶层配置，但不提供原始文本编辑入口。" />
       </PanelHeader>
       <PanelBody className="grid gap-4 md:grid-cols-3">
         <MetricCard label="模型数量" value={draft.models?.length || 0} />
@@ -751,37 +691,6 @@ function AgentCatalogEditor({
       <Field label="系统提示词">
         <Textarea className="min-h-56 text-sm" value={agent.prompt || ""} onChange={(event) => onChange({ ...agent, prompt: event.target.value })} />
       </Field>
-    </div>
-  );
-}
-
-function CustomAgentEditor({
-  agent,
-  modelIDs,
-  toolOptions,
-  onChange,
-}: {
-  agent: CustomAgentConfig;
-  modelIDs: string[];
-  toolOptions: ToolSelectOption[];
-  onChange: (value: CustomAgentConfig) => void;
-}) {
-  return (
-    <div className="grid gap-3">
-      <div className="grid gap-3 md:grid-cols-3">
-        <TextField label="ID" value={agent.id} onChange={(value) => onChange({ ...agent, id: value })} />
-        <TextField label="名称" value={agent.name} onChange={(value) => onChange({ ...agent, name: value })} />
-        <ModelSelect label="模型 ID" value={agent.model_id} modelIDs={modelIDs} onChange={(value) => onChange({ ...agent, model_id: value })} />
-      </div>
-      <TextField label="描述" value={agent.description} onChange={(value) => onChange({ ...agent, description: value })} />
-      <Field label="系统提示词">
-        <Textarea
-          className="min-h-32 text-sm"
-          value={agent.prompt || ""}
-          onChange={(event) => onChange({ ...agent, prompt: event.target.value })}
-        />
-      </Field>
-      <ToolSelectField tools={agent.tools || []} options={toolOptions} onChange={(tools) => onChange({ ...agent, tools })} />
     </div>
   );
 }
@@ -945,7 +854,7 @@ function ToolSelectField({
   );
 }
 
-function customToolOptions(tools: ToolInfo[], mcpServers: MCPServerConfig[]): ToolSelectOption[] {
+function buildToolOptions(tools: ToolInfo[], mcpServers: MCPServerConfig[]): ToolSelectOption[] {
   const options = new Map<string, ToolSelectOption>();
   for (const tool of tools) {
     const name = tool.name.trim();
@@ -1002,9 +911,9 @@ function MCPServerEditor({
 }) {
   function update(patch: Partial<MCPServerConfig>) {
     updateDraft((next) => {
-      const servers = [...(next.custom?.mcp_servers || [])];
+      const servers = [...(next.tools?.mcp_servers || [])];
       servers[index] = { ...servers[index], ...patch };
-      next.custom = { ...(next.custom || {}), mcp_servers: servers };
+      next.tools = { ...(next.tools || {}), mcp_servers: servers };
     });
   }
 
@@ -1014,7 +923,7 @@ function MCPServerEditor({
       aside={server.transport || "transport"}
       onRemove={() =>
         updateDraft((next) => {
-          next.custom = { ...(next.custom || {}), mcp_servers: (next.custom?.mcp_servers || []).filter((_, itemIndex) => itemIndex !== index) };
+          next.tools = { ...(next.tools || {}), mcp_servers: (next.tools?.mcp_servers || []).filter((_, itemIndex) => itemIndex !== index) };
         })
       }
     >
@@ -1124,10 +1033,33 @@ function TextField({
   );
 }
 
-function NumberField({ label, value, onChange }: { label: string; value?: number; onChange: (value: number) => void }) {
+function NumberField({
+  label,
+  value,
+  min,
+  step = 1,
+  onChange,
+}: {
+  label: string;
+  value?: number;
+  min?: number;
+  step?: number;
+  onChange: (value: number) => void;
+}) {
+  function parseValue(raw: string) {
+    let next = Number(raw || 0);
+    if (!Number.isFinite(next)) {
+      next = 0;
+    }
+    if (min !== undefined) {
+      next = Math.max(min, next);
+    }
+    return next;
+  }
+
   return (
     <Field label={label}>
-      <Input type="number" value={value ?? 0} onChange={(event) => onChange(Number(event.target.value || 0))} />
+      <Input type="number" min={min} step={step} value={value ?? 0} onChange={(event) => onChange(parseValue(event.target.value))} />
     </Field>
   );
 }
@@ -1213,7 +1145,7 @@ function ModelSelect({
 }
 
 function ModeField({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
-  return <SelectField label="运行模式" value={value} options={["team", "deep", "roundtable", "custom", "agent"]} onChange={onChange} />;
+  return <SelectField label="运行模式" value={value} options={["team", "deep", "roundtable", "agent"]} onChange={onChange} />;
 }
 
 function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
@@ -1422,10 +1354,8 @@ function normalizeConfig(config: AppConfig): AppConfig {
   next.openai_api = next.openai_api || {};
   next.roundtable = next.roundtable || {};
   next.roundtable.members = next.roundtable.members || [];
-  next.custom = next.custom || {};
-  next.custom.moderator = next.custom.moderator || {};
-  next.custom.agents = next.custom.agents || [];
-  next.custom.mcp_servers = next.custom.mcp_servers || [];
+  next.tools = next.tools || {};
+  next.tools.mcp_servers = next.tools.mcp_servers || [];
   return next;
 }
 

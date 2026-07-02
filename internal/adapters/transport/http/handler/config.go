@@ -96,6 +96,10 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
+		if err := newCfg.ValidateRoundtable(); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
 
 		// 合并敏感字段：前端传空字符串时保留旧值
 		for i := range newCfg.Models {

@@ -181,6 +181,20 @@ func TestUpdateConfigHandlerRejectsDuplicateModelNames(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigHandlerRejectsNegativeRoundtableIterations(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{})
+
+	body := `{"models":[{"id":"main","name":"主力模型","use_for":["chat"]}],"roundtable":{"max_iterations":-1}}`
+	router := gin.New()
+	router.POST("/config", UpdateConfigHandlerWithState(nil))
+
+	resp := performJSON(router, http.MethodPost, "/config", body)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("negative roundtable iterations status = %d, want 400", resp.Code)
+	}
+}
+
 func TestMemoryHandlersUseInjectedState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

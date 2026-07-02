@@ -99,8 +99,6 @@ export interface RoundtableConfig {
   max_iterations?: number;
 }
 
-export type CustomAgentConfig = AgentConfig;
-
 export interface MCPServerConfig {
   id?: string;
   name?: string;
@@ -114,9 +112,7 @@ export interface MCPServerConfig {
   transport?: string;
 }
 
-export interface CustomConfig {
-  moderator?: CustomAgentConfig;
-  agents?: CustomAgentConfig[];
+export interface ToolSettingsConfig {
   mcp_servers?: MCPServerConfig[];
 }
 
@@ -139,10 +135,10 @@ export interface AppConfig {
   models?: ModelConfig[];
   server?: ServerConfig;
   agents?: AgentsConfig;
-  custom?: CustomConfig;
   channels?: ChannelsConfig;
   memory?: MemoryConfig;
   openai_api?: OpenAIAPIConfig;
   roundtable?: RoundtableConfig;
+  tools?: ToolSettingsConfig;
   [key: string]: unknown;
 }

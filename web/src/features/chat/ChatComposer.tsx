@@ -11,7 +11,6 @@ const modeOptions = [
   { value: "team", label: "团队" },
   { value: "deep", label: "深度" },
   { value: "roundtable", label: "圆桌" },
-  { value: "custom", label: "自定义" },
 ] as const;
 
 const referenceResultLimit = 50;
