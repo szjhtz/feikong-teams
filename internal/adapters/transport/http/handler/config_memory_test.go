@@ -17,7 +17,9 @@ func TestGetConfigHandlerMasksSensitiveFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	saveHandlerConfig(t, config.Config{
 		Models: []config.ModelConfig{{
-			Name:   "default",
+			ID:     "main",
+			Name:   "主力模型",
+			UseFor: []string{config.ModelUseChat},
 			APIKey: "sk-secret",
 		}},
 		Server: config.Server{Auth: config.ServerAuth{
@@ -61,7 +63,9 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	saveHandlerConfig(t, config.Config{
 		Models: []config.ModelConfig{{
-			Name:   "default",
+			ID:     "main",
+			Name:   "主力模型",
+			UseFor: []string{config.ModelUseChat},
 			APIKey: "old-key",
 		}},
 		Server: config.Server{Auth: config.ServerAuth{
@@ -79,8 +83,10 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 
 	next := config.Config{
 		Models: []config.ModelConfig{{
-			Name:         "renamed",
-			OriginalName: "default",
+			ID:         "renamed",
+			Name:       "重命名模型",
+			UseFor:     []string{config.ModelUseChat},
+			OriginalID: "main",
 		}},
 		Server: config.Server{Auth: config.ServerAuth{
 			Enabled:  true,
@@ -130,7 +136,7 @@ func TestUpdateConfigHandlerRejectsDuplicateModelNames(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	saveHandlerConfig(t, config.Config{})
 
-	body := `{"models":[{"name":"default"},{"name":"default"}]}`
+	body := `{"models":[{"id":"main","name":"主力模型","use_for":["chat"]},{"id":"main","name":"重复模型"}]}`
 	router := gin.New()
 	router.POST("/config", UpdateConfigHandlerWithState(nil))
 

@@ -1,109 +1,90 @@
 # MCP 工具集成指南
 
-## 什么是 MCP？
+fkteams 可以通过 MCP 接入外部工具和数据源。MCP 服务在 `~/.fkteams/config/config.toml` 的 `[[custom.mcp_servers]]` 中配置。
 
-Model Context Protocol (MCP) 是一个开放的协议标准，用于 AI 应用与外部工具和数据源的集成。fkteams 完整支持 MCP 协议，可以轻松接入丰富的 MCP 工具生态。
-
-## MCP 服务配置
-
-在 `config/config.toml` 中配置 MCP 服务：
+## 配置示例
 
 ```toml
 [[custom.mcp_servers]]
-name = "filesystem"
-desc = "文件系统操作工具"
-enabled = true          # 是否启用
-timeout = 30           # 超时时间（秒）
+id = "filesystem"
+name = "文件系统"
+description = "文件系统操作工具"
+enabled = true
+timeout = "30s"
 url = "http://127.0.0.1:3000/mcp"
-transport_type = "http"
+transport = "http"
 
 [[custom.mcp_servers]]
-name = "postgres"
-desc = "PostgreSQL 数据库工具"
+id = "postgres"
+name = "PostgreSQL"
+description = "数据库查询工具"
 enabled = true
-timeout = 30
-command = "npx"        # 启动命令
-env_vars = ["DATABASE_URL=postgresql://localhost/mydb"]  # 环境变量
-args = ["-y", "@modelcontextprotocol/server-postgres"]   # 命令参数
-transport_type = "stdio"
+timeout = "30s"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-postgres"]
+env = { DATABASE_URL = "postgresql://localhost/mydb" }
+transport = "stdio"
 ```
 
-## 支持的连接方式
+字段说明：
 
-1. **HTTP 方式**
-   - 适合：远程 MCP 服务
-   - 配置：设置 `url` 和 `transport_type = "http"`
+| 字段 | 说明 |
+| ---- | ---- |
+| `id` | 稳定服务 ID，工具名使用 `mcp-<id>` |
+| `name` | 展示名称 |
+| `description` | 服务描述 |
+| `enabled` | 是否启用 |
+| `timeout` | 初始化超时，使用 Go duration 格式，如 `"30s"` |
+| `transport` | `http`、`sse` 或 `stdio` |
+| `url` | HTTP/SSE 服务地址 |
+| `command` | stdio 本地进程启动命令 |
+| `args` | stdio 命令参数 |
+| `env` | 当前 MCP server 独立环境变量，推荐 inline table |
 
-2. **SSE 方式**
-   - 适合：需要服务器推送的场景
-   - 配置：设置 `url` 和 `transport_type = "sse"`
-
-3. **Stdio 方式**
-   - 适合：本地 MCP 工具
-   - 配置：设置 `command`、`args` 和 `transport_type = "stdio"`
-   - 支持通过 `env_vars` 配置环境变量
-
-## 在自定义智能体中使用 MCP 工具
+## 在自定义智能体中使用
 
 ```toml
 [[custom.agents]]
+id = "data"
 name = "数据处理专家"
-desc = "专门处理数据相关任务"
-model = "default"  # 引用 [[models]] 中的模型名称
-system_prompt = "你是一个数据处理专家..."
+description = "专门处理数据相关任务"
+model_id = "main"
+prompt = "你是一个数据处理专家。"
 tools = [
-  "file",              # 内置文件工具
-  "mcp-filesystem",    # MCP 文件系统工具（需加 mcp- 前缀）
-  "mcp-postgres"       # MCP 数据库工具
+  "file",
+  "mcp-filesystem",
+  "mcp-postgres",
 ]
 ```
 
-## MCP 工具命名规则
+MCP 工具命名规则：
 
-- MCP 服务在配置文件中使用 `name` 字段定义
-- 在智能体的 `tools` 列表中引用时，需要添加 `mcp-` 前缀
-- 例如：`name = "filesystem"` → 使用时写作 `mcp-filesystem`
+- 服务 `id = "filesystem"` 对应工具名 `mcp-filesystem`。
+- 自定义智能体 `tools` 中填写完整工具名。
+- `env` 只属于当前 `[[custom.mcp_servers]]`，不会和其他 MCP 服务混用。
 
-## 常用 MCP 服务示例
+## 常用 stdio 示例
 
 ```toml
-# 文件系统操作
 [[custom.mcp_servers]]
-name = "filesystem"
-desc = "文件系统读写工具"
+id = "github"
+name = "GitHub"
+description = "GitHub API 工具"
 enabled = true
+timeout = "30s"
 command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
-transport_type = "stdio"
-
-# GitHub 集成
-[[custom.mcp_servers]]
-name = "github"
-desc = "GitHub API 工具"
-enabled = true
-command = "npx"
-env_vars = ["GITHUB_TOKEN=your_github_token"]
 args = ["-y", "@modelcontextprotocol/server-github"]
-transport_type = "stdio"
+env = { GITHUB_TOKEN = "your_github_token" }
+transport = "stdio"
 
-# Google Drive
 [[custom.mcp_servers]]
-name = "gdrive"
-desc = "Google Drive 工具"
+id = "brave-search"
+name = "Brave Search"
+description = "Brave 搜索工具"
 enabled = true
+timeout = "30s"
 command = "npx"
-args = ["-y", "@modelcontextprotocol/server-gdrive"]
-transport_type = "stdio"
-
-# Brave Search
-[[custom.mcp_servers]]
-name = "brave-search"
-desc = "Brave 搜索引擎"
-enabled = true
-command = "npx"
-env_vars = ["BRAVE_API_KEY=your_api_key"]
 args = ["-y", "@modelcontextprotocol/server-brave-search"]
-transport_type = "stdio"
+env = { BRAVE_API_KEY = "your_api_key" }
+transport = "stdio"
 ```
-
-更多 MCP 服务请访问：https://github.com/modelcontextprotocol/servers

@@ -226,7 +226,7 @@ fkteams model ls       # 或 fkteams model list
 fkteams model lr --name deepseek
 fkteams model lr --provider openai
 
-# 切换默认模型（交互式选择）
+# 切换默认对话模型（交互式选择）
 fkteams model sw
 # 指定配置名
 fkteams model sw --name deepseek
@@ -255,7 +255,7 @@ fkteams login custom --base-url https://my-proxy.example.com/v1 --api-key sk-...
 
 # 通用可选参数
 fkteams login openai --api-key sk-... --model gpt-4o --name my-openai
-# --name default 会覆盖当前默认模型
+# --name 指定模型 ID；首次登录会自动设为默认对话模型
 
 # 退出登录
 fkteams logout

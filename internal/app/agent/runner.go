@@ -78,7 +78,7 @@ func agentDisplayNamesByName(ctx context.Context) map[string]string {
 
 // resolveCustomModel 从配置文件解析自定义智能体的模型配置
 func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Model {
-	mc := cfg.ResolveModel(agent.Model)
+	mc := cfg.ResolveModel(agent.ModelID)
 	if mc == nil {
 		return custom.Model{}
 	}
@@ -190,11 +190,11 @@ func CreateCustomRunner(ctx context.Context) (runtimeport.Runner, error) {
 
 	for _, customAgent := range cfg.Custom.Agents {
 		agent, err := custom.NewAgent(ctx, custom.Config{
-			Name:         customAgent.Name,
-			Description:  customAgent.Desc,
-			SystemPrompt: customAgent.SystemPrompt,
-			Model:        resolveCustomModel(cfg, customAgent),
-			ToolNames:    customAgent.Tools,
+			Name:        customAgent.Name,
+			Description: customAgent.Description,
+			Prompt:      customAgent.Prompt,
+			Model:       resolveCustomModel(cfg, customAgent),
+			ToolNames:   customAgent.Tools,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("创建自定义智能体 %s 失败: %w", customAgent.Name, err)
@@ -208,12 +208,12 @@ func CreateCustomRunner(ctx context.Context) (runtimeport.Runner, error) {
 	}
 	if cfg.Custom.Moderator.Name != "" {
 		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
-			Name:         cfg.Custom.Moderator.Name,
-			Description:  cfg.Custom.Moderator.Desc,
-			SystemPrompt: customModeratorPrompt(cfg.Custom.Moderator.SystemPrompt),
-			Model:        resolveCustomModel(cfg, cfg.Custom.Moderator),
-			ToolNames:    cfg.Custom.Moderator.Tools,
-			Tools:        agentTools,
+			Name:        cfg.Custom.Moderator.Name,
+			Description: cfg.Custom.Moderator.Description,
+			Prompt:      customModeratorPrompt(cfg.Custom.Moderator.Prompt),
+			Model:       resolveCustomModel(cfg, cfg.Custom.Moderator),
+			ToolNames:   cfg.Custom.Moderator.Tools,
+			Tools:       agentTools,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("创建自定义主持人失败: %w", err)
@@ -251,11 +251,11 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 
 	if cfg.Custom.Moderator.Name != "" {
 		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
-			Name:         cfg.Custom.Moderator.Name,
-			Description:  cfg.Custom.Moderator.Desc,
-			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
-			Model:        resolveCustomModel(cfg, cfg.Custom.Moderator),
-			ToolNames:    cfg.Custom.Moderator.Tools,
+			Name:        cfg.Custom.Moderator.Name,
+			Description: cfg.Custom.Moderator.Description,
+			Prompt:      cfg.Custom.Moderator.Prompt,
+			Model:       resolveCustomModel(cfg, cfg.Custom.Moderator),
+			ToolNames:   cfg.Custom.Moderator.Tools,
 		})
 		if err != nil {
 			return fmt.Errorf("创建自定义主持人失败: %w", err)
@@ -269,11 +269,11 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 
 	for _, customAgent := range cfg.Custom.Agents {
 		agent, err := custom.NewAgent(ctx, custom.Config{
-			Name:         customAgent.Name,
-			Description:  customAgent.Desc,
-			SystemPrompt: customAgent.SystemPrompt,
-			Model:        resolveCustomModel(cfg, customAgent),
-			ToolNames:    customAgent.Tools,
+			Name:        customAgent.Name,
+			Description: customAgent.Description,
+			Prompt:      customAgent.Prompt,
+			Model:       resolveCustomModel(cfg, customAgent),
+			ToolNames:   customAgent.Tools,
 		})
 		if err != nil {
 			return fmt.Errorf("创建自定义智能体 %s 失败: %w", customAgent.Name, err)

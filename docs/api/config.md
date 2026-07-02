@@ -17,7 +17,9 @@
   "data": {
     "models": [
       {
-        "name": "default",
+        "id": "main",
+        "name": "主力模型",
+        "use_for": ["chat", "agent"],
         "provider": "openai",
         "base_url": "https://api.openai.com/v1",
         "api_key": "",
@@ -41,7 +43,7 @@
 
 | 字段 | 保留旧值条件 |
 | ---- | ------------ |
-| `models[].api_key` | 提交空字符串时按 `original_name` 或 `name` 还原旧密钥 |
+| `models[].api_key` | 提交空字符串时按 `original_id` 或 `id` 还原旧密钥 |
 | `server.auth.password` / `server.auth.secret` | 提交 `"***"` 时保留旧值 |
 | `agents.ssh_visitor.password` | 提交 `"***"` 时保留旧值 |
 | `channels.qq.app_secret` | 提交 `"***"` 时保留旧值 |
@@ -73,7 +75,8 @@
 | 状态码 | message | 说明 |
 | ------ | ------- | ---- |
 | 400 | `invalid config: ...` | 请求体不是合法配置 |
-| 400 | `duplicate model name: <name>` | 模型配置名称重复 |
+| 400 | `duplicate model id: <id>` | 模型 ID 重复 |
+| 400 | `model use_for "<use>" is configured by both <id> and <id>` | 模型用途重复 |
 | 500 | `failed to save config: ...` | 保存失败 |
 
 ---

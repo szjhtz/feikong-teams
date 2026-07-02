@@ -94,29 +94,21 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 
 		oldCfg := config.Get()
 
-		// 校验模型名称唯一性
-		modelNames := make(map[string]bool, len(newCfg.Models))
-		for _, m := range newCfg.Models {
-			if m.Name == "" {
-				continue
-			}
-			if modelNames[m.Name] {
-				Fail(c, http.StatusBadRequest, "duplicate model name: "+m.Name)
-				return
-			}
-			modelNames[m.Name] = true
+		if err := newCfg.ValidateModels(); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
 
 		// 合并敏感字段：前端传空字符串时保留旧值
 		for i := range newCfg.Models {
 			if newCfg.Models[i].APIKey == "" {
-				lookupName := newCfg.Models[i].OriginalName
-				if lookupName == "" {
-					lookupName = newCfg.Models[i].Name
+				lookupID := newCfg.Models[i].OriginalID
+				if lookupID == "" {
+					lookupID = newCfg.Models[i].ID
 				}
 				restored := false
 				for _, old := range oldCfg.Models {
-					if old.Name == lookupName {
+					if old.ID == lookupID {
 						newCfg.Models[i].APIKey = old.APIKey
 						restored = true
 						break

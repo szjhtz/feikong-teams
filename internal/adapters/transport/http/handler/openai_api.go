@@ -34,7 +34,7 @@ func OpenAIModelsHandler() gin.HandlerFunc {
 		models := make([]modelObject, 0, len(cfg.Models))
 		for _, m := range cfg.Models {
 			models = append(models, modelObject{
-				ID:      m.Name,
+				ID:      m.ID,
 				Object:  "model",
 				Created: now,
 				OwnedBy: "fkteams",

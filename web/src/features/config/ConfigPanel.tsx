@@ -62,7 +62,7 @@ export function ConfigPanel() {
   const [activeTab, setActiveTab] = useState<ConfigTab>("models");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const modelNames = useMemo(() => (draft?.models || []).map((model) => model.name).filter(Boolean), [draft?.models]);
+  const modelIDs = useMemo(() => (draft?.models || []).map((model) => model.id).filter(Boolean), [draft?.models]);
 
   async function load() {
     setLoading(true);
@@ -160,10 +160,10 @@ export function ConfigPanel() {
 
         {activeTab === "models" ? <ModelsTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "server" ? <ServerTab draft={draft} updateDraft={updateDraft} /> : null}
-        {activeTab === "agents" ? <AgentsTab draft={draft} modelNames={modelNames} updateDraft={updateDraft} /> : null}
+        {activeTab === "agents" ? <AgentsTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
         {activeTab === "memory" ? <MemoryTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "channels" ? <ChannelsTab draft={draft} updateDraft={updateDraft} /> : null}
-        {activeTab === "custom" ? <CustomTab draft={draft} modelNames={modelNames} updateDraft={updateDraft} /> : null}
+        {activeTab === "custom" ? <CustomTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
         {activeTab === "tools" ? <ToolsTab /> : null}
         {activeTab === "other" ? <OtherTab draft={draft} toolsCount={tools.length} /> : null}
       </div>
@@ -176,7 +176,7 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
   return (
     <Panel>
       <PanelHeader className="flex items-center justify-between">
-        <SectionTitle icon={Bot} title="模型池" description="模型通过名称被智能体、圆桌和自定义配置引用。" />
+        <SectionTitle icon={Bot} title="模型池" description="模型通过稳定 ID 被智能体、圆桌和自定义配置引用。" />
         <Button
           variant="outline"
           onClick={() =>
@@ -184,7 +184,9 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
               next.models = [
                 ...(next.models || []),
                 {
+                  id: uniqueModelID(next.models || [], "main"),
                   name: uniqueName(next.models || [], "model"),
+                  use_for: (next.models || []).some((item) => item.use_for?.includes("chat")) ? [] : ["chat"],
                   provider: "openai",
                   base_url: "",
                   api_key: "",
@@ -201,8 +203,8 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
       <PanelBody className="grid gap-4 xl:grid-cols-2">
         {models.map((model, index) => (
           <ConfigCard
-            key={`${model.original_name || model.name || "model"}-${index}`}
-            title={model.name || "未命名模型"}
+            key={`${model.original_id || model.id || "model"}-${index}`}
+            title={model.name || model.id || "未命名模型"}
             aside={model.provider || "provider"}
             onRemove={() =>
               updateDraft((next) => {
@@ -211,7 +213,8 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
             }
           >
             <div className="grid gap-3 md:grid-cols-2">
-              <TextField label="名称" value={model.name} onChange={(value) => updateModel(updateDraft, index, { name: value })} />
+              <TextField label="ID" value={model.id} onChange={(value) => updateModel(updateDraft, index, { id: value })} />
+              <TextField label="显示名称" value={model.name} onChange={(value) => updateModel(updateDraft, index, { name: value })} />
               <SelectField
                 label="提供商"
                 value={model.provider}
@@ -224,6 +227,7 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
                 label={model.has_api_key ? "API Key（已配置，留空不修改）" : "API Key"}
                 type="password"
                 value={model.api_key}
+                placeholder={model.has_api_key ? "********" : undefined}
                 onChange={(value) => updateModel(updateDraft, index, { api_key: value })}
               />
               <TextField
@@ -232,10 +236,11 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
                 placeholder="X-Key: value, X-Trace: value"
                 onChange={(value) => updateModel(updateDraft, index, { extra_headers: value })}
               />
+              <ModelUseField uses={model.use_for || []} onChange={(use_for) => updateModel(updateDraft, index, { use_for })} />
             </div>
           </ConfigCard>
         ))}
-        {!models.length ? <EmptyState title="暂无模型配置" description="添加 default 模型后即可开始使用。" /> : null}
+        {!models.length ? <EmptyState title="暂无模型配置" description="添加一个 chat 用途模型后即可开始使用。" /> : null}
       </PanelBody>
     </Panel>
   );
@@ -304,7 +309,7 @@ function ServerTab({ draft, updateDraft }: EditorProps) {
   );
 }
 
-function AgentsTab({ draft, modelNames, updateDraft }: EditorProps & { modelNames: string[] }) {
+function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
   const agents = draft.agents || {};
   const ssh = agents.ssh_visitor || {};
   const roundtable = draft.roundtable || {};
@@ -342,7 +347,7 @@ function AgentsTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
                 const members = next.roundtable?.members || [];
                 next.roundtable = {
                   ...(next.roundtable || {}),
-                  members: [...members, { index: members.length, name: "", desc: "", model: modelNames[0] || "default" }],
+                  members: [...members, { id: uniqueMemberID(members, "member"), name: "", description: "", model_id: modelIDs[0] || "" }],
                 };
               })
             }
@@ -362,7 +367,7 @@ function AgentsTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
             }
           />
           {(roundtable.members || []).map((member, index) => (
-            <RoundtableMemberEditor key={index} member={member} index={index} modelNames={modelNames} updateDraft={updateDraft} />
+            <RoundtableMemberEditor key={index} member={member} index={index} modelIDs={modelIDs} updateDraft={updateDraft} />
           ))}
         </PanelBody>
       </Panel>
@@ -403,12 +408,14 @@ function ChannelsTab({ draft, updateDraft }: EditorProps) {
         <TextField label="App Secret" type="password" value={qq.app_secret} onChange={(value) => updateDraft((next) => setQQ(next, { app_secret: value }))} />
         <ToggleField label="沙箱模式" checked={Boolean(qq.sandbox)} onChange={(value) => updateDraft((next) => setQQ(next, { sandbox: value }))} />
         <ModeField value={qq.mode} onChange={(value) => updateDraft((next) => setQQ(next, { mode: value }))} />
+        {qq.mode === "agent" ? <TextField label="智能体 ID" value={qq.agent_id} onChange={(value) => updateDraft((next) => setQQ(next, { agent_id: value }))} /> : null}
       </ChannelCard>
       <ChannelCard title="Discord" description="Discord Bot 通道">
         <ToggleField label="启用" checked={Boolean(discord.enabled)} onChange={(value) => updateDraft((next) => setDiscord(next, { enabled: value }))} />
         <TextField label="Token" type="password" value={discord.token} onChange={(value) => updateDraft((next) => setDiscord(next, { token: value }))} />
         <TextField label="允许用户" value={discord.allow_from} placeholder="多个 ID 用逗号分隔" onChange={(value) => updateDraft((next) => setDiscord(next, { allow_from: value }))} />
         <ModeField value={discord.mode} onChange={(value) => updateDraft((next) => setDiscord(next, { mode: value }))} />
+        {discord.mode === "agent" ? <TextField label="智能体 ID" value={discord.agent_id} onChange={(value) => updateDraft((next) => setDiscord(next, { agent_id: value }))} /> : null}
       </ChannelCard>
       <ChannelCard title="微信" description="iLinkAI 微信通道">
         <ToggleField label="启用" checked={Boolean(weixin.enabled)} onChange={(value) => updateDraft((next) => setWeixin(next, { enabled: value }))} />
@@ -417,12 +424,13 @@ function ChannelsTab({ draft, updateDraft }: EditorProps) {
         <SelectField label="日志级别" value={weixin.log_level} options={["debug", "info", "warn", "error", "silent"]} onChange={(value) => updateDraft((next) => setWeixin(next, { log_level: value }))} />
         <TextField label="允许用户" value={weixin.allow_from} placeholder="多个 ID 用逗号分隔" onChange={(value) => updateDraft((next) => setWeixin(next, { allow_from: value }))} />
         <ModeField value={weixin.mode} onChange={(value) => updateDraft((next) => setWeixin(next, { mode: value }))} />
+        {weixin.mode === "agent" ? <TextField label="智能体 ID" value={weixin.agent_id} onChange={(value) => updateDraft((next) => setWeixin(next, { agent_id: value }))} /> : null}
       </ChannelCard>
     </div>
   );
 }
 
-function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelNames: string[] }) {
+function CustomTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
   const custom = draft.custom || {};
   const moderator = custom.moderator || {};
   const tools = useAppSelector((state) => state.config.tools);
@@ -431,12 +439,12 @@ function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
     <div className="space-y-4">
       <Panel>
         <PanelHeader>
-          <SectionTitle icon={Bot} title="主持人" description="自定义模式的协调者配置。" />
+          <SectionTitle icon={Bot} title="协调者" description="自定义团队模式下负责调度成员协作的智能体。" />
         </PanelHeader>
         <PanelBody>
           <CustomAgentEditor
             agent={moderator}
-            modelNames={modelNames}
+            modelIDs={modelIDs}
             toolOptions={toolOptions}
             onChange={(value) =>
               updateDraft((next) => {
@@ -449,14 +457,24 @@ function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
 
       <Panel>
         <PanelHeader className="flex items-center justify-between">
-          <SectionTitle icon={Brain} title="自定义智能体" description="配置 custom 模式下的成员、提示词和工具。" />
+          <SectionTitle icon={Brain} title="自定义智能体" description="配置可全局调用的智能体、提示词和工具；团队模式也可以调度这些成员。" />
           <Button
             variant="outline"
             onClick={() =>
               updateDraft((next) => {
                 next.custom = {
                   ...(next.custom || {}),
-                  agents: [...(next.custom?.agents || []), { name: "", desc: "", system_prompt: "", model: modelNames[0] || "default", tools: [] }],
+                  agents: [
+                    ...(next.custom?.agents || []),
+                    {
+                      id: uniqueAgentID(next.custom?.agents || [], "agent"),
+                      name: "",
+                      description: "",
+                      prompt: "",
+                      model_id: modelIDs[0] || "",
+                      tools: [],
+                    },
+                  ],
                 };
               })
             }
@@ -470,7 +488,7 @@ function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
             <ConfigCard
               key={index}
               title={agent.name || "未命名智能体"}
-              aside={agent.model || "model"}
+              aside={agent.model_id || "model_id"}
               onRemove={() =>
                 updateDraft((next) => {
                   next.custom = {
@@ -482,7 +500,7 @@ function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
             >
               <CustomAgentEditor
                 agent={agent}
-                modelNames={modelNames}
+                modelIDs={modelIDs}
                 toolOptions={toolOptions}
                 onChange={(value) =>
                   updateDraft((next) => {
@@ -508,7 +526,7 @@ function CustomTab({ draft, modelNames, updateDraft }: EditorProps & { modelName
                   ...(next.custom || {}),
                   mcp_servers: [
                     ...(next.custom?.mcp_servers || []),
-                    { name: "", desc: "", enabled: false, timeout: 30, transport_type: "http", url: "" },
+                    { id: uniqueMCPServerID(next.custom?.mcp_servers || [], "mcp"), name: "", description: "", enabled: false, timeout: "30s", transport: "http", url: "" },
                   ],
                 };
               })
@@ -596,12 +614,12 @@ interface EditorProps {
 function RoundtableMemberEditor({
   member,
   index,
-  modelNames,
+  modelIDs,
   updateDraft,
 }: {
   member: TeamMemberConfig;
   index: number;
-  modelNames: string[];
+  modelIDs: string[];
   updateDraft: EditorProps["updateDraft"];
 }) {
   function update(patch: Partial<TeamMemberConfig>) {
@@ -615,46 +633,47 @@ function RoundtableMemberEditor({
   return (
     <ConfigCard
       title={member.name || `成员 ${index + 1}`}
-      aside={member.model || "model"}
+      aside={member.model_id || "model_id"}
       onRemove={() =>
         updateDraft((next) => {
           next.roundtable = { ...(next.roundtable || {}), members: (next.roundtable?.members || []).filter((_, itemIndex) => itemIndex !== index) };
         })
       }
     >
-      <div className="grid gap-3 md:grid-cols-[100px_1fr_1fr]">
-        <NumberField label="序号" value={member.index ?? index} onChange={(value) => update({ index: value })} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <TextField label="ID" value={member.id} onChange={(value) => update({ id: value })} />
         <TextField label="名称" value={member.name} onChange={(value) => update({ name: value })} />
-        <ModelSelect label="模型" value={member.model} modelNames={modelNames} onChange={(value) => update({ model: value })} />
+        <ModelSelect label="模型 ID" value={member.model_id} modelIDs={modelIDs} onChange={(value) => update({ model_id: value })} />
       </div>
-      <TextField label="描述" value={member.desc} onChange={(value) => update({ desc: value })} />
+      <TextField label="描述" value={member.description} onChange={(value) => update({ description: value })} />
     </ConfigCard>
   );
 }
 
 function CustomAgentEditor({
   agent,
-  modelNames,
+  modelIDs,
   toolOptions,
   onChange,
 }: {
   agent: CustomAgentConfig;
-  modelNames: string[];
+  modelIDs: string[];
   toolOptions: ToolSelectOption[];
   onChange: (value: CustomAgentConfig) => void;
 }) {
   return (
     <div className="grid gap-3">
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-3">
+        <TextField label="ID" value={agent.id} onChange={(value) => onChange({ ...agent, id: value })} />
         <TextField label="名称" value={agent.name} onChange={(value) => onChange({ ...agent, name: value })} />
-        <ModelSelect label="模型" value={agent.model} modelNames={modelNames} onChange={(value) => onChange({ ...agent, model: value })} />
+        <ModelSelect label="模型 ID" value={agent.model_id} modelIDs={modelIDs} onChange={(value) => onChange({ ...agent, model_id: value })} />
       </div>
-      <TextField label="描述" value={agent.desc} onChange={(value) => onChange({ ...agent, desc: value })} />
+      <TextField label="描述" value={agent.description} onChange={(value) => onChange({ ...agent, description: value })} />
       <Field label="系统提示词">
         <Textarea
           className="min-h-32 text-sm"
-          value={agent.system_prompt || ""}
-          onChange={(event) => onChange({ ...agent, system_prompt: event.target.value })}
+          value={agent.prompt || ""}
+          onChange={(event) => onChange({ ...agent, prompt: event.target.value })}
         />
       </Field>
       <ToolSelectField tools={agent.tools || []} options={toolOptions} onChange={(tools) => onChange({ ...agent, tools })} />
@@ -838,12 +857,12 @@ function customToolOptions(tools: ToolInfo[], mcpServers: MCPServerConfig[]): To
     });
   }
   for (const server of mcpServers) {
-    const name = server.name?.trim();
+    const name = server.id?.trim();
     if (!name || options.has(name)) continue;
     options.set(name, {
       name,
-      label: name,
-      description: server.desc,
+      label: server.name || name,
+      description: server.description,
       category: "mcp",
       source: "mcp",
       enabled: Boolean(server.enabled),
@@ -886,8 +905,8 @@ function MCPServerEditor({
 
   return (
     <ConfigCard
-      title={server.name || "未命名 MCP"}
-      aside={server.transport_type || "transport"}
+      title={server.name || server.id || "未命名 MCP"}
+      aside={server.transport || "transport"}
       onRemove={() =>
         updateDraft((next) => {
           next.custom = { ...(next.custom || {}), mcp_servers: (next.custom?.mcp_servers || []).filter((_, itemIndex) => itemIndex !== index) };
@@ -895,17 +914,18 @@ function MCPServerEditor({
       }
     >
       <div className="grid gap-3 md:grid-cols-2">
+        <TextField label="ID" value={server.id} onChange={(value) => update({ id: value })} />
         <TextField label="名称" value={server.name} onChange={(value) => update({ name: value })} />
-        <SelectField label="传输" value={server.transport_type} options={["http", "stdio"]} onChange={(value) => update({ transport_type: value })} />
+        <SelectField label="传输" value={server.transport} options={["http", "stdio"]} onChange={(value) => update({ transport: value })} />
         <ToggleField label="启用" checked={Boolean(server.enabled)} onChange={(value) => update({ enabled: value })} />
-        <NumberField label="超时秒数" value={server.timeout} onChange={(value) => update({ timeout: value })} />
+        <TextField label="超时" value={server.timeout} placeholder="30s" onChange={(value) => update({ timeout: value })} />
       </div>
-      <TextField label="描述" value={server.desc} onChange={(value) => update({ desc: value })} />
-      {server.transport_type === "stdio" ? (
+      <TextField label="描述" value={server.description} onChange={(value) => update({ description: value })} />
+      {server.transport === "stdio" ? (
         <>
           <TextField label="命令" value={server.command} onChange={(value) => update({ command: value })} />
           <StringListField label="参数" values={server.args || []} placeholder="run" onChange={(values) => update({ args: values })} />
-          <StringListField label="环境变量" values={server.env_vars || []} placeholder="KEY=value" onChange={(values) => update({ env_vars: values })} />
+          <KeyValueMapField label="环境变量" values={server.env || {}} onChange={(env) => update({ env })} />
         </>
       ) : (
         <TextField label="URL" value={server.url} onChange={(value) => update({ url: value })} />
@@ -1033,22 +1053,60 @@ function SelectField({
   );
 }
 
+const modelUseOptions = [
+  { value: "chat", label: "对话" },
+  { value: "agent", label: "智能体" },
+  { value: "title", label: "标题" },
+  { value: "summary", label: "摘要" },
+];
+
+function ModelUseField({ uses, onChange }: { uses: string[]; onChange: (uses: string[]) => void }) {
+  const selected = new Set(uses);
+  function toggle(value: string) {
+    if (selected.has(value)) {
+      onChange(uses.filter((item) => item !== value));
+      return;
+    }
+    onChange([...uses, value]);
+  }
+  return (
+    <div className="space-y-1.5 md:col-span-2">
+      <div className="text-sm text-muted-foreground">用途</div>
+      <div className="flex flex-wrap gap-2">
+        {modelUseOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={cn(
+              "inline-flex h-8 items-center rounded-md border px-3 text-sm transition-colors",
+              selected.has(option.value) ? "border-primary/60 bg-primary/10 text-primary" : "border-border/75 bg-card/70 text-muted-foreground hover:bg-accent/60",
+            )}
+            onClick={() => toggle(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ModelSelect({
   label,
   value,
-  modelNames,
+  modelIDs,
   onChange,
 }: {
   label: string;
   value?: string;
-  modelNames: string[];
+  modelIDs: string[];
   onChange: (value: string) => void;
 }) {
-  return <SelectField label={label} value={value} options={modelNames.length ? modelNames : ["default"]} onChange={onChange} />;
+  return <SelectField label={label} value={value} options={modelIDs.length ? modelIDs : [""]} onChange={onChange} />;
 }
 
 function ModeField({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
-  return <SelectField label="运行模式" value={value} options={["team", "deep", "roundtable", "custom"]} onChange={onChange} />;
+  return <SelectField label="运行模式" value={value} options={["team", "deep", "roundtable", "custom", "agent"]} onChange={onChange} />;
 }
 
 function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
@@ -1118,6 +1176,80 @@ function StringListField({
   );
 }
 
+function KeyValueMapField({
+  label,
+  values,
+  onChange,
+}: {
+  label: string;
+  values: Record<string, string>;
+  onChange: (values: Record<string, string>) => void;
+}) {
+  const [rows, setRows] = useState<Array<[string, string]>>(() => {
+    const entries = Object.entries(values);
+    return entries.length ? entries : [["", ""]];
+  });
+  useEffect(() => {
+    const entries = Object.entries(values);
+    setRows(entries.length ? entries : [["", ""]]);
+  }, [JSON.stringify(values)]);
+
+  function commit(nextRows: Array<[string, string]>) {
+    setRows(nextRows.length ? nextRows : [["", ""]]);
+    const next: Record<string, string> = {};
+    for (const [key, value] of nextRows) {
+      const trimmed = key.trim();
+      if (!trimmed) continue;
+      next[trimmed] = value;
+    }
+    onChange(next);
+  }
+  return (
+    <div className="space-y-2">
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="space-y-2">
+        {rows.map(([key, value], index) => (
+          <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <Input
+              value={key}
+              placeholder="KEY"
+              onChange={(event) => {
+                const nextRows = [...rows];
+                nextRows[index] = [event.target.value, value];
+                commit(nextRows);
+              }}
+            />
+            <Input
+              value={value}
+              placeholder="value"
+              onChange={(event) => {
+                const nextRows = [...rows];
+                nextRows[index] = [key, event.target.value];
+                commit(nextRows);
+              }}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="删除"
+              onClick={() => {
+                const nextRows = rows.filter((_, itemIndex) => itemIndex !== index);
+                commit(nextRows);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+      </div>
+      <Button variant="outline" size="sm" onClick={() => setRows([...rows, ["", ""]])}>
+        <Plus className="h-4 w-4" />
+        添加
+      </Button>
+    </div>
+  );
+}
+
 function EmptyState({ title, description }: { title: string; description: string }) {
   return (
     <div className="rounded-xl border border-dashed border-border p-8 text-center xl:col-span-2">
@@ -1139,7 +1271,7 @@ function MetricCard({ label, value }: { label: string; value: number }) {
 function updateModel(updateDraft: EditorProps["updateDraft"], index: number, patch: Partial<ModelConfig>) {
   updateDraft((next) => {
     const models = [...(next.models || [])];
-    models[index] = { ...models[index], ...patch, original_name: models[index]?.original_name || models[index]?.name };
+    models[index] = { ...models[index], ...patch, original_id: models[index]?.original_id || models[index]?.id };
     next.models = models;
   });
 }
@@ -1200,6 +1332,33 @@ function clone<T>(value: T): T {
 
 function uniqueName(models: ModelConfig[], base: string) {
   const used = new Set(models.map((model) => model.name));
+  if (!used.has(base)) return base;
+  let index = 2;
+  while (used.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
+}
+
+function uniqueModelID(models: ModelConfig[], base: string) {
+  const used = new Set(models.map((model) => model.id));
+  return uniqueID(base, used);
+}
+
+function uniqueMemberID(members: TeamMemberConfig[], base: string) {
+  const used = new Set(members.map((member) => member.id));
+  return uniqueID(base, used);
+}
+
+function uniqueAgentID(agents: CustomAgentConfig[], base: string) {
+  const used = new Set(agents.map((agent) => agent.id));
+  return uniqueID(base, used);
+}
+
+function uniqueMCPServerID(servers: MCPServerConfig[], base: string) {
+  const used = new Set(servers.map((server) => server.id));
+  return uniqueID(base, used);
+}
+
+function uniqueID(base: string, used: Set<string | undefined>) {
   if (!used.has(base)) return base;
   let index = 2;
   while (used.has(`${base}-${index}`)) index += 1;

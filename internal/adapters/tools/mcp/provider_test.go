@@ -62,7 +62,7 @@ func TestProviderReturnsEmptyGroupsWithNoEnabledServers(t *testing.T) {
 	if err := config.Save(&config.Config{
 		Custom: config.Custom{
 			MCPServers: []config.MCPServer{
-				{Name: "disabled", Enabled: false, TransportType: "stdio"},
+				{ID: "disabled", Name: "Disabled", Enabled: false, Transport: "stdio"},
 			},
 		},
 	}); err != nil {
@@ -83,7 +83,7 @@ func TestSetupMCPClientsRejectsUnsupportedTransport(t *testing.T) {
 	if err := config.Save(&config.Config{
 		Custom: config.Custom{
 			MCPServers: []config.MCPServer{
-				{Name: "bad", Enabled: true, TransportType: "pipe"},
+				{ID: "bad", Name: "Bad", Enabled: true, Transport: "pipe"},
 			},
 		},
 	}); err != nil {

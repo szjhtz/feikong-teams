@@ -41,8 +41,7 @@ func modelCommand() *ucli.Command {
 					},
 					&ucli.StringFlag{
 						Name:  "name",
-						Usage: "从已配置的模型读取服务商信息",
-						Value: "default",
+						Usage: "从已配置的模型 ID 读取服务商信息；留空使用默认对话模型",
 					},
 				},
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
@@ -60,7 +59,7 @@ func modelCommand() *ucli.Command {
 					&ucli.StringFlag{
 						Name:    "name",
 						Aliases: []string{"n"},
-						Usage:   "模型配置名称（未指定则交互式选择）",
+						Usage:   "模型配置 ID（未指定则交互式选择）",
 					},
 					&ucli.StringFlag{
 						Name:    "model",
@@ -83,7 +82,7 @@ func modelCommand() *ucli.Command {
 					&ucli.StringFlag{
 						Name:    "name",
 						Aliases: []string{"n"},
-						Usage:   "要移除的模型配置名称（未指定则交互式选择）",
+						Usage:   "要移除的模型配置 ID（未指定则交互式选择）",
 					},
 				},
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
@@ -115,10 +114,6 @@ func listModels() error {
 
 	data := make([][]string, 0, len(cfg.Models))
 	for _, m := range cfg.Models {
-		isDefault := ""
-		if m.Name == "default" {
-			isDefault = "✓"
-		}
 		provider := m.Provider
 		if provider == "" {
 			provider = "-"
@@ -127,11 +122,11 @@ func listModels() error {
 		if baseURL == "" {
 			baseURL = "(默认)"
 		}
-		data = append(data, []string{m.Name, provider, m.Model, baseURL, isDefault})
+		data = append(data, []string{m.ID, m.Name, provider, m.Model, baseURL, formatModelUses(m.UseFor)})
 	}
 
 	pterm.DefaultTable.WithHasHeader().WithData(append(
-		[][]string{{"名称", "服务商", "模型", "接口地址", "默认"}},
+		[][]string{{"ID", "名称", "服务商", "模型", "接口地址", "用途"}},
 		data...,
 	)).Render()
 	return nil
@@ -154,7 +149,7 @@ func listAvailableModels(ctx context.Context, provider, name string) error {
 			}
 		}
 	} else {
-		// 通过 --name 从已配置的模型读取
+		// 通过 --name 从已配置的模型读取；未指定时使用默认对话模型。
 		mc := cfg.ResolveModel(name)
 		if mc == nil {
 			return fmt.Errorf("未找到模型配置: %s", name)
@@ -187,13 +182,13 @@ func listAvailableModels(ctx context.Context, provider, name string) error {
 	return nil
 }
 
-// removeModel 移除指定名称的模型配置
+// removeModel 移除指定 ID 的模型配置
 func removeModel(name string) error {
 	cfg := config.Get()
 	var newModels []config.ModelConfig
 	var removed bool
 	for _, m := range cfg.Models {
-		if m.Name == name {
+		if m.ID == name {
 			removed = true
 			continue
 		}
@@ -222,7 +217,10 @@ func selectModelToRemove() (string, error) {
 
 	items := make([]tui.SelectItem, 0, len(cfg.Models))
 	for _, m := range cfg.Models {
-		label := m.Name
+		label := m.ID
+		if m.Name != "" && m.Name != m.ID {
+			label += " - " + m.Name
+		}
 		if m.Provider != "" {
 			label += " (" + m.Provider
 			if m.Model != "" {
@@ -230,7 +228,7 @@ func selectModelToRemove() (string, error) {
 			}
 			label += ")"
 		}
-		items = append(items, tui.SelectItem{Label: label, Value: m.Name})
+		items = append(items, tui.SelectItem{Label: label, Value: m.ID})
 	}
 
 	return tui.SelectFromList("请选择要移除的模型配置", items)
@@ -239,40 +237,24 @@ func selectModelToRemove() (string, error) {
 // switchModel 切换默认模型
 func switchModel(ctx context.Context, name, model string) error {
 	cfg := config.Get()
-
-	// 快捷路径：直接更新 default 模型
-	if name == "" || name == "default" {
-		defaultModel := cfg.ResolveModel("default")
+	defaultModel := cfg.ResolveDefaultModel(config.ModelUseChat)
+	if name == "" && model != "" {
 		if defaultModel == nil {
-			return fmt.Errorf("尚未配置默认模型，请先使用 fkteams login 登录或 fkteams model sw 选择供应商")
+			return fmt.Errorf("尚未配置默认对话模型，请先使用 fkteams login 登录或 fkteams model sw 选择模型")
 		}
-		if model != "" {
-			oldModel := defaultModel.Model
-			defaultModel.Model = model
-			if err := config.Save(cfg); err != nil {
-				return fmt.Errorf("保存配置失败: %w", err)
-			}
-			fmt.Printf("✓ 已切换模型：%s → %s（%s）\n", oldModel, model, defaultModel.Provider)
-			return nil
+		oldModel := defaultModel.Model
+		defaultModel.Model = model
+		if err := config.Save(cfg); err != nil {
+			return fmt.Errorf("保存配置失败: %w", err)
 		}
-		if name == "default" {
-			return switchCurrentModel(ctx, cfg)
-		}
-	}
-
-	// 筛选可切换的模型（排除 default）
-	var candidates []config.ModelConfig
-	for _, m := range cfg.Models {
-		if m.Name != "default" {
-			candidates = append(candidates, m)
-		}
+		fmt.Printf("✓ 已切换模型：%s → %s（%s）\n", oldModel, model, defaultModel.Provider)
+		return nil
 	}
 
 	// 交互式选择
 	if name == "" {
 		var items []tui.SelectItem
 
-		defaultModel := cfg.ResolveModel("default")
 		if defaultModel != nil && defaultModel.Provider != "" {
 			current := defaultModel.Provider
 			if defaultModel.Model != "" {
@@ -284,17 +266,21 @@ func switchModel(ctx context.Context, name, model string) error {
 			})
 		}
 
-		if len(candidates) == 0 && len(items) == 0 {
+		if len(cfg.Models) == 0 && len(items) == 0 {
 			return fmt.Errorf("没有可切换的模型配置，请先使用 fkteams login 登录")
 		}
 
-		for _, m := range candidates {
-			label := m.Name + " (" + m.Provider
+		for _, m := range cfg.Models {
+			label := m.ID
+			if m.Name != "" && m.Name != m.ID {
+				label += " - " + m.Name
+			}
+			label += " (" + m.Provider
 			if m.Model != "" {
 				label += "/" + m.Model
 			}
 			label += ")"
-			items = append(items, tui.SelectItem{Label: label, Value: m.Name})
+			items = append(items, tui.SelectItem{Label: label, Value: m.ID})
 		}
 
 		selected, err := tui.SelectFromList("请选择操作", items)
@@ -307,8 +293,8 @@ func switchModel(ctx context.Context, name, model string) error {
 		name = selected
 	}
 
-	// 按 name 查找，回退按 provider 查找（含 default）
-	source := findModelConfig(cfg, candidates, name)
+	// 按 ID 查找，回退按 provider 查找。
+	source := findModelConfig(cfg, nil, name)
 	if source == nil {
 		return fmt.Errorf("未找到模型配置「%s」", name)
 	}
@@ -326,22 +312,11 @@ func switchModel(ctx context.Context, name, model string) error {
 		}
 	}
 
-	// 更新或创建 default
-	defaultModel := cfg.ResolveModel("default")
-	if defaultModel != nil {
-		defaultModel.Provider = source.Provider
-		defaultModel.APIKey = source.APIKey
-		defaultModel.BaseURL = source.BaseURL
-		defaultModel.Model = targetModel
-	} else {
-		cfg.Models = append(cfg.Models, config.ModelConfig{
-			Name:     "default",
-			Provider: source.Provider,
-			APIKey:   source.APIKey,
-			BaseURL:  source.BaseURL,
-			Model:    targetModel,
-		})
+	source.Model = targetModel
+	for i := range cfg.Models {
+		cfg.Models[i].UseFor = removeModelUse(cfg.Models[i].UseFor, config.ModelUseChat)
 	}
+	source.UseFor = appendModelUse(source.UseFor, config.ModelUseChat)
 
 	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("保存配置失败: %w", err)
@@ -351,19 +326,19 @@ func switchModel(ctx context.Context, name, model string) error {
 	if displayModel == "" {
 		displayModel = "(未指定)"
 	}
-	fmt.Printf("✓ 已切换默认模型为「%s」（%s / %s）\n", name, source.Provider, displayModel)
+	fmt.Printf("✓ 已切换默认对话模型为「%s」（%s / %s）\n", source.ID, source.Provider, displayModel)
 	return nil
 }
 
-// findModelConfig 按 name 查找候选模型，回退按 provider 在所有模型中查找
+// findModelConfig 按 ID 查找候选模型，回退按 provider 在所有模型中查找。
 func findModelConfig(cfg *config.Config, candidates []config.ModelConfig, name string) *config.ModelConfig {
 	for i := range candidates {
-		if candidates[i].Name == name {
+		if candidates[i].ID == name {
 			return &candidates[i]
 		}
 	}
 	for i := range cfg.Models {
-		if cfg.Models[i].Provider == name {
+		if cfg.Models[i].ID == name || cfg.Models[i].Provider == name {
 			return &cfg.Models[i]
 		}
 	}
@@ -372,7 +347,10 @@ func findModelConfig(cfg *config.Config, candidates []config.ModelConfig, name s
 
 // switchCurrentModel 在当前默认供应商内切换模型
 func switchCurrentModel(ctx context.Context, cfg *config.Config) error {
-	defaultModel := cfg.ResolveModel("default")
+	defaultModel := cfg.ResolveDefaultModel(config.ModelUseChat)
+	if defaultModel == nil {
+		return fmt.Errorf("尚未配置默认对话模型，请先使用 fkteams login 登录或 fkteams model sw 选择模型")
+	}
 
 	selected, err := promptModelSelection(ctx, defaultModel.Provider, defaultModel.APIKey, defaultModel.BaseURL)
 	if err != nil {
@@ -389,4 +367,30 @@ func switchCurrentModel(ctx context.Context, cfg *config.Config) error {
 	}
 	fmt.Printf("✓ 已切换模型：%s → %s（%s）\n", oldModel, selected, defaultModel.Provider)
 	return nil
+}
+
+func formatModelUses(uses []string) string {
+	if len(uses) == 0 {
+		return "-"
+	}
+	return fmt.Sprint(uses)
+}
+
+func appendModelUse(uses []string, use string) []string {
+	for _, item := range uses {
+		if item == use {
+			return uses
+		}
+	}
+	return append(uses, use)
+}
+
+func removeModelUse(uses []string, use string) []string {
+	result := uses[:0]
+	for _, item := range uses {
+		if item != use {
+			result = append(result, item)
+		}
+	}
+	return result
 }

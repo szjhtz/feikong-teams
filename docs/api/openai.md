@@ -21,7 +21,7 @@ Authorization: Bearer <api_key>
 
 ## GET /v1/models
 
-返回当前配置中的模型名称，格式兼容 OpenAI Models API。
+返回当前配置中的模型 ID，格式兼容 OpenAI Models API。
 
 **成功响应**：
 
@@ -30,7 +30,7 @@ Authorization: Bearer <api_key>
   "object": "list",
   "data": [
     {
-      "id": "default",
+      "id": "main",
       "object": "model",
       "created": 1760000000,
       "owned_by": "fkteams"
@@ -39,19 +39,19 @@ Authorization: Bearer <api_key>
 }
 ```
 
-`id` 对应 `config.toml` 中 `[[models]].name`。
+`id` 对应 `config.toml` 中 `[[models]].id`。
 
 ---
 
 ## POST /v1/chat/completions
 
-代理请求到配置的模型后端。请求体与 OpenAI Chat Completions 兼容，`model` 字段应填写本地模型配置名；后端会将其替换为该配置中的真实模型名后转发。
+代理请求到配置的模型后端。请求体与 OpenAI Chat Completions 兼容，`model` 字段应填写本地模型 ID；后端会将其替换为该配置中的真实模型名后转发。
 
 **请求示例**：
 
 ```json
 {
-  "model": "default",
+  "model": "main",
   "messages": [
     {"role": "user", "content": "你好"}
   ],

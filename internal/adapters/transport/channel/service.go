@@ -44,6 +44,7 @@ func SetupWithOptions(entries []config.ChannelEntry, options SetupOptions) (*Ser
 			HistoryDir:        historyDir,
 			Sessions:          sessions,
 			SchedulerProvider: options.SchedulerProvider,
+			AgentID:           entry.AgentID,
 		})
 		bridges[entry.Name] = bridge
 	}
@@ -66,7 +67,7 @@ func SetupWithOptions(entries []config.ChannelEntry, options SetupOptions) (*Ser
 		}); err != nil {
 			return nil, fmt.Errorf("register channel %s: %w", entry.Name, err)
 		}
-		log.Printf("[channels] registered channel: %s (mode=%s)", entry.Name, entry.Mode)
+		log.Printf("[channels] registered channel: %s (mode=%s, agent_id=%s)", entry.Name, entry.Mode, entry.AgentID)
 	}
 
 	bridgeList := make([]*Bridge, 0, len(bridges))

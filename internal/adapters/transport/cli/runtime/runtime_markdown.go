@@ -146,7 +146,7 @@ func markdownEscapeTable(value string) string {
 
 func runtimeWelcomeInfo(session *Session) tui.WelcomeInfo {
 	modelName := ""
-	if mc := config.Get().ResolveModel("default"); mc != nil {
+	if mc := config.Get().ResolveDefaultModel(config.ModelUseChat); mc != nil {
 		modelName = mc.Model
 		if mc.Provider != "" {
 			modelName = mc.Provider + "/" + modelName

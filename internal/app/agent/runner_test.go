@@ -97,17 +97,17 @@ func TestCreateAgentRunnerPropagatesRuntimeError(t *testing.T) {
 func TestResolveCustomModel(t *testing.T) {
 	cfg := &config.Config{
 		Models: []config.ModelConfig{
-			{Name: "default", Provider: "openai", Model: "gpt-default", APIKey: "default-key", BaseURL: "https://default.example"},
-			{Name: "fast", Provider: "deepseek", Model: "deepseek-chat", APIKey: "fast-key", BaseURL: "https://fast.example"},
+			{ID: "main", Name: "主力模型", UseFor: []string{config.ModelUseChat}, Provider: "openai", Model: "gpt-default", APIKey: "default-key", BaseURL: "https://default.example"},
+			{ID: "fast", Name: "快速模型", Provider: "deepseek", Model: "deepseek-chat", APIKey: "fast-key", BaseURL: "https://fast.example"},
 		},
 	}
 
-	got := resolveCustomModel(cfg, config.CustomAgent{Model: "fast"})
+	got := resolveCustomModel(cfg, config.CustomAgent{ModelID: "fast"})
 	if got.Provider != "deepseek" || got.Name != "deepseek-chat" || got.APIKey != "fast-key" || got.BaseURL != "https://fast.example" {
 		t.Fatalf("resolved custom model = %#v", got)
 	}
 
-	if missing := resolveCustomModel(cfg, config.CustomAgent{Model: "missing"}); missing != (custom.Model{}) {
+	if missing := resolveCustomModel(cfg, config.CustomAgent{ModelID: "missing"}); missing != (custom.Model{}) {
 		t.Fatalf("missing model = %#v, want zero value", missing)
 	}
 }

@@ -1,12 +1,14 @@
 export interface ModelConfig {
+  id: string;
   name: string;
+  use_for?: string[];
   provider: string;
   model: string;
   api_key?: string;
   base_url?: string;
   extra_headers?: string;
   has_api_key?: boolean;
-  original_name?: string;
+  original_id?: string;
 }
 
 export interface MemoryConfig {
@@ -48,6 +50,7 @@ export interface ChannelQQConfig {
   app_secret?: string;
   sandbox?: boolean;
   mode?: string;
+  agent_id?: string;
 }
 
 export interface ChannelDiscordConfig {
@@ -55,6 +58,7 @@ export interface ChannelDiscordConfig {
   token?: string;
   allow_from?: string;
   mode?: string;
+  agent_id?: string;
 }
 
 export interface ChannelWeixinConfig {
@@ -64,6 +68,7 @@ export interface ChannelWeixinConfig {
   log_level?: string;
   allow_from?: string;
   mode?: string;
+  agent_id?: string;
 }
 
 export interface ChannelsConfig {
@@ -73,10 +78,10 @@ export interface ChannelsConfig {
 }
 
 export interface TeamMemberConfig {
-  index?: number;
+  id?: string;
   name?: string;
-  desc?: string;
-  model?: string;
+  description?: string;
+  model_id?: string;
 }
 
 export interface RoundtableConfig {
@@ -85,23 +90,25 @@ export interface RoundtableConfig {
 }
 
 export interface CustomAgentConfig {
+  id?: string;
   name?: string;
-  desc?: string;
-  system_prompt?: string;
-  model?: string;
+  description?: string;
+  prompt?: string;
+  model_id?: string;
   tools?: string[];
 }
 
 export interface MCPServerConfig {
+  id?: string;
   name?: string;
-  desc?: string;
+  description?: string;
   enabled?: boolean;
-  timeout?: number;
+  timeout?: string;
   url?: string;
   command?: string;
-  env_vars?: string[];
+  env?: Record<string, string>;
   args?: string[];
-  transport_type?: string;
+  transport?: string;
 }
 
 export interface CustomConfig {

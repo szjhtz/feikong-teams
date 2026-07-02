@@ -11,9 +11,9 @@ import (
 
 func NewAgent(ctx context.Context, member config.TeamMember) (runtimeport.Agent, error) {
 	cfg := config.Get()
-	modelCfg := cfg.ResolveModel(member.Model)
+	modelCfg := cfg.ResolveModel(member.ModelID)
 	if modelCfg == nil {
-		return nil, fmt.Errorf("模型 %q 未在配置文件中定义", member.Model)
+		return nil, fmt.Errorf("模型 %q 未在配置文件中定义", member.ModelID)
 	}
 
 	chatModel, err := common.NewChatModelWithModelConfig(ctx, modelCfg)
@@ -23,7 +23,7 @@ func NewAgent(ctx context.Context, member config.TeamMember) (runtimeport.Agent,
 
 	return common.BuildAgent(ctx, common.Definition{
 		Name:          member.Name,
-		Description:   member.Desc,
+		Description:   member.Description,
 		Instruction:   discussantPrompt,
 		Profile:       common.ProfileWorkspace,
 		Model:         chatModel,

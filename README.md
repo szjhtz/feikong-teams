@@ -73,7 +73,9 @@ fkteams generate config
 
 ```toml
 [[models]]
-name = "default"
+id = "main"
+name = "主力模型"
+use_for = ["chat", "agent"]
 provider = "openai"
 base_url = "https://api.openai.com/v1"
 api_key = "your_api_key_here"

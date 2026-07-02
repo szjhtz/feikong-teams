@@ -249,20 +249,26 @@ func appendCustomAgents(entries []AgentInfo, cfg *config.Config) []AgentInfo {
 	}
 
 	for _, agentCfg := range cfg.Custom.Agents {
-		if agentCfg.Name == "" {
+		agentID := agentCfg.ID
+		if agentID == "" {
+			agentID = agentCfg.Name
+		}
+		if agentID == "" || agentCfg.Name == "" {
 			continue
 		}
-		if existingNames[agentCfg.Name] {
-			log.Printf("[agent] 自定义智能体 %q 与已有智能体名称重复，不建议使用相同名称", agentCfg.Name)
+		if existingNames[agentID] {
+			log.Printf("[agent] 自定义智能体 %q 与已有智能体 ID 重复，不建议使用相同 ID", agentID)
 		}
 
 		agentCfg := agentCfg
+		capturedAgentID := agentID
 		entries = append(entries, AgentInfo{
-			Name:        agentCfg.Name,
-			Description: agentCfg.Desc,
+			Name:        capturedAgentID,
+			DisplayName: agentCfg.Name,
+			Description: agentCfg.Description,
 			TeamMember:  true,
 			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
-				mc := config.Get().ResolveModel(agentCfg.Model)
+				mc := config.Get().ResolveModel(agentCfg.ModelID)
 				var model custom.Model
 				if mc != nil {
 					model = custom.Model{
@@ -273,14 +279,15 @@ func appendCustomAgents(entries []AgentInfo, cfg *config.Config) []AgentInfo {
 					}
 				}
 				return custom.NewAgent(ctx, custom.Config{
-					Name:         agentCfg.Name,
-					Description:  agentCfg.Desc,
-					SystemPrompt: agentCfg.SystemPrompt,
-					Model:        model,
-					ToolNames:    agentCfg.Tools,
+					Name:        capturedAgentID,
+					Description: agentCfg.Description,
+					Prompt:      agentCfg.Prompt,
+					Model:       model,
+					ToolNames:   agentCfg.Tools,
 				})
 			},
 		})
+		existingNames[agentID] = true
 	}
 	return entries
 }

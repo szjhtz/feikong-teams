@@ -81,11 +81,11 @@ func TestChannelsList(t *testing.T) {
 func TestConfigResolveModelAndWorkspaceDir(t *testing.T) {
 	appDir := resetConfigForTest(t)
 	cfg := &Config{Models: []ModelConfig{
-		{Name: "default", Provider: "openai", Model: "gpt-5"},
-		{Name: "deepseek", Provider: "deepseek", Model: "deepseek-chat"},
+		{ID: "main", Name: "主力模型", UseFor: []string{ModelUseChat}, Provider: "openai", Model: "gpt-5"},
+		{ID: "deepseek", Name: "DeepSeek", Provider: "deepseek", Model: "deepseek-chat"},
 	}}
 
-	if got := cfg.ResolveModel(""); got == nil || got.Name != "default" {
+	if got := cfg.ResolveModel(""); got == nil || got.ID != "main" {
 		t.Fatalf("ResolveModel empty = %#v", got)
 	}
 	if got := cfg.ResolveModel("deepseek"); got == nil || got.Model != "deepseek-chat" {
@@ -117,7 +117,7 @@ func TestDefaultConfigAndGet(t *testing.T) {
 func TestSaveReloadAndInit(t *testing.T) {
 	appDir := resetConfigForTest(t)
 	cfg := &Config{
-		Models: []ModelConfig{{Name: "default", Provider: "openai", APIKey: "sk-test", Model: "gpt-5"}},
+		Models: []ModelConfig{{ID: "main", Name: "主力模型", UseFor: []string{ModelUseChat}, Provider: "openai", APIKey: "sk-test", Model: "gpt-5"}},
 		Server: Server{Host: "127.0.0.1", Port: 1234, LogLevel: "debug"},
 	}
 
@@ -136,8 +136,8 @@ func TestSaveReloadAndInit(t *testing.T) {
 	if err := Reload(); err != nil {
 		t.Fatalf("Reload returned error: %v", err)
 	}
-	if got := Get().ResolveModel("default"); got == nil || got.APIKey != "sk-test" {
-		t.Fatalf("reloaded default model = %#v", got)
+	if got := Get().ResolveDefaultModel(ModelUseChat); got == nil || got.APIKey != "sk-test" {
+		t.Fatalf("reloaded chat model = %#v", got)
 	}
 
 	globalConfig.Store((*Config)(nil))
@@ -152,12 +152,12 @@ func TestSaveReloadAndInit(t *testing.T) {
 
 func TestInitAndValidate(t *testing.T) {
 	resetConfigForTest(t)
-	if err := InitAndValidate(); err == nil || !strings.Contains(err.Error(), "未配置默认模型") {
+	if err := InitAndValidate(); err == nil {
 		t.Fatalf("InitAndValidate missing default error = %v", err)
 	}
 
 	resetConfigForTest(t)
-	if err := Save(&Config{Models: []ModelConfig{{Name: "default", Provider: "openai"}}}); err != nil {
+	if err := Save(&Config{Models: []ModelConfig{{ID: "main", Name: "主力模型", UseFor: []string{ModelUseChat}, Provider: "openai"}}}); err != nil {
 		t.Fatalf("Save returned error: %v", err)
 	}
 	configOnce = sync.Once{}
@@ -224,7 +224,7 @@ func TestGenerateExample(t *testing.T) {
 	if err := Unmarshal(configPath, &generated); err != nil {
 		t.Fatalf("generated config should be valid TOML: %v", err)
 	}
-	if generated.ResolveModel("default") == nil || generated.Server.Auth.Username != "admin" {
+	if generated.ResolveDefaultModel(ModelUseChat) == nil || generated.Server.Auth.Username != "admin" {
 		t.Fatalf("generated config = %#v", generated)
 	}
 }

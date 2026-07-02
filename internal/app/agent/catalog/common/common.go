@@ -25,10 +25,10 @@ func WorkspaceDir() string {
 	return config.Get().WorkspaceDir()
 }
 
-// NewChatModel 使用配置文件的 default 模型创建聊天模型
+// NewChatModel 使用配置文件的默认对话模型创建聊天模型
 func NewChatModel(ctx context.Context) (runtimeport.ChatModel, error) {
 	cfg := config.Get()
-	modelCfg := cfg.ResolveModel("default")
+	modelCfg := cfg.ResolveDefaultModel(config.ModelUseChat)
 	if modelCfg != nil && (modelCfg.APIKey != "" || modelCfg.Provider != "") {
 		return NewChatModelWithModelConfig(ctx, modelCfg)
 	}

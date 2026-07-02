@@ -16,19 +16,19 @@ type Model struct {
 }
 
 type Config struct {
-	Name         string
-	Description  string
-	SystemPrompt string
-	Model        Model
-	ToolNames    []string
-	Tools        []runtimeport.Tool
+	Name        string
+	Description string
+	Prompt      string
+	Model       Model
+	ToolNames   []string
+	Tools       []runtimeport.Tool
 }
 
 func NewAgent(ctx context.Context, cfg Config) (runtimeport.Agent, error) {
 	def := common.Definition{
 		Name:        cfg.Name,
 		Description: cfg.Description,
-		Instruction: cfg.SystemPrompt,
+		Instruction: cfg.Prompt,
 		Profile:     common.ProfileFull,
 		Tools:       cfg.Tools,
 		ToolNames:   cfg.ToolNames,

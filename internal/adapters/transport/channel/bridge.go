@@ -55,7 +55,8 @@ const (
 // Bridge 连接通道消息与智能体执行引擎
 type Bridge struct {
 	manager    *Manager
-	mode       string // 运行模式: team, deep, roundtable, custom 或智能体名称
+	mode       string // 运行模式: team, deep, roundtable, custom, agent
+	agentID    string
 	state      *appstate.State
 	historyDir string
 	sessions   *eventlog.SessionHistoryManager
@@ -83,6 +84,7 @@ type BridgeOptions struct {
 	HistoryDir        string
 	Sessions          *eventlog.SessionHistoryManager
 	SchedulerProvider func() *appschedule.Service
+	AgentID           string
 }
 
 // NewBridge 创建消息桥接器
@@ -111,6 +113,7 @@ func NewBridgeWithOptions(manager *Manager, mode string, options BridgeOptions) 
 	return &Bridge{
 		manager:    manager,
 		mode:       mode,
+		agentID:    options.AgentID,
 		state:      options.State,
 		historyDir: historyDir,
 		sessions:   sessions,
@@ -170,7 +173,7 @@ func (b *Bridge) getRunner(ctx context.Context) (runtimeport.Runner, error) {
 		return b.runner, b.runnerErr
 	}
 
-	b.runner, b.runnerErr = appagent.Resolve(ctx, b.mode, "")
+	b.runner, b.runnerErr = appagent.Resolve(ctx, b.mode, b.agentID)
 	return b.runner, b.runnerErr
 }
 

@@ -30,29 +30,29 @@ func TestSaveProviderConfigCreatesDefault(t *testing.T) {
 			t.Fatalf("saveProviderConfig returned error: %v", err)
 		}
 	})
-	if !strings.Contains(output, "已新增供应商配置") || !strings.Contains(output, "已自动设为默认模型") {
+	if !strings.Contains(output, "已新增供应商配置") || !strings.Contains(output, "已自动设为默认对话模型") {
 		t.Fatalf("saveProviderConfig output = %q", output)
 	}
 
 	cfg := config.Get()
-	if len(cfg.Models) != 2 {
-		t.Fatalf("models count = %d, want provider and default: %#v", len(cfg.Models), cfg.Models)
+	if len(cfg.Models) != 1 {
+		t.Fatalf("models count = %d, want one provider model: %#v", len(cfg.Models), cfg.Models)
 	}
 	model := cfg.ResolveModel("deepseek")
 	if model == nil || model.Provider != "deepseek" || model.APIKey != "sk-test" || model.Model != "deepseek-chat" {
 		t.Fatalf("deepseek model = %#v", model)
 	}
-	defaultModel := cfg.ResolveModel("default")
-	if defaultModel == nil || defaultModel.Provider != "deepseek" || defaultModel.Model != "deepseek-chat" {
-		t.Fatalf("default model = %#v", defaultModel)
+	defaultModel := cfg.ResolveDefaultModel(config.ModelUseChat)
+	if defaultModel == nil || defaultModel.ID != "deepseek" || defaultModel.Provider != "deepseek" || defaultModel.Model != "deepseek-chat" {
+		t.Fatalf("default chat model = %#v", defaultModel)
 	}
 }
 
 func TestSaveProviderConfigUpdatesExisting(t *testing.T) {
 	useTempAppDir(t)
 	if err := config.Save(&config.Config{Models: []config.ModelConfig{
-		{Name: "openai", Provider: "openai", APIKey: "old", BaseURL: "https://old.example.com", Model: "old-model"},
-		{Name: "default", Provider: "deepseek", APIKey: "keep", Model: "deepseek-chat"},
+		{ID: "openai", Name: "OpenAI", Provider: "openai", APIKey: "old", BaseURL: "https://old.example.com", Model: "old-model"},
+		{ID: "deepseek", Name: "DeepSeek", UseFor: []string{config.ModelUseChat}, Provider: "deepseek", APIKey: "keep", Model: "deepseek-chat"},
 	}}); err != nil {
 		t.Fatalf("save initial config: %v", err)
 	}
@@ -71,9 +71,9 @@ func TestSaveProviderConfigUpdatesExisting(t *testing.T) {
 	if model == nil || model.APIKey != "new-key" || model.BaseURL != "https://old.example.com" || model.Model != "gpt-5" {
 		t.Fatalf("updated openai model = %#v", model)
 	}
-	defaultModel := cfg.ResolveModel("default")
+	defaultModel := cfg.ResolveDefaultModel(config.ModelUseChat)
 	if defaultModel == nil || defaultModel.Provider != "deepseek" {
-		t.Fatalf("default model should be preserved, got %#v", defaultModel)
+		t.Fatalf("default chat model should be preserved, got %#v", defaultModel)
 	}
 }
 

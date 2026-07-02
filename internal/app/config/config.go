@@ -16,16 +16,25 @@ import (
 
 // ==================== 模型池 ====================
 
-// ModelConfig 可复用的模型配置，通过 Name 引用
+const (
+	ModelUseChat    = "chat"
+	ModelUseAgent   = "agent"
+	ModelUseTitle   = "title"
+	ModelUseSummary = "summary"
+)
+
+// ModelConfig 可复用的模型配置，通过 ID 稳定引用，Name 仅用于展示。
 type ModelConfig struct {
-	Name         string `toml:"name" json:"name"`
-	Provider     string `toml:"provider,omitempty" json:"provider"`
-	BaseURL      string `toml:"base_url" json:"base_url"`
-	APIKey       string `toml:"api_key" json:"api_key"`
-	Model        string `toml:"model" json:"model"`
-	ExtraHeaders string `toml:"extra_headers,omitempty" json:"extra_headers"` // 格式: Key1:Value1,Key2:Value2
-	HasAPIKey    bool   `toml:"-" json:"has_api_key,omitempty"`               // 是否已配置 APIKey（前端展示用）
-	OriginalName string `toml:"-" json:"original_name,omitempty"`             // 前端加载时的原始名称，用于 APIKey 还原匹配
+	ID           string   `toml:"id" json:"id"`
+	Name         string   `toml:"name" json:"name"`
+	UseFor       []string `toml:"use_for,omitempty" json:"use_for,omitempty"`
+	Provider     string   `toml:"provider,omitempty" json:"provider"`
+	BaseURL      string   `toml:"base_url" json:"base_url"`
+	APIKey       string   `toml:"api_key" json:"api_key"`
+	Model        string   `toml:"model" json:"model"`
+	ExtraHeaders string   `toml:"extra_headers,omitempty" json:"extra_headers"` // 格式: Key1:Value1,Key2:Value2
+	HasAPIKey    bool     `toml:"-" json:"has_api_key,omitempty"`               // 是否已配置 APIKey（前端展示用）
+	OriginalID   string   `toml:"-" json:"original_id,omitempty"`               // 前端加载时的原始 ID，用于 APIKey 还原匹配
 }
 
 // ParseExtraHeaders 解析额外请求头字符串为 map
@@ -95,7 +104,8 @@ type ChannelQQ struct {
 	AppID     string `toml:"app_id" json:"app_id"`
 	AppSecret string `toml:"app_secret" json:"app_secret"`
 	Sandbox   bool   `toml:"sandbox" json:"sandbox"`
-	Mode      string `toml:"mode" json:"mode"` // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+	Mode      string `toml:"mode" json:"mode"` // 运行模式: team(默认), deep, roundtable, custom, agent
+	AgentID   string `toml:"agent_id,omitempty" json:"agent_id,omitempty"`
 }
 
 // ChannelDiscord Discord 机器人通道配置
@@ -103,7 +113,8 @@ type ChannelDiscord struct {
 	Enabled   bool   `toml:"enabled" json:"enabled"`
 	Token     string `toml:"token" json:"token"`
 	AllowFrom string `toml:"allow_from" json:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
-	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom, agent
+	AgentID   string `toml:"agent_id,omitempty" json:"agent_id,omitempty"`
 }
 
 // ChannelWeixin 微信机器人通道配置
@@ -113,14 +124,16 @@ type ChannelWeixin struct {
 	CredPath  string `toml:"cred_path" json:"cred_path"`   // 凭证存储路径（可选）
 	LogLevel  string `toml:"log_level" json:"log_level"`   // 日志级别: debug, info, warn, error, silent
 	AllowFrom string `toml:"allow_from" json:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
-	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom, agent
+	AgentID   string `toml:"agent_id,omitempty" json:"agent_id,omitempty"`
 }
 
 // ChannelEntry 统一通道配置条目
 type ChannelEntry struct {
-	Name  string
-	Mode  string
-	Extra map[string]string
+	Name    string
+	Mode    string
+	AgentID string
+	Extra   map[string]string
 }
 
 // Channels 消息通道配置
@@ -135,8 +148,9 @@ func (c Channels) List() []ChannelEntry {
 	var entries []ChannelEntry
 	if c.QQ.Enabled {
 		entries = append(entries, ChannelEntry{
-			Name: "qq",
-			Mode: c.QQ.Mode,
+			Name:    "qq",
+			Mode:    c.QQ.Mode,
+			AgentID: c.QQ.AgentID,
 			Extra: map[string]string{
 				"app_id":     c.QQ.AppID,
 				"app_secret": c.QQ.AppSecret,
@@ -146,8 +160,9 @@ func (c Channels) List() []ChannelEntry {
 	}
 	if c.Discord.Enabled {
 		entries = append(entries, ChannelEntry{
-			Name: "discord",
-			Mode: c.Discord.Mode,
+			Name:    "discord",
+			Mode:    c.Discord.Mode,
+			AgentID: c.Discord.AgentID,
 			Extra: map[string]string{
 				"token":      c.Discord.Token,
 				"allow_from": c.Discord.AllowFrom,
@@ -156,8 +171,9 @@ func (c Channels) List() []ChannelEntry {
 	}
 	if c.Weixin.Enabled {
 		entries = append(entries, ChannelEntry{
-			Name: "weixin",
-			Mode: c.Weixin.Mode,
+			Name:    "weixin",
+			Mode:    c.Weixin.Mode,
+			AgentID: c.Weixin.AgentID,
 			Extra: map[string]string{
 				"base_url":   c.Weixin.BaseURL,
 				"cred_path":  c.Weixin.CredPath,
@@ -173,10 +189,10 @@ func (c Channels) List() []ChannelEntry {
 
 // TeamMember 圆桌讨论模式的成员配置
 type TeamMember struct {
-	Index int    `toml:"index" json:"index"`
-	Name  string `toml:"name" json:"name"`
-	Desc  string `toml:"desc" json:"desc"`
-	Model string `toml:"model" json:"model"` // 引用 models 中的 name
+	ID          string `toml:"id" json:"id"`
+	Name        string `toml:"name" json:"name"`
+	Description string `toml:"description" json:"description"`
+	ModelID     string `toml:"model_id" json:"model_id"` // 引用 models 中的 id
 }
 
 // Roundtable 圆桌讨论模式配置
@@ -189,24 +205,26 @@ type Roundtable struct {
 
 // CustomAgent 自定义智能体配置
 type CustomAgent struct {
-	Name         string   `toml:"name" json:"name"`
-	Desc         string   `toml:"desc" json:"desc"`
-	SystemPrompt string   `toml:"system_prompt" json:"system_prompt"`
-	Model        string   `toml:"model" json:"model"` // 引用 models 中的 name
-	Tools        []string `toml:"tools,omitempty" json:"tools"`
+	ID          string   `toml:"id" json:"id"`
+	Name        string   `toml:"name" json:"name"`
+	Description string   `toml:"description" json:"description"`
+	Prompt      string   `toml:"prompt" json:"prompt"`
+	ModelID     string   `toml:"model_id" json:"model_id"` // 引用 models 中的 id
+	Tools       []string `toml:"tools,omitempty" json:"tools"`
 }
 
 // MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
 type MCPServer struct {
-	Name          string   `toml:"name" json:"name"`
-	Desc          string   `toml:"desc" json:"desc"`
-	Enabled       bool     `toml:"enabled" json:"enabled"`
-	Timeout       int      `toml:"timeout" json:"timeout"`
-	URL           string   `toml:"url,omitempty" json:"url"`
-	Command       string   `toml:"command,omitempty" json:"command"`   // Command: "uvx" or "npx"
-	EnvVars       []string `toml:"env_vars,omitempty" json:"env_vars"` // Environment variables for stdio
-	Args          []string `toml:"args,omitempty" json:"args"`         // Command arguments array
-	TransportType string   `toml:"transport_type" json:"transport_type"`
+	ID          string            `toml:"id" json:"id"`
+	Name        string            `toml:"name" json:"name"`
+	Description string            `toml:"description" json:"description"`
+	Enabled     bool              `toml:"enabled" json:"enabled"`
+	Timeout     string            `toml:"timeout,omitempty" json:"timeout,omitempty"`
+	URL         string            `toml:"url,omitempty" json:"url"`
+	Command     string            `toml:"command,omitempty" json:"command"` // Command: "uvx" or "npx"
+	Env         map[string]string `toml:"env,omitempty" json:"env,omitempty"`
+	Args        []string          `toml:"args,omitempty" json:"args"` // Command arguments array
+	Transport   string            `toml:"transport" json:"transport"`
 }
 
 // Custom 自定义会议模式配置
@@ -237,15 +255,60 @@ type Config struct {
 	Custom     Custom        `toml:"custom" json:"custom"`
 }
 
-// ResolveModel 通过名称查找模型配置，空名称返回 "default" 模型
-func (c *Config) ResolveModel(name string) *ModelConfig {
-	if name == "" {
-		name = "default"
+// ResolveModel 通过稳定 ID 查找模型配置，空 ID 返回默认对话模型。
+func (c *Config) ResolveModel(id string) *ModelConfig {
+	if id == "" {
+		return c.ResolveDefaultModel(ModelUseChat)
 	}
 	for i := range c.Models {
-		if c.Models[i].Name == name {
+		if c.Models[i].ID == id {
 			return &c.Models[i]
 		}
+	}
+	return nil
+}
+
+// ResolveDefaultModel 返回指定用途的默认模型；非 chat 用途未配置时回退到 chat。
+func (c *Config) ResolveDefaultModel(use string) *ModelConfig {
+	if use == "" {
+		use = ModelUseChat
+	}
+	for i := range c.Models {
+		for _, item := range c.Models[i].UseFor {
+			if item == use {
+				return &c.Models[i]
+			}
+		}
+	}
+	if use != ModelUseChat {
+		return c.ResolveDefaultModel(ModelUseChat)
+	}
+	return nil
+}
+
+func (c *Config) ValidateModels() error {
+	modelIDs := make(map[string]struct{}, len(c.Models))
+	uses := make(map[string]string)
+	for _, m := range c.Models {
+		if m.ID == "" {
+			return fmt.Errorf("model id is required")
+		}
+		if _, ok := modelIDs[m.ID]; ok {
+			return fmt.Errorf("duplicate model id: %s", m.ID)
+		}
+		modelIDs[m.ID] = struct{}{}
+		for _, use := range m.UseFor {
+			if use == "" {
+				continue
+			}
+			if existing := uses[use]; existing != "" {
+				return fmt.Errorf("model use_for %q is configured by both %s and %s", use, existing, m.ID)
+			}
+			uses[use] = m.ID
+		}
+	}
+	if _, ok := uses[ModelUseChat]; !ok {
+		return fmt.Errorf("model use_for %q is required", ModelUseChat)
 	}
 	return nil
 }
@@ -333,8 +396,10 @@ func Save(cfg *Config) error {
 // EnsureDefaultModel 检查是否配置了默认模型，未配置时返回引导信息
 func ensureDefaultModel() error {
 	cfg := Get()
-	// 配置文件中有 default 模型
-	if mc := cfg.ResolveModel("default"); mc != nil && (mc.APIKey != "" || mc.Provider != "") {
+	if err := cfg.ValidateModels(); err != nil {
+		return err
+	}
+	if mc := cfg.ResolveDefaultModel(ModelUseChat); mc != nil && (mc.APIKey != "" || mc.Provider != "") {
 		return nil
 	}
 	configPath := filepath.Join(appdata.Dir(), "config", "config.toml")
@@ -393,21 +458,26 @@ func GenerateExample() error {
 	exampleConfig := Config{
 		Models: []ModelConfig{
 			{
-				Name:     "default",
+				ID:       "main",
+				Name:     "主力模型",
+				UseFor:   []string{ModelUseChat, ModelUseAgent},
 				Provider: "openai",
 				BaseURL:  "https://api.openai.com/v1",
 				APIKey:   "xxxxx",
 				Model:    "GPT-5",
 			},
 			{
-				Name:     "deepseek",
+				ID:       "fast",
+				Name:     "快速模型",
+				UseFor:   []string{ModelUseTitle, ModelUseSummary},
 				Provider: "deepseek",
 				BaseURL:  "https://api.deepseek.com/v1",
 				APIKey:   "xxxxx",
 				Model:    "deepseek-chat",
 			},
 			{
-				Name:     "copilot",
+				ID:       "copilot",
+				Name:     "Copilot",
 				Provider: "copilot",
 				Model:    "gpt-4o",
 			},
@@ -449,11 +519,13 @@ func GenerateExample() error {
 				AppSecret: "your_app_secret",
 				Sandbox:   true,
 				Mode:      "team",
+				AgentID:   "",
 			},
 			Discord: ChannelDiscord{
 				Enabled: false,
 				Token:   "your_discord_bot_token",
 				Mode:    "team",
+				AgentID: "",
 			},
 			Weixin: ChannelWeixin{
 				Enabled:   false,
@@ -462,53 +534,58 @@ func GenerateExample() error {
 				LogLevel:  "info",
 				AllowFrom: "",
 				Mode:      "team",
+				AgentID:   "",
 			},
 		},
 		Roundtable: Roundtable{
 			Members: []TeamMember{
 				{
-					Index: 0,
-					Name:  "Deepseek Chat",
-					Desc:  "深度求索聊天模型",
-					Model: "deepseek",
+					ID:          "deepseek",
+					Name:        "Deepseek Chat",
+					Description: "深度求索聊天模型",
+					ModelID:     "fast",
 				},
 			},
 			MaxIterations: 2,
 		},
 		Custom: Custom{
 			Moderator: CustomAgent{
-				Name:         "主持人名称",
-				Desc:         "主持人描述",
-				SystemPrompt: "你是一个公正的主持人，负责引导讨论。",
-				Model:        "default",
+				ID:          "moderator",
+				Name:        "协调者名称",
+				Description: "协调者描述",
+				Prompt:      "你是一个公正的协调者，负责引导讨论并调度成员协作。",
+				ModelID:     "main",
 			},
 			Agents: []CustomAgent{
 				{
-					Name:         "智能体名称",
-					Desc:         "智能体描述",
-					SystemPrompt: "你是一个有帮助的助手。",
-					Model:        "default",
-					Tools:        []string{"command", "mcp-服务名称"},
+					ID:          "assistant",
+					Name:        "智能体名称",
+					Description: "智能体描述",
+					Prompt:      "你是一个有帮助的助手。",
+					ModelID:     "main",
+					Tools:       []string{"command", "mcp-服务名称"},
 				},
 			},
 			MCPServers: []MCPServer{
 				{
-					Name:          "MCP服务名称",
-					Desc:          "MCP服务描述",
-					Enabled:       false,
-					Timeout:       30,
-					URL:           "http://127.0.0.1:12345/mcp",
-					TransportType: "http",
+					ID:          "remote_mcp",
+					Name:        "MCP服务名称",
+					Description: "MCP服务描述",
+					Enabled:     false,
+					Timeout:     "30s",
+					URL:         "http://127.0.0.1:12345/mcp",
+					Transport:   "http",
 				},
 				{
-					Name:          "本地Stdio MCP服务",
-					Desc:          "通过stdio通信的本地MCP服务",
-					Enabled:       false,
-					Timeout:       30,
-					Command:       "go",
-					EnvVars:       []string{"FEIKONG_MCP_LOG_LEVEL=info"},
-					Args:          []string{"run", "main.go"},
-					TransportType: "stdio",
+					ID:          "local_stdio_mcp",
+					Name:        "本地Stdio MCP服务",
+					Description: "通过stdio通信的本地MCP服务",
+					Enabled:     false,
+					Timeout:     "30s",
+					Command:     "go",
+					Env:         map[string]string{"FEIKONG_MCP_LOG_LEVEL": "info"},
+					Args:        []string{"run", "main.go"},
+					Transport:   "stdio",
 				},
 			},
 		},

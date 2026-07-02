@@ -325,11 +325,14 @@ func customLoginAction(ctx context.Context, cmd *ucli.Command) error {
 func saveProviderConfig(name, provider, apiKey, baseURL, model string) error {
 	cfg := config.Get()
 
-	// 查找是否已存在同名配置
+	// 查找是否已存在同 ID 配置
 	var found bool
 	for i := range cfg.Models {
-		if cfg.Models[i].Name == name {
+		if cfg.Models[i].ID == name {
 			cfg.Models[i].Provider = provider
+			if cfg.Models[i].Name == "" {
+				cfg.Models[i].Name = name
+			}
 			cfg.Models[i].APIKey = apiKey
 			if baseURL != "" {
 				cfg.Models[i].BaseURL = baseURL
@@ -344,6 +347,7 @@ func saveProviderConfig(name, provider, apiKey, baseURL, model string) error {
 
 	if !found {
 		cfg.Models = append(cfg.Models, config.ModelConfig{
+			ID:       name,
 			Name:     name,
 			Provider: provider,
 			APIKey:   apiKey,
@@ -352,15 +356,14 @@ func saveProviderConfig(name, provider, apiKey, baseURL, model string) error {
 		})
 	}
 
-	// 如果还没有 default 模型，自动将当前配置设为默认
-	if name != "default" && cfg.ResolveModel("default") == nil {
-		cfg.Models = append(cfg.Models, config.ModelConfig{
-			Name:     "default",
-			Provider: provider,
-			APIKey:   apiKey,
-			BaseURL:  baseURL,
-			Model:    model,
-		})
+	// 如果还没有默认对话模型，自动将当前配置设为 chat 用途。
+	if cfg.ResolveDefaultModel(config.ModelUseChat) == nil {
+		for i := range cfg.Models {
+			if cfg.Models[i].ID == name {
+				cfg.Models[i].UseFor = appendModelUse(cfg.Models[i].UseFor, config.ModelUseChat)
+				break
+			}
+		}
 	}
 
 	if err := config.Save(cfg); err != nil {
@@ -375,9 +378,9 @@ func saveProviderConfig(name, provider, apiKey, baseURL, model string) error {
 	if baseURL != "" {
 		fmt.Printf("  API 地址: %s\n", baseURL)
 	}
-	if name != "default" && !found {
-		if hasDefault := cfg.ResolveModel("default"); hasDefault != nil && hasDefault.Provider == provider && hasDefault.Model == model {
-			fmt.Printf("✓ 已自动设为默认模型\n")
+	if !found {
+		if chatModel := cfg.ResolveDefaultModel(config.ModelUseChat); chatModel != nil && chatModel.ID == name {
+			fmt.Printf("✓ 已自动设为默认对话模型\n")
 		}
 	}
 	return nil
@@ -398,7 +401,7 @@ func providerLogoutAction(cmd *ucli.Command, defaultName string) error {
 	var newModels []config.ModelConfig
 	var removed bool
 	for _, m := range cfg.Models {
-		if m.Name == name {
+		if m.ID == name {
 			removed = true
 			continue
 		}
