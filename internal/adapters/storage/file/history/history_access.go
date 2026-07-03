@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const contextCompressNoticeContent = "对话上下文已压缩，旧消息已被总结摘要替代"
+
 // RecordCancelled 收束当前活跃消息，并在历史末尾追加用户取消提示。
 func (h *HistoryRecorder) RecordCancelled(message string) {
 	h.mu.Lock()
@@ -197,20 +199,17 @@ func (h *HistoryRecorder) reconstructSummaryFromEvents() {
 
 	for i := len(h.messages) - 1; i >= 0; i-- {
 		for _, evt := range h.messages[i].Events {
-			if evt.Type == MsgTypeNotice && evt.Detail != "" {
+			if isContextCompressNotice(evt) {
 				h.summary = evt.Detail
-
-				for j := i - 1; j >= 0; j-- {
-					if isUserAgentName(h.messages[j].AgentName) {
-						h.summarizedCount = j
-						return
-					}
-				}
-				h.summarizedCount = 0
+				h.summarizedCount = i + 1
 				return
 			}
 		}
 	}
+}
+
+func isContextCompressNotice(evt MessageEvent) bool {
+	return evt.Type == MsgTypeNotice && evt.Detail != "" && evt.Content == contextCompressNoticeContent
 }
 
 func isUserAgentName(agentName string) bool {

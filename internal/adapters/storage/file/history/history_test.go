@@ -54,6 +54,99 @@ func TestTranscriptProjectionBuildsTurnInput(t *testing.T) {
 	}
 }
 
+func TestTranscriptProjectionUsesLatestSummaryAsHistoryBoundary(t *testing.T) {
+	sessionDir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(sessionDir)
+
+	recorder.RecordEvent(Event{
+		Type:    events.EventUserMessage,
+		Content: "old question",
+		Message: &message.Message{Role: message.RoleUser, Content: "old question"},
+	})
+	recorder.RecordEvent(Event{
+		Type:      events.EventAssistantCompleted,
+		Role:      message.RoleAssistant,
+		AgentName: "coordinator",
+		Content:   "old answer",
+	})
+	recorder.RecordEvent(Event{
+		Type:      EventSystemNotice,
+		AgentName: "系统",
+		Content:   "对话上下文已压缩，旧消息已被总结摘要替代",
+		Detail:    "summary of old conversation",
+	})
+	recorder.RecordEvent(Event{
+		Type:    events.EventUserMessage,
+		Content: "new question",
+		Message: &message.Message{Role: message.RoleUser, Content: "new question"},
+	})
+	recorder.RecordEvent(Event{
+		Type:      events.EventAssistantCompleted,
+		Role:      message.RoleAssistant,
+		AgentName: "coordinator",
+		Content:   "new answer",
+	})
+	recorder.FinalizeCurrent()
+
+	loaded := NewHistoryRecorder()
+	if err := loaded.LoadFromFile(filepath.Join(sessionDir, TranscriptFileName)); err != nil {
+		t.Fatalf("load transcript: %v", err)
+	}
+	summary, summarizedCount := loaded.GetSummary()
+	if summary != "summary of old conversation" {
+		t.Fatalf("summary = %q, want latest summary", summary)
+	}
+	if summarizedCount != 3 {
+		t.Fatalf("summarized count = %d, want 3", summarizedCount)
+	}
+
+	input := appchat.BuildTurnInput(loaded, "next")
+	if len(input.Context) != 3 {
+		t.Fatalf("context count = %d, want 3: %#v", len(input.Context), input.Context)
+	}
+	if input.Context[0].Role != message.RoleSystem || !strings.Contains(input.Context[0].Content, "summary of old conversation") {
+		t.Fatalf("summary context = %#v", input.Context[0])
+	}
+	if input.Context[1].Role != message.RoleUser || input.Context[1].Content != "new question" {
+		t.Fatalf("new user context = %#v", input.Context[1])
+	}
+	if input.Context[2].Role != message.RoleAssistant || input.Context[2].Content != "new answer" {
+		t.Fatalf("new assistant context = %#v", input.Context[2])
+	}
+	for _, ctx := range input.Context {
+		if strings.Contains(ctx.Content, "old question") || strings.Contains(ctx.Content, "old answer") {
+			t.Fatalf("context contains summarized old content: %#v", input.Context)
+		}
+		if strings.Contains(ctx.Content, "对话上下文已压缩") {
+			t.Fatalf("context contains summary notice event: %#v", input.Context)
+		}
+	}
+}
+
+func TestTranscriptProjectionIgnoresNonSummaryNoticeDetails(t *testing.T) {
+	sessionDir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(sessionDir)
+
+	recorder.RecordEvent(Event{
+		Type:      EventSystemNotice,
+		AgentName: "系统",
+		Content:   "dispatch progress",
+		Detail:    `{"event_type":"op"}`,
+	})
+	recorder.FinalizeCurrent()
+
+	loaded := NewHistoryRecorder()
+	if err := loaded.LoadFromFile(filepath.Join(sessionDir, TranscriptFileName)); err != nil {
+		t.Fatalf("load transcript: %v", err)
+	}
+	summary, summarizedCount := loaded.GetSummary()
+	if summary != "" || summarizedCount != 0 {
+		t.Fatalf("summary = %q/%d, want empty summary", summary, summarizedCount)
+	}
+}
+
 func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 	recorder := NewHistoryRecorder()
 	toolIndex := 0
