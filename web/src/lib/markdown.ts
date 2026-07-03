@@ -1,4 +1,17 @@
 import { Marked } from "marked";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import css from "highlight.js/lib/languages/css";
+import diff from "highlight.js/lib/languages/diff";
+import go from "highlight.js/lib/languages/go";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
 import markedKatex from "marked-katex-extension";
 
 const marked = new Marked({
@@ -11,11 +24,36 @@ marked.use(markedKatex({
   throwOnError: false,
 }));
 
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sh", bash);
+hljs.registerLanguage("shell", bash);
+hljs.registerLanguage("zsh", bash);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("diff", diff);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("golang", go);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("js", javascript);
+hljs.registerLanguage("jsx", javascript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("md", markdown);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("py", python);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("ts", typescript);
+hljs.registerLanguage("tsx", typescript);
+hljs.registerLanguage("html", xml);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("yml", yaml);
+
 export function renderMarkdown(value?: string) {
   if (!value) return "";
   try {
     const footnoteInput = normalizeFootnotes(value);
-    const html = withCodeCopyButtons(marked.parse(normalizeMathDelimiters(footnoteInput.markdown)) as string) + footnoteInput.html;
+    const html = withTableWrappers(withCodeCopyButtons(marked.parse(normalizeMathDelimiters(footnoteInput.markdown)) as string)) + footnoteInput.html;
     return withExternalLinkTargets(html);
   } catch {
     return escapeHTML(value).replace(/\n/g, "<br />");
@@ -68,8 +106,40 @@ function slugFootnoteID(value: string) {
 }
 
 function withCodeCopyButtons(html: string) {
-  return html.replace(/<pre><code([^>]*)>([\s\S]*?)<\/code><\/pre>/g, (_match, attrs: string, code: string) => (
-    `<div class="markdown-code-block"><button class="markdown-code-copy" type="button" data-markdown-copy title="复制代码" aria-label="复制代码">复制</button><pre><code${attrs}>${code}</code></pre></div>`
+  return html.replace(/<pre><code([^>]*)>([\s\S]*?)<\/code><\/pre>/g, (_match, attrs: string, code: string) => {
+    const language = codeLanguageInfo(attrs);
+    const highlighted = highlightCodeBlock(code, language.key);
+    return `<div class="markdown-code-block"><div class="markdown-code-header"><span class="markdown-code-language">${language.label}</span><button class="markdown-code-copy" type="button" data-markdown-copy title="复制代码" aria-label="复制代码">复制</button></div><pre><code${attrs}>${highlighted}</code></pre></div>`;
+  });
+}
+
+function codeLanguageInfo(attrs: string) {
+  const match = attrs.match(/class="[^"]*\blanguage-([^"\s]+)[^"]*"/);
+  if (!match) return { key: "text", label: "text" };
+  return { key: match[1].toLowerCase(), label: escapeHTML(match[1].replace(/[-_]/g, " ")) };
+}
+
+function highlightCodeBlock(code: string, language: string) {
+  const raw = decodeHTML(code);
+  if (language !== "text" && hljs.getLanguage(language)) {
+    return hljs.highlight(raw, { language, ignoreIllegals: true }).value;
+  }
+  return hljs.highlightAuto(raw).value;
+}
+
+function decodeHTML(value: string) {
+  return value
+    .replace(/&quot;/g, "\"")
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function withTableWrappers(html: string) {
+  return html.replace(/<table([^>]*)>([\s\S]*?)<\/table>/g, (_match, attrs: string, content: string) => (
+    `<div class="markdown-table-wrap"><table${attrs}>${content}</table></div>`
   ));
 }
 

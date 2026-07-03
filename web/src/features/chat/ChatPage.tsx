@@ -195,8 +195,8 @@ function QuestionNavigator({
           style={{ bottom: "calc(var(--app-keyboard-inset-bottom,0px) + var(--chat-dock-height,10rem) + 1rem)" }}
         >
           {mobileOpen && showMobileQuestion ? (
-            <div className="chat-scroll sketch-surface mb-2 max-h-[44vh] w-[min(calc(100vw-1.5rem),22rem)] animate-in fade-in slide-in-from-bottom-1 overflow-y-auto rounded-2xl bg-card/95 p-3 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur duration-150">
-              <div className="space-y-1">
+            <div className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] animate-in fade-in slide-in-from-bottom-1 overflow-y-auto rounded-xl bg-card/95 p-2 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur duration-150">
+              <div className="space-y-0.5">
                 {orderedQuestions.map(({ question, index }) => (
                   <QuestionButton
                     key={question.id}
@@ -246,8 +246,8 @@ function QuestionNavigator({
           className="group absolute top-[42%] z-20 hidden -translate-y-1/2 xl:block"
           style={{ right: "0.75rem" }}
         >
-          <div className="flex min-h-24 w-7 items-center justify-center">
-            <div className="space-y-4 rounded-full bg-background/55 px-2 py-3 backdrop-blur-sm">
+          <div className="flex min-h-20 w-7 items-center justify-center">
+            <div className="space-y-3 rounded-full bg-background/55 px-2 py-2.5 backdrop-blur-sm">
               {visibleQuestions.map(({ question, index }) => (
                 <button
                   key={question.id}
@@ -264,9 +264,9 @@ function QuestionNavigator({
           </div>
           <div
             ref={panelRef}
-            className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-80 w-72 -translate-y-1/2 overflow-y-auto rounded-2xl bg-card/95 p-4 opacity-0 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+            className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-72 w-64 -translate-y-1/2 overflow-y-auto rounded-xl bg-card/95 p-2.5 opacity-0 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
-            <div className="space-y-1.5">
+            <div className="space-y-0.5">
               {orderedQuestions.map(({ question, index }) => (
                 <QuestionButton
                   key={question.id}
@@ -288,7 +288,7 @@ function QuestionButton({ active, index, content, onClick }: { active: boolean; 
   return (
     <button
       className={cn(
-        "flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-muted",
+        "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[13px] leading-5 transition-colors hover:bg-muted",
         active && "bg-muted text-primary",
       )}
       onClick={onClick}
@@ -296,7 +296,7 @@ function QuestionButton({ active, index, content, onClick }: { active: boolean; 
     >
       <span
         className={cn(
-          "flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border text-[11px]",
+          "flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none",
           active
             ? "border-primary/60 bg-primary/10 text-primary"
             : "border-border/70 bg-muted/55 text-muted-foreground",
@@ -308,7 +308,7 @@ function QuestionButton({ active, index, content, onClick }: { active: boolean; 
       <span
         className={cn(
           "h-[2px] shrink-0 rounded-full",
-          active ? "w-5 bg-primary" : "w-3.5 bg-muted-foreground/35",
+          active ? "w-4 bg-primary" : "w-2.5 bg-muted-foreground/35",
         )}
         aria-hidden="true"
       />
