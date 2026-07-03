@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, CalendarClock, FolderOpen, ListTree, Settings, Share2, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { appActions, chatActions, type AppPanel } from "@/app/store";
+import { LoadingSurface } from "@/components/ui/loading-surface";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
 import { cn } from "@/lib/cn";
 import { pushAppPath } from "@/lib/navigation";
@@ -23,6 +24,7 @@ export function ChatPage() {
   const [showSessionLoading, setShowSessionLoading] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
+  const loadingSessionIDRef = useRef("");
   const hasConversation = messages.length > 0 || events.length > 0 || queue.length > 0 || isProcessing || Boolean(error);
   const currentSessionIsRunning = Boolean(isProcessing && runningSessionID === activeSessionID);
   const currentViewBelongsToActiveSession = Boolean(
@@ -39,30 +41,36 @@ export function ChatPage() {
     if (!activeSessionID) {
       setLoadedSessionID("");
       setFailedSessionID("");
+      loadingSessionIDRef.current = "";
       return;
     }
     if (currentSessionIsRunning && currentViewBelongsToActiveSession) {
       setLoadedSessionID(activeSessionID);
+      if (loadingSessionIDRef.current === activeSessionID) loadingSessionIDRef.current = "";
       return;
     }
     if (activeSessionID === loadedSessionID) return;
+    if (loadingSessionIDRef.current === activeSessionID) return;
 
-    let cancelled = false;
+    const loadingSessionID = activeSessionID;
+    loadingSessionIDRef.current = loadingSessionID;
     setFailedSessionID("");
-    void dispatch(loadSessionDetail(activeSessionID))
+    void dispatch(loadSessionDetail(loadingSessionID))
       .unwrap()
-      .then(() => {
-        if (!cancelled) setLoadedSessionID(activeSessionID);
+      .then((detail) => {
+        if (loadingSessionIDRef.current !== loadingSessionID) return;
+        dispatch(chatActions.setSessionDetail(detail));
+        setLoadedSessionID(loadingSessionID);
       })
       .catch((loadError) => {
-        if (cancelled) return;
-        setFailedSessionID(activeSessionID);
-        dispatch(chatActions.setError(loadError instanceof Error ? loadError.message : String(loadError)));
+        if (loadingSessionIDRef.current === loadingSessionID) {
+          setFailedSessionID(loadingSessionID);
+          dispatch(chatActions.setError(loadError instanceof Error ? loadError.message : String(loadError)));
+        }
+      })
+      .finally(() => {
+        if (loadingSessionIDRef.current === loadingSessionID) loadingSessionIDRef.current = "";
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [activeSessionID, loadedSessionID, currentSessionIsRunning, currentViewBelongsToActiveSession, dispatch]);
 
   useEffect(() => {
@@ -105,15 +113,8 @@ export function ChatPage() {
 
 function ChatSessionLoading() {
   return (
-    <div className="flex h-full items-center justify-center px-3 sm:px-6">
-      <div className="sketch-surface flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl px-6 py-8 text-center sm:px-8 sm:py-9">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-          <span className="h-2 w-2 animate-pulse rounded-full bg-primary/70 [animation-delay:120ms]" />
-          <span className="h-2 w-2 animate-pulse rounded-full bg-primary/45 [animation-delay:240ms]" />
-        </div>
-        <div className="text-base text-muted-foreground">正在打开会话</div>
-      </div>
+    <div className="flex h-full items-center justify-center px-4">
+      <LoadingSurface label="正在打开会话" />
     </div>
   );
 }

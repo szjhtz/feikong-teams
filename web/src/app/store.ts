@@ -1,7 +1,7 @@
 import { configureStore, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { AgentInfo, VersionInfo } from "@/types/api";
 import type { ChatEvent, ContentPartDTO, QueueItem } from "@/types/events";
-import type { ChatState, ChatViewMessage, SessionSummary } from "@/types/chat";
+import type { ChatState, ChatViewMessage, SessionDetail, SessionSummary } from "@/types/chat";
 import type { AppConfig, ToolInfo } from "@/types/config";
 import type { FileEntry } from "@/types/files";
 import type { ScheduleTask } from "@/types/schedules";
@@ -61,6 +61,31 @@ const chatSlice = createSlice({
       state.technicalError = undefined;
       state.statusText = undefined;
     },
+    setSessionDetail(state, action: PayloadAction<SessionDetail>) {
+      const detail = action.payload;
+      state.activeSessionID = detail.session_id;
+      if (detail.session_id) localStorage.setItem(storageKeys.sessionID, detail.session_id);
+      else localStorage.removeItem(storageKeys.sessionID);
+      state.messages = [];
+      state.events = [];
+      state.queue = [];
+      state.error = undefined;
+      state.errorTitle = undefined;
+      state.errorSuggestions = undefined;
+      state.technicalError = undefined;
+      state.statusText = undefined;
+      for (const event of detail.events || []) {
+        applyChatEvent(state, event);
+      }
+      state.queue = detail.queue || [];
+      if (detail.active_task) {
+        state.runningSessionID = detail.session_id;
+        state.isProcessing = true;
+      } else {
+        state.runningSessionID = "";
+        state.isProcessing = false;
+      }
+    },
     appendUserMessage(state, action: PayloadAction<{ id: string; content: string; sessionID?: string; contentParts?: ContentPartDTO[]; createdAt?: string }>) {
       const event: ChatEvent = {
         type: "user_message",
@@ -81,123 +106,7 @@ const chatSlice = createSlice({
       });
     },
     receiveEvent(state, action: PayloadAction<ChatEvent>) {
-      const event = { ...action.payload };
-      if (event.session_id && state.activeSessionID && event.session_id !== state.activeSessionID) {
-        if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && state.runningSessionID === event.session_id) {
-          state.isProcessing = false;
-          state.runningSessionID = "";
-        }
-        return;
-      }
-      if (state.events.some((item) => sameEventIdentity(item, event))) return;
-      state.events.push(event);
-      if (event.type === "queue_updated" && Array.isArray(event.queue)) {
-        state.queue = event.queue;
-      }
-      if (event.type === "processing_start") {
-        state.isProcessing = true;
-        if (event.session_id) state.runningSessionID = event.session_id;
-        state.statusText = String(event.message || event.content || "处理中");
-      }
-      if (isModelResponseEvent(event)) {
-        state.statusText = undefined;
-      }
-      if (event.type === "user_message") {
-        const content = eventText(event);
-        const contentParts = Array.isArray(event.content_parts) ? event.content_parts : [];
-        if (!content && contentParts.length === 0) return;
-        const eventExists = state.messages.some((item) => item.role === "user" && item.events.some((messageEvent) => sameEventIdentity(messageEvent, event)));
-        if (eventExists) return;
-        const mergeTarget = content
-          ? findMergeableLocalUserMessage(state.messages, content)
-          : findMergeableLocalUserAttachmentMessage(state.messages, contentParts);
-        if (mergeTarget) {
-          mergeTarget.createdAt = mergeTarget.createdAt || event.created_at;
-          mergeTarget.contentParts = mergeTarget.contentParts?.length ? mergeTarget.contentParts : contentParts;
-          mergeTarget.events.push(event);
-          return;
-        }
-        state.messages.push({
-          id: `user-${eventIdentityKey(event)}`,
-          role: "user",
-          content,
-          contentParts,
-          createdAt: event.created_at,
-          events: [event],
-        });
-      }
-      if (isMemberActivityEvent(event)) {
-        const key = memberActivityKey(event);
-        const id = `member-${key}`;
-        let message = state.messages.find((item) => item.id === id);
-        if (!message) {
-          message = {
-            id,
-            role: "assistant",
-            agent: event.member_name || event.agent_name,
-            content: "",
-            events: [],
-            hidden: true,
-          };
-          const parentIndex = findParentToolMessageIndex(state.messages, event);
-          if (parentIndex >= 0) state.messages.splice(parentIndex + 1, 0, message);
-          else state.messages.push(message);
-        }
-        message.events.push(event);
-      }
-      if (shouldAttachAssistantMessage(event)) {
-        const key = assistantMessageKey(event);
-        let message = state.messages.find((item) => item.id === key);
-        if (!message) {
-          message = {
-            id: key,
-            role: "assistant",
-            agent: event.agent_name,
-            content: "",
-            events: [],
-          };
-          state.messages.push(message);
-        }
-        const content = eventText(event);
-        if (isAssistantTextDelta(event) && content) {
-          message.content += content;
-        }
-        if (event.type === "assistant_completed") {
-          if (!message.content && content) message.content = content;
-          if (event.reasoning_content) message.reasoningContent = String(event.reasoning_content);
-        }
-        message.events.push(event);
-      }
-      if (event.type === "system_notice") {
-        state.statusText = eventText(event) || state.statusText;
-      }
-      if (event.type === "error") {
-        state.error = friendlyEventMessage(event);
-        state.errorTitle = event.error_title;
-        state.errorSuggestions = Array.isArray(event.error_suggestions) ? event.error_suggestions : undefined;
-        state.technicalError = event.technical_error || event.error || event.content || event.message;
-        state.isProcessing = false;
-        state.runningSessionID = "";
-        state.statusText = undefined;
-      }
-      if (event.type === "cancelled" || event.type === "processing_end") {
-        state.isProcessing = false;
-        state.runningSessionID = "";
-        state.statusText = String(event.message || event.content || "");
-      }
-      if (event.type === "cancelled") {
-        const content = eventText(event) || "任务已取消";
-        const exists = state.messages.some((message) => message.role === "system" && message.events.some((item) => sameEventIdentity(item, event)));
-        if (!exists) {
-          state.messages.push({
-            id: `cancelled-${event.event_id ?? event.sequence ?? Date.now()}`,
-            role: "system",
-            content,
-            createdAt: event.created_at,
-            events: [event],
-          });
-        }
-      }
+      applyChatEvent(state, action.payload);
     },
     setQueue(state, action: PayloadAction<QueueItem[]>) {
       state.queue = action.payload;
@@ -210,6 +119,126 @@ const chatSlice = createSlice({
     },
   },
 });
+
+function applyChatEvent(state: ChatState, payload: ChatEvent) {
+  const event = { ...payload };
+  if (event.session_id && state.activeSessionID && event.session_id !== state.activeSessionID) {
+    if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && state.runningSessionID === event.session_id) {
+      state.isProcessing = false;
+      state.runningSessionID = "";
+    }
+    return;
+  }
+  if (state.events.some((item) => sameEventIdentity(item, event))) return;
+  state.events.push(event);
+  if (event.type === "queue_updated" && Array.isArray(event.queue)) {
+    state.queue = event.queue;
+  }
+  if (event.type === "processing_start") {
+    state.isProcessing = true;
+    if (event.session_id) state.runningSessionID = event.session_id;
+    state.statusText = String(event.message || event.content || "处理中");
+  }
+  if (isModelResponseEvent(event)) {
+    state.statusText = undefined;
+  }
+  if (event.type === "user_message") {
+    const content = eventText(event);
+    const contentParts = Array.isArray(event.content_parts) ? event.content_parts : [];
+    if (!content && contentParts.length === 0) return;
+    const eventExists = state.messages.some((item) => item.role === "user" && item.events.some((messageEvent) => sameEventIdentity(messageEvent, event)));
+    if (eventExists) return;
+    const mergeTarget = content
+      ? findMergeableLocalUserMessage(state.messages, content)
+      : findMergeableLocalUserAttachmentMessage(state.messages, contentParts);
+    if (mergeTarget) {
+      mergeTarget.createdAt = mergeTarget.createdAt || event.created_at;
+      mergeTarget.contentParts = mergeTarget.contentParts?.length ? mergeTarget.contentParts : contentParts;
+      mergeTarget.events.push(event);
+      return;
+    }
+    state.messages.push({
+      id: `user-${eventIdentityKey(event)}`,
+      role: "user",
+      content,
+      contentParts,
+      createdAt: event.created_at,
+      events: [event],
+    });
+  }
+  if (isMemberActivityEvent(event)) {
+    const key = memberActivityKey(event);
+    const id = `member-${key}`;
+    let message = state.messages.find((item) => item.id === id);
+    if (!message) {
+      message = {
+        id,
+        role: "assistant",
+        agent: event.member_name || event.agent_name,
+        content: "",
+        events: [],
+        hidden: true,
+      };
+      const parentIndex = findParentToolMessageIndex(state.messages, event);
+      if (parentIndex >= 0) state.messages.splice(parentIndex + 1, 0, message);
+      else state.messages.push(message);
+    }
+    message.events.push(event);
+  }
+  if (shouldAttachAssistantMessage(event)) {
+    const key = assistantMessageKey(event);
+    let message = state.messages.find((item) => item.id === key);
+    if (!message) {
+      message = {
+        id: key,
+        role: "assistant",
+        agent: event.agent_name,
+        content: "",
+        events: [],
+      };
+      state.messages.push(message);
+    }
+    const content = eventText(event);
+    if (isAssistantTextDelta(event) && content) {
+      message.content += content;
+    }
+    if (event.type === "assistant_completed") {
+      if (!message.content && content) message.content = content;
+      if (event.reasoning_content) message.reasoningContent = String(event.reasoning_content);
+    }
+    message.events.push(event);
+  }
+  if (event.type === "system_notice") {
+    state.statusText = eventText(event) || state.statusText;
+  }
+  if (event.type === "error") {
+    state.error = friendlyEventMessage(event);
+    state.errorTitle = event.error_title;
+    state.errorSuggestions = Array.isArray(event.error_suggestions) ? event.error_suggestions : undefined;
+    state.technicalError = event.technical_error || event.error || event.content || event.message;
+    state.isProcessing = false;
+    state.runningSessionID = "";
+    state.statusText = undefined;
+  }
+  if (event.type === "cancelled" || event.type === "processing_end") {
+    state.isProcessing = false;
+    state.runningSessionID = "";
+    state.statusText = String(event.message || event.content || "");
+  }
+  if (event.type === "cancelled") {
+    const content = eventText(event) || "任务已取消";
+    const exists = state.messages.some((message) => message.role === "system" && message.events.some((item) => sameEventIdentity(item, event)));
+    if (!exists) {
+      state.messages.push({
+        id: `cancelled-${event.event_id ?? event.sequence ?? Date.now()}`,
+        role: "system",
+        content,
+        createdAt: event.created_at,
+        events: [event],
+      });
+    }
+  }
+}
 
 function eventText(event: ChatEvent) {
   return String(event.content || event.message || "");

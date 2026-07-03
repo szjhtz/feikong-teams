@@ -1,5 +1,4 @@
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import anime from "animejs";
 import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
@@ -104,7 +103,6 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
-  const previousMessageCountRef = useRef(0);
   const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [scrollDistanceFromBottom, setScrollDistanceFromBottom] = useState(0);
@@ -151,19 +149,6 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
   useEffect(() => {
     return () => onJumpToBottomControlsChange?.({ distanceFromBottom: 0, jump: () => {} });
   }, [onJumpToBottomControlsChange]);
-
-  useEffect(() => {
-    const previous = previousMessageCountRef.current;
-    previousMessageCountRef.current = timeline.messages.length;
-    if (timeline.messages.length <= previous) return;
-    anime({
-      targets: ".message-row:last-of-type",
-      opacity: [0, 1],
-      translateY: [8, 0],
-      duration: 180,
-      easing: "easeOutQuad",
-    });
-  }, [timeline.messages.length]);
 
   if (timeline.messages.length === 0 && displayEvents.length === 0 && !isProcessing && !error) {
     return <div className="min-h-0 flex-1" />;

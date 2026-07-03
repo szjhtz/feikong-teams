@@ -6,6 +6,7 @@ import { appActions, chatActions } from "@/app/store";
 import { store } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { AppShell } from "@/components/layout/AppShell";
+import { LoadingSurface } from "@/components/ui/loading-surface";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import type { AgentInfo, VersionInfo } from "@/types/api";
@@ -124,17 +125,6 @@ function PanelLoading() {
   return (
     <div className="flex h-full items-center justify-center px-4">
       <LoadingSurface label="正在打开" />
-    </div>
-  );
-}
-
-function LoadingSurface({ label }: { label: string }) {
-  return (
-    <div className="sketch-surface flex min-w-40 items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm text-muted-foreground">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary/70 [animation-delay:120ms]" />
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary/45 [animation-delay:240ms]" />
-      <span className="ml-1">{label}</span>
     </div>
   );
 }
