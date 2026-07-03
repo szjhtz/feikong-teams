@@ -11,7 +11,7 @@ builds:
     binary: "fkteams" # 决定了生成的文件名是 fkteams (Windows 下自动加 .exe)
     env:
       - CGO_ENABLED=0
-    main: .
+    main: ./cmd/fkteams
     goos:
       - linux
       - windows
@@ -21,8 +21,8 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X 'fkteams/version.version={{.Version}}'
-      - -X 'fkteams/version.buildTime={{.Date}}'
+      - -X 'fkteams/internal/app/version.version={{.Version}}'
+      - -X 'fkteams/internal/app/version.buildTime={{.Date}}'
     flags:
       - -trimpath
 
