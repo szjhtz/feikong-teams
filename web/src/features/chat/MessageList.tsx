@@ -1652,7 +1652,12 @@ function askOptions(value: unknown) {
 
 function parseAskResponse(event: ChatEvent) {
   const selected = askOptions(event.selected) || askOptions(event.ask_selected) || [];
-  const freeText = String(event.free_text || event.ask_free_text || event.content || "");
+  const structuredFreeText = event.free_text ?? event.ask_free_text;
+  const freeText = structuredFreeText !== undefined
+    ? String(structuredFreeText)
+    : selected.length
+      ? ""
+      : String(event.content || "");
   return { selected, freeText };
 }
 
