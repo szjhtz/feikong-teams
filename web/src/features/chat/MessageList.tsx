@@ -1,8 +1,8 @@
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send } from "lucide-react";
+import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send, ShieldAlert } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
-import { submitAskResponse } from "@/api/stream";
+import { submitApproval, submitAskResponse } from "@/api/stream";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,6 +45,16 @@ interface AskToolAnchor {
 
 type AskAnsweredHandler = (ask: AskActivity, selected: string[], freeText: string) => void;
 
+interface ApprovalActivity {
+  id: string;
+  order: number;
+  message: string;
+  answered: boolean;
+  decision?: string;
+}
+
+type ApprovalAnsweredHandler = (approval: ApprovalActivity, decision: 0 | 1 | 2) => void;
+
 interface ErrorActivity {
   id: string;
   order: number;
@@ -73,6 +83,7 @@ type TimelineItem =
   | { kind: "member"; member: MemberActivity; order: number }
   | { kind: "tool"; part: Extract<MessageRenderPart, { type: "tool" }>; order: number }
   | { kind: "ask"; ask: AskActivity; order: number }
+  | { kind: "approval"; approval: ApprovalActivity; order: number }
   | { kind: "error"; error: ErrorActivity; order: number };
 
 interface TimelineModel {
@@ -104,13 +115,15 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
+  const [submittedApprovalIDs, setSubmittedApprovalIDs] = useState<Set<string>>(() => new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [scrollDistanceFromBottom, setScrollDistanceFromBottom] = useState(0);
   const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
   const canAnswerAsk = Boolean(isProcessing && activeSessionID && (!runningSessionID || runningSessionID === activeSessionID));
+  const canAnswerApproval = canAnswerAsk;
   const timeline = useMemo(
-    () => buildTimelineModel(messages, displayEvents, submittedAskIDs, isProcessing),
-    [messages, displayEvents, submittedAskIDs, isProcessing],
+    () => buildTimelineModel(messages, displayEvents, submittedAskIDs, submittedApprovalIDs, isProcessing),
+    [messages, displayEvents, submittedAskIDs, submittedApprovalIDs, isProcessing],
   );
   const hasMatchingTimelineError = timeline.items.some((item) => (
     item.kind === "error"
@@ -177,6 +190,19 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
     }));
   }
 
+  function handleApprovalAnswered(approval: ApprovalActivity, decision: 0 | 1 | 2) {
+    const decisionText = approvalDecisionLabel(decision);
+    setSubmittedApprovalIDs((previous) => new Set(previous).add(approval.id));
+    dispatch(chatActions.receiveEvent({
+      type: "approval_answered",
+      session_id: activeSessionID,
+      detail: approval.id,
+      event_id: `local:approval:${approval.id}`,
+      content: decisionText,
+      approval: { decision: decisionText },
+    }));
+  }
+
   return (
     <div className="relative min-h-0 flex-1">
       <div
@@ -223,6 +249,18 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
                     sessionID={item.ask.sessionID || activeSessionID}
                     canAnswer={canAnswerAsk}
                     onAnswered={(selected, freeText) => handleAskAnswered(item.ask, selected, freeText)}
+                  />
+                </div>
+              );
+            }
+            if (item.kind === "approval") {
+              return (
+                <div key={`approval-${item.approval.id}`} className={spacing}>
+                  <ApprovalTimelineItem
+                    approval={item.approval}
+                    sessionID={activeSessionID}
+                    canAnswer={canAnswerApproval}
+                    onAnswered={handleApprovalAnswered}
                   />
                 </div>
               );
@@ -1118,6 +1156,95 @@ function AskTimelineItem({
   return <AskPanel ask={ask} sessionID={sessionID} canAnswer={canAnswer} onAnswered={onAnswered} />;
 }
 
+function ApprovalTimelineItem({
+  approval,
+  sessionID,
+  canAnswer,
+  onAnswered,
+}: {
+  approval: ApprovalActivity;
+  sessionID?: string;
+  canAnswer: boolean;
+  onAnswered: ApprovalAnsweredHandler;
+}) {
+  if (approval.answered) return <ApprovalRecord approval={approval} />;
+  return <ApprovalPanel approval={approval} sessionID={sessionID} canAnswer={canAnswer} onAnswered={onAnswered} />;
+}
+
+function ApprovalPanel({
+  approval,
+  sessionID,
+  canAnswer,
+  onAnswered,
+}: {
+  approval: ApprovalActivity;
+  sessionID?: string;
+  canAnswer: boolean;
+  onAnswered: ApprovalAnsweredHandler;
+}) {
+  const [submitting, setSubmitting] = useState<0 | 1 | 2 | undefined>();
+  const [error, setError] = useState("");
+  const disabledReason = !canAnswer ? "当前任务已结束，无法提交审批。" : "";
+
+  async function answer(decision: 0 | 1 | 2) {
+    if (!canAnswer || !sessionID || submitting !== undefined) return;
+    setSubmitting(decision);
+    setError("");
+    try {
+      await submitApproval(sessionID, decision);
+      onAnswered(approval, decision);
+    } catch (approvalError) {
+      setError(approvalError instanceof Error ? approvalError.message : String(approvalError));
+    } finally {
+      setSubmitting(undefined);
+    }
+  }
+
+  return (
+    <section className="sketch-surface rounded-xl border-amber-300/70 bg-amber-50/50 px-3 py-3 shadow-[0_10px_24px_hsl(38_45%_30%/0.1)] sm:px-4 sm:py-4">
+      <div className="flex items-start gap-2 sm:gap-3">
+        <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold text-amber-700">需要权限审批</div>
+          <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-foreground">{approval.message}</div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">{error || disabledReason}</div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => void answer(0)} disabled={!canAnswer || submitting !== undefined}>
+                {submitting === 0 ? "提交中" : "拒绝"}
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => void answer(1)} disabled={!canAnswer || submitting !== undefined}>
+                {submitting === 1 ? "提交中" : "允许一次"}
+              </Button>
+              <Button type="button" size="sm" onClick={() => void answer(2)} disabled={!canAnswer || submitting !== undefined}>
+                {submitting === 2 ? "提交中" : "记住允许"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ApprovalRecord({ approval }: { approval: ApprovalActivity }) {
+  return (
+    <section className="rounded-xl border border-amber-300/45 bg-card/70 px-3 py-3 shadow-[1px_2px_0_hsl(38_45%_30%/0.06)] sm:px-4 sm:py-4">
+      <div className="flex items-start gap-2 sm:gap-3">
+        <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold text-amber-700">权限审批</div>
+          <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{approval.message}</div>
+          <div className="mt-3 rounded-md border border-border bg-background/55 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">审批结果：</span>
+            <span className="text-foreground">{approval.decision || "已处理"}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function askTitle(ask: AskActivity) {
   if (ask.memberName) return `${ask.memberName} · ask_questions`;
   return "ask_questions";
@@ -1127,6 +1254,7 @@ function buildTimelineModel(
   messages: ChatViewMessage[],
   displayEvents: ChatEvent[],
   submittedAskIDs: Set<string>,
+  submittedApprovalIDs: Set<string>,
   isProcessing: boolean,
 ): TimelineModel {
   const eventOrders = eventOrderMap(displayEvents);
@@ -1134,6 +1262,7 @@ function buildTimelineModel(
   const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
   const askToolAnchors = collectAskToolAnchors(displayEvents);
   const askActivities = collectAskActivities(displayEvents, submittedAskIDs, askToolAnchors);
+  const approvalActivities = collectApprovalActivities(displayEvents, submittedApprovalIDs, eventOrders);
   const errorActivities = collectErrorActivities(displayEvents, eventOrders);
   const memberActivities = collectMemberActivities(displayEvents, isProcessing, askActivities);
   const memberLookup = buildMemberLookup(memberActivities);
@@ -1184,7 +1313,7 @@ function buildTimelineModel(
   const timelineTools = trailingTools.filter((part): part is Extract<MessageRenderPart, { type: "tool" }> => part.type === "tool");
   const inlineAskIDs = unionSets(collectInlineAskIDsFromMessageNodes(messageNodes), collectInlineAskIDsFromMembers(memberActivities));
   const timelineAsks = askActivities.filter((ask) => !ask.memberID && !inlineAskIDs.has(ask.id));
-  const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools, timelineAsks, errorActivities);
+  const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools, timelineAsks, approvalActivities, errorActivities);
   markFinalAssistantCopyActions(items, isProcessing);
   const timelineMessages = items.filter((item) => item.kind === "message").map((item) => item.node.message);
   const agentLabelMessageIDs = visibleAgentLabelMessageIDs(timelineMessages);
@@ -1300,6 +1429,7 @@ function orderedTimelineItems(
   members: MemberActivity[],
   tools: Array<Extract<MessageRenderPart, { type: "tool" }>>,
   asks: AskActivity[],
+  approvals: ApprovalActivity[],
   errors: ErrorActivity[],
 ): TimelineItem[] {
   const items: TimelineItem[] = [];
@@ -1314,6 +1444,9 @@ function orderedTimelineItems(
   }
   for (const ask of asks) {
     items.push({ kind: "ask", ask, order: ask.order ?? Number.MAX_SAFE_INTEGER });
+  }
+  for (const approval of approvals) {
+    items.push({ kind: "approval", approval, order: approval.order });
   }
   for (const error of errors) {
     items.push({ kind: "error", error, order: error.order });
@@ -1333,12 +1466,14 @@ function timelineKindPriority(kind: TimelineItem["kind"]) {
       return 1;
     case "ask":
       return 2;
-    case "member":
+    case "approval":
       return 3;
-    case "error":
+    case "member":
       return 4;
-    default:
+    case "error":
       return 5;
+    default:
+      return 6;
   }
 }
 
@@ -1349,9 +1484,11 @@ function timelineItemSpacingClass(items: TimelineItem[], index: number) {
   if (!previous || !current) return "mt-6";
   if (current.kind === "tool") return previous.kind === "message" ? "mt-2" : "mt-2";
   if (current.kind === "ask") return previous.kind === "tool" ? "mt-2" : "mt-3";
+  if (current.kind === "approval") return previous.kind === "tool" ? "mt-2" : "mt-3";
   if (current.kind === "error") return previous.kind === "message" ? "mt-4" : "mt-3";
   if (previous.kind === "tool" && current.kind === "message") return "mt-5";
   if (previous.kind === "ask" && current.kind === "message") return "mt-5";
+  if (previous.kind === "approval" && current.kind === "message") return "mt-5";
   if (previous.kind === "error" && current.kind === "message") return "mt-6";
   if (current.kind === "member" || previous.kind === "member") return "mt-3";
   return "mt-6";
@@ -1418,8 +1555,81 @@ function collectErrorActivities(events: ChatEvent[], eventOrders: Map<string, nu
   return result;
 }
 
+function collectApprovalActivities(
+  events: ChatEvent[],
+  submittedApprovalIDs: Set<string>,
+  eventOrders: Map<string, number>,
+) {
+  const approvals: ApprovalActivity[] = [];
+  const byID = new Map<string, ApprovalActivity>();
+  for (const event of events) {
+    if (event.type === "approval_requested") {
+      const id = approvalEventID(event) || eventDisplayKey(event) || `approval-${approvals.length + 1}`;
+      const existing = byID.get(id);
+      if (existing) {
+        existing.message = approvalRequestMessage(event) || existing.message;
+        existing.answered = existing.answered || submittedApprovalIDs.has(id);
+        continue;
+      }
+      const activity: ApprovalActivity = {
+        id,
+        order: eventOrders.get(eventDisplayKey(event)) ?? Number.MAX_SAFE_INTEGER,
+        message: approvalRequestMessage(event) || "需要审批",
+        answered: submittedApprovalIDs.has(id),
+      };
+      approvals.push(activity);
+      byID.set(id, activity);
+      continue;
+    }
+
+    if (event.type !== "approval_answered") continue;
+    const explicitID = approvalEventID(event);
+    const target = explicitID ? byID.get(explicitID) : approvals.slice().reverse().find((approval) => !approval.answered);
+    if (!target) continue;
+    target.answered = true;
+    target.decision = approvalDecisionFromEvent(event);
+  }
+  for (const id of submittedApprovalIDs) {
+    const approval = byID.get(id);
+    if (approval) approval.answered = true;
+  }
+  return approvals.filter((approval) => approval.message.trim());
+}
+
 function errorEventMessage(event: ChatEvent) {
   return stringValue(event.display_error || event.error_title || event.error || event.content || event.message) || "请求失败";
+}
+
+function approvalEventID(event: ChatEvent) {
+  return String(event.detail || "").trim();
+}
+
+function approvalRequestMessage(event: ChatEvent) {
+  const approval = approvalPayload(event);
+  return stringValue(approval.message) || stringValue(event.content || event.message);
+}
+
+function approvalDecisionFromEvent(event: ChatEvent) {
+  const approval = approvalPayload(event);
+  return stringValue(approval.decision) || stringValue(event.content || event.message) || "已处理";
+}
+
+function approvalDecisionLabel(decision: 0 | 1 | 2) {
+  switch (decision) {
+    case 0:
+      return "已拒绝";
+    case 1:
+      return "已允许（一次）";
+    case 2:
+      return "已允许并记住";
+    default:
+      return "已处理";
+  }
+}
+
+function approvalPayload(event: ChatEvent) {
+  const value = event.approval;
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
 function stringValue(value: unknown) {

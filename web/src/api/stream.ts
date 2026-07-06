@@ -86,6 +86,13 @@ export function submitAskResponse(
   });
 }
 
+export function submitApproval(sessionID: string, decision: 0 | 1 | 2) {
+  return post<{ message: string }>("/api/fkteams/stream/approval", {
+    session_id: sessionID,
+    decision,
+  });
+}
+
 export async function subscribeStream(
   sessionID: string,
   offset: number,
