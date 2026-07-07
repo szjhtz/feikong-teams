@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"fkteams/internal/runtime/env"
 )
@@ -155,6 +156,61 @@ func TestSkillFilePathTraversalRejected(t *testing.T) {
 	}
 	if _, err := ReadSkillFile("demo", "../secret.txt"); err == nil || !strings.Contains(err.Error(), "invalid path") {
 		t.Fatalf("ReadSkillFile traversal error = %v, want invalid path", err)
+	}
+}
+
+func TestListSkillFilesSortsByTypeModTimeSizeAndName(t *testing.T) {
+	appDir := t.TempDir()
+	t.Setenv(env.AppDir, appDir)
+	writeSkill(t, appDir, "demo", "---\nname: Demo\n---\n")
+
+	skillDir := filepath.Join(appDir, "skills", "demo")
+	for _, dir := range []string{"old-dir", "new-dir"} {
+		if err := os.Mkdir(filepath.Join(skillDir, dir), 0755); err != nil {
+			t.Fatalf("create dir %s: %v", dir, err)
+		}
+	}
+	for name, content := range map[string]string{
+		"recent-small.txt": "r",
+		"old-large.txt":    strings.Repeat("o", 64),
+		"same-large.txt":   strings.Repeat("l", 32),
+		"same-alpha.txt":   "s",
+		"same-beta.txt":    "s",
+	} {
+		if err := os.WriteFile(filepath.Join(skillDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("write file %s: %v", name, err)
+		}
+	}
+
+	base := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+	modTimes := map[string]time.Time{
+		"new-dir":          base.Add(2 * time.Hour),
+		"old-dir":          base.Add(time.Hour),
+		"recent-small.txt": base.Add(4 * time.Hour),
+		"old-large.txt":    base,
+		"same-large.txt":   base.Add(3 * time.Hour),
+		"same-alpha.txt":   base.Add(3 * time.Hour),
+		"same-beta.txt":    base.Add(3 * time.Hour),
+		"SKILL.md":         base.Add(-time.Hour),
+	}
+	for name, modTime := range modTimes {
+		path := filepath.Join(skillDir, name)
+		if err := os.Chtimes(path, modTime, modTime); err != nil {
+			t.Fatalf("change mod time %s: %v", name, err)
+		}
+	}
+
+	entries, err := ListSkillFiles("demo", "")
+	if err != nil {
+		t.Fatalf("ListSkillFiles returned error: %v", err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name)
+	}
+	want := []string{"new-dir", "old-dir", "recent-small.txt", "same-large.txt", "same-alpha.txt", "same-beta.txt", "old-large.txt", "SKILL.md"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("entry order = %#v, want %#v", names, want)
 	}
 }
 

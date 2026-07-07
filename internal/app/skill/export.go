@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"fkteams/internal/app/appdata"
@@ -103,18 +104,44 @@ func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
 		return nil, err
 	}
 
-	var result []SkillFileEntry
+	type sortableSkillFileEntry struct {
+		entry       SkillFileEntry
+		modUnixNano int64
+	}
+	var sortableEntries []sortableSkillFileEntry
 	for _, e := range entries {
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-		result = append(result, SkillFileEntry{
-			Name:  e.Name(),
-			Path:  filepath.ToSlash(filepath.Join(cleanSub, e.Name())),
-			IsDir: e.IsDir(),
-			Size:  info.Size(),
+		sortableEntries = append(sortableEntries, sortableSkillFileEntry{
+			entry: SkillFileEntry{
+				Name:  e.Name(),
+				Path:  filepath.ToSlash(filepath.Join(cleanSub, e.Name())),
+				IsDir: e.IsDir(),
+				Size:  info.Size(),
+			},
+			modUnixNano: info.ModTime().UnixNano(),
 		})
+	}
+	sort.SliceStable(sortableEntries, func(i, j int) bool {
+		left := sortableEntries[i]
+		right := sortableEntries[j]
+		if left.entry.IsDir != right.entry.IsDir {
+			return left.entry.IsDir
+		}
+		if left.modUnixNano != right.modUnixNano {
+			return left.modUnixNano > right.modUnixNano
+		}
+		if left.entry.Size != right.entry.Size {
+			return left.entry.Size > right.entry.Size
+		}
+		return left.entry.Name < right.entry.Name
+	})
+
+	result := make([]SkillFileEntry, 0, len(sortableEntries))
+	for _, item := range sortableEntries {
+		result = append(result, item.entry)
 	}
 	return result, nil
 }
