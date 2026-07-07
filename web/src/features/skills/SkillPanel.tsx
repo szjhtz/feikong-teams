@@ -16,8 +16,9 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { generateSkillDraft } from "@/api/ai";
+import { isAbortError } from "@/api/client";
 import {
   createSkill,
   createSkillFile,
@@ -72,6 +73,7 @@ export function SkillPanel() {
   const [creatingEntry, setCreatingEntry] = useState(false);
   const [deleteFileTarget, setDeleteFileTarget] = useState("");
   const [deleteSkillTarget, setDeleteSkillTarget] = useState<SkillInfo | null>(null);
+  const skillDraftAbortRef = useRef<AbortController | null>(null);
   const installedSlugs = useMemo(() => new Set(local.map((skill) => skill.slug)), [local]);
   const selectedSkill =
     local.find((skill) => skill.slug === selectedSlug) || results.find((skill) => skill.slug === selectedSlug);
@@ -189,14 +191,25 @@ export function SkillPanel() {
       dispatch(appActions.showToast("请输入希望创建的技能说明"));
       return;
     }
+    const controller = new AbortController();
+    skillDraftAbortRef.current = controller;
     setGeneratingSkill(true);
     try {
-      const result = await generateSkillDraft({ instruction, existing_skills: local.map((skill) => skill.slug) });
+      const result = await generateSkillDraft(
+        { instruction, existing_skills: local.map((skill) => skill.slug) },
+        { signal: controller.signal },
+      );
       setSkillDraft(result.skill);
       dispatch(appActions.showToast("AI 草稿已生成"));
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
     } finally {
+      if (skillDraftAbortRef.current === controller) {
+        skillDraftAbortRef.current = null;
+      }
       setGeneratingSkill(false);
     }
   }
@@ -207,10 +220,19 @@ export function SkillPanel() {
       dispatch(appActions.showToast("请输入希望创建的技能说明"));
       return;
     }
+    const controller = new AbortController();
+    skillDraftAbortRef.current = controller;
     setGeneratingSkill(true);
     setCreatingSkill(true);
     try {
-      const draftResult = await generateSkillDraft({ instruction, existing_skills: local.map((skill) => skill.slug) });
+      const draftResult = await generateSkillDraft(
+        { instruction, existing_skills: local.map((skill) => skill.slug) },
+        { signal: controller.signal },
+      );
+      if (skillDraftAbortRef.current === controller) {
+        skillDraftAbortRef.current = null;
+      }
+      setGeneratingSkill(false);
       const result = await createSkill(draftResult.skill);
       await loadLocal();
       dispatch(appActions.showToast("AI 技能已创建"));
@@ -226,11 +248,21 @@ export function SkillPanel() {
       setSelectedSlug(created.slug);
       await openDirectory(created.slug, "");
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
     } finally {
+      if (skillDraftAbortRef.current === controller) {
+        skillDraftAbortRef.current = null;
+      }
       setGeneratingSkill(false);
       setCreatingSkill(false);
     }
+  }
+
+  function cancelSkillDraftGeneration() {
+    skillDraftAbortRef.current?.abort();
   }
 
   async function saveActiveFile() {
@@ -453,6 +485,7 @@ export function SkillPanel() {
           onGenerate={() => void generateDraft()}
           onGenerateCreate={() => void generateAndCreateSkill()}
           onCreate={() => void createCustomSkill()}
+          onCancelGenerate={cancelSkillDraftGeneration}
         />
         <TextInputDialog
           open={Boolean(entryDialogKind)}
@@ -797,6 +830,7 @@ function CreateSkillDialog({
   onInstructionChange,
   onGenerate,
   onGenerateCreate,
+  onCancelGenerate,
   onCreate,
 }: {
   open: boolean;
@@ -809,9 +843,11 @@ function CreateSkillDialog({
   onInstructionChange: (value: string) => void;
   onGenerate: () => void;
   onGenerateCreate: () => void;
+  onCancelGenerate: () => void;
   onCreate: () => void;
 }) {
   const busy = generating || creating;
+  const loadingLabel = generating && creating ? "正在生成并创建技能" : generating ? "正在生成技能草稿" : "正在创建技能";
 
   function update<K extends keyof SkillCreateRequest>(key: K, value: SkillCreateRequest[K]) {
     const next = { ...draft, [key]: value };
@@ -829,7 +865,18 @@ function CreateSkillDialog({
       open={open}
       title="新建技能"
       closeDisabled={busy}
-      overlay={busy ? <LoadingSurface label={generating && creating ? "正在生成并创建技能" : generating ? "正在生成技能草稿" : "正在创建技能"} /> : undefined}
+      overlay={
+        busy ? (
+          <div className="flex flex-col items-center gap-3">
+            <LoadingSurface label={loadingLabel} />
+            {generating ? (
+              <Button variant="outline" onClick={onCancelGenerate}>
+                取消生成
+              </Button>
+            ) : null}
+          </div>
+        ) : undefined
+      }
       onOpenChange={(next) => {
         if (busy && !next) return;
         onOpenChange(next);

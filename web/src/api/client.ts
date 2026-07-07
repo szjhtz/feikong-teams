@@ -80,8 +80,9 @@ export function get<T>(path: string) {
   return request<T>(path);
 }
 
-export function post<T>(path: string, body?: unknown) {
+export function post<T>(path: string, body?: unknown, init: RequestInit = {}) {
   return request<T>(path, {
+    ...init,
     method: "POST",
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -103,4 +104,8 @@ export function patch<T>(path: string, body?: unknown) {
 
 export function del<T>(path: string) {
   return request<T>(path, { method: "DELETE" });
+}
+
+export function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
 }

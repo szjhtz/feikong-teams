@@ -34,14 +34,14 @@ export interface SkillDraftResponse {
   skill: SkillDraft;
 }
 
-export function generateAgentDrafts(body: AgentDraftRequest) {
-  return post<AgentDraftResponse>("/api/fkteams/ai/agents/draft", body);
+export function generateAgentDrafts(body: AgentDraftRequest, init?: RequestInit) {
+  return post<AgentDraftResponse>("/api/fkteams/ai/agents/draft", body, init);
 }
 
 export function rewriteText(body: RewriteTextRequest) {
   return post<RewriteTextResponse>("/api/fkteams/ai/text/rewrite", body);
 }
 
-export function generateSkillDraft(body: SkillDraftRequest) {
-  return post<SkillDraftResponse>("/api/fkteams/ai/skills/draft", body);
+export function generateSkillDraft(body: SkillDraftRequest, init?: RequestInit) {
+  return post<SkillDraftResponse>("/api/fkteams/ai/skills/draft", body, init);
 }

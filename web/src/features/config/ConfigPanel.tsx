@@ -19,8 +19,9 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { generateAgentDrafts, rewriteText } from "@/api/ai";
+import { isAbortError } from "@/api/client";
 import { getConfig, getToolCatalog, saveConfig } from "@/api/config";
 import { listProviderModels } from "@/api/providers";
 import { configActions, appActions } from "@/app/store";
@@ -993,28 +994,45 @@ function AgentDraftDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   async function generate() {
     const trimmed = instruction.trim();
     if (!trimmed || loading) return;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setLoading(true);
     setError("");
     try {
-      const resp = await generateAgentDrafts({
-        instruction: trimmed,
-        existing_agents: agents.map((agent) => agent.id || agent.name || "").filter(Boolean),
-        available_tools: toolOptions.map((tool) => tool.name),
-        available_models: modelIDs,
-        default_model_id: modelIDs[0] || "",
-      });
+      const resp = await generateAgentDrafts(
+        {
+          instruction: trimmed,
+          existing_agents: agents.map((agent) => agent.id || agent.name || "").filter(Boolean),
+          available_tools: toolOptions.map((tool) => tool.name),
+          available_models: modelIDs,
+          default_model_id: modelIDs[0] || "",
+        },
+        { signal: controller.signal },
+      );
       const items = resp.agents || [];
       setDrafts(items);
       setSelected(new Set(items.map((agent) => agent.id || agent.name || "")));
     } catch (err) {
+      if (isAbortError(err)) {
+        setError("");
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setLoading(false);
     }
+  }
+
+  function cancelGenerate() {
+    abortControllerRef.current?.abort();
   }
 
   function toggle(id: string) {
@@ -1035,7 +1053,12 @@ function AgentDraftDialog({
       <div className="sketch-surface relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/75 backdrop-blur-[1px]">
-            <LoadingSurface label="正在生成智能体草稿" />
+            <div className="flex flex-col items-center gap-3">
+              <LoadingSurface label="正在生成智能体草稿" />
+              <Button variant="outline" onClick={cancelGenerate}>
+                取消生成
+              </Button>
+            </div>
           </div>
         ) : null}
         <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4">

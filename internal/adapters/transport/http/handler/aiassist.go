@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const statusClientClosedRequest = 499
 
 func GenerateAgentDraftsHandler() gin.HandlerFunc {
 	return NewRuntime().GenerateAgentDraftsHandler()
@@ -34,7 +37,7 @@ func (rt *Runtime) GenerateAgentDraftsHandler() gin.HandlerFunc {
 		}
 		resp, err := service.GenerateAgents(ctx, req)
 		if err != nil {
-			Fail(c, http.StatusBadRequest, err.Error())
+			failAIAssistError(c, err)
 			return
 		}
 		OK(c, resp)
@@ -62,7 +65,7 @@ func (rt *Runtime) GenerateSkillDraftHandler() gin.HandlerFunc {
 		}
 		resp, err := service.GenerateSkill(ctx, req)
 		if err != nil {
-			Fail(c, http.StatusBadRequest, err.Error())
+			failAIAssistError(c, err)
 			return
 		}
 		OK(c, resp)
@@ -105,11 +108,19 @@ func (rt *Runtime) RewriteTextHandler() gin.HandlerFunc {
 		}
 		resp, err := service.RewriteText(ctx, req)
 		if err != nil {
-			Fail(c, http.StatusBadRequest, err.Error())
+			failAIAssistError(c, err)
 			return
 		}
 		OK(c, resp)
 	}
+}
+
+func failAIAssistError(c *gin.Context, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
+		Fail(c, statusClientClosedRequest, "client closed request")
+		return
+	}
+	Fail(c, http.StatusBadRequest, err.Error())
 }
 
 func enrichAgentDraftRequest(ctx context.Context, req *appaiassist.AgentDraftRequest, cfg *config.Config) {
