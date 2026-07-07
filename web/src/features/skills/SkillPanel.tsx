@@ -2,25 +2,44 @@ import {
   Box,
   Download,
   ExternalLink,
+  FilePlus,
   FileText,
   Folder,
+  FolderPlus,
   PackageCheck,
+  Plus,
   RefreshCcw,
+  Save,
   Search,
   Sparkles,
   Star,
   Trash2,
+  Wand2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { installSkill, listSkillFiles, listSkills, readSkillFile, removeSkill, searchSkills } from "@/api/skills";
+import { generateSkillDraft } from "@/api/ai";
+import {
+  createSkill,
+  createSkillFile,
+  deleteSkillFile,
+  installSkill,
+  listSkillFiles,
+  listSkills,
+  readSkillFile,
+  removeSkill,
+  saveSkillFile,
+  searchSkills,
+} from "@/api/skills";
 import { skillsActions, appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Dialog } from "@/components/ui/dialog";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
-import type { SkillFileEntry, SkillInfo } from "@/types/skills";
+import type { SkillCreateRequest, SkillFileEntry, SkillInfo } from "@/types/skills";
 
 type SkillView = "installed" | "market";
 
@@ -34,10 +53,17 @@ export function SkillPanel() {
   const [filePath, setFilePath] = useState("");
   const [files, setFiles] = useState<SkillFileEntry[]>([]);
   const [content, setContent] = useState("");
+  const [editorContent, setEditorContent] = useState("");
   const [activeFile, setActiveFile] = useState("");
   const [loadingLocal, setLoadingLocal] = useState(false);
   const [searching, setSearching] = useState(false);
   const [busySlug, setBusySlug] = useState("");
+  const [savingFile, setSavingFile] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creatingSkill, setCreatingSkill] = useState(false);
+  const [generatingSkill, setGeneratingSkill] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState("");
+  const [skillDraft, setSkillDraft] = useState<SkillCreateRequest>(() => emptySkillDraft());
   const installedSlugs = useMemo(() => new Set(local.map((skill) => skill.slug)), [local]);
   const selectedSkill =
     local.find((skill) => skill.slug === selectedSlug) || results.find((skill) => skill.slug === selectedSlug);
@@ -74,6 +100,7 @@ export function SkillPanel() {
     setFilePath("");
     setActiveFile("");
     setContent("");
+    setEditorContent("");
     if (!installedSlugs.has(skill.slug)) {
       setFiles([]);
       return;
@@ -86,6 +113,17 @@ export function SkillPanel() {
     setFilePath(path);
     setActiveFile("");
     setContent("");
+    setEditorContent("");
+    try {
+      const result = await listSkillFiles(slug, path);
+      setFiles(result.files || []);
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  async function refreshDirectory(slug = selectedSlug, path = filePath) {
+    if (!slug) return;
     try {
       const result = await listSkillFiles(slug, path);
       setFiles(result.files || []);
@@ -100,6 +138,136 @@ export function SkillPanel() {
     try {
       const result = await readSkillFile(selectedSlug, path);
       setContent(result.content || "");
+      setEditorContent(result.content || "");
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  async function createCustomSkill() {
+    const draft = {
+      ...skillDraft,
+      slug: skillDraft.slug.trim(),
+      name: skillDraft.name.trim(),
+      description: skillDraft.description.trim(),
+      content: skillDraft.content.trim(),
+    };
+    if (!draft.slug || !draft.name || !draft.content) {
+      dispatch(appActions.showToast("技能标识、名称和内容不能为空"));
+      return;
+    }
+    setCreatingSkill(true);
+    try {
+      const result = await createSkill(draft);
+      await loadLocal();
+      dispatch(appActions.showToast("技能已创建"));
+      setCreateOpen(false);
+      setSkillDraft(emptySkillDraft());
+      setAiInstruction("");
+      setView("installed");
+      const created = result.skill || { slug: draft.slug, name: draft.name, description: draft.description };
+      setSelectedSlug(created.slug);
+      await openDirectory(created.slug, "");
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setCreatingSkill(false);
+    }
+  }
+
+  async function generateDraft() {
+    const instruction = aiInstruction.trim();
+    if (!instruction) {
+      dispatch(appActions.showToast("请输入希望创建的技能说明"));
+      return;
+    }
+    setGeneratingSkill(true);
+    try {
+      const result = await generateSkillDraft({ instruction, existing_skills: local.map((skill) => skill.slug) });
+      setSkillDraft(result.skill);
+      dispatch(appActions.showToast("AI 草稿已生成"));
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setGeneratingSkill(false);
+    }
+  }
+
+  async function generateAndCreateSkill() {
+    const instruction = aiInstruction.trim();
+    if (!instruction) {
+      dispatch(appActions.showToast("请输入希望创建的技能说明"));
+      return;
+    }
+    setGeneratingSkill(true);
+    setCreatingSkill(true);
+    try {
+      const draftResult = await generateSkillDraft({ instruction, existing_skills: local.map((skill) => skill.slug) });
+      const result = await createSkill(draftResult.skill);
+      await loadLocal();
+      dispatch(appActions.showToast("AI 技能已创建"));
+      setCreateOpen(false);
+      setSkillDraft(emptySkillDraft());
+      setAiInstruction("");
+      setView("installed");
+      const created = result.skill || {
+        slug: draftResult.skill.slug,
+        name: draftResult.skill.name,
+        description: draftResult.skill.description,
+      };
+      setSelectedSlug(created.slug);
+      await openDirectory(created.slug, "");
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setGeneratingSkill(false);
+      setCreatingSkill(false);
+    }
+  }
+
+  async function saveActiveFile() {
+    if (!selectedSlug || !activeFile) return;
+    setSavingFile(true);
+    try {
+      await saveSkillFile(selectedSlug, activeFile, editorContent);
+      setContent(editorContent);
+      await refreshDirectory(selectedSlug, filePath);
+      if (activeFile === "SKILL.md") {
+        await loadLocal();
+      }
+      dispatch(appActions.showToast("文件已保存"));
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setSavingFile(false);
+    }
+  }
+
+  async function createFileEntry(isDir: boolean) {
+    if (!selectedSlug) return;
+    const name = window.prompt(isDir ? "输入目录名" : "输入文件名");
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    const path = filePath ? `${filePath}/${trimmed}` : trimmed;
+    try {
+      await createSkillFile(selectedSlug, path, "", isDir);
+      await openDirectory(selectedSlug, filePath);
+      dispatch(appActions.showToast(isDir ? "目录已创建" : "文件已创建"));
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  async function deleteActiveFile() {
+    if (!selectedSlug || !activeFile) return;
+    if (!window.confirm("确定删除这个文件或目录吗？")) return;
+    try {
+      await deleteSkillFile(selectedSlug, activeFile);
+      setActiveFile("");
+      setContent("");
+      setEditorContent("");
+      await openDirectory(selectedSlug, filePath);
+      dispatch(appActions.showToast("文件已删除"));
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
     }
@@ -130,6 +298,7 @@ export function SkillPanel() {
         setSelectedSlug("");
         setFiles([]);
         setContent("");
+        setEditorContent("");
       }
       await loadLocal();
       dispatch(appActions.showToast("技能已删除"));
@@ -156,7 +325,7 @@ export function SkillPanel() {
               </div>
               <div className="mt-1 text-sm text-muted-foreground">管理本地技能，搜索市场技能，并直接查看技能文件内容。</div>
             </div>
-            <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] xl:w-[560px]">
+            <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] xl:w-[660px]">
               <Input
                 className="min-w-0"
                 value={keyword}
@@ -173,6 +342,10 @@ export function SkillPanel() {
               <Button className="min-w-20 justify-center whitespace-nowrap" variant="outline" onClick={() => void loadLocal()} disabled={loadingLocal}>
                 <RefreshCcw className="h-4 w-4" />
                 刷新
+              </Button>
+              <Button className="min-w-24 justify-center whitespace-nowrap" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" />
+                新建技能
               </Button>
             </div>
           </PanelHeader>
@@ -229,11 +402,31 @@ export function SkillPanel() {
           filePath={filePath}
           activeFile={activeFile}
           content={content}
+          editorContent={editorContent}
           busy={Boolean(selectedSkill && busySlug === selectedSkill.slug)}
           onInstall={(slug) => void install(slug)}
           onRemove={(slug) => void remove(slug)}
           onOpenDirectory={(path) => void openDirectory(selectedSkill?.slug, path)}
           onOpenFile={(path) => void openFile(path)}
+          onEditorChange={setEditorContent}
+          onSaveFile={() => void saveActiveFile()}
+          onCreateFile={() => void createFileEntry(false)}
+          onCreateDirectory={() => void createFileEntry(true)}
+          onDeleteFile={() => void deleteActiveFile()}
+          savingFile={savingFile}
+        />
+        <CreateSkillDialog
+          open={createOpen}
+          draft={skillDraft}
+          aiInstruction={aiInstruction}
+          creating={creatingSkill}
+          generating={generatingSkill}
+          onOpenChange={setCreateOpen}
+          onDraftChange={setSkillDraft}
+          onInstructionChange={setAiInstruction}
+          onGenerate={() => void generateDraft()}
+          onGenerateCreate={() => void generateAndCreateSkill()}
+          onCreate={() => void createCustomSkill()}
         />
       </div>
     </div>
@@ -346,11 +539,18 @@ function SkillDetail({
   filePath,
   activeFile,
   content,
+  editorContent,
   busy,
+  savingFile,
   onInstall,
   onRemove,
   onOpenDirectory,
   onOpenFile,
+  onEditorChange,
+  onSaveFile,
+  onCreateFile,
+  onCreateDirectory,
+  onDeleteFile,
 }: {
   skill?: SkillInfo;
   installed: boolean;
@@ -358,11 +558,18 @@ function SkillDetail({
   filePath: string;
   activeFile: string;
   content: string;
+  editorContent: string;
   busy: boolean;
+  savingFile: boolean;
   onInstall: (slug: string) => void;
   onRemove: (slug: string) => void;
   onOpenDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onEditorChange: (value: string) => void;
+  onSaveFile: () => void;
+  onCreateFile: () => void;
+  onCreateDirectory: () => void;
+  onDeleteFile: () => void;
 }) {
   if (!skill) {
     return (
@@ -424,6 +631,16 @@ function SkillDetail({
                   根目录
                 </button>
                 {filePath ? <span className="text-sm text-muted-foreground">/ {filePath}</span> : null}
+                <div className="ml-auto flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={onCreateFile}>
+                    <FilePlus className="h-4 w-4" />
+                    文件
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={onCreateDirectory}>
+                    <FolderPlus className="h-4 w-4" />
+                    目录
+                  </Button>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {files.map((file) => {
@@ -447,13 +664,38 @@ function SkillDetail({
               </div>
             </div>
             <div className="rounded-xl border border-border/75 bg-card/65">
-              <div className="flex h-11 items-center justify-between border-b border-border/70 px-4">
+              <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border/70 px-4 py-2">
                 <div className="truncate text-sm font-medium">{activeFile || "文件预览"}</div>
-                {content ? <Badge>{content.length} 字符</Badge> : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {content ? <Badge>{content.length} 字符</Badge> : null}
+                  {activeFile ? (
+                    <>
+                      <Button size="sm" variant="outline" disabled={savingFile} onClick={onSaveFile}>
+                        <Save className="h-4 w-4" />
+                        保存
+                      </Button>
+                      {activeFile !== "SKILL.md" ? (
+                        <Button size="sm" variant="ghost" onClick={onDeleteFile}>
+                          <Trash2 className="h-4 w-4" />
+                          删除
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
               </div>
-              <pre className="chat-scroll max-h-[46vh] min-h-64 overflow-auto whitespace-pre-wrap p-5 text-sm leading-7">
-                {content || "选择文件查看内容"}
-              </pre>
+              {activeFile ? (
+                <Textarea
+                  className="chat-scroll min-h-80 rounded-none border-0 bg-transparent p-5 font-mono text-sm leading-7 shadow-none focus-visible:ring-0"
+                  value={editorContent}
+                  onChange={(event) => onEditorChange(event.target.value)}
+                  spellCheck={false}
+                />
+              ) : (
+                <pre className="chat-scroll max-h-[46vh] min-h-64 overflow-auto whitespace-pre-wrap p-5 text-sm leading-7">
+                  选择文件查看内容
+                </pre>
+              )}
             </div>
           </>
         ) : (
@@ -461,6 +703,102 @@ function SkillDetail({
         )}
       </PanelBody>
     </Panel>
+  );
+}
+
+function CreateSkillDialog({
+  open,
+  draft,
+  aiInstruction,
+  creating,
+  generating,
+  onOpenChange,
+  onDraftChange,
+  onInstructionChange,
+  onGenerate,
+  onGenerateCreate,
+  onCreate,
+}: {
+  open: boolean;
+  draft: SkillCreateRequest;
+  aiInstruction: string;
+  creating: boolean;
+  generating: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDraftChange: (draft: SkillCreateRequest) => void;
+  onInstructionChange: (value: string) => void;
+  onGenerate: () => void;
+  onGenerateCreate: () => void;
+  onCreate: () => void;
+}) {
+  function update<K extends keyof SkillCreateRequest>(key: K, value: SkillCreateRequest[K]) {
+    const next = { ...draft, [key]: value };
+    if (key === "name" && (!draft.slug || draft.slug === slugifySkill(draft.name))) {
+      next.slug = slugifySkill(String(value));
+    }
+    if ((key === "name" || key === "description") && draft.content === defaultSkillContent(draft.name, draft.description)) {
+      next.content = defaultSkillContent(next.name, next.description);
+    }
+    onDraftChange(next);
+  }
+
+  return (
+    <Dialog open={open} title="新建技能" onOpenChange={onOpenChange}>
+      <div className="space-y-5">
+        <div className="grid gap-3 rounded-lg border border-border/75 bg-card/60 p-3">
+          <div className="text-sm font-medium">AI 创建</div>
+          <Textarea
+            className="min-h-24"
+            value={aiInstruction}
+            onChange={(event) => onInstructionChange(event.target.value)}
+            placeholder="描述你想创建的技能，例如：帮我创建一个用于代码评审的技能，关注安全、测试和可维护性。"
+          />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={onGenerate} disabled={generating || !aiInstruction.trim()}>
+              <Wand2 className="h-4 w-4" />
+              {generating ? "生成中" : "生成草稿"}
+            </Button>
+            <Button onClick={onGenerateCreate} disabled={generating || creating || !aiInstruction.trim()}>
+              <Wand2 className="h-4 w-4" />
+              生成并创建
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm font-medium">
+            <span>技能标识</span>
+            <Input value={draft.slug} onChange={(event) => update("slug", event.target.value)} placeholder="my_skill" />
+          </label>
+          <label className="space-y-1 text-sm font-medium">
+            <span>技能名称</span>
+            <Input value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder="我的技能" />
+          </label>
+        </div>
+        <label className="space-y-1 text-sm font-medium">
+          <span>描述</span>
+          <Input value={draft.description} onChange={(event) => update("description", event.target.value)} placeholder="一句话说明技能用途" />
+        </label>
+        <label className="space-y-1 text-sm font-medium">
+          <span>SKILL.md</span>
+          <Textarea
+            className="min-h-80 font-mono text-sm"
+            value={draft.content}
+            onChange={(event) => update("content", event.target.value)}
+            spellCheck={false}
+          />
+        </label>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button onClick={onCreate} disabled={creating || !draft.slug.trim() || !draft.name.trim() || !draft.content.trim()}>
+            <Plus className="h-4 w-4" />
+            {creating ? "创建中" : "创建技能"}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -525,4 +863,49 @@ function formatSize(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function emptySkillDraft(): SkillCreateRequest {
+  return {
+    slug: "",
+    name: "",
+    description: "",
+    content: defaultSkillContent("", ""),
+  };
+}
+
+function defaultSkillContent(name: string, description: string) {
+  const safeName = name.trim() || "我的技能";
+  const safeDescription = description.trim() || "描述这个技能的用途。";
+  return `---
+name: ${yamlScalar(safeName)}
+description: ${yamlScalar(safeDescription)}
+---
+
+# ${safeName}
+
+${safeDescription}
+
+## Use when
+
+- Describe when this skill should be used.
+
+## Instructions
+
+- Add the reusable workflow, constraints, and examples here.
+`;
+}
+
+function yamlScalar(value: string) {
+  return JSON.stringify(value);
+}
+
+function slugifySkill(value: string) {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+  return slug || "";
 }

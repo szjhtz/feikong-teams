@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -41,6 +42,22 @@ type AgentDraftRequest struct {
 
 type AgentDraftResponse struct {
 	Agents []AgentDraft `json:"agents"`
+}
+
+type SkillDraft struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+}
+
+type SkillDraftRequest struct {
+	Instruction    string   `json:"instruction"`
+	ExistingSkills []string `json:"existing_skills"`
+}
+
+type SkillDraftResponse struct {
+	Skill SkillDraft `json:"skill"`
 }
 
 type RewriteTextRequest struct {
@@ -109,6 +126,34 @@ func (s *Service) GenerateAgents(ctx context.Context, req AgentDraftRequest) (Ag
 	return parsed, nil
 }
 
+func (s *Service) GenerateSkill(ctx context.Context, req SkillDraftRequest) (SkillDraftResponse, error) {
+	if s == nil || s.model == nil {
+		return SkillDraftResponse{}, fmt.Errorf("ai assist model is not configured")
+	}
+	req.Instruction = strings.TrimSpace(req.Instruction)
+	if req.Instruction == "" {
+		return SkillDraftResponse{}, fmt.Errorf("instruction is required")
+	}
+
+	resp, err := s.model.Generate(ctx, []domainmessage.Message{
+		{Role: domainmessage.RoleSystem, Content: skillDraftSystemPrompt()},
+		{Role: domainmessage.RoleUser, Content: marshalPromptPayload(req)},
+	})
+	if err != nil {
+		return SkillDraftResponse{}, err
+	}
+
+	var parsed SkillDraftResponse
+	if err := decodeJSONResponse(resp.Content, &parsed); err != nil {
+		return SkillDraftResponse{}, fmt.Errorf("decode skill draft: %w", err)
+	}
+	parsed.Skill = normalizeSkillDraft(parsed.Skill, req)
+	if parsed.Skill.Content == "" {
+		return SkillDraftResponse{}, fmt.Errorf("model did not return valid skill draft")
+	}
+	return parsed, nil
+}
+
 func (s *Service) RewriteText(ctx context.Context, req RewriteTextRequest) (RewriteTextResponse, error) {
 	if s == nil || s.model == nil {
 		return RewriteTextResponse{}, fmt.Errorf("ai assist model is not configured")
@@ -162,6 +207,29 @@ JSON 格式必须是：
 - prompt 必须能直接作为系统提示词使用，写清角色、职责、边界、输出风格和必要澄清策略。
 - tools 只能从用户提供的 available_tools 中选择；不确定就返回空数组。
 - 不要生成 SSH 密码、API Key 或其他敏感信息。
+`)
+}
+
+func skillDraftSystemPrompt() string {
+	return strings.TrimSpace(`
+你是 fkteams 的 Skills 创建助手。根据用户要求生成一个可直接安装到本地的自定义 Skill。
+必须只返回 JSON，不要返回 Markdown，不要解释。
+JSON 格式必须是：
+{
+  "skill": {
+    "slug": "skill_slug",
+    "name": "技能名称",
+    "description": "一句话描述",
+    "content": "完整 SKILL.md 文件内容"
+  }
+}
+要求：
+- slug 使用小写英文、数字和下划线。
+- name 和 description 简洁准确。
+- content 必须是完整 SKILL.md，包含 YAML frontmatter：name、description。
+- content 要写清使用场景、输入要求、执行步骤、质量标准和必要示例。
+- 不要生成 SSH 密码、API Key、令牌或其他敏感信息。
+- 不要引用不存在的本地文件。
 `)
 }
 
@@ -278,6 +346,38 @@ func normalizeAgentDrafts(items []AgentDraft, req AgentDraftRequest) []AgentDraf
 		normalized = append(normalized, item)
 	}
 	return normalized
+}
+
+func normalizeSkillDraft(item SkillDraft, req SkillDraftRequest) SkillDraft {
+	used := make(map[string]bool)
+	for _, slug := range req.ExistingSkills {
+		if trimmed := strings.TrimSpace(slug); trimmed != "" {
+			used[trimmed] = true
+		}
+	}
+	item.Name = strings.TrimSpace(item.Name)
+	item.Description = strings.TrimSpace(item.Description)
+	item.Content = strings.TrimSpace(item.Content)
+	item.Slug = uniqueSlug(firstNonEmpty(item.Slug, item.Name, "custom_skill"), used)
+	if item.Name == "" {
+		item.Name = item.Slug
+	}
+	if item.Description == "" {
+		item.Description = item.Name
+	}
+	if item.Content == "" {
+		item.Content = defaultSkillDraftContent(item.Name, item.Description)
+	}
+	return item
+}
+
+func defaultSkillDraftContent(name, description string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "---\nname: %s\ndescription: %s\n---\n\n", strconv.Quote(name), strconv.Quote(description))
+	fmt.Fprintf(&sb, "# %s\n\n%s\n\n", name, description)
+	sb.WriteString("## Use when\n\n- Use this skill when the task matches the user's stated goal.\n\n")
+	sb.WriteString("## Instructions\n\n- Clarify missing requirements before acting.\n- Follow the project's existing constraints.\n- Provide concise verification notes when finished.\n")
+	return strings.TrimSpace(sb.String())
 }
 
 func firstNonEmpty(values ...string) string {

@@ -69,6 +69,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		ai := apiV1.Group("/ai")
 		{
 			ai.POST("/agents/draft", runtime.GenerateAgentDraftsHandler())
+			ai.POST("/skills/draft", runtime.GenerateSkillDraftHandler())
 			ai.POST("/text/rewrite", runtime.RewriteTextHandler())
 		}
 
@@ -164,11 +165,15 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		skills := apiV1.Group("/skills")
 		{
 			skills.GET("", handler.GetInstalledSkillsHandler())
+			skills.POST("", handler.CreateSkillHandler())
 			skills.GET("/search", runtime.SearchSkillsHandler())
 			skills.POST("/install", runtime.InstallSkillHandler())
 			skills.DELETE("/:slug", handler.RemoveSkillHandler())
 			skills.GET("/:slug/files", handler.GetSkillFilesHandler())
+			skills.POST("/:slug/files", handler.CreateSkillFileHandler())
 			skills.GET("/:slug/file", handler.GetSkillFileContentHandler())
+			skills.PUT("/:slug/file", handler.SaveSkillFileContentHandler())
+			skills.DELETE("/:slug/file", handler.DeleteSkillFileHandler())
 		}
 
 		// 长期记忆管理 API

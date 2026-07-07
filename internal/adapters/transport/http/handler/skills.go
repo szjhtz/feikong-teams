@@ -113,6 +113,26 @@ func (rt *Runtime) InstallSkillHandler() gin.HandlerFunc {
 	}
 }
 
+// CreateSkillHandler 创建用户自定义技能。
+func CreateSkillHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req appskill.LocalSkillSpec
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+			return
+		}
+
+		info, err := appskill.CreateLocalSkill(req)
+		if err != nil {
+			log.Printf("failed to create skill: slug=%s, err=%v", req.Slug, err)
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		OK(c, gin.H{"skill": info, "message": "skill created"})
+	}
+}
+
 // RemoveSkillHandler 删除已安装技能。
 func RemoveSkillHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -129,6 +149,64 @@ func RemoveSkillHandler() gin.HandlerFunc {
 		}
 
 		OK(c, gin.H{"slug": slug, "message": "skill removed"})
+	}
+}
+
+// CreateSkillFileHandler 创建技能文件或目录。
+func CreateSkillFileHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		slug := c.Param("slug")
+		var req struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+			IsDir   bool   `json:"is_dir"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+			return
+		}
+		if err := appskill.CreateSkillFile(slug, req.Path, req.Content, req.IsDir); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		OK(c, gin.H{"slug": slug, "path": req.Path, "message": "skill file created"})
+	}
+}
+
+// SaveSkillFileContentHandler 保存技能文件内容。
+func SaveSkillFileContentHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		slug := c.Param("slug")
+		var req struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+			return
+		}
+		if err := appskill.SaveSkillFile(slug, req.Path, req.Content); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		OK(c, gin.H{"slug": slug, "path": req.Path, "message": "skill file saved"})
+	}
+}
+
+// DeleteSkillFileHandler 删除技能文件或目录。
+func DeleteSkillFileHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		slug := c.Param("slug")
+		filePath := c.Query("path")
+		if slug == "" || filePath == "" {
+			Fail(c, http.StatusBadRequest, "slug and path are required")
+			return
+		}
+		if err := appskill.DeleteSkillFile(slug, filePath); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		OK(c, gin.H{"slug": slug, "path": filePath, "message": "skill file deleted"})
 	}
 }
 

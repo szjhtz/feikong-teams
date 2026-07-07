@@ -74,6 +74,38 @@ func TestRewriteTextDecodesFencedJSON(t *testing.T) {
 	}
 }
 
+func TestGenerateSkillNormalizesDraft(t *testing.T) {
+	model := testmodel.New(domainmessage.Message{
+		Role: domainmessage.RoleAssistant,
+		Content: `{
+  "skill": {
+    "slug": "Research Skill",
+    "name": "资料整理技能",
+    "description": "整理研究资料",
+    "content": "---\nname: 资料整理技能\ndescription: 整理研究资料\n---\n\n# 资料整理技能\n"
+  }
+}`,
+	})
+	service := New(model)
+
+	got, err := service.GenerateSkill(context.Background(), SkillDraftRequest{
+		Instruction:    "创建资料整理技能",
+		ExistingSkills: []string{"research_skill"},
+	})
+	if err != nil {
+		t.Fatalf("GenerateSkill returned error: %v", err)
+	}
+	if got.Skill.Slug != "research_skill_2" {
+		t.Fatalf("slug = %q, want research_skill_2", got.Skill.Slug)
+	}
+	if got.Skill.Name != "资料整理技能" || got.Skill.Description != "整理研究资料" {
+		t.Fatalf("skill metadata = %#v", got.Skill)
+	}
+	if !strings.Contains(got.Skill.Content, "SKILL") && !strings.Contains(got.Skill.Content, "资料整理技能") {
+		t.Fatalf("content = %q, want skill content", got.Skill.Content)
+	}
+}
+
 func TestGenerateAgentsSendsInstructionToModel(t *testing.T) {
 	model := testmodel.New(domainmessage.Message{Role: domainmessage.RoleAssistant, Content: `{"agents":[{"name":"A"}]}`})
 	service := New(model)

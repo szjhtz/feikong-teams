@@ -159,6 +159,65 @@ func TestSkillFilePathTraversalRejected(t *testing.T) {
 	}
 }
 
+func TestCreateSaveAndDeleteLocalSkillFiles(t *testing.T) {
+	appDir := t.TempDir()
+	t.Setenv(env.AppDir, appDir)
+
+	info, err := CreateLocalSkill(LocalSkillSpec{
+		Slug:        "custom_skill",
+		Name:        "Custom Skill",
+		Description: "Custom description",
+	})
+	if err != nil {
+		t.Fatalf("CreateLocalSkill returned error: %v", err)
+	}
+	if info.Slug != "custom_skill" || info.Name != "Custom Skill" {
+		t.Fatalf("created skill = %#v", info)
+	}
+
+	if err := CreateSkillFile("custom_skill", "references", "", true); err != nil {
+		t.Fatalf("CreateSkillFile dir returned error: %v", err)
+	}
+	if err := CreateSkillFile("custom_skill", "references/example.md", "example", false); err != nil {
+		t.Fatalf("CreateSkillFile file returned error: %v", err)
+	}
+	if err := SaveSkillFile("custom_skill", "references/example.md", "updated"); err != nil {
+		t.Fatalf("SaveSkillFile returned error: %v", err)
+	}
+	content, err := ReadSkillFile("custom_skill", "references/example.md")
+	if err != nil {
+		t.Fatalf("ReadSkillFile returned error: %v", err)
+	}
+	if content != "updated" {
+		t.Fatalf("content = %q, want updated", content)
+	}
+	if err := DeleteSkillFile("custom_skill", "references/example.md"); err != nil {
+		t.Fatalf("DeleteSkillFile returned error: %v", err)
+	}
+	if _, err := ReadSkillFile("custom_skill", "references/example.md"); err == nil {
+		t.Fatal("deleted file should not be readable")
+	}
+}
+
+func TestSkillMutationsRejectInvalidPaths(t *testing.T) {
+	appDir := t.TempDir()
+	t.Setenv(env.AppDir, appDir)
+	writeSkill(t, appDir, "demo", "---\nname: Demo\n---\n")
+
+	if _, err := CreateLocalSkill(LocalSkillSpec{Slug: "../bad", Name: "Bad"}); err == nil || !strings.Contains(err.Error(), "invalid skill slug") {
+		t.Fatalf("CreateLocalSkill traversal error = %v, want invalid skill slug", err)
+	}
+	if err := SaveSkillFile("demo", "../secret.txt", "secret"); err == nil || !strings.Contains(err.Error(), "invalid path") {
+		t.Fatalf("SaveSkillFile traversal error = %v, want invalid path", err)
+	}
+	if err := CreateSkillFile("demo", "/secret.txt", "secret", false); err == nil || !strings.Contains(err.Error(), "invalid path") {
+		t.Fatalf("CreateSkillFile absolute error = %v, want invalid path", err)
+	}
+	if err := DeleteSkillFile("demo", "SKILL.md"); err == nil || !strings.Contains(err.Error(), "cannot be deleted") {
+		t.Fatalf("DeleteSkillFile SKILL.md error = %v, want cannot be deleted", err)
+	}
+}
+
 func TestListSkillFilesSortsByTypeModTimeSizeAndName(t *testing.T) {
 	appDir := t.TempDir()
 	t.Setenv(env.AppDir, appDir)

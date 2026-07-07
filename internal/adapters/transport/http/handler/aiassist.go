@@ -7,6 +7,7 @@ import (
 
 	appaiassist "fkteams/internal/app/aiassist"
 	"fkteams/internal/app/config"
+	appskill "fkteams/internal/app/skill"
 	apptools "fkteams/internal/app/tools"
 
 	"github.com/gin-gonic/gin"
@@ -40,8 +41,51 @@ func (rt *Runtime) GenerateAgentDraftsHandler() gin.HandlerFunc {
 	}
 }
 
+func GenerateSkillDraftHandler() gin.HandlerFunc {
+	return NewRuntime().GenerateSkillDraftHandler()
+}
+
+func (rt *Runtime) GenerateSkillDraftHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req appaiassist.SkillDraftRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+			return
+		}
+		ctx, cancel := context.WithTimeout(rt.withRuntimeContext(c.Request.Context()), 60*time.Second)
+		defer cancel()
+		enrichSkillDraftRequest(&req)
+		service, err := appaiassist.NewDefault(ctx)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		resp, err := service.GenerateSkill(ctx, req)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		OK(c, resp)
+	}
+}
+
 func RewriteTextHandler() gin.HandlerFunc {
 	return NewRuntime().RewriteTextHandler()
+}
+
+func enrichSkillDraftRequest(req *appaiassist.SkillDraftRequest) {
+	if req == nil || len(req.ExistingSkills) > 0 {
+		return
+	}
+	skills, err := appskill.ListLocalSkills()
+	if err != nil {
+		return
+	}
+	for _, item := range skills {
+		if item.Slug != "" {
+			req.ExistingSkills = append(req.ExistingSkills, item.Slug)
+		}
+	}
 }
 
 func (rt *Runtime) RewriteTextHandler() gin.HandlerFunc {

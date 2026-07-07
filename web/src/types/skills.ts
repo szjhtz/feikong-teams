@@ -16,3 +16,12 @@ export interface SkillFileEntry {
   is_dir?: boolean;
   size?: number;
 }
+
+export interface SkillDraft {
+  slug: string;
+  name: string;
+  description: string;
+  content: string;
+}
+
+export interface SkillCreateRequest extends SkillDraft {}
