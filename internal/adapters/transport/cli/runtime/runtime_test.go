@@ -266,6 +266,82 @@ func TestRuntimeMemberAskSubmitDoesNotQueueSteering(t *testing.T) {
 	}
 }
 
+func TestRuntimeRootAskSubmitDoesNotQueueSteering(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	executor := NewQueryExecutor(nil, state)
+	broker := newRuntimeAskBroker(func(tea.Msg) {})
+	responseCh := make(chan *ask.AskResponse, 1)
+	broker.pending["ask-1"] = responseCh
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		executor:    executor,
+		askBroker:   broker,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.ask = &runtimeAskState{
+		ID:            "ask-1",
+		Question:      "Choose one",
+		Options:       []string{"A", "B"},
+		SelectedIndex: 1,
+	}
+
+	updated, cmd := model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("root ask submit should not start a command")
+	}
+	if messages := executor.takeSteeringMessages(1); len(messages) != 0 {
+		t.Fatalf("root ask submit should not queue steering, got %#v", messages)
+	}
+	select {
+	case resp := <-responseCh:
+		if resp.AskID != "ask-1" || len(resp.Selected) != 1 || resp.Selected[0] != "B" {
+			t.Fatalf("unexpected ask response: %#v", resp)
+		}
+	default:
+		t.Fatal("expected root ask response to be submitted")
+	}
+	if model.ask != nil {
+		t.Fatal("root ask panel should be cleared after submit")
+	}
+}
+
+func TestRuntimeRootAskKeysDoNotNavigateHistory(t *testing.T) {
+	session := NewSession(ModeTeam, nil, nil)
+	session.InputHistory = []string{"old", "new"}
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.ask = &runtimeAskState{
+		ID:            "ask-1",
+		Question:      "Choose one",
+		Options:       []string{"A", "B"},
+		SelectedIndex: 0,
+	}
+
+	updated, _ := model.Update(keyMsg("up", "", 0))
+	model = updated.(runtimeModel)
+	if got := model.input.Value(); got != "" {
+		t.Fatalf("root ask up should not load history, got %q", got)
+	}
+	if got := model.ask.SelectedIndex; got != 1 {
+		t.Fatalf("root ask up should wrap to last option, got %d", got)
+	}
+	updated, _ = model.Update(keyMsg("down", "", 0))
+	model = updated.(runtimeModel)
+	if got := model.ask.SelectedIndex; got != 0 {
+		t.Fatalf("root ask down should move selection, got %d", got)
+	}
+}
+
 func TestRuntimeAskBrokerRoutesResponsesByAskID(t *testing.T) {
 	broker := newRuntimeAskBroker(func(tea.Msg) {})
 	ctx, cancel := context.WithCancel(context.Background())

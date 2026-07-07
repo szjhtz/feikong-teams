@@ -64,6 +64,7 @@ func (r *Runtime) Run() error {
 	r.executor.SetApproveStores(r.session.ApproveStores)
 	r.executor.SetView(view)
 	r.executor.SetAskRuntimeHandler(askBroker.Handle)
+	view.ask = askBroker
 	view.approval = approvalBroker
 
 	model := newRuntimeModel(r)

@@ -264,6 +264,12 @@ func (m runtimeModel) renderBottom() string {
 			sb.WriteString("\n")
 		}
 	}
+	if m.ask != nil {
+		sb.WriteString(m.renderAskPanel(*m.ask))
+		if !strings.HasSuffix(sb.String(), "\n") {
+			sb.WriteString("\n")
+		}
+	}
 	if m.approval != nil {
 		sb.WriteString(m.renderApprovalPanel())
 		if !strings.HasSuffix(sb.String(), "\n") {
@@ -335,6 +341,16 @@ func (m runtimeModel) memberDetailHint() string {
 }
 
 func (m runtimeModel) inputHint() string {
+	if m.ask != nil {
+		hints := []string{"回答提问", "↑↓ 选择", "Enter 提交", "Esc 取消", "Ctrl+C 取消任务"}
+		if len(m.ask.Options) == 0 {
+			hints = []string{"回答提问", "输入回答", "Enter 提交", "Esc 取消", "Ctrl+C 取消任务"}
+		}
+		if m.ask.MultiSelect {
+			hints = []string{"回答提问", "多选逗号分隔", "Enter 提交", "Esc 取消", "Ctrl+C 取消任务"}
+		}
+		return strings.Join(hints, " · ")
+	}
 	if m.approval != nil {
 		return strings.Join([]string{
 			"权限审批",
@@ -527,7 +543,13 @@ func (m runtimeModel) renderAskPanel(askState runtimeAskState) string {
 	if len(askState.Options) > 0 {
 		sb.WriteString(tui.Dim("  选项:") + "\n")
 		for i, option := range askState.Options {
-			fmt.Fprintf(&sb, "    %d. %s\n", i+1, option)
+			prefix := "   "
+			label := option
+			if !askState.Answered && i == askState.SelectedIndex {
+				prefix = " > "
+				label = tui.PickerSelected(option)
+			}
+			fmt.Fprintf(&sb, "%s%d. %s\n", prefix, i+1, label)
 		}
 	}
 	answer := runtimeAskResponseSummary(askState.Selected, askState.FreeText)

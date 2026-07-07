@@ -113,6 +113,20 @@ func toolArgsSummary(args string) string {
 	return strings.Join(strings.Fields(args), " ")
 }
 
+func stableToolArgsSummary(args string) string {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return ""
+	}
+	if strings.HasPrefix(args, "{") || strings.HasPrefix(args, "[") {
+		var payload any
+		if err := json.Unmarshal([]byte(args), &payload); err != nil {
+			return ""
+		}
+	}
+	return toolArgsSummary(args)
+}
+
 func stringifyArgValue(v any) string {
 	switch t := v.(type) {
 	case string:

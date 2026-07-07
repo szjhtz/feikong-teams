@@ -242,7 +242,11 @@ func Status(text string) string {
 
 func ToolCall(name string, args string, status ToolStatus) string {
 	name = emptyAs(name, defaultToolDisplayName)
-	args = toolArgsSummary(args)
+	if status == ToolStatusRunning {
+		args = stableToolArgsSummary(args)
+	} else {
+		args = toolArgsSummary(args)
+	}
 	label := name
 	if args != "" {
 		label = name + "(" + truncateRunes(args, 88) + ")"

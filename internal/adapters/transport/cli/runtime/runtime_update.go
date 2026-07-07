@@ -166,6 +166,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.approval != nil {
 			return m.updateApproval(msg)
 		}
+		if m.ask != nil {
+			return m.updateAsk(msg)
+		}
 		if m.memberView != "" {
 			switch msg.String() {
 			case "esc", "left":

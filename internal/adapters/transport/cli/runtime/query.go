@@ -284,7 +284,11 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 					continue
 				}
 				if askInfo, ok := ic.Info.(*ask.AskInfo); ok {
-					targets[ic.ID] = e.promptAskQuestions(askInfo)
+					resp, err := e.promptAskQuestions(ctx, askInfo)
+					if err != nil {
+						return nil, err
+					}
+					targets[ic.ID] = resp
 					continue
 				}
 				decision, err := e.promptApproval(ctx, ic.Info)
@@ -403,7 +407,11 @@ func (e *QueryExecutor) promptApproval(ctx context.Context, info any) (int, erro
 }
 
 // promptAskQuestions 在 CLI 中展示问题并收集用户回答
-func (e *QueryExecutor) promptAskQuestions(info *ask.AskInfo) *ask.AskResponse {
+func (e *QueryExecutor) promptAskQuestions(ctx context.Context, info *ask.AskInfo) (*ask.AskResponse, error) {
+	if promptView, ok := e.view.(askPromptView); ok {
+		return promptView.PromptAsk(ctx, info)
+	}
+
 	var options []tui.AskOption
 	for _, opt := range info.Options {
 		options = append(options, tui.AskOption{Label: opt, Value: opt})
@@ -411,12 +419,12 @@ func (e *QueryExecutor) promptAskQuestions(info *ask.AskInfo) *ask.AskResponse {
 
 	result, err := tui.AskQuestions(info.Question, options, info.MultiSelect)
 	if err != nil || result == nil {
-		return &ask.AskResponse{}
+		return &ask.AskResponse{}, nil
 	}
 	return &ask.AskResponse{
 		Selected: result.Selected,
 		FreeText: result.FreeText,
-	}
+	}, nil
 }
 
 // HandleCtrlC 处理 Ctrl+C 事件，只中断查询，不退出程序

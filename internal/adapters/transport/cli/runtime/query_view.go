@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/adapters/transport/cli/eventview"
+	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/runtime/events"
 	"fmt"
 	"log"
@@ -27,6 +28,10 @@ type QueryView interface {
 
 type approvalPromptView interface {
 	PromptApproval(context.Context, string) (int, error)
+}
+
+type askPromptView interface {
+	PromptAsk(context.Context, *ask.AskInfo) (*ask.AskResponse, error)
 }
 
 // TerminalQueryView 保留传统非交互输出方式，交互 TUI runtime 不再使用它。

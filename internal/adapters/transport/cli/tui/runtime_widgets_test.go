@@ -79,6 +79,10 @@ func TestToolRuntimeRendering(t *testing.T) {
 	if !strings.Contains(call, "tool") || !strings.Contains(call, "go test ./...") {
 		t.Fatalf("ToolCall = %q", call)
 	}
+	partialCall := StripANSI(ToolCall("todo_add", `{"title":"测试 TODO`, ToolStatusRunning))
+	if strings.Contains(partialCall, "测试 TODO") || strings.Contains(partialCall, "(") {
+		t.Fatalf("running ToolCall should hide incomplete args, got %q", partialCall)
+	}
 
 	result := StripANSI(ToolResult("exec", "{}", "line1\n\nline2\nline3", ToolStatusDone))
 	if !strings.Contains(result, "exec") || !strings.Contains(result, "line1") || !strings.Contains(result, "隐藏 1 行") {

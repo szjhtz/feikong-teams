@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/runtime/events"
 	"fmt"
 	"sync"
@@ -18,6 +19,7 @@ type runtimeQueryView struct {
 	mu       sync.Mutex
 	pending  *events.Event
 	timer    *time.Timer
+	ask      *runtimeAskBroker
 	approval *runtimeApprovalBroker
 }
 
@@ -67,6 +69,14 @@ func (v *runtimeQueryView) PromptApproval(ctx context.Context, info string) (int
 	}
 	v.flushPending()
 	return v.approval.Handle(ctx, info)
+}
+
+func (v *runtimeQueryView) PromptAsk(ctx context.Context, info *ask.AskInfo) (*ask.AskResponse, error) {
+	if v.ask == nil {
+		return nil, fmt.Errorf("ask broker is not initialized")
+	}
+	v.flushPending()
+	return v.ask.Handle(ctx, ask.RuntimeRequest{Info: info})
 }
 
 func (v *runtimeQueryView) sendEvent(event events.Event) {
