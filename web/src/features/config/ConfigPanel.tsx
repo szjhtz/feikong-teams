@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/action-dialog";
 import { LoadingSurface } from "@/components/ui/loading-surface";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
@@ -487,6 +488,8 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
   const tools = useAppSelector((state) => state.config.tools);
   const toolOptions = useMemo(() => buildToolOptions(tools, draft.tools?.mcp_servers || []), [draft.tools?.mcp_servers, tools]);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [expandedAgentKey, setExpandedAgentKey] = useState<string | null>(null);
+  const [deleteAgentTarget, setDeleteAgentTarget] = useState<{ agent: AgentConfig; index: number; key: string } | null>(null);
 
   function appendAgents(items: AgentConfig[]) {
     updateDraft((next) => {
@@ -503,6 +506,18 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
       next.agents = { ...(next.agents || {}), items: merged };
     });
     dispatch(appActions.showToast(`${items.length} 个智能体草稿已添加`));
+  }
+
+  function confirmDeleteAgent() {
+    if (!deleteAgentTarget) return;
+    const target = deleteAgentTarget;
+    updateDraft((next) => {
+      next.agents = { ...(next.agents || {}), items: (next.agents?.items || []).filter((_, itemIndex) => itemIndex !== target.index) };
+    });
+    if (expandedAgentKey === target.key) {
+      setExpandedAgentKey(null);
+    }
+    setDeleteAgentTarget(null);
   }
 
   return (
@@ -554,40 +569,115 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
           }}
         />
       ) : null}
-      <PanelBody className="grid gap-4 xl:grid-cols-2">
-        {agentItems.map((agent, index) => (
-          <ConfigCard
-            key={`${agent.id || "agent"}-${index}`}
-            title={agent.name || agent.id || "未命名智能体"}
-            aside={agent.builtin ? "内置智能体" : agent.model_id || "自定义智能体"}
-            onRemove={
-              agent.builtin
-                ? undefined
-                : () =>
-                    updateDraft((next) => {
-                      next.agents = { ...(next.agents || {}), items: (next.agents?.items || []).filter((_, itemIndex) => itemIndex !== index) };
-                    })
-            }
-          >
-            <AgentCatalogEditor
+      <ConfirmDialog
+        open={Boolean(deleteAgentTarget)}
+        title="删除智能体"
+        description={
+          <>
+            智能体「<span className="font-medium text-foreground">{deleteAgentTarget?.agent.name || deleteAgentTarget?.agent.id || "未命名智能体"}</span>」将从当前配置草稿中移除，保存配置后生效。
+          </>
+        }
+        confirmLabel="确认删除"
+        destructive
+        onCancel={() => setDeleteAgentTarget(null)}
+        onConfirm={confirmDeleteAgent}
+      />
+      <PanelBody className="grid items-start gap-4 xl:grid-cols-2">
+        {agentItems.map((agent, index) => {
+          const agentKey = `${agent.id || agent.name || "agent"}-${index}`;
+          const expanded = expandedAgentKey === agentKey;
+          return (
+            <AgentConfigCard
+              key={agentKey}
               agent={agent}
-              modelIDs={modelIDs}
-              toolOptions={toolOptions}
-              onChange={(value) =>
-                updateDraft((next) => {
-                  const items = [...(next.agents?.items || [])];
-                  items[index] = value;
-                  next.agents = { ...(next.agents || {}), items };
-                })
+              expanded={expanded}
+              onToggle={() => setExpandedAgentKey(expanded ? null : agentKey)}
+              onRemove={
+                agent.builtin
+                  ? undefined
+                  : () => setDeleteAgentTarget({ agent, index, key: agentKey })
               }
-            />
-          </ConfigCard>
-        ))}
+            >
+              <AgentCatalogEditor
+                agent={agent}
+                modelIDs={modelIDs}
+                toolOptions={toolOptions}
+                onChange={(value) =>
+                  updateDraft((next) => {
+                    const items = [...(next.agents?.items || [])];
+                    items[index] = value;
+                    next.agents = { ...(next.agents || {}), items };
+                  })
+                }
+              />
+            </AgentConfigCard>
+          );
+        })}
         {agentItems.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground xl:col-span-2">暂无智能体配置，重新加载配置会从后端获取内置智能体默认信息。</div>
         ) : null}
       </PanelBody>
     </Panel>
+  );
+}
+
+function AgentConfigCard({
+  agent,
+  expanded,
+  onToggle,
+  onRemove,
+  children,
+}: {
+  agent: AgentConfig;
+  expanded: boolean;
+  onToggle: () => void;
+  onRemove?: () => void;
+  children: React.ReactNode;
+}) {
+  const toolCount = agent.tools?.length || 0;
+  return (
+    <div className={cn("rounded-xl border border-border/75 bg-card/65 transition-colors", expanded && "xl:col-span-2")}>
+      <div className="flex min-h-36 flex-col gap-3 p-4">
+        <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={onToggle} aria-expanded={expanded}>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="truncate font-medium">{agent.name || agent.id || "未命名智能体"}</span>
+              <Badge>{agent.builtin ? "内置" : "自定义"}</Badge>
+              <Badge>{agent.enabled ? "已启用" : "已关闭"}</Badge>
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">{agent.id || "未设置 ID"}</div>
+            <div className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.description || "暂无描述"}</div>
+          </div>
+          <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+        </button>
+        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+          <AgentSummaryMetric label="类型" value={agent.builtin ? "内置" : agent.team_member ? "团队" : "自定义"} />
+          <AgentSummaryMetric label="模型" value={agent.model_id || "默认"} />
+          <AgentSummaryMetric label="工具" value={`${toolCount}`} />
+          <AgentSummaryMetric label="状态" value={agent.enabled ? "启用" : "关闭"} />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <Button size="sm" variant={expanded ? "secondary" : "outline"} onClick={onToggle}>
+            {expanded ? "收起" : "编辑"}
+          </Button>
+          {onRemove ? (
+            <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {expanded ? <div className="border-t border-border/70 p-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function AgentSummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border/60 bg-background/45 px-2 py-1.5">
+      <div>{label}</div>
+      <div className="mt-1 truncate text-foreground">{value}</div>
+    </div>
   );
 }
 
