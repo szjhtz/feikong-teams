@@ -226,9 +226,22 @@ export function ChatComposer({
 
   function handlePaste(event: React.ClipboardEvent<HTMLDivElement>) {
     const files = clipboardFiles(event.clipboardData);
-    if (!files.length) return;
+    if (files.length) {
+      event.preventDefault();
+      onFilesAdded?.(files);
+      return;
+    }
+
+    const pastedText = clipboardPlainText(event.clipboardData);
+    if (!pastedText) return;
+
     event.preventDefault();
-    onFilesAdded?.(files);
+    const editor = event.currentTarget;
+    const selection = selectionTextRange(editor);
+    const fallbackPosition = editorText(editor).length;
+    replaceTextRange(editor, selection?.start ?? fallbackPosition, selection?.end ?? fallbackPosition, pastedText);
+    onValueChange(editorText(editor));
+    requestAnimationFrame(updateTriggerFromEditor);
   }
 
   function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -463,6 +476,14 @@ function clipboardFiles(data: DataTransfer) {
     .filter((item) => item.kind === "file")
     .map((item) => item.getAsFile())
     .filter((file): file is File => Boolean(file && file.size > 0));
+}
+
+function clipboardPlainText(data: DataTransfer) {
+  const text = data.getData("text/plain");
+  if (text) return text.replace(/\u00a0/g, " ");
+  const html = data.getData("text/html");
+  if (!html) return "";
+  return new DOMParser().parseFromString(html, "text/html").body.textContent?.replace(/\u00a0/g, " ") || "";
 }
 
 function removeEmbeddedMedia(root: HTMLElement) {
