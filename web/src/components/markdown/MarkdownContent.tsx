@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { renderMarkdown } from "@/lib/markdown";
 
@@ -21,7 +22,11 @@ async function handleMarkdownClick(event: MouseEvent<HTMLDivElement>) {
   const code = block?.querySelector("pre code")?.textContent || "";
   if (!code) return;
 
-  await navigator.clipboard?.writeText(code);
+  try {
+    await copyText(code);
+  } catch {
+    return;
+  }
   const previous = button.textContent || "复制";
   button.textContent = "已复制";
   button.dataset.copied = "true";

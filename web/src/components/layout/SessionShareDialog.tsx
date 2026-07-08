@@ -5,6 +5,7 @@ import { useAppDispatch } from "@/app/hooks";
 import { createSessionShare, type SessionShare } from "@/api/shares";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { copyText } from "@/lib/clipboard";
 import { shortID } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -76,10 +77,14 @@ export function SessionShareDialog({
 
   async function copyShareURL() {
     if (!shareURL) return;
-    await navigator.clipboard?.writeText(shareURL);
-    setCopied(true);
-    dispatch(appActions.showToast("分享链接已复制"));
-    window.setTimeout(() => setCopied(false), 1200);
+    try {
+      await copyText(shareURL);
+      setCopied(true);
+      dispatch(appActions.showToast("分享链接已复制"));
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
+    }
   }
 
   return (

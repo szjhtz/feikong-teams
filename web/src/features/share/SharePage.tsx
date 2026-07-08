@@ -8,6 +8,7 @@ import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { copyText } from "@/lib/clipboard";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { ToolCallCard } from "@/features/chat/ToolCallCard";
@@ -351,7 +352,11 @@ function ShareMessageActions({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copyContent() {
-    await navigator.clipboard?.writeText(content);
+    try {
+      await copyText(content);
+    } catch {
+      return;
+    }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }

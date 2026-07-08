@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { formatTime, shortID } from "@/lib/format";
 import type { PreviewLink } from "@/types/files";
@@ -86,20 +87,28 @@ export function ShareManagerPanel() {
     const id = shareID(share);
     if (!id) return;
     const url = shareURL(id);
-    await navigator.clipboard?.writeText(url);
-    setCopiedKey(shareKey("session", id));
-    dispatch(appActions.showToast("分享链接已复制"));
-    window.setTimeout(() => setCopiedKey(""), 1200);
+    try {
+      await copyText(url);
+      setCopiedKey(shareKey("session", id));
+      dispatch(appActions.showToast("分享链接已复制"));
+      window.setTimeout(() => setCopiedKey(""), 1200);
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
+    }
   }
 
   async function copyFileShare(share: PreviewLink) {
     const id = previewLinkID(share);
     if (!id) return;
     const url = previewURL(id);
-    await navigator.clipboard?.writeText(url);
-    setCopiedKey(shareKey("file", id));
-    dispatch(appActions.showToast("分享链接已复制"));
-    window.setTimeout(() => setCopiedKey(""), 1200);
+    try {
+      await copyText(url);
+      setCopiedKey(shareKey("file", id));
+      dispatch(appActions.showToast("分享链接已复制"));
+      window.setTimeout(() => setCopiedKey(""), 1200);
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
+    }
   }
 
   async function confirmDelete() {

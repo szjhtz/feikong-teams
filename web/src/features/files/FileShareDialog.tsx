@@ -5,6 +5,7 @@ import { appActions } from "@/app/store";
 import { useAppDispatch } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import type { FileEntry, PreviewLink } from "@/types/files";
 
@@ -64,10 +65,14 @@ export function FileShareDialog({
 
   async function copyPreviewURL() {
     if (!previewURL) return;
-    await navigator.clipboard?.writeText(previewURL);
-    setCopied(true);
-    dispatch(appActions.showToast("分享链接已复制"));
-    window.setTimeout(() => setCopied(false), 1200);
+    try {
+      await copyText(previewURL);
+      setCopied(true);
+      dispatch(appActions.showToast("分享链接已复制"));
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
+    }
   }
 
   return (

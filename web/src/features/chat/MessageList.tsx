@@ -6,6 +6,7 @@ import { submitApproval, submitAskResponse } from "@/api/stream";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
@@ -964,7 +965,11 @@ function MessageActions({
   const [copied, setCopied] = useState(false);
 
   async function copyContent() {
-    await navigator.clipboard?.writeText(content);
+    try {
+      await copyText(content);
+    } catch {
+      return;
+    }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
