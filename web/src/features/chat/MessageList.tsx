@@ -344,7 +344,7 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
       </div>
       {showJumpToBottom ? (
         <button
-          className="absolute bottom-4 left-1/2 z-20 hidden h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground xl:flex"
+          className="absolute bottom-2 left-1/2 z-20 hidden h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground xl:flex"
           type="button"
           onClick={jumpToBottom}
         >

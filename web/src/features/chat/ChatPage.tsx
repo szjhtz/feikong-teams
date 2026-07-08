@@ -196,7 +196,7 @@ function QuestionNavigator({
         <div
           ref={mobileRef}
           className="absolute left-1/2 z-[35] -translate-x-1/2 xl:hidden"
-          style={{ bottom: "calc(var(--app-keyboard-inset-bottom,0px) + var(--chat-dock-height,10rem) + 1rem)" }}
+          style={{ bottom: "calc(var(--app-keyboard-inset-bottom,0px) + var(--chat-dock-height,10rem) + 0.35rem)" }}
         >
           {mobileOpen && showMobileQuestion ? (
             <div className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] animate-in fade-in slide-in-from-bottom-1 overflow-y-auto rounded-xl bg-card/95 p-2 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur duration-150">
