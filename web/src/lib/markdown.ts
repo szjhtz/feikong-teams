@@ -22,6 +22,7 @@ const marked = new Marked({
 marked.use(markedKatex({
   nonStandard: true,
   throwOnError: false,
+  strict: "ignore",
 }));
 
 hljs.registerLanguage("bash", bash);
