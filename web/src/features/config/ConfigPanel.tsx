@@ -195,6 +195,18 @@ export function ConfigPanel() {
 function ModelsTab({ draft, updateDraft }: EditorProps) {
   const models = draft.models || [];
   const [modelLookup, setModelLookup] = useState<Record<number, ModelLookupState>>({});
+  const [expandedModelIndex, setExpandedModelIndex] = useState<number | null>(null);
+
+  function removeModel(index: number) {
+    updateDraft((next) => {
+      next.models = (next.models || []).filter((_, itemIndex) => itemIndex !== index);
+    });
+    setExpandedModelIndex((current) => {
+      if (current === null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
+  }
 
   async function loadProviderModels(model: ModelConfig, index: number) {
     if (!model.provider) {
@@ -238,7 +250,7 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
         <Button
           className="w-full sm:w-auto"
           variant="outline"
-          onClick={() =>
+          onClick={() => {
             updateDraft((next) => {
               next.models = [
                 ...(next.models || []),
@@ -252,53 +264,54 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
                   model: "",
                 },
               ];
-            })
-          }
+            });
+            setExpandedModelIndex(models.length);
+          }}
         >
           <Plus className="h-4 w-4" />
           添加模型
         </Button>
       </SectionHeader>
       <PanelBody className="grid gap-4 xl:grid-cols-2">
-        {models.map((model, index) => (
-          <ConfigCard
-            key={`${model.original_id || model.id || "model"}-${index}`}
-            title={model.name || model.id || "未命名模型"}
-            aside={model.provider || "provider"}
-            onRemove={() =>
-              updateDraft((next) => {
-                next.models = (next.models || []).filter((_, itemIndex) => itemIndex !== index);
-              })
-            }
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              <TextField label="ID" value={model.id} onChange={(value) => updateModel(updateDraft, index, { id: value })} />
-              <TextField label="显示名称" value={model.name} onChange={(value) => updateModel(updateDraft, index, { name: value })} />
-              <SelectField
-                label="提供商"
-                value={model.provider}
-                options={["openai", "deepseek", "claude", "ollama", "ark", "gemini", "qwen", "openrouter", "copilot"]}
-                onChange={(value) => updateModel(updateDraft, index, { provider: value })}
-              />
-              <ModelNameField
-                index={index}
-                model={model}
-                state={modelLookup[index]}
-                onChange={(value) => updateModel(updateDraft, index, { model: value })}
-                onLoad={() => void loadProviderModels(model, index)}
-              />
-              <TextField label="Base URL" value={model.base_url} onChange={(value) => updateModel(updateDraft, index, { base_url: value })} />
-              <ModelAPIKeyField model={model} onChange={(value) => updateModel(updateDraft, index, { api_key: value })} />
-              <TextField
-                label="额外请求头"
-                value={model.extra_headers}
-                placeholder="X-Key: value, X-Trace: value"
-                onChange={(value) => updateModel(updateDraft, index, { extra_headers: value })}
-              />
-              <ModelUseField uses={model.use_for || []} onChange={(use_for) => updateModel(updateDraft, index, { use_for })} />
-            </div>
-          </ConfigCard>
-        ))}
+        {models.map((model, index) => {
+          const expanded = expandedModelIndex === index;
+          return (
+            <ModelConfigCard
+              key={`${model.original_id || model.id || "model"}-${index}`}
+              model={model}
+              expanded={expanded}
+              onToggle={() => setExpandedModelIndex(expanded ? null : index)}
+              onRemove={() => removeModel(index)}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <TextField label="ID" value={model.id} onChange={(value) => updateModel(updateDraft, index, { id: value })} />
+                <TextField label="显示名称" value={model.name} onChange={(value) => updateModel(updateDraft, index, { name: value })} />
+                <SelectField
+                  label="提供商"
+                  value={model.provider}
+                  options={["openai", "deepseek", "claude", "ollama", "ark", "gemini", "qwen", "openrouter", "copilot"]}
+                  onChange={(value) => updateModel(updateDraft, index, { provider: value })}
+                />
+                <ModelNameField
+                  index={index}
+                  model={model}
+                  state={modelLookup[index]}
+                  onChange={(value) => updateModel(updateDraft, index, { model: value })}
+                  onLoad={() => void loadProviderModels(model, index)}
+                />
+                <TextField label="Base URL" value={model.base_url} onChange={(value) => updateModel(updateDraft, index, { base_url: value })} />
+                <ModelAPIKeyField model={model} onChange={(value) => updateModel(updateDraft, index, { api_key: value })} />
+                <TextField
+                  label="额外请求头"
+                  value={model.extra_headers}
+                  placeholder="X-Key: value, X-Trace: value"
+                  onChange={(value) => updateModel(updateDraft, index, { extra_headers: value })}
+                />
+                <ModelUseField uses={model.use_for || []} onChange={(use_for) => updateModel(updateDraft, index, { use_for })} />
+              </div>
+            </ModelConfigCard>
+          );
+        })}
         {!models.length ? <EmptyState title="暂无模型配置" description="添加一个 chat 用途模型后即可开始使用。" /> : null}
       </PanelBody>
     </Panel>
@@ -309,6 +322,59 @@ interface ModelLookupState {
   loading?: boolean;
   models?: string[];
   error?: string;
+}
+
+function ModelConfigCard({
+  model,
+  expanded,
+  onToggle,
+  onRemove,
+  children,
+}: {
+  model: ModelConfig;
+  expanded: boolean;
+  onToggle: () => void;
+  onRemove: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn("rounded-xl border border-border/75 bg-card/65 transition-colors", expanded && "xl:col-span-2")}>
+      <div className="flex min-h-32 flex-col gap-3 p-4">
+        <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={onToggle} aria-expanded={expanded}>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="truncate font-medium">{model.name || model.id || "未命名模型"}</span>
+              <Badge>{model.provider || "provider"}</Badge>
+              {model.use_for?.includes("chat") ? <Badge>chat</Badge> : null}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">{model.id || "未设置 ID"}</div>
+            <div className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">{model.model || "尚未指定供应商模型"}</div>
+          </div>
+          <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+        </button>
+        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+          <AgentSummaryMetric label="提供商" value={model.provider || "未设置"} />
+          <AgentSummaryMetric label="模型" value={model.model || "未设置"} />
+          <AgentSummaryMetric label="用途" value={modelUsesSummary(model.use_for || [])} />
+          <AgentSummaryMetric label="密钥" value={model.has_api_key || model.api_key ? "已配置" : "未配置"} />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <Button size="sm" variant={expanded ? "secondary" : "outline"} onClick={onToggle}>
+            {expanded ? "收起" : "编辑"}
+          </Button>
+          <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      {expanded ? <div className="border-t border-border/70 p-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function modelUsesSummary(uses: string[]) {
+  if (!uses.length) return "未设置";
+  return uses.join(", ");
 }
 
 function ModelNameField({
