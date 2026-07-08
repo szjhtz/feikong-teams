@@ -283,7 +283,7 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 		reasoning := strings.TrimSpace(reasoningBuf.String())
 		textBuf.Reset()
 		reasoningBuf.Reset()
-		if content == "" && reasoning == "" {
+		if content == "" {
 			return
 		}
 		m := domainmessage.Message{Role: domainmessage.RoleAssistant, Content: content}

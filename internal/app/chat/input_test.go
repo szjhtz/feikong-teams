@@ -208,6 +208,20 @@ func TestAgentMessageToCoreMessagesKeepsCoordinatorReasoningAndTools(t *testing.
 	}
 }
 
+func TestAgentMessageToCoreMessagesSkipsReasoningOnlyAssistantOutput(t *testing.T) {
+	msg := domainhistory.AgentMessage{
+		AgentName: "assistant",
+		Events: []domainhistory.MessageEvent{
+			{Type: domainhistory.MsgTypeReasoning, Content: "thinking without final output"},
+		},
+	}
+
+	messages := agentMessageToCoreMessages(msg, 0)
+	if len(messages) != 0 {
+		t.Fatalf("message count = %d, want 0: %#v", len(messages), messages)
+	}
+}
+
 func TestAgentMessageToCoreMessagesKeepsOnlyMemberFinalText(t *testing.T) {
 	msg := domainhistory.AgentMessage{
 		AgentName:      "researcher",
