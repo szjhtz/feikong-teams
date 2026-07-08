@@ -121,6 +121,11 @@ function codeLanguageInfo(attrs: string) {
 
 function highlightCodeBlock(code: string, language: string) {
   const raw = decodeHTML(code);
+  return highlightCode(raw, language);
+}
+
+export function highlightCode(value: string, language = "text") {
+  const raw = value || "";
   if (language !== "text" && hljs.getLanguage(language)) {
     return hljs.highlight(raw, { language, ignoreIllegals: true }).value;
   }

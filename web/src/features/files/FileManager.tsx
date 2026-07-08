@@ -1,8 +1,10 @@
 import {
   Archive,
   ArrowLeft,
+  AlertCircle,
   Code2,
   Download,
+  Eye,
   File,
   FilePenLine,
   FileText,
@@ -22,20 +24,30 @@ import { filesActions, appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { formatBytes, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { highlightCode } from "@/lib/markdown";
 import type { FileContent, FileEntry } from "@/types/files";
 import { FileShareDialog } from "./FileShareDialog";
+
+type FileViewMode = "preview" | "source" | "edit";
+
+interface FileViewer {
+  entry: FileEntry;
+  content?: FileContent;
+}
 
 export function FileManager() {
   const dispatch = useAppDispatch();
   const path = useAppSelector((state) => state.files.path);
   const entries = useAppSelector((state) => state.files.entries);
   const [uploading, setUploading] = useState(false);
-  const [editor, setEditor] = useState<FileContent | null>(null);
+  const [viewer, setViewer] = useState<FileViewer | null>(null);
+  const [viewMode, setViewMode] = useState<FileViewMode>("preview");
   const [draft, setDraft] = useState("");
-  const [editorError, setEditorError] = useState("");
+  const [viewerError, setViewerError] = useState("");
   const [saving, setSaving] = useState(false);
   const [shareTarget, setShareTarget] = useState<FileEntry | null>(null);
   const [openActionPath, setOpenActionPath] = useState("");
@@ -58,28 +70,49 @@ export function FileManager() {
     }
   }
 
-  async function editFile(filePath: string) {
-    setEditorError("");
+  async function openFile(entry: FileEntry, preferredMode?: FileViewMode) {
+    setOpenActionPath("");
+    setViewerError("");
+    setDraft("");
+    const kind = filePreviewKind(entry);
+    const nextMode = preferredMode || defaultViewMode(entry);
+    setViewMode(nextMode);
+
+    if (!requiresTextContent(kind) && nextMode !== "source" && nextMode !== "edit") {
+      setViewer({ entry });
+      return;
+    }
+
     try {
-      const file = await readFileContent(filePath);
-      setEditor(file);
+      const file = await readFileContent(entry.path);
+      setViewer({ entry, content: file });
       setDraft(file.content || "");
     } catch (error) {
-      setEditorError(error instanceof Error ? error.message : String(error));
+      setViewer({ entry });
+      setViewerError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function changeViewMode(mode: FileViewMode) {
+    if (!viewer) return;
+    const kind = filePreviewKind(viewer.entry);
+    setViewMode(mode);
+    if ((mode === "source" || mode === "edit" || kind === "markdown") && isEditableKind(kind) && !viewer.content) {
+      void openFile(viewer.entry, mode);
     }
   }
 
   async function saveEditor() {
-    if (!editor) return;
+    if (!viewer?.content) return;
     setSaving(true);
-    setEditorError("");
+    setViewerError("");
     try {
-      const saved = await saveFileContent(editor.path, draft);
-      setEditor({ ...editor, ...saved, content: draft });
+      const saved = await saveFileContent(viewer.content.path, draft);
+      setViewer({ ...viewer, content: { ...viewer.content, ...saved, content: draft } });
       dispatch(appActions.showToast("已保存"));
       await load();
     } catch (error) {
-      setEditorError(error instanceof Error ? error.message : String(error));
+      setViewerError(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
     }
@@ -88,11 +121,11 @@ export function FileManager() {
   function openEntry(entry: FileEntry) {
     setOpenActionPath("");
     if (entry.is_dir) {
-      setEditor(null);
+      setViewer(null);
       void load(entry.path);
       return;
     }
-    void editFile(entry.path);
+    void openFile(entry);
   }
 
   function downloadEntry(entry: FileEntry) {
@@ -117,27 +150,30 @@ export function FileManager() {
   }, []);
 
   return (
-    <div className={cn("h-full p-3 sm:p-6", editor ? "overflow-hidden" : "overflow-auto")}>
-      <Panel className={cn("flex min-h-0 flex-col", editor ? "h-full w-full" : "mx-auto max-w-6xl")}>
+    <div className={cn("h-full p-3 sm:p-6", viewer ? "overflow-hidden" : "overflow-auto")}>
+      <Panel className={cn("flex min-h-0 flex-col", viewer ? "h-full w-full" : "mx-auto max-w-6xl")}>
         <PanelHeader className="flex flex-wrap items-center justify-between gap-4">
-          {editor ? (
+          {viewer ? (
             <>
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2 font-semibold">
-                  <FileIcon entry={{ name: editor.name || editor.path, path: editor.path }} />
-                  <span className="truncate">{editor.name || editor.path}</span>
+                  <FileIcon entry={viewer.entry} />
+                  <span className="truncate">{viewer.entry.name || viewer.entry.path}</span>
                 </div>
-                <div className="mt-0.5 truncate text-sm text-muted-foreground">{editor.path}</div>
+                <div className="mt-0.5 truncate text-sm text-muted-foreground">{viewer.entry.path}</div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button className="whitespace-nowrap" variant="outline" onClick={() => setEditor(null)}>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <FileModeSwitch entry={viewer.entry} mode={viewMode} onChange={changeViewMode} />
+                <Button className="whitespace-nowrap" variant="outline" onClick={() => setViewer(null)}>
                   <ArrowLeft className="h-4 w-4" />
                   返回
                 </Button>
-                <Button className="min-w-20 whitespace-nowrap" onClick={() => void saveEditor()} disabled={saving}>
-                  <Save className="h-4 w-4" />
-                  {saving ? "保存中" : "保存"}
-                </Button>
+                {viewMode === "edit" ? (
+                  <Button className="min-w-20 whitespace-nowrap" onClick={() => void saveEditor()} disabled={saving || !viewer.content}>
+                    <Save className="h-4 w-4" />
+                    {saving ? "保存中" : "保存"}
+                  </Button>
+                ) : null}
               </div>
             </>
           ) : (
@@ -171,17 +207,12 @@ export function FileManager() {
             </>
           )}
         </PanelHeader>
-        <PanelBody className={cn(editor && "flex min-h-0 flex-1 flex-col")}>
-          {editorError && !editor ? <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{editorError}</div> : null}
-          {editor ? (
+        <PanelBody className={cn(viewer && "flex min-h-0 flex-1 flex-col")}>
+          {viewerError && !viewer ? <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{viewerError}</div> : null}
+          {viewer ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3">
-              {editorError ? <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{editorError}</div> : null}
-              <textarea
-                className="min-h-0 flex-1 w-full resize-none rounded-lg border border-input bg-card/80 p-4 font-mono text-sm leading-6 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/30"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                spellCheck={false}
-              />
+              {viewerError ? <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{viewerError}</div> : null}
+              <FileViewerContent viewer={viewer} mode={viewMode} draft={draft} onDraftChange={setDraft} />
             </div>
           ) : (
             <div className="overflow-hidden rounded-md border">
@@ -201,7 +232,7 @@ export function FileManager() {
                         <button
                           className="text-primary"
                           onClick={() => {
-                            setEditor(null);
+                            setViewer(null);
                             void load(path.split("/").slice(0, -1).join("/"));
                           }}
                         >
@@ -224,7 +255,7 @@ export function FileManager() {
                         <div className="hidden justify-end gap-1 sm:flex">
                           <FileActionButtons
                             entry={entry}
-                            onEdit={() => void editFile(entry.path)}
+                            onEdit={() => void openFile(entry, "edit")}
                             onShare={() => shareEntry(entry)}
                             onDownload={() => downloadEntry(entry)}
                             onDelete={() => void removeEntry(entry)}
@@ -254,7 +285,7 @@ export function FileManager() {
         <FileActionSheet
           entry={actionEntry}
           onOpen={() => openEntry(actionEntry)}
-          onEdit={() => void editFile(actionEntry.path)}
+          onEdit={() => void openFile(actionEntry, "edit")}
           onShare={() => shareEntry(actionEntry)}
           onDownload={() => downloadEntry(actionEntry)}
           onDelete={() => void removeEntry(actionEntry)}
@@ -262,6 +293,131 @@ export function FileManager() {
         />
       ) : null}
       <FileShareDialog file={shareTarget} onClose={() => setShareTarget(null)} />
+    </div>
+  );
+}
+
+function FileModeSwitch({ entry, mode, onChange }: { entry: FileEntry; mode: FileViewMode; onChange: (mode: FileViewMode) => void }) {
+  const kind = filePreviewKind(entry);
+  const editable = isEditableKind(kind);
+  const modes: Array<{ value: FileViewMode; label: string; icon: LucideIcon }> = [];
+  if (supportsRenderedPreview(kind)) {
+    modes.push({ value: "preview", label: "预览", icon: Eye });
+  }
+  if (editable) {
+    modes.push({ value: "source", label: "源码", icon: Code2 });
+    modes.push({ value: "edit", label: "编辑", icon: FilePenLine });
+  }
+  if (modes.length <= 1) return null;
+  return (
+    <div className="flex rounded-lg border border-border/75 bg-card/70 p-1">
+      {modes.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.value}
+            type="button"
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors",
+              mode === item.value ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent/65 hover:text-foreground",
+            )}
+            onClick={() => onChange(item.value)}
+          >
+            <Icon className="h-4 w-4" />
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function FileViewerContent({
+  viewer,
+  mode,
+  draft,
+  onDraftChange,
+}: {
+  viewer: FileViewer;
+  mode: FileViewMode;
+  draft: string;
+  onDraftChange: (value: string) => void;
+}) {
+  const kind = filePreviewKind(viewer.entry);
+  if (mode === "edit") {
+    if (!viewer.content) return <UnsupportedPreview message="这个文件无法作为 UTF-8 文本编辑。" />;
+    return (
+      <textarea
+        className="min-h-0 flex-1 w-full resize-none rounded-lg border border-input bg-card/80 p-4 font-mono text-sm leading-6 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/30"
+        value={draft}
+        onChange={(event) => onDraftChange(event.target.value)}
+        spellCheck={false}
+      />
+    );
+  }
+  if (mode === "source") {
+    if (!viewer.content) return <UnsupportedPreview message="这个文件没有可显示的 UTF-8 源码内容。" />;
+    return <HighlightedSource content={draft} language={fileLanguage(viewer.entry)} />;
+  }
+  if (kind === "markdown") {
+    if (!viewer.content) return <UnsupportedPreview message="无法读取 Markdown 内容。" />;
+    return (
+      <div className="chat-scroll min-h-0 flex-1 overflow-auto rounded-lg border border-border/75 bg-background/60 p-5">
+        <MarkdownContent className="text-base leading-8" content={draft} />
+      </div>
+    );
+  }
+  if (kind === "html" || kind === "pdf") {
+    return <iframe className="min-h-0 flex-1 rounded-lg border border-border/75 bg-background" src={serveFileURL(viewer.entry.path)} title={viewer.entry.name} sandbox={kind === "html" ? "" : undefined} />;
+  }
+  if (kind === "image") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg border border-border/75 bg-background/60 p-4">
+        <img className="max-h-full max-w-full object-contain" src={serveFileURL(viewer.entry.path)} alt={viewer.entry.name} />
+      </div>
+    );
+  }
+  if (kind === "audio") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-border/75 bg-background/60 p-6">
+        <audio className="w-full max-w-3xl" src={serveFileURL(viewer.entry.path)} controls />
+      </div>
+    );
+  }
+  if (kind === "video") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-border/75 bg-background/60 p-4">
+        <video className="max-h-full max-w-full" src={serveFileURL(viewer.entry.path)} controls />
+      </div>
+    );
+  }
+  if (viewer.content) {
+    return <HighlightedSource content={viewer.content.content || ""} language={fileLanguage(viewer.entry)} />;
+  }
+  return <UnsupportedPreview message="当前文件类型暂不支持预览。你仍然可以下载后使用本地应用打开。" />;
+}
+
+function HighlightedSource({ content, language }: { content: string; language: string }) {
+  return (
+    <div className="prose message-prose min-h-0 max-w-none flex-1 overflow-auto rounded-lg border border-border/75 bg-background/60">
+      <div className="markdown-code-block m-0 rounded-none border-0">
+        <div className="markdown-code-header">
+          <span className="markdown-code-language">{language}</span>
+        </div>
+        <pre className="min-h-full"><code dangerouslySetInnerHTML={{ __html: highlightCode(content, language) }} /></pre>
+      </div>
+    </div>
+  );
+}
+
+function UnsupportedPreview({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-background/45 p-8 text-center">
+      <div className="max-w-md">
+        <AlertCircle className="mx-auto h-9 w-9 text-muted-foreground" />
+        <div className="mt-3 font-medium">无法预览</div>
+        <div className="mt-2 text-sm leading-6 text-muted-foreground">{message}</div>
+      </div>
     </div>
   );
 }
@@ -284,13 +440,16 @@ function FileActionButtons({
   onDownload: () => void;
   onDelete: () => void;
 }) {
+  const editable = isEditableKind(filePreviewKind(entry));
   return (
     <>
       {!entry.is_dir ? (
         <>
-          <Button size="icon" variant="ghost" onClick={onEdit} aria-label="编辑">
-            <FilePenLine className="h-4 w-4" />
-          </Button>
+          {editable ? (
+            <Button size="icon" variant="ghost" onClick={onEdit} aria-label="编辑">
+              <FilePenLine className="h-4 w-4" />
+            </Button>
+          ) : null}
           <Button size="icon" variant="ghost" onClick={onShare} aria-label="分享文件">
             <Share2 className="h-4 w-4" />
           </Button>
@@ -323,6 +482,7 @@ function FileActionSheet({
   onDelete: () => void;
   onClose: () => void;
 }) {
+  const editable = isEditableKind(filePreviewKind(entry));
   function run(action: () => void) {
     onClose();
     action();
@@ -343,10 +503,12 @@ function FileActionSheet({
           </button>
         ) : (
           <>
-            <button className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-accent/65" type="button" onClick={() => run(onEdit)}>
-              <FilePenLine className="h-4 w-4" />
-              编辑
-            </button>
+            {editable ? (
+              <button className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-accent/65" type="button" onClick={() => run(onEdit)}>
+                <FilePenLine className="h-4 w-4" />
+                编辑
+              </button>
+            ) : null}
             <button className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-accent/65" type="button" onClick={() => run(onShare)}>
               <Share2 className="h-4 w-4" />
               分享
@@ -375,4 +537,108 @@ function fileIcon(entry: FileEntry): LucideIcon {
   if (["go", "ts", "tsx", "js", "jsx", "css", "html", "sh", "py", "rs", "java", "c", "cpp", "h"].includes(ext)) return Code2;
   if (["zip", "tar", "gz", "tgz", "rar", "7z"].includes(ext)) return Archive;
   return File;
+}
+
+type FilePreviewKind = "markdown" | "html" | "text" | "image" | "audio" | "video" | "pdf" | "unsupported";
+
+function filePreviewKind(entry: FileEntry): FilePreviewKind {
+  const ext = fileExtension(entry);
+  if (["md", "markdown", "mdown"].includes(ext)) return "markdown";
+  if (["html", "htm"].includes(ext)) return "html";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"].includes(ext)) return "image";
+  if (["mp3", "wav", "ogg", "m4a", "aac", "flac", "weba"].includes(ext)) return "audio";
+  if (["mp4", "webm", "mov", "m4v", "ogv"].includes(ext)) return "video";
+  if (ext === "pdf") return "pdf";
+  if (
+    [
+      "txt",
+      "log",
+      "json",
+      "jsonl",
+      "yaml",
+      "yml",
+      "toml",
+      "csv",
+      "tsv",
+      "xml",
+      "css",
+      "scss",
+      "less",
+      "js",
+      "jsx",
+      "ts",
+      "tsx",
+      "go",
+      "sh",
+      "bash",
+      "zsh",
+      "py",
+      "rs",
+      "java",
+      "c",
+      "cpp",
+      "h",
+      "hpp",
+      "sql",
+      "diff",
+      "patch",
+      "env",
+      "ini",
+      "conf",
+      "dockerfile",
+    ].includes(ext) ||
+    entry.name.toLowerCase() === "dockerfile"
+  ) {
+    return "text";
+  }
+  return "unsupported";
+}
+
+function defaultViewMode(entry: FileEntry): FileViewMode {
+  const kind = filePreviewKind(entry);
+  if (supportsRenderedPreview(kind)) return "preview";
+  if (isEditableKind(kind)) return "source";
+  return "preview";
+}
+
+function supportsRenderedPreview(kind: FilePreviewKind) {
+  return ["markdown", "html", "image", "audio", "video", "pdf", "unsupported"].includes(kind);
+}
+
+function isEditableKind(kind: FilePreviewKind) {
+  return kind === "markdown" || kind === "html" || kind === "text";
+}
+
+function requiresTextContent(kind: FilePreviewKind) {
+  return kind === "markdown" || kind === "text";
+}
+
+function serveFileURL(path: string) {
+  return `/api/fkteams/files/serve/${path.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function fileLanguage(entry: FileEntry) {
+  const ext = fileExtension(entry);
+  const name = entry.name.toLowerCase();
+  if (name === "dockerfile") return "dockerfile";
+  const aliases: Record<string, string> = {
+    htm: "html",
+    mdown: "markdown",
+    md: "markdown",
+    jsonl: "json",
+    yml: "yaml",
+    bash: "sh",
+    zsh: "sh",
+    patch: "diff",
+    env: "ini",
+    conf: "ini",
+  };
+  return aliases[ext] || ext || "text";
+}
+
+function fileExtension(entry: FileEntry) {
+  const name = entry.name || entry.path;
+  const index = name.lastIndexOf(".");
+  if (index < 0 || index === name.length - 1) return "";
+  return name.slice(index + 1).toLowerCase();
 }
