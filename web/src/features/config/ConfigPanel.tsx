@@ -287,13 +287,7 @@ function ModelsTab({ draft, updateDraft }: EditorProps) {
                 onLoad={() => void loadProviderModels(model, index)}
               />
               <TextField label="Base URL" value={model.base_url} onChange={(value) => updateModel(updateDraft, index, { base_url: value })} />
-              <TextField
-                label={model.has_api_key ? "API Key（已配置，留空不修改）" : "API Key"}
-                type="password"
-                value={model.api_key}
-                placeholder={model.has_api_key ? "********" : undefined}
-                onChange={(value) => updateModel(updateDraft, index, { api_key: value })}
-              />
+              <ModelAPIKeyField model={model} onChange={(value) => updateModel(updateDraft, index, { api_key: value })} />
               <TextField
                 label="额外请求头"
                 value={model.extra_headers}
@@ -1615,6 +1609,63 @@ function TextField({
   return (
     <Field label={label}>
       <Input type={type} value={value || ""} placeholder={placeholder} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+    </Field>
+  );
+}
+
+function ModelAPIKeyField({ model, onChange }: { model: ModelConfig; onChange: (value: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const configured = Boolean(model.has_api_key);
+  const hasDraftValue = Boolean(model.api_key);
+  const showEditor = !configured || editing || hasDraftValue;
+
+  useEffect(() => {
+    if (configured && !hasDraftValue) {
+      setEditing(false);
+    }
+  }, [configured, hasDraftValue]);
+
+  if (!showEditor) {
+    return (
+      <Field
+        label="API Key"
+        action={
+          <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+            修改
+          </Button>
+        }
+      >
+        <div className="sketch-inset flex h-9 w-full items-center rounded-md px-3 py-1 text-sm text-muted-foreground">已配置，留空不修改</div>
+      </Field>
+    );
+  }
+
+  return (
+    <Field
+      label={configured ? "API Key（输入新值后保存）" : "API Key"}
+      action={
+        configured ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onChange("");
+              setEditing(false);
+            }}
+          >
+            取消
+          </Button>
+        ) : null
+      }
+    >
+      <Input
+        type="password"
+        value={model.api_key || ""}
+        placeholder={configured ? "输入新的 API Key" : undefined}
+        autoComplete="new-password"
+        spellCheck={false}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </Field>
   );
 }
