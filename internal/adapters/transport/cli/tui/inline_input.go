@@ -76,6 +76,18 @@ func DeleteInlinePasteBeforeCursor(value string, cursor int, pastes []string) (s
 	return value, cursor, pastes, true
 }
 
+func DeleteInlineLineBreakNearCursor(value string, cursor int) (string, int, bool) {
+	start, end, ok := inlineTokenRangeNearCursor(value, cursor, InlineLineBreakTag)
+	if !ok {
+		return value, cursor, false
+	}
+	runes := []rune(value)
+	newRunes := make([]rune, 0, len(runes)-(end-start))
+	newRunes = append(newRunes, runes[:start]...)
+	newRunes = append(newRunes, runes[end:]...)
+	return string(newRunes), start, true
+}
+
 func DeleteInlineTokenNearCursor(value string, cursor int) (string, int, bool) {
 	runes := []rune(value)
 	if cursor < 0 {
@@ -123,6 +135,30 @@ func DeleteInlineTokenNearCursor(value string, cursor int) (string, int, bool) {
 	newRunes = append(newRunes, runes[:deleteStart]...)
 	newRunes = append(newRunes, runes[deleteEnd:]...)
 	return string(newRunes), deleteStart, true
+}
+
+func inlineTokenRangeNearCursor(value string, cursor int, token string) (int, int, bool) {
+	runes := []rune(value)
+	tokenRunes := []rune(token)
+	if len(tokenRunes) == 0 {
+		return 0, 0, false
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	for start := 0; start+len(tokenRunes) <= len(runes); start++ {
+		end := start + len(tokenRunes)
+		if cursor <= start || cursor > end {
+			continue
+		}
+		if string(runes[start:end]) == token {
+			return start, end, true
+		}
+	}
+	return 0, 0, false
 }
 
 func ExpandInlineInput(text string, pastes []string) string {

@@ -245,6 +245,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if newM, ok := m.backspacePasteTag(); ok {
 				return newM, nil
 			}
+			if newM, ok := m.backspaceLineBreakTag(); ok {
+				return newM, nil
+			}
 			if newM, ok := m.backspaceInlineToken(); ok {
 				return newM, nil
 			}

@@ -64,6 +64,16 @@ func (m runtimeModel) backspacePasteTag() (runtimeModel, bool) {
 	return m, true
 }
 
+func (m runtimeModel) backspaceLineBreakTag() (runtimeModel, bool) {
+	value, cursor, ok := tui.DeleteInlineLineBreakNearCursor(m.input.Value(), m.input.Position())
+	if !ok {
+		return m, false
+	}
+	m.input.SetValue(value)
+	m.input.SetCursor(cursor)
+	return m, true
+}
+
 func (m runtimeModel) backspaceInlineToken() (runtimeModel, bool) {
 	value, cursor, ok := tui.DeleteInlineTokenNearCursor(m.input.Value(), m.input.Position())
 	if !ok {

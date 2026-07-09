@@ -36,7 +36,28 @@ func TestInlinePasteInsertExpandAndDelete(t *testing.T) {
 }
 
 func TestInlineTokenDeleteAndRender(t *testing.T) {
-	value, cursor, ok := DeleteInlineTokenNearCursor("ask @coder #file.txt now", len("ask @coder"))
+	value, cursor, ok := DeleteInlineLineBreakNearCursor("第一行"+InlineLineBreakTag+"第二行", len([]rune("第一行"+InlineLineBreakTag)))
+	if !ok {
+		t.Fatal("expected line break token to be deleted")
+	}
+	if value != "第一行第二行" || cursor != len([]rune("第一行")) {
+		t.Fatalf("delete line break result value=%q cursor=%d", value, cursor)
+	}
+
+	value, cursor, ok = DeleteInlineLineBreakNearCursor("第一行"+InlineLineBreakTag+"第二行", len([]rune("第一行[换")))
+	if !ok {
+		t.Fatal("expected line break token to be deleted from inside token")
+	}
+	if value != "第一行第二行" || cursor != len([]rune("第一行")) {
+		t.Fatalf("delete line break inside result value=%q cursor=%d", value, cursor)
+	}
+
+	value, cursor, ok = DeleteInlineLineBreakNearCursor("第一行第二行", len([]rune("第一行")))
+	if ok || value != "第一行第二行" || cursor != len([]rune("第一行")) {
+		t.Fatalf("unexpected line break delete value=%q cursor=%d ok=%v", value, cursor, ok)
+	}
+
+	value, cursor, ok = DeleteInlineTokenNearCursor("ask @coder #file.txt now", len("ask @coder"))
 	if !ok {
 		t.Fatal("expected mention token to be deleted")
 	}

@@ -910,7 +910,6 @@ func TestRuntimeShiftEnterInsertsLineBreak(t *testing.T) {
 
 	updated, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter, Mod: tea.ModShift}))
 	model = updated.(runtimeModel)
-	model.input.SetValue(model.input.Value() + "第二行")
 	inputView := model.renderInputValue()
 	if strings.Contains(inputView, tui.InlineLineBreakTag) {
 		t.Fatalf("shift+enter should render as a real line break, got %q", inputView)
@@ -918,6 +917,20 @@ func TestRuntimeShiftEnterInsertsLineBreak(t *testing.T) {
 	if !strings.Contains(inputView, "\n") {
 		t.Fatalf("shift+enter should visibly break the input line, got %q", inputView)
 	}
+
+	updated, _ = model.Update(keyMsg("backspace", "", 0))
+	model = updated.(runtimeModel)
+	if model.input.Value() != "第一行" {
+		t.Fatalf("backspace should delete the whole line break token, got %q", model.input.Value())
+	}
+	inputView = model.renderInputValue()
+	if strings.Contains(inputView, tui.InlineLineBreakTag) || strings.Contains(inputView, "[换") {
+		t.Fatalf("backspace should not expose line break token, got %q", inputView)
+	}
+
+	updated, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter, Mod: tea.ModShift}))
+	model = updated.(runtimeModel)
+	model.input.SetValue(model.input.Value() + "第二行")
 
 	updated, _ = model.Update(keyMsg("enter", "", 0))
 	model = updated.(runtimeModel)
