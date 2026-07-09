@@ -421,7 +421,7 @@ func (m *runtimeModel) ensureAskMember(askState runtimeAskState) *runtimeMemberS
 			Status:       "waiting",
 			ActiveOutput: -1,
 			ActiveReason: -1,
-			RenderDirty:  true,
+			RenderCache:  &runtimeTranscriptRenderCache{Dirty: true},
 		}
 		m.members[key] = member
 	}

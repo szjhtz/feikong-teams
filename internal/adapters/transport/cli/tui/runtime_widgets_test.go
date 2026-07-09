@@ -74,13 +74,21 @@ func TestWelcomeAndStyledTextHelpers(t *testing.T) {
 	if emptyAs("  ", "fallback") != "fallback" || emptyAs(" value ", "fallback") != "value" {
 		t.Fatal("emptyAs returned unexpected value")
 	}
-	collapsedReasoning := StripANSI(ReasoningBlock("line 1\nline 2", true, "1.2s"))
+	collapsedReasoning := StripANSI(ReasoningBlock("line 1\nline 2", true, "1.2s", 80, false))
 	if !strings.Contains(collapsedReasoning, "Thought · 2 行 · 1.2s") || strings.Contains(collapsedReasoning, "line 1") || strings.Contains(collapsedReasoning, "点击") || strings.Contains(collapsedReasoning, "Ctrl+R") {
 		t.Fatalf("collapsed reasoning should render only a clickable title, got %q", collapsedReasoning)
 	}
-	expandedReasoning := StripANSI(ReasoningBlock("line 1\nline 2", false, "1.2s"))
+	expandedReasoning := StripANSI(ReasoningBlock("line 1\nline 2", false, "1.2s", 80, false))
 	if !strings.Contains(expandedReasoning, "Thought · 2 行 · 1.2s") || !strings.Contains(expandedReasoning, "line 1") || !strings.Contains(expandedReasoning, "line 2") {
 		t.Fatalf("expanded reasoning should render title and body, got %q", expandedReasoning)
+	}
+	wrappedReasoning := StripANSI(ReasoningBlock("abcdefghijklmnopqrstuvwxyz", false, "", 16, false))
+	if lines := strings.Split(wrappedReasoning, "\n"); len(lines) < 3 {
+		t.Fatalf("expanded reasoning body should wrap to available width, got %q", wrappedReasoning)
+	}
+	selectedReasoning := ReasoningBlock("line", true, "", 30, true)
+	if selectedReasoning == ReasoningBlock("line", true, "", 30, false) {
+		t.Fatalf("selected reasoning title should have a distinct style")
 	}
 	for _, rendered := range []string{
 		Dim("dim"),
@@ -123,9 +131,13 @@ func TestToolRuntimeRendering(t *testing.T) {
 	if !strings.Contains(readyCall, "测试 TODO") || strings.Contains(readyCall, "参数准备中") {
 		t.Fatalf("ready ToolCall should show final args, got %q", readyCall)
 	}
+	fileReadCall := StripANSI(ToolCall("file_read", `{"filepath":"/tmp/project/agent-loop.ts","end_line":500}`, ToolStatusDone))
+	if !strings.Contains(fileReadCall, "/tmp/project/agent-loop.ts:1-500") || strings.Contains(fileReadCall, "· 500") {
+		t.Fatalf("file_read ToolCall should prefer filepath over numeric fields, got %q", fileReadCall)
+	}
 
 	result := StripANSI(ToolResult("exec", "{}", "line1\n\nline2\nline3", ToolStatusDone))
-	if !strings.Contains(result, "exec") || !strings.Contains(result, "line1") || !strings.Contains(result, "line3") {
+	if !strings.Contains(result, "exec") || !strings.Contains(result, "line1") || !strings.Contains(result, "line2") || !strings.Contains(result, "line3") {
 		t.Fatalf("ToolResult = %q", result)
 	}
 	if got := StripANSI(ToolResult("exec", "{}", "   ", ToolStatusDone)); !strings.Contains(got, "exec") {
@@ -144,6 +156,15 @@ func TestToolRuntimeRendering(t *testing.T) {
 		if !strings.Contains(formattedResult, want) {
 			t.Fatalf("structured tool result missing %q: %q", want, formattedResult)
 		}
+	}
+	codeResult := StripANSI(ToolResult(
+		"file_read",
+		`{"filepath":"/tmp/agent-loop.ts","end_line":500}`,
+		`{"content":"line 1\nline 2\nline 3\nline 4\nline 5\nline 6"}`,
+		ToolStatusDone,
+	))
+	if !strings.Contains(codeResult, "line 1") || !strings.Contains(codeResult, "line 4") || strings.Contains(codeResult, "line 5") || !strings.Contains(codeResult, "隐藏 2 项") {
+		t.Fatalf("file_read result should preview the first lines only, got %q", codeResult)
 	}
 	arrayResult := StripANSI(ToolResult("search", `{}`, `{"results":[{"title":"A"},{"title":"B"},{"title":"C"},{"title":"D"},{"title":"E"}]}`, ToolStatusDone))
 	if !strings.Contains(arrayResult, "隐藏 1 项") || !strings.Contains(arrayResult, "- {\"title\":\"A\"}") {
@@ -176,7 +197,7 @@ func TestToolRuntimeRendering(t *testing.T) {
 		t.Fatal("running and done colors should differ")
 	}
 	line, hidden := toolResultPreviewLine(" a \r\n\r\n b \n c ")
-	if line != "a  b" || hidden != 1 {
+	if line != " a   b" || hidden != 1 {
 		t.Fatalf("toolResultPreviewLine = %q,%d", line, hidden)
 	}
 	if formatInt(42) != "42" {

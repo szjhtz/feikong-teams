@@ -134,7 +134,19 @@ func toolArgsSummary(args string) string {
 func computeToolArgsSummary(args string) string {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(args), &payload); err == nil {
-		for _, key := range []string{"query", "url", "path", "file_path", "request", "task", "command"} {
+		for _, key := range []string{"filepath", "file_path", "path"} {
+			if v, ok := payload[key]; ok {
+				if s := stringifyArgValue(v); s != "" {
+					return formatPathArgSummary(s, payload)
+				}
+			}
+		}
+		if v, ok := payload["dirpath"]; ok {
+			if s := stringifyArgValue(v); s != "" {
+				return s
+			}
+		}
+		for _, key := range []string{"query", "url", "request", "task", "command"} {
 			if v, ok := payload[key]; ok {
 				if s := stringifyArgValue(v); s != "" {
 					return s
@@ -153,6 +165,32 @@ func computeToolArgsSummary(args string) string {
 		}
 	}
 	return strings.Join(strings.Fields(args), " ")
+}
+
+func formatPathArgSummary(path string, payload map[string]any) string {
+	start := argNumberString(payload["start_line"])
+	end := argNumberString(payload["end_line"])
+	if start == "" && end == "" {
+		return path
+	}
+	if start == "" {
+		start = "1"
+	}
+	if end == "" {
+		return path + ":" + start
+	}
+	return path + ":" + start + "-" + end
+}
+
+func argNumberString(v any) string {
+	switch t := v.(type) {
+	case float64:
+		return fmt.Sprintf("%.0f", t)
+	case string:
+		return strings.TrimSpace(t)
+	default:
+		return ""
+	}
 }
 
 func stableToolArgsSummary(args string) string {

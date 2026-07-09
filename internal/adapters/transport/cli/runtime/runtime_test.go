@@ -901,6 +901,119 @@ func TestRuntimeScrollUsesTranscriptRenderCache(t *testing.T) {
 	}
 }
 
+func TestRuntimeRenderCacheReusesUnchangedBlocks(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 80
+	model.height = 12
+	model.blocks = []runtimeBlock{
+		{Kind: runtimeBlockSystem, Title: "first", Content: "alpha"},
+		{Kind: runtimeBlockSystem, Title: "second", Content: "beta"},
+	}
+	model.markTranscriptDirty()
+
+	_ = model.View()
+	firstCache := model.blocks[0].RenderCache
+	secondFingerprint := model.blocks[1].RenderCache.Fingerprint
+	if firstCache.Text == "" || firstCache.Fingerprint == "" || secondFingerprint == "" {
+		t.Fatalf("initial render should populate block caches: %#v %#v", model.blocks[0].RenderCache, model.blocks[1].RenderCache)
+	}
+
+	model.blocks[1].Content = "changed"
+	model.markTranscriptDirty()
+	_ = model.View()
+
+	if model.blocks[0].RenderCache.Text != firstCache.Text || model.blocks[0].RenderCache.Fingerprint != firstCache.Fingerprint {
+		t.Fatal("unchanged block cache should be reused after another block changes")
+	}
+	if model.blocks[1].RenderCache.Fingerprint == secondFingerprint {
+		t.Fatal("changed block should refresh its render cache")
+	}
+}
+
+func TestRuntimeRenderCacheInvalidatesBlocksOnWidthChange(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 60
+	model.height = 12
+	model.blocks = []runtimeBlock{{
+		Kind:    runtimeBlockAssistant,
+		Content: "这是一段比较长的内容，用来确认宽度变化时 Markdown block 会重新按照新的宽度渲染。",
+	}}
+	model.markTranscriptDirty()
+
+	_ = model.View()
+	firstWidth := model.blocks[0].RenderCache.Width
+	if firstWidth == 0 {
+		t.Fatalf("initial block cache width should be set: %#v", model.blocks[0].RenderCache)
+	}
+
+	model.width = 100
+	_ = model.View()
+	if model.blocks[0].RenderCache.Width == firstWidth {
+		t.Fatalf("block cache width = %d, want different from %d after resize", model.blocks[0].RenderCache.Width, firstWidth)
+	}
+}
+
+func TestRuntimeMemberSummaryBlockCacheTracksMemberToolChanges(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 100
+	model.height = 12
+	model.blocks = []runtimeBlock{{
+		Kind:         runtimeBlockMember,
+		MemberKey:    "member-1",
+		MemberName:   "Member",
+		MemberStatus: "running",
+		MemberTools:  1,
+	}}
+	model.members["member-1"] = &runtimeMemberState{
+		Key:          "member-1",
+		Name:         "Member",
+		Status:       "running",
+		ToolCount:    1,
+		ActiveOutput: -1,
+		ActiveReason: -1,
+		RenderCache:  &runtimeTranscriptRenderCache{Dirty: true},
+		Blocks: []runtimeBlock{{
+			Kind:          runtimeBlockTool,
+			ToolKey:       "tool-1",
+			ToolName:      "file_read",
+			ToolArgs:      `{"filepath":"one.ts"}`,
+			ToolArgsReady: true,
+			ToolStatus:    tui.ToolStatusRunning,
+		}},
+	}
+	model.markTranscriptDirty()
+
+	firstView := tui.StripANSI(model.View().Content)
+	if !strings.Contains(firstView, "one.ts") {
+		t.Fatalf("initial member summary should include first tool args, got %q", firstView)
+	}
+	firstFingerprint := model.blocks[0].RenderCache.Fingerprint
+
+	member := model.members["member-1"]
+	member.Blocks[0].ToolArgs = `{"filepath":"two.ts"}`
+	member.markDirty()
+	model.syncMemberSummary(member)
+	secondView := tui.StripANSI(model.View().Content)
+	if !strings.Contains(secondView, "two.ts") {
+		t.Fatalf("member summary should update after member tool args change, got %q", secondView)
+	}
+	if model.blocks[0].RenderCache.Fingerprint == firstFingerprint {
+		t.Fatal("member summary block cache should refresh when member tool chain changes")
+	}
+}
+
 func TestRuntimeMouseSelectionCopiesVisibleText(t *testing.T) {
 	model := newRuntimeModel(&Runtime{
 		ctx:         context.Background(),
@@ -966,6 +1079,9 @@ func TestRuntimeMouseClickTogglesReasoning(t *testing.T) {
 	model = updated.(runtimeModel)
 	if model.blocks[0].Collapsed {
 		t.Fatal("clicking reasoning header should expand reasoning")
+	}
+	if !model.selectedReasoning.Valid || model.selectedReasoning.Index != 0 || model.selectedReasoning.MemberKey != "" {
+		t.Fatalf("clicked reasoning should become selected, got %#v", model.selectedReasoning)
 	}
 	if view := model.View().Content; !strings.Contains(view, "Thought · 2 行") || !strings.Contains(view, "line 1") || strings.Contains(view, "点击") || strings.Contains(view, "Ctrl+R") {
 		t.Fatalf("expanded reasoning view should show body, got %q", view)

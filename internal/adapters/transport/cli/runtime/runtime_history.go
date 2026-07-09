@@ -251,7 +251,7 @@ func (m *runtimeModel) ensureHistoryMember(key, name, task, status string) *runt
 			Task:         task,
 			ActiveOutput: -1,
 			ActiveReason: -1,
-			RenderDirty:  true,
+			RenderCache:  &runtimeTranscriptRenderCache{Dirty: true},
 		}
 		if member.Status == "" {
 			member.Status = "done"
@@ -305,7 +305,7 @@ func (m *runtimeModel) ensureMember(event events.Event) *runtimeMemberState {
 			Status:       "running",
 			ActiveOutput: -1,
 			ActiveReason: -1,
-			RenderDirty:  true,
+			RenderCache:  &runtimeTranscriptRenderCache{Dirty: true},
 		}
 		m.members[key] = member
 		m.blocks = append(m.blocks, runtimeBlock{
@@ -345,7 +345,7 @@ func (m *runtimeModel) ensureAgentToolMember(key, name, task string) *runtimeMem
 			Task:         runtimeAgentTaskFromCompleteArgs(task),
 			ActiveOutput: -1,
 			ActiveReason: -1,
-			RenderDirty:  true,
+			RenderCache:  &runtimeTranscriptRenderCache{Dirty: true},
 		}
 		m.members[key] = member
 	} else {
@@ -539,9 +539,18 @@ func (s *runtimeMemberState) markDirty() {
 	if s == nil {
 		return
 	}
-	s.RenderDirty = true
-	s.RenderCache = ""
-	s.RenderLineBlockIndexes = nil
+	cache := s.ensureRenderCache()
+	cache.Dirty = true
+	cache.Text = ""
+	cache.Lines = nil
+	cache.LineBlockIndexes = nil
+}
+
+func (s *runtimeMemberState) ensureRenderCache() *runtimeTranscriptRenderCache {
+	if s.RenderCache == nil {
+		s.RenderCache = &runtimeTranscriptRenderCache{Dirty: true}
+	}
+	return s.RenderCache
 }
 
 func (s *runtimeMemberState) hasPendingAsk() bool {

@@ -224,7 +224,9 @@ func (m runtimeModel) reasoningBlockIndexAtRenderedLine(line int) (int, bool) {
 
 func (m runtimeModel) rebuildMainTranscriptCache() string {
 	cache := m.ensureRenderCache()
-	rendered := m.renderBlocksWithLineIndexes(m.blocks, m.renderBlock)
+	rendered := m.renderBlocksWithLineIndexes(m.blocks, "", func(block *runtimeBlock, _ int, selected bool) string {
+		return m.renderBlock(*block, selected)
+	})
 	cache.Text = rendered.Text
 	cache.Lines = rendered.Lines
 	cache.LineBlockIndexes = rendered.LineBlockIndexes
@@ -274,30 +276,33 @@ func (m runtimeModel) memberBlocksText(member *runtimeMemberState) string {
 	if member == nil {
 		return ""
 	}
-	if !member.RenderDirty && member.RenderCache != "" {
-		return member.RenderCache
+	cache := member.ensureRenderCache()
+	if !cache.Dirty && cache.Width == m.contentWidth() {
+		return cache.Text
 	}
-	rendered := m.renderBlocksWithLineIndexes(member.Blocks, func(block runtimeBlock) string {
-		return m.renderMemberBlock(member, block)
+	rendered := m.renderBlocksWithLineIndexes(member.Blocks, member.Key, func(block *runtimeBlock, _ int, selected bool) string {
+		return m.renderMemberBlock(member, *block, selected)
 	})
-	member.RenderCache = rendered.Text
-	member.RenderLineBlockIndexes = rendered.LineBlockIndexes
-	member.RenderDirty = false
-	return member.RenderCache
+	cache.Text = rendered.Text
+	cache.Lines = rendered.Lines
+	cache.LineBlockIndexes = rendered.LineBlockIndexes
+	cache.Width = m.contentWidth()
+	cache.Dirty = false
+	return cache.Text
 }
 
 func (s *runtimeMemberState) reasoningBlockIndexAtRenderedLine(line int) (int, bool) {
-	if s == nil || line < 0 || line >= len(s.RenderLineBlockIndexes) {
+	if s == nil || s.RenderCache == nil || line < 0 || line >= len(s.RenderCache.LineBlockIndexes) {
 		return -1, false
 	}
-	idx := s.RenderLineBlockIndexes[line]
+	idx := s.RenderCache.LineBlockIndexes[line]
 	if idx < 0 || idx >= len(s.Blocks) || s.Blocks[idx].Kind != runtimeBlockReasoning {
 		return -1, false
 	}
 	return idx, true
 }
 
-func (m runtimeModel) renderMemberBlock(member *runtimeMemberState, block runtimeBlock) string {
+func (m runtimeModel) renderMemberBlock(member *runtimeMemberState, block runtimeBlock, selected bool) string {
 	if block.Kind == runtimeBlockTool {
 		rendered := runtimeRenderToolBlock(block)
 		if askState := member.askForToolKey(block.ToolKey); askState != nil {
@@ -308,11 +313,13 @@ func (m runtimeModel) renderMemberBlock(member *runtimeMemberState, block runtim
 		}
 		return rendered
 	}
-	return m.renderBlock(block)
+	return m.renderBlock(block, selected)
 }
 
 func (m runtimeModel) blocksText(blocks []runtimeBlock) string {
-	return m.renderBlocksWithLineIndexes(blocks, m.renderBlock).Text
+	return m.renderBlocksWithLineIndexes(blocks, "", func(block *runtimeBlock, _ int, selected bool) string {
+		return m.renderBlock(*block, selected)
+	}).Text
 }
 
 type runtimeRenderedBlocks struct {
@@ -321,7 +328,7 @@ type runtimeRenderedBlocks struct {
 	LineBlockIndexes []int
 }
 
-func (m runtimeModel) renderBlocksWithLineIndexes(blocks []runtimeBlock, render func(runtimeBlock) string) runtimeRenderedBlocks {
+func (m runtimeModel) renderBlocksWithLineIndexes(blocks []runtimeBlock, memberKey string, render func(*runtimeBlock, int, bool) string) runtimeRenderedBlocks {
 	var lines []string
 	var lineBlockIndexes []int
 	appendRenderedLine := func(line string, blockIndex int, interactive bool) {
@@ -337,7 +344,11 @@ func (m runtimeModel) renderBlocksWithLineIndexes(blocks []runtimeBlock, render 
 			lines = append(lines, "")
 			lineBlockIndexes = append(lineBlockIndexes, -1)
 		}
-		for lineIndex, line := range strings.Split(render(block), "\n") {
+		selected := m.isReasoningSelected(i, memberKey)
+		blockLines := m.cachedBlockLines(&blocks[i], selected, func(block *runtimeBlock) string {
+			return render(block, i, selected)
+		})
+		for lineIndex, line := range blockLines {
 			appendRenderedLine(line, i, block.Kind == runtimeBlockReasoning && lineIndex == 0)
 		}
 	}
@@ -346,6 +357,69 @@ func (m runtimeModel) renderBlocksWithLineIndexes(blocks []runtimeBlock, render 
 		Lines:            lines,
 		LineBlockIndexes: lineBlockIndexes,
 	}
+}
+
+func (m runtimeModel) cachedBlockLines(block *runtimeBlock, selected bool, render func(*runtimeBlock) string) []string {
+	if block == nil {
+		return []string{""}
+	}
+	width := m.contentWidth()
+	fingerprint := m.blockRenderFingerprint(*block)
+	if block.Kind == runtimeBlockReasoning {
+		fingerprint += fmt.Sprintf("\x00selected=%t", selected)
+	}
+	cache := block.RenderCache
+	if cache.Text != "" && cache.Width == width && cache.Fingerprint == fingerprint {
+		return cache.Lines
+	}
+	text := render(block)
+	lines := strings.Split(text, "\n")
+	block.RenderCache = runtimeBlockRenderCache{
+		Text:        text,
+		Lines:       lines,
+		Fingerprint: fingerprint,
+		Width:       width,
+	}
+	return lines
+}
+
+func (m runtimeModel) isReasoningSelected(index int, memberKey string) bool {
+	selection := m.selectedReasoning
+	return selection.Valid && selection.Index == index && selection.MemberKey == memberKey
+}
+
+func (m runtimeModel) blockRenderFingerprint(block runtimeBlock) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s\x00%s\x00%s\x00%d\x00%d\x00%t\x00", block.Kind, block.Title, block.Content, block.StartedAt.UnixNano(), block.UpdatedAt.UnixNano(), block.Collapsed)
+	fmt.Fprintf(&sb, "%s\x00%s\x00%s\x00%t\x00%s\x00%s\x00%t\x00", block.ToolKey, block.ToolName, block.ToolArgs, block.ToolArgsReady, block.ToolResult, block.ToolStatus, block.ToolHasResult)
+	fmt.Fprintf(&sb, "%s\x00%s\x00%s\x00%s\x00%d\x00", block.MemberKey, block.MemberName, block.MemberStatus, block.MemberTask, block.MemberTools)
+	if block.Kind == runtimeBlockWelcome {
+		fmt.Fprintf(&sb, "%s\x00%s\x00%s\x00%s\x00%s\x00", m.welcome.Version, m.welcome.Mode, m.welcome.SessionID, m.welcome.Workspace, m.welcome.Model)
+	}
+	if block.Kind == runtimeBlockMember {
+		sb.WriteString(m.memberSummaryFingerprint(block.MemberKey))
+	}
+	return sb.String()
+}
+
+func (m runtimeModel) memberSummaryFingerprint(key string) string {
+	if key == "" || m.members == nil {
+		return ""
+	}
+	member := m.members[key]
+	if member == nil {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s\x00%s\x00%s\x00%d\x00%d\x00", member.Name, member.Status, member.Task, member.ToolCount, len(member.PendingAsks))
+	for _, block := range member.Blocks {
+		sb.WriteString(m.blockRenderFingerprint(block))
+		sb.WriteByte('\x00')
+	}
+	for _, askState := range member.PendingAsks {
+		fmt.Fprintf(&sb, "%s\x00%s\x00%t\x00%d\x00%s\x00", askState.ID, askState.Question, askState.Answered, askState.SelectedIndex, askState.FreeText)
+	}
+	return sb.String()
 }
 
 func shouldSpaceBeforeBlock(prev runtimeBlockKind, current runtimeBlockKind) bool {
@@ -562,14 +636,14 @@ func (m runtimeModel) renderPicker() string {
 	return tui.PickerBox(max(20, m.contentWidth()), sb.String())
 }
 
-func (m runtimeModel) renderBlock(block runtimeBlock) string {
+func (m runtimeModel) renderBlock(block runtimeBlock, selected bool) string {
 	switch block.Kind {
 	case runtimeBlockUser:
 		return tui.RenderUserMessageBlock(block.Content, m.contentWidth())
 	case runtimeBlockWelcome:
 		return tui.RenderWelcomePanel(m.welcome, m.contentWidth())
 	case runtimeBlockReasoning:
-		return tui.ReasoningBlock(block.Content, block.Collapsed, reasoningDurationLabel(block))
+		return tui.ReasoningBlock(block.Content, block.Collapsed, reasoningDurationLabel(block), m.contentWidth(), selected)
 	case runtimeBlockError:
 		return tui.Error(block.Title + " " + block.Content)
 	case runtimeBlockDone:

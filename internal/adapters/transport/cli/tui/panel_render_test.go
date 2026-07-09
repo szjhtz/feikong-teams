@@ -28,6 +28,9 @@ func TestPanelRenderHelpers(t *testing.T) {
 	}{
 		{args: `{"query":" search "}`, want: "search"},
 		{args: `{"url":"https://example.com"}`, want: "https://example.com"},
+		{args: `{"filepath":"/tmp/project/main.go","end_line":500}`, want: "/tmp/project/main.go:1-500"},
+		{args: `{"filepath":"/tmp/project/main.go","start_line":250,"end_line":500}`, want: "/tmp/project/main.go:250-500"},
+		{args: `{"dirpath":"/tmp/project","end_line":500}`, want: "/tmp/project"},
 		{args: `{"flag":true}`, want: "true"},
 		{args: `{"count":2}`, want: "2"},
 		{args: `{"z":"last","a":"first"}`, want: "first"},

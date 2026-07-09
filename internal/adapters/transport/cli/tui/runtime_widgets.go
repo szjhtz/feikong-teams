@@ -391,23 +391,27 @@ func Tool(text string) string {
 }
 
 func Reasoning(text string) string {
-	return ReasoningBlock(text, false, "")
+	return ReasoningBlock(text, false, "", 100, false)
 }
 
-func ReasoningBlock(text string, collapsed bool, duration string) string {
+func ReasoningBlock(text string, collapsed bool, duration string, width int, selected bool) string {
 	lines := nonEmptyReasoningLines(text)
 	count := len(lines)
 	if count == 0 {
 		count = 1
 	}
 	title := reasoningTitle(collapsed, count, duration)
+	titleStyle := reasoningTitleStyle(selected, max(20, width))
 	if collapsed {
-		return reasoningTitleStyle().Render(title)
+		return titleStyle.Render(title)
 	}
 	rendered := make([]string, 0, len(lines)+1)
-	rendered = append(rendered, reasoningTitleStyle().Render(title))
+	rendered = append(rendered, titleStyle.Render(title))
+	bodyWidth := max(12, width-4)
 	for _, line := range lines {
-		rendered = append(rendered, reasoningBodyStyle().Render("    "+line))
+		for _, wrapped := range WrapStyledLine(line, bodyWidth) {
+			rendered = append(rendered, reasoningBodyStyle().Render("    "+wrapped))
+		}
 	}
 	return strings.Join(rendered, "\n")
 }
@@ -453,19 +457,28 @@ func dimStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 }
 
-func reasoningTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+func reasoningTitleStyle(selected bool, width int) lipgloss.Style {
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	if selected {
+		style = style.
+			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color("236")).
+			Width(width)
+	}
+	return style
 }
 
 func reasoningBodyStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 }
 
 func nonEmptyReasoningLines(text string) []string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
 	rawLines := strings.Split(strings.TrimSpace(text), "\n")
 	lines := make([]string, 0, len(rawLines))
 	for _, line := range rawLines {
-		line = strings.Join(strings.Fields(strings.TrimSpace(line)), " ")
+		line = strings.TrimSpace(line)
 		if line != "" {
 			lines = append(lines, line)
 		}
@@ -505,8 +518,7 @@ func toolResultPreviewLines(content string, limit int) ([]string, int) {
 	}
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	content = strings.ReplaceAll(content, "\r", "\n")
-	content = strings.TrimSpace(content)
-	if content == "" {
+	if strings.TrimSpace(content) == "" {
 		return nil, 0
 	}
 	if parsed, ok := parseToolResultPreviewJSON(content, limit); ok {
@@ -566,17 +578,21 @@ func previewTextLines(content string, limit int) ([]string, int) {
 	lines := make([]string, 0, min(len(rawLines), limit))
 	hidden := 0
 	for _, line := range rawLines {
-		line = strings.TrimSpace(line)
+		line = preservePreviewLine(line)
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		if len(lines) < limit {
-			lines = append(lines, truncateRunes(strings.Join(strings.Fields(line), " "), 160))
+			lines = append(lines, truncateRunes(line, 160))
 		} else {
 			hidden++
 		}
 	}
 	return lines, hidden
+}
+
+func preservePreviewLine(line string) string {
+	return strings.TrimRight(line, " \t")
 }
 
 func previewJSONArray(items []any, limit int) ([]string, int) {

@@ -384,6 +384,7 @@ func (m *runtimeModel) toggleReasoningBlock(hit runtimeReasoningHit) {
 		if block.Kind != runtimeBlockReasoning {
 			return
 		}
+		m.selectReasoningHit(hit)
 		block.Collapsed = !block.Collapsed
 		collapsed = block.Collapsed
 		hit.Member.markDirty()
@@ -395,6 +396,7 @@ func (m *runtimeModel) toggleReasoningBlock(hit runtimeReasoningHit) {
 		if block.Kind != runtimeBlockReasoning {
 			return
 		}
+		m.selectReasoningHit(hit)
 		block.Collapsed = !block.Collapsed
 		collapsed = block.Collapsed
 		m.markTranscriptDirty()
@@ -404,6 +406,19 @@ func (m *runtimeModel) toggleReasoningBlock(hit runtimeReasoningHit) {
 	} else {
 		m.status = "已展开思考内容"
 	}
+}
+
+func (m *runtimeModel) selectReasoningHit(hit runtimeReasoningHit) {
+	next := runtimeReasoningSelection{Index: hit.Index, Valid: true}
+	if hit.Member != nil {
+		next.MemberKey = hit.Member.Key
+	}
+	if m.selectedReasoning == next {
+		return
+	}
+	m.selectedReasoning = next
+	m.markTranscriptDirty()
+	m.markMembersDirty()
 }
 
 func (m *runtimeModel) keepTranscriptLineAtScreenY(absoluteLine int, screenY int) {

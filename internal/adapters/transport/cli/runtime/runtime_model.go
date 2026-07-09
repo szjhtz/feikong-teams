@@ -11,35 +11,42 @@ import (
 )
 
 type runtimeModel struct {
-	runtime      *Runtime
-	input        textinput.Model
-	width        int
-	height       int
-	blocks       []runtimeBlock
-	activeOutput int
-	activeReason int
-	historyIndex int
-	savedInput   string
-	pastes       []string
-	picker       *runtimePicker
-	scrollOffset int
-	renderCache  *runtimeTranscriptRenderCache
-	selection    tui.TextSelection
-	running      bool
-	cancelling   bool
-	status       string
-	totalTokens  int
-	exitUntil    time.Time
-	copiedUntil  time.Time
-	welcome      tui.WelcomeInfo
-	members      map[string]*runtimeMemberState
-	memberTools  map[string]string
-	memberView   string
-	ask          *runtimeAskState
-	approval     *runtimeApprovalState
+	runtime           *Runtime
+	input             textinput.Model
+	width             int
+	height            int
+	blocks            []runtimeBlock
+	activeOutput      int
+	activeReason      int
+	historyIndex      int
+	savedInput        string
+	pastes            []string
+	picker            *runtimePicker
+	scrollOffset      int
+	renderCache       *runtimeTranscriptRenderCache
+	selection         tui.TextSelection
+	running           bool
+	cancelling        bool
+	status            string
+	totalTokens       int
+	exitUntil         time.Time
+	copiedUntil       time.Time
+	welcome           tui.WelcomeInfo
+	members           map[string]*runtimeMemberState
+	memberTools       map[string]string
+	memberView        string
+	selectedReasoning runtimeReasoningSelection
+	ask               *runtimeAskState
+	approval          *runtimeApprovalState
 }
 
 type runtimeSelectionCopiedTickMsg time.Time
+
+type runtimeReasoningSelection struct {
+	Index     int
+	MemberKey string
+	Valid     bool
+}
 
 type runtimeTranscriptRenderCache struct {
 	Text             string
@@ -47,6 +54,13 @@ type runtimeTranscriptRenderCache struct {
 	LineBlockIndexes []int
 	Dirty            bool
 	Width            int
+}
+
+type runtimeBlockRenderCache struct {
+	Text        string
+	Lines       []string
+	Fingerprint string
+	Width       int
 }
 
 type runtimeBlockKind string
@@ -85,22 +99,21 @@ type runtimeBlock struct {
 	MemberStatus  string
 	MemberTask    string
 	MemberTools   int
+	RenderCache   runtimeBlockRenderCache
 }
 
 type runtimeMemberState struct {
-	Key                    string
-	Name                   string
-	Status                 string
-	Task                   string
-	Blocks                 []runtimeBlock
-	ActiveOutput           int
-	ActiveReason           int
-	ToolCount              int
-	PendingAsks            []runtimeAskState
-	ScrollOffset           int
-	RenderCache            string
-	RenderLineBlockIndexes []int
-	RenderDirty            bool
+	Key          string
+	Name         string
+	Status       string
+	Task         string
+	Blocks       []runtimeBlock
+	ActiveOutput int
+	ActiveReason int
+	ToolCount    int
+	PendingAsks  []runtimeAskState
+	ScrollOffset int
+	RenderCache  *runtimeTranscriptRenderCache
 }
 
 func newRuntimeModel(r *Runtime) runtimeModel {
