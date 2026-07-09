@@ -186,7 +186,7 @@ export function ConfigPanel() {
 
         {activeTab === "models" ? <ModelsTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "server" ? <ServerTab draft={draft} updateDraft={updateDraft} /> : null}
-        {activeTab === "agents" ? <AgentsTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
+        {activeTab === "agents" ? <AgentsTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} autoSaveDraft={(next) => persistConfig(next, "智能体配置已保存")} saving={saving} /> : null}
         {activeTab === "roundtable" ? <RoundtableTab draft={draft} modelIDs={modelIDs} updateDraft={updateDraft} /> : null}
         {activeTab === "deep" ? <DeepTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "memory" ? <MemoryTab draft={draft} updateDraft={updateDraft} /> : null}
@@ -554,7 +554,7 @@ function ServerTab({ draft, updateDraft }: EditorProps) {
   );
 }
 
-function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
+function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving }: EditorProps & { modelIDs: string[] }) {
   const dispatch = useAppDispatch();
   const agents = draft.agents || {};
   const agentItems = agents.items || [];
@@ -564,20 +564,31 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
   const [expandedAgentKey, setExpandedAgentKey] = useState<string | null>(null);
   const [deleteAgentTarget, setDeleteAgentTarget] = useState<{ agent: AgentConfig; index: number; key: string } | null>(null);
 
-  function appendAgents(items: AgentConfig[]) {
+  function buildAgentsDraft(items: AgentConfig[]) {
+    const next = normalizeConfig(draft);
+    const current = next.agents?.items || [];
+    const merged = [...current];
+    for (const item of items) {
+      merged.push({
+        ...item,
+        id: uniqueAgentID(merged, item.id || item.name || "agent"),
+        tools: item.tools || [],
+        enabled: item.enabled ?? true,
+      });
+    }
+    next.agents = { ...(next.agents || {}), items: merged };
+    return next;
+  }
+
+  async function appendAgents(items: AgentConfig[]) {
+    const nextDraft = buildAgentsDraft(items);
     updateDraft((next) => {
-      const current = next.agents?.items || [];
-      const merged = [...current];
-      for (const item of items) {
-        merged.push({
-          ...item,
-          id: uniqueAgentID(merged, item.id || item.name || "agent"),
-          tools: item.tools || [],
-          enabled: item.enabled ?? true,
-        });
-      }
-      next.agents = { ...(next.agents || {}), items: merged };
+      next.agents = nextDraft.agents;
     });
+    if (autoSaveDraft) {
+      await autoSaveDraft(nextDraft);
+      return;
+    }
     dispatch(appActions.showToast(`${items.length} 个智能体草稿已添加`));
   }
 
@@ -653,9 +664,10 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
           agents={agentItems}
           modelIDs={modelIDs}
           toolOptions={toolOptions}
+          applying={Boolean(saving)}
           onClose={() => setAssistantOpen(false)}
-          onApply={(items) => {
-            appendAgents(items);
+          onApply={async (items) => {
+            await appendAgents(items);
             setAssistantOpen(false);
           }}
         />
@@ -1270,14 +1282,16 @@ function AgentDraftDialog({
   agents,
   modelIDs,
   toolOptions,
+  applying = false,
   onClose,
   onApply,
 }: {
   agents: AgentConfig[];
   modelIDs: string[];
   toolOptions: ToolSelectOption[];
+  applying?: boolean;
   onClose: () => void;
-  onApply: (agents: AgentConfig[]) => void;
+  onApply: (agents: AgentConfig[]) => void | Promise<void>;
 }) {
   const [instruction, setInstruction] = useState("");
   const [drafts, setDrafts] = useState<AgentConfig[]>([]);
@@ -1411,9 +1425,9 @@ function AgentDraftDialog({
             <Sparkles className="h-4 w-4" />
             {loading ? "生成中" : "生成草稿"}
           </Button>
-          <Button disabled={!selectedDrafts.length || loading} onClick={() => onApply(selectedDrafts)}>
+          <Button disabled={!selectedDrafts.length || loading || applying} onClick={() => void onApply(selectedDrafts)}>
             <Plus className="h-4 w-4" />
-            添加选中
+            {applying ? "保存中" : "添加选中"}
           </Button>
         </div>
       </div>
