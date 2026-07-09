@@ -29,6 +29,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.input.SetWidth(max(20, m.contentWidth()-2))
 		if oldContentWidth != m.contentWidth() {
+			m.markTranscriptDirty()
 			m.markMembersDirty()
 		}
 		return m, nil
@@ -361,7 +362,7 @@ func (m *runtimeModel) scrollTranscript(delta int) {
 	if delta == 0 {
 		return
 	}
-	total := tui.LineCount(m.transcriptText())
+	total := m.transcriptLineCount()
 	maxOffset := max(0, total-m.bodyHeight())
 	next := m.currentScrollOffset() + delta
 	if next < 0 {

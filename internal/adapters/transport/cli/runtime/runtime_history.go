@@ -14,17 +14,29 @@ import (
 func (m *runtimeModel) appendBlock(kind runtimeBlockKind, title, content string) {
 	m.blocks = append(m.blocks, runtimeBlock{Kind: kind, Title: title, Content: content})
 	m.trimBlocks()
+	m.markTranscriptDirty()
 }
 
 func (m *runtimeModel) appendHistoryBlock(block runtimeBlock) {
 	m.blocks = append(m.blocks, block)
 	m.trimBlocks()
+	m.markTranscriptDirty()
 }
 
 func (m *runtimeModel) trimBlocks() {
 	if len(m.blocks) > 200 {
 		m.blocks = m.blocks[len(m.blocks)-200:]
+		m.markTranscriptDirty()
 	}
+}
+
+func (m *runtimeModel) markTranscriptDirty() {
+	if m.renderCache == nil {
+		m.renderCache = &runtimeTranscriptRenderCache{}
+	}
+	m.renderCache.Dirty = true
+	m.renderCache.Text = ""
+	m.renderCache.Lines = nil
 }
 
 func (m *runtimeModel) appendLoadedHistory() {
@@ -260,6 +272,7 @@ func (m *runtimeModel) ensureMember(event events.Event) *runtimeMemberState {
 			MemberName:   member.Name,
 			MemberStatus: member.Status,
 		})
+		m.markTranscriptDirty()
 	} else if name := runtimeMemberName(event); name != "" {
 		if member.Name != name {
 			member.markDirty()
@@ -365,6 +378,7 @@ func (m *runtimeModel) syncMemberSummary(member *runtimeMemberState) {
 			m.blocks[i].MemberStatus = member.Status
 			m.blocks[i].MemberTask = member.Task
 			m.blocks[i].MemberTools = member.ToolCount
+			m.markTranscriptDirty()
 			return
 		}
 	}
@@ -376,6 +390,7 @@ func (m *runtimeModel) syncMemberSummary(member *runtimeMemberState) {
 		MemberTask:   member.Task,
 		MemberTools:  member.ToolCount,
 	})
+	m.markTranscriptDirty()
 }
 
 func runtimeMemberToolChainItems(member *runtimeMemberState) []tui.ToolChainItem {
@@ -413,6 +428,7 @@ func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolSta
 			ToolArgs:   args,
 			ToolStatus: status,
 		})
+		m.markTranscriptDirty()
 		return
 	}
 	block := &m.blocks[idx]
@@ -423,6 +439,7 @@ func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolSta
 		block.ToolArgs = args
 	}
 	block.ToolStatus = status
+	m.markTranscriptDirty()
 }
 
 func (m *runtimeModel) upsertToolResult(key, name, result string, status tui.ToolStatus, appendResult bool) {
@@ -439,6 +456,7 @@ func (m *runtimeModel) upsertToolResult(key, name, result string, status tui.Too
 			ToolStatus:    status,
 			ToolHasResult: true,
 		})
+		m.markTranscriptDirty()
 		return
 	}
 	block := &m.blocks[idx]
@@ -452,6 +470,7 @@ func (m *runtimeModel) upsertToolResult(key, name, result string, status tui.Too
 	}
 	block.ToolStatus = status
 	block.ToolHasResult = true
+	m.markTranscriptDirty()
 }
 
 func (m runtimeModel) findToolBlock(key string) int {
@@ -694,10 +713,12 @@ func (m *runtimeModel) appendOutput(agent, content string) {
 	m.activeReason = -1
 	if m.activeOutput >= 0 && m.activeOutput < len(m.blocks) && m.blocks[m.activeOutput].Kind == runtimeBlockAssistant {
 		m.blocks[m.activeOutput].Content += content
+		m.markTranscriptDirty()
 		return
 	}
 	m.blocks = append(m.blocks, runtimeBlock{Kind: runtimeBlockAssistant, Title: agent, Content: content})
 	m.activeOutput = len(m.blocks) - 1
+	m.markTranscriptDirty()
 }
 
 func (m *runtimeModel) appendReasoning(agent, content string) {
@@ -707,8 +728,10 @@ func (m *runtimeModel) appendReasoning(agent, content string) {
 	m.activeOutput = -1
 	if m.activeReason >= 0 && m.activeReason < len(m.blocks) && m.blocks[m.activeReason].Kind == runtimeBlockReasoning {
 		m.blocks[m.activeReason].Content += content
+		m.markTranscriptDirty()
 		return
 	}
 	m.blocks = append(m.blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: content})
 	m.activeReason = len(m.blocks) - 1
+	m.markTranscriptDirty()
 }

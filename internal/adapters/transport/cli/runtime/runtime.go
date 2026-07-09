@@ -24,8 +24,8 @@ const (
 	runtimeHorizontalGutter  = 1
 	runtimeDefaultAgentName  = "assistant"
 	runtimeDefaultToolName   = "tool"
-	runtimeWheelLines        = 1
-	runtimeFastWheelLines    = 5
+	runtimeWheelLines        = 3
+	runtimeFastWheelLines    = 12
 )
 
 type Runtime struct {

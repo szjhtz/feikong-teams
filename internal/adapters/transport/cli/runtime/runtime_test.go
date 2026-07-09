@@ -808,6 +808,41 @@ func TestRuntimeMouseWheelScrollsTranscript(t *testing.T) {
 	}
 }
 
+func TestRuntimeScrollUsesTranscriptRenderCache(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 80
+	model.height = 10
+	for i := range 20 {
+		model.appendBlock(runtimeBlockSystem, "行", "content "+string(rune('A'+i)))
+	}
+
+	_ = model.View()
+	if model.renderCache == nil || model.renderCache.Dirty || model.renderCache.Text == "" || len(model.renderCache.Lines) == 0 {
+		t.Fatalf("initial view should populate clean render cache: %#v", model.renderCache)
+	}
+	cachedText := model.renderCache.Text
+	cachedLines := model.renderCache.Lines
+
+	updated, _ := model.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
+	model = updated.(runtimeModel)
+	_ = model.View()
+	if model.renderCache.Dirty {
+		t.Fatal("scrolling should not dirty transcript render cache")
+	}
+	if model.renderCache.Text != cachedText || len(model.renderCache.Lines) != len(cachedLines) {
+		t.Fatal("scrolling should reuse cached transcript content")
+	}
+
+	model.appendBlock(runtimeBlockSystem, "行", "content Z")
+	if model.renderCache == nil || !model.renderCache.Dirty {
+		t.Fatal("appending a block should dirty transcript render cache")
+	}
+}
+
 func TestRuntimeMouseSelectionCopiesVisibleText(t *testing.T) {
 	model := newRuntimeModel(&Runtime{
 		ctx:         context.Background(),

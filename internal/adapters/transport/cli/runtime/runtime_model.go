@@ -23,6 +23,7 @@ type runtimeModel struct {
 	pastes       []string
 	picker       *runtimePicker
 	scrollOffset int
+	renderCache  *runtimeTranscriptRenderCache
 	selection    tui.TextSelection
 	running      bool
 	cancelling   bool
@@ -39,6 +40,13 @@ type runtimeModel struct {
 }
 
 type runtimeSelectionCopiedTickMsg time.Time
+
+type runtimeTranscriptRenderCache struct {
+	Text  string
+	Lines []string
+	Dirty bool
+	Width int
+}
 
 type runtimeBlockKind string
 
@@ -103,6 +111,7 @@ func newRuntimeModel(r *Runtime) runtimeModel {
 		activeOutput: -1,
 		activeReason: -1,
 		historyIndex: len(r.session.InputHistory),
+		renderCache:  &runtimeTranscriptRenderCache{Dirty: true},
 		status:       "就绪",
 		welcome:      runtimeWelcomeInfo(r.session),
 		members:      make(map[string]*runtimeMemberState),

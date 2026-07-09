@@ -146,6 +146,9 @@ func (m runtimeModel) visibleTranscriptLines(maxLines int) []string {
 	if maxLines <= 0 {
 		return nil
 	}
+	if m.currentMember() == nil {
+		return visibleLineSlice(m.mainTranscriptLines(), maxLines, m.currentScrollOffset())
+	}
 	transcript := strings.TrimRight(m.transcriptText(), "\n")
 	if transcript == "" {
 		return nil
@@ -178,7 +181,80 @@ func (m runtimeModel) transcriptText() string {
 		}
 		return header + "\n\n" + body
 	}
-	return m.blocksText(m.blocks)
+	return m.mainTranscriptText()
+}
+
+func (m runtimeModel) transcriptLineCount() int {
+	if m.currentMember() == nil {
+		return len(m.mainTranscriptLines())
+	}
+	transcript := strings.TrimRight(m.transcriptText(), "\n")
+	if transcript == "" {
+		return 0
+	}
+	return tui.LineCount(transcript)
+}
+
+func (m runtimeModel) mainTranscriptText() string {
+	width := m.contentWidth()
+	cache := m.ensureRenderCache()
+	if !cache.Dirty && cache.Width == width {
+		return cache.Text
+	}
+	return m.rebuildMainTranscriptCache()
+}
+
+func (m runtimeModel) mainTranscriptLines() []string {
+	_ = m.mainTranscriptText()
+	return m.ensureRenderCache().Lines
+}
+
+func (m runtimeModel) rebuildMainTranscriptCache() string {
+	cache := m.ensureRenderCache()
+	text := m.blocksText(m.blocks)
+	lines := splitTranscriptLines(text)
+	cache.Text = text
+	cache.Lines = lines
+	cache.Width = m.contentWidth()
+	cache.Dirty = false
+	return cache.Text
+}
+
+func (m runtimeModel) ensureRenderCache() *runtimeTranscriptRenderCache {
+	if m.renderCache == nil {
+		return &runtimeTranscriptRenderCache{Dirty: true}
+	}
+	return m.renderCache
+}
+
+func splitTranscriptLines(text string) []string {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return nil
+	}
+	return strings.Split(text, "\n")
+}
+
+func visibleLineSlice(lines []string, maxLines int, offsetFromBottom int) []string {
+	if len(lines) == 0 || maxLines <= 0 {
+		return nil
+	}
+	if len(lines) <= maxLines {
+		return lines
+	}
+	if offsetFromBottom < 0 {
+		offsetFromBottom = 0
+	}
+	maxOffset := max(0, len(lines)-maxLines)
+	if offsetFromBottom > maxOffset {
+		offsetFromBottom = maxOffset
+	}
+	end := len(lines) - offsetFromBottom
+	start := end - maxLines
+	if start < 0 {
+		start = 0
+	}
+	return lines[start:end]
 }
 
 func (m runtimeModel) memberBlocksText(member *runtimeMemberState) string {
