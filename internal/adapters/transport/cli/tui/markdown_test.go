@@ -52,6 +52,37 @@ func TestRenderMarkdownTableRendersInlineMarkdown(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownTableBalancesDynamicColumnWidths(t *testing.T) {
+	out := RenderMarkdownWithWidth(strings.Join([]string{
+		"| 工具 | 文件 | 能力 |",
+		"| --- | --- | --- |",
+		"| **read** | `read.ts` | 读取文件内容 |",
+		"| **write** | `write.ts` | 写入/覆盖文件 |",
+		"| **edit / edit-diff** | `edit.ts / edit-diff.ts` | 精确文本替换 / diff 模式修改 |",
+		"| **bash** | `bash.ts` | 执行 shell 命令 |",
+	}, "\n"), 100)
+	plain := StripANSI(out)
+	widths := renderedTableColumnWidths(plain)
+
+	if len(widths) != 3 {
+		t.Fatalf("expected three table columns, got %v in:\n%s", widths, out)
+	}
+	if widths[0] > 24 || widths[1] > 32 {
+		t.Fatalf("short token columns should stay compact, got widths %v in:\n%s", widths, out)
+	}
+	if widths[2] < 24 {
+		t.Fatalf("description column should receive enough width, got widths %v in:\n%s", widths, out)
+	}
+	for _, line := range strings.Split(plain, "\n") {
+		if line == "" {
+			continue
+		}
+		if got := CellWidth(line); got != 100 {
+			t.Fatalf("table line should fill target width, got %d want 100\n%s", got, out)
+		}
+	}
+}
+
 func TestRenderMarkdownNormalizesCompactOneLineTable(t *testing.T) {
 	out := RenderMarkdownWithWidth("| 序号 | 项目 | 状态 | |:---:|:---|:---:| | 1 | 用户中心重构 | 进行中 | | 2 | 支付模块升级 | 待评审 |", 80)
 
@@ -63,6 +94,25 @@ func TestRenderMarkdownNormalizesCompactOneLineTable(t *testing.T) {
 			t.Fatalf("expected normalized compact table to render border token %q:\n%s", token, out)
 		}
 	}
+}
+
+func renderedTableColumnWidths(rendered string) []int {
+	for _, line := range strings.Split(rendered, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "┌") && strings.Contains(line, "┬") {
+			parts := strings.FieldsFunc(line, func(r rune) bool {
+				return r == '┌' || r == '┬' || r == '┐'
+			})
+			widths := make([]int, 0, len(parts))
+			for _, part := range parts {
+				if part != "" {
+					widths = append(widths, CellWidth(part))
+				}
+			}
+			return widths
+		}
+	}
+	return nil
 }
 
 func TestRenderMarkdownMixedContentKeepsClosedTableBorder(t *testing.T) {

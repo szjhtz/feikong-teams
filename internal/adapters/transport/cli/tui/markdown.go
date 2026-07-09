@@ -580,6 +580,8 @@ const (
 	tableAlignRight
 )
 
+const markdownTableCellPadding = 2
+
 func parseTableAligns(separator []string, count int) []tableAlign {
 	aligns := make([]tableAlign, count)
 	for i := 0; i < count && i < len(separator); i++ {
@@ -596,6 +598,13 @@ func parseTableAligns(separator []string, count int) []tableAlign {
 		}
 	}
 	return aligns
+}
+
+type markdownTableColumn struct {
+	minContent   int
+	idealContent int
+	maxContent   int
+	proseWeight  int
 }
 
 func renderMarkdownTable(tableMarkdown string, width int) string {
@@ -623,6 +632,7 @@ func renderMarkdownTable(tableMarkdown string, width int) string {
 		renderMarkdownTableRow(rows[i], width)
 	}
 	aligns := parseTableAligns(splitMarkdownTableLine(lines[1]), colCount)
+	columnWidths, tableWidth := markdownTableColumnWidths(header, rows, width)
 
 	t := table.New().
 		Border(classiclipgloss.NormalBorder()).
@@ -639,6 +649,9 @@ func renderMarkdownTable(tableMarkdown string, width int) string {
 		Rows(rows...).
 		StyleFunc(func(row, col int) classiclipgloss.Style {
 			style := classiclipgloss.NewStyle().Padding(0, 1)
+			if col < len(columnWidths) && columnWidths[col] > 0 {
+				style = style.Width(columnWidths[col])
+			}
 			if row == table.HeaderRow {
 				return style.Bold(true).Foreground(classiclipgloss.Color("12")).Align(classiclipgloss.Center)
 			}
@@ -647,6 +660,9 @@ func renderMarkdownTable(tableMarkdown string, width int) string {
 			}
 			return style
 		})
+	if tableWidth > 0 {
+		t = t.Width(tableWidth)
+	}
 
 	rendered := t.String()
 	maxWidth := normalizeMarkdownWidth(width)
@@ -654,6 +670,185 @@ func renderMarkdownTable(tableMarkdown string, width int) string {
 		rendered = t.Width(maxWidth).String()
 	}
 	return strings.TrimRight(rendered, "\n")
+}
+
+func markdownTableColumnWidths(header []string, rows [][]string, width int) ([]int, int) {
+	colCount := len(header)
+	if colCount == 0 {
+		return nil, 0
+	}
+	maxWidth := normalizeMarkdownWidth(width)
+	borderWidth := colCount + 1
+	availableContent := maxWidth - borderWidth - colCount*markdownTableCellPadding
+	if availableContent < colCount*3 {
+		return nil, 0
+	}
+
+	columns := make([]markdownTableColumn, colCount)
+	visit := func(col int, cell string, isHeader bool) {
+		stats := markdownTableCellStats(cell)
+		column := &columns[col]
+		if isHeader {
+			column.minContent = max(column.minContent, min(max(stats.width, 3), 12))
+		}
+		if stats.longestToken > 0 {
+			column.minContent = max(column.minContent, min(stats.longestToken, 14))
+		}
+		if stats.width > 0 {
+			column.maxContent = max(column.maxContent, stats.width)
+			if stats.prose {
+				column.proseWeight += max(stats.width, 1)
+			}
+		}
+	}
+	for col, cell := range header {
+		visit(col, cell, true)
+	}
+	for _, row := range rows {
+		for col, cell := range row {
+			if col < colCount {
+				visit(col, cell, false)
+			}
+		}
+	}
+
+	for i := range columns {
+		column := &columns[i]
+		if column.minContent == 0 {
+			column.minContent = 3
+		}
+		if column.maxContent == 0 {
+			column.maxContent = column.minContent
+		}
+		capContent := 28
+		if column.proseWeight > 0 {
+			capContent = max(18, availableContent/2)
+		}
+		column.idealContent = max(column.minContent, min(column.maxContent, capContent))
+	}
+
+	contents := make([]int, colCount)
+	for i, column := range columns {
+		contents[i] = column.idealContent
+	}
+	shrinkMarkdownTableColumns(contents, columns, availableContent)
+	growMarkdownTableColumns(contents, columns, availableContent)
+
+	widths := make([]int, colCount)
+	total := borderWidth
+	for i, contentWidth := range contents {
+		widths[i] = contentWidth + markdownTableCellPadding
+		total += widths[i]
+	}
+	return widths, min(total, maxWidth)
+}
+
+type markdownTableCellWidth struct {
+	width        int
+	longestToken int
+	prose        bool
+}
+
+func markdownTableCellStats(cell string) markdownTableCellWidth {
+	plain := strings.TrimSpace(StripANSI(cell))
+	if plain == "" {
+		return markdownTableCellWidth{}
+	}
+	width := 0
+	for _, line := range strings.Split(plain, "\n") {
+		width = max(width, runewidth.StringWidth(strings.TrimSpace(line)))
+	}
+	longestToken := 0
+	for _, token := range strings.Fields(plain) {
+		longestToken = max(longestToken, runewidth.StringWidth(token))
+	}
+	if longestToken == 0 {
+		longestToken = width
+	}
+	return markdownTableCellWidth{
+		width:        width,
+		longestToken: longestToken,
+		prose:        markdownTableCellLooksLikeProse(plain),
+	}
+}
+
+func markdownTableCellLooksLikeProse(s string) bool {
+	fields := strings.Fields(s)
+	if len(fields) >= 4 {
+		return true
+	}
+	for _, r := range s {
+		switch {
+		case unicode.Is(unicode.Han, r):
+			return true
+		case strings.ContainsRune("，。；、：？！,.?!", r):
+			return true
+		}
+	}
+	return false
+}
+
+func shrinkMarkdownTableColumns(contents []int, columns []markdownTableColumn, available int) {
+	for sumInts(contents) > available {
+		target := -1
+		targetScore := -1
+		for i, width := range contents {
+			excess := width - columns[i].minContent
+			if excess <= 0 {
+				continue
+			}
+			score := excess
+			if columns[i].proseWeight > 0 {
+				score += 8
+			}
+			if score > targetScore {
+				target = i
+				targetScore = score
+			}
+		}
+		if target < 0 {
+			break
+		}
+		contents[target]--
+	}
+}
+
+func growMarkdownTableColumns(contents []int, columns []markdownTableColumn, available int) {
+	for sumInts(contents) < available {
+		target := -1
+		targetScore := -1
+		for i, width := range contents {
+			if columns[i].proseWeight <= 0 {
+				continue
+			}
+			score := columns[i].proseWeight - width
+			if score > targetScore {
+				target = i
+				targetScore = score
+			}
+		}
+		if target >= 0 {
+			contents[target]++
+			continue
+		}
+		for i, width := range contents {
+			if target < 0 || width < contents[target] {
+				target = i
+			}
+		}
+		if target < 0 {
+			return
+		}
+		contents[target]++
+	}
+}
+
+func sumInts(values []int) int {
+	total := 0
+	for _, value := range values {
+		total += value
+	}
+	return total
 }
 
 func renderMarkdownTableRow(row []string, width int) {
