@@ -9,6 +9,7 @@ import (
 
 const (
 	defaultToolDisplayName = "tool"
+	toolArgsPendingText    = "参数准备中..."
 )
 
 type ToolStatus string
@@ -20,10 +21,11 @@ const (
 )
 
 type ToolChainItem struct {
-	Name   string
-	Args   string
-	Status string
-	Error  string
+	Name        string
+	Args        string
+	ArgsPending bool
+	Status      string
+	Error       string
 }
 
 type WelcomeInfo struct {
@@ -241,8 +243,14 @@ func Status(text string) string {
 }
 
 func ToolCall(name string, args string, status ToolStatus) string {
+	return ToolCallWithArgsReady(name, args, status, true)
+}
+
+func ToolCallWithArgsReady(name string, args string, status ToolStatus, argsReady bool) string {
 	name = emptyAs(name, defaultToolDisplayName)
-	if status == ToolStatusRunning {
+	if status == ToolStatusRunning && !argsReady {
+		args = toolArgsPendingText
+	} else if status == ToolStatusRunning {
 		args = stableToolArgsSummary(args)
 	} else {
 		args = toolArgsSummary(args)
@@ -256,12 +264,16 @@ func ToolCall(name string, args string, status ToolStatus) string {
 }
 
 func ToolResult(name string, args string, content string, status ToolStatus) string {
+	return ToolResultWithArgsReady(name, args, content, status, true)
+}
+
+func ToolResultWithArgsReady(name string, args string, content string, status ToolStatus, argsReady bool) string {
 	if strings.TrimSpace(content) == "" {
-		return ToolCall(name, args, status)
+		return ToolCallWithArgsReady(name, args, status, argsReady)
 	}
 	line, hidden := toolResultPreviewLine(content)
 	rendered := make([]string, 0, 3)
-	rendered = append(rendered, ToolCall(name, args, status))
+	rendered = append(rendered, ToolCallWithArgsReady(name, args, status, argsReady))
 	if line != "" {
 		if hidden > 0 {
 			line += "  ... 隐藏 " + formatInt(hidden) + " 行"
@@ -295,7 +307,7 @@ func RenderToolChainLines(items []ToolChainItem, lineWidth int) []string {
 		if i == len(visible)-1 {
 			branch = "└─"
 		}
-		label := toolTreeLabel(name, item.Args, max(16, lineWidth-8))
+		label := toolTreeLabel(name, item.Args, item.ArgsPending, max(16, lineWidth-8))
 		if isToolChainErrorStatus(item.Status) {
 			reason := item.Error
 			if strings.TrimSpace(reason) == "" {
@@ -313,12 +325,15 @@ func isToolChainErrorStatus(status string) bool {
 	return status == "error" || status == "failed" || status == "失败"
 }
 
-func toolTreeLabel(name, args string, maxWidth int) string {
+func toolTreeLabel(name, args string, argsPending bool, maxWidth int) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = defaultToolDisplayName
 	}
 	summary := toolArgsSummary(args)
+	if argsPending {
+		summary = toolArgsPendingText
+	}
 	if summary == "" {
 		return truncateRunes(name, maxWidth)
 	}

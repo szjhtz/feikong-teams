@@ -357,7 +357,7 @@ func (m *runtimeModel) applyAskPending(askState runtimeAskState) {
 	}
 	member.upsertAsk(askState)
 	member.Status = "waiting"
-	member.upsertToolCall(runtimeAskToolKey(askState), askState.ToolName, askState.Question, tui.ToolStatusRunning)
+	member.upsertToolCall(runtimeAskToolKey(askState), askState.ToolName, askState.Question, tui.ToolStatusRunning, true)
 	m.syncMemberSummary(member)
 }
 

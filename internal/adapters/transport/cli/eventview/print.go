@@ -411,7 +411,7 @@ func newPrintEvent() (func(Event), func()) {
 			case domainevent.DeltaToolArgs:
 				if isMemberEvent(event) {
 					key, name := memberFromEvent(event)
-					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, domainmessage.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_prepare", ToolKey: memberToolKey(event, domainmessage.ToolCall{}, 0), ToolName: event.ToolName})
 					return
 				}
 				toolName := event.ToolName
@@ -449,7 +449,7 @@ func newPrintEvent() (func(Event), func()) {
 				if toolName == "" {
 					return
 				}
-				sendToolPanel(key, flow, "op", flow.Args, false)
+				sendToolPanel(key, flow, "start", "", false)
 				return
 
 			default:

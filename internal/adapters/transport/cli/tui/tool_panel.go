@@ -19,12 +19,13 @@ type ToolEvent struct {
 }
 
 type toolItem struct {
-	key    string
-	name   string
-	status string
-	args   string
-	result string
-	error  string
+	key         string
+	name        string
+	status      string
+	args        string
+	argsPending bool
+	result      string
+	error       string
 }
 
 type toolModel struct {
@@ -69,8 +70,10 @@ func (m *toolModel) applyEvent(e ToolEvent) {
 	switch e.Type {
 	case "start":
 		item.status = "准备参数"
+		item.argsPending = true
 	case "args":
 		item.status = "已调用"
+		item.argsPending = false
 		if e.Append {
 			item.args += e.Content
 		} else {
@@ -78,6 +81,7 @@ func (m *toolModel) applyEvent(e ToolEvent) {
 		}
 	case "result":
 		item.status = "执行中"
+		item.argsPending = false
 		if e.Append {
 			item.result += e.Content
 		} else {
@@ -85,6 +89,7 @@ func (m *toolModel) applyEvent(e ToolEvent) {
 		}
 	case "done":
 		item.status = "已完成"
+		item.argsPending = false
 		if e.Content != "" {
 			if e.Append {
 				item.result += e.Content
@@ -94,6 +99,7 @@ func (m *toolModel) applyEvent(e ToolEvent) {
 		}
 	case "error":
 		item.status = "失败"
+		item.argsPending = false
 		item.error = e.Content
 	}
 }
@@ -147,7 +153,7 @@ func (m toolModel) renderItem(i int) string {
 		status = "失败"
 	}
 	nameWidth := max(12, lineWidth-runewidthStringWidth(status)-6)
-	name := toolLabel(item.name, item.args, nameWidth)
+	name := toolLabelWithPending(item.name, item.args, item.argsPending, nameWidth)
 	return fmt.Sprintf("%s %s  %s",
 		toolStatusStyle(status).Render(toolIcon(status)),
 		name,

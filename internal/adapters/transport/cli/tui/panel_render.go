@@ -78,11 +78,18 @@ func truncateRunes(s string, maxWidth int) string {
 }
 
 func toolLabel(name, args string, maxWidth int) string {
+	return toolLabelWithPending(name, args, false, maxWidth)
+}
+
+func toolLabelWithPending(name, args string, argsPending bool, maxWidth int) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "tool"
 	}
 	summary := toolArgsSummary(args)
+	if argsPending {
+		summary = toolArgsPendingText
+	}
 	if summary == "" {
 		return truncateRunes(name, maxWidth)
 	}

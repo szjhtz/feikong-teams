@@ -83,6 +83,14 @@ func TestToolRuntimeRendering(t *testing.T) {
 	if strings.Contains(partialCall, "测试 TODO") || strings.Contains(partialCall, "(") {
 		t.Fatalf("running ToolCall should hide incomplete args, got %q", partialCall)
 	}
+	pendingCall := StripANSI(ToolCallWithArgsReady("todo_add", `{"title":"测试 TODO"}`, ToolStatusRunning, false))
+	if !strings.Contains(pendingCall, "参数准备中...") || strings.Contains(pendingCall, "测试 TODO") {
+		t.Fatalf("pending ToolCall should show stable pending text, got %q", pendingCall)
+	}
+	readyCall := StripANSI(ToolCallWithArgsReady("todo_add", `{"title":"测试 TODO"}`, ToolStatusRunning, true))
+	if !strings.Contains(readyCall, "测试 TODO") || strings.Contains(readyCall, "参数准备中") {
+		t.Fatalf("ready ToolCall should show final args, got %q", readyCall)
+	}
 
 	result := StripANSI(ToolResult("exec", "{}", "line1\n\nline2\nline3", ToolStatusDone))
 	if !strings.Contains(result, "exec") || !strings.Contains(result, "line1") || !strings.Contains(result, "隐藏 1 行") {
@@ -100,10 +108,11 @@ func TestToolRuntimeRendering(t *testing.T) {
 		{Name: "old5"},
 		{Name: "old6"},
 		{Name: "fail", Args: `{"path":"/tmp/a"}`, Status: "error", Error: "boom happened"},
+		{Name: "pending", Args: `{"path":"/tmp/draft"}`, ArgsPending: true},
 	}
 	lines := RenderToolChainLines(items, 40)
 	joined := StripANSI(strings.Join(lines, "\n"))
-	if !strings.Contains(joined, "省略 1") || !strings.Contains(joined, "fail") || !strings.Contains(joined, "boom happened") {
+	if !strings.Contains(joined, "省略 2") || !strings.Contains(joined, "fail") || !strings.Contains(joined, "boom happened") || !strings.Contains(joined, "参数准备中...") {
 		t.Fatalf("tool chain lines = %q", joined)
 	}
 	if got := RenderToolChainLines(nil, 40); len(got) != 1 || !strings.Contains(got[0], "等待工具") {

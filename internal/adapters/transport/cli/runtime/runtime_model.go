@@ -72,6 +72,7 @@ type runtimeBlock struct {
 	ToolKey       string
 	ToolName      string
 	ToolArgs      string
+	ToolArgsReady bool
 	ToolResult    string
 	ToolStatus    tui.ToolStatus
 	ToolHasResult bool

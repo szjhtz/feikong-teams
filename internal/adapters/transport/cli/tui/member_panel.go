@@ -43,12 +43,13 @@ type memberCard struct {
 }
 
 type memberToolFlow struct {
-	key    string
-	name   string
-	status string
-	args   string
-	result string
-	error  string
+	key         string
+	name        string
+	status      string
+	args        string
+	argsPending bool
+	result      string
+	error       string
 }
 
 type memberModel struct {
@@ -90,6 +91,7 @@ func (m *memberModel) applyEvent(e MemberEvent) {
 					dstTool := dst.ensureTool(tool.key, tool.name)
 					dstTool.status = tool.status
 					dstTool.args += tool.args
+					dstTool.argsPending = tool.argsPending
 					dstTool.result += tool.result
 					dstTool.error = tool.error
 				}
@@ -148,9 +150,11 @@ func (m *memberModel) applyEvent(e MemberEvent) {
 	case "tool_prepare":
 		tool := card.ensureTool(e.ToolKey, e.ToolName)
 		tool.status = "参数准备中"
+		tool.argsPending = true
 	case "tool_args":
 		tool := card.ensureTool(e.ToolKey, e.ToolName)
 		tool.status = "已调用"
+		tool.argsPending = false
 		if e.Append {
 			tool.args += e.Content
 		} else {
@@ -158,6 +162,7 @@ func (m *memberModel) applyEvent(e MemberEvent) {
 		}
 	case "tool_result":
 		tool := card.ensureTool(e.ToolKey, e.ToolName)
+		tool.argsPending = false
 		if e.Append {
 			tool.result += e.Content
 		} else {
@@ -185,6 +190,7 @@ func (m *memberModel) applyEvent(e MemberEvent) {
 		if e.ToolKey != "" || e.ToolName != "" {
 			tool := card.ensureTool(e.ToolKey, e.ToolName)
 			tool.status = "失败"
+			tool.argsPending = false
 			tool.error = card.errorText
 		}
 		if card.errorText != "" {
@@ -354,7 +360,7 @@ func currentMemberTool(tools []memberToolFlow) string {
 		if name == "" {
 			name = tool.key
 		}
-		name = toolLabel(name, tool.args, 32)
+		name = toolLabelWithPending(name, tool.args, tool.argsPending, 32)
 		if tool.status == "" {
 			return name
 		}
@@ -371,10 +377,11 @@ func memberToolChainLines(tools []memberToolFlow, lineWidth int) []string {
 			name = tool.key
 		}
 		items = append(items, ToolChainItem{
-			Name:   name,
-			Args:   tool.args,
-			Status: tool.status,
-			Error:  tool.error,
+			Name:        name,
+			Args:        tool.args,
+			ArgsPending: tool.argsPending,
+			Status:      tool.status,
+			Error:       tool.error,
 		})
 	}
 	return RenderToolChainLines(items, lineWidth)

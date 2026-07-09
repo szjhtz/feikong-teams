@@ -403,9 +403,10 @@ func runtimeMemberToolChainItems(member *runtimeMemberState) []tui.ToolChainItem
 			continue
 		}
 		item := tui.ToolChainItem{
-			Name:   block.ToolName,
-			Args:   block.ToolArgs,
-			Status: string(block.ToolStatus),
+			Name:        block.ToolName,
+			Args:        block.ToolArgs,
+			ArgsPending: block.ToolStatus == tui.ToolStatusRunning && !block.ToolArgsReady,
+			Status:      string(block.ToolStatus),
 		}
 		if block.ToolStatus == tui.ToolStatusError {
 			item.Error = block.ToolResult
@@ -415,18 +416,19 @@ func runtimeMemberToolChainItems(member *runtimeMemberState) []tui.ToolChainItem
 	return items
 }
 
-func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolStatus) {
+func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolStatus, argsReady bool) {
 	if key == "" {
 		return
 	}
 	idx := m.findToolBlock(key)
 	if idx < 0 {
 		m.blocks = append(m.blocks, runtimeBlock{
-			Kind:       runtimeBlockTool,
-			ToolKey:    key,
-			ToolName:   emptyRuntimeToolName(name),
-			ToolArgs:   args,
-			ToolStatus: status,
+			Kind:          runtimeBlockTool,
+			ToolKey:       key,
+			ToolName:      emptyRuntimeToolName(name),
+			ToolArgs:      args,
+			ToolArgsReady: argsReady,
+			ToolStatus:    status,
 		})
 		m.markTranscriptDirty()
 		return
@@ -437,6 +439,9 @@ func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolSta
 	}
 	if args != "" {
 		block.ToolArgs = args
+	}
+	if argsReady {
+		block.ToolArgsReady = true
 	}
 	block.ToolStatus = status
 	m.markTranscriptDirty()
@@ -454,6 +459,7 @@ func (m *runtimeModel) upsertToolResult(key, name, result string, status tui.Too
 			ToolName:      emptyRuntimeToolName(name),
 			ToolResult:    result,
 			ToolStatus:    status,
+			ToolArgsReady: true,
 			ToolHasResult: true,
 		})
 		m.markTranscriptDirty()
@@ -469,6 +475,7 @@ func (m *runtimeModel) upsertToolResult(key, name, result string, status tui.Too
 		block.ToolResult = result
 	}
 	block.ToolStatus = status
+	block.ToolArgsReady = true
 	block.ToolHasResult = true
 	m.markTranscriptDirty()
 }
@@ -635,7 +642,7 @@ func (s *runtimeMemberState) appendReasoning(agent, content string) {
 	s.ActiveReason = len(s.Blocks) - 1
 }
 
-func (s *runtimeMemberState) upsertToolCall(key, name, args string, status tui.ToolStatus) {
+func (s *runtimeMemberState) upsertToolCall(key, name, args string, status tui.ToolStatus, argsReady bool) {
 	if key == "" {
 		return
 	}
@@ -643,11 +650,12 @@ func (s *runtimeMemberState) upsertToolCall(key, name, args string, status tui.T
 	idx := s.findToolBlock(key)
 	if idx < 0 {
 		s.Blocks = append(s.Blocks, runtimeBlock{
-			Kind:       runtimeBlockTool,
-			ToolKey:    key,
-			ToolName:   emptyRuntimeToolName(name),
-			ToolArgs:   args,
-			ToolStatus: status,
+			Kind:          runtimeBlockTool,
+			ToolKey:       key,
+			ToolName:      emptyRuntimeToolName(name),
+			ToolArgs:      args,
+			ToolArgsReady: argsReady,
+			ToolStatus:    status,
 		})
 		s.ToolCount++
 		return
@@ -658,6 +666,9 @@ func (s *runtimeMemberState) upsertToolCall(key, name, args string, status tui.T
 	}
 	if args != "" {
 		block.ToolArgs = args
+	}
+	if argsReady {
+		block.ToolArgsReady = true
 	}
 	block.ToolStatus = status
 }
@@ -675,6 +686,7 @@ func (s *runtimeMemberState) upsertToolResult(key, name, result string, status t
 			ToolName:      emptyRuntimeToolName(name),
 			ToolResult:    result,
 			ToolStatus:    status,
+			ToolArgsReady: true,
 			ToolHasResult: true,
 		})
 		s.ToolCount++
@@ -690,6 +702,7 @@ func (s *runtimeMemberState) upsertToolResult(key, name, result string, status t
 		block.ToolResult = result
 	}
 	block.ToolStatus = status
+	block.ToolArgsReady = true
 	block.ToolHasResult = true
 }
 

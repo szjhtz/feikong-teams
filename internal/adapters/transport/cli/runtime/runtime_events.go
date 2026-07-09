@@ -62,7 +62,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 			if event.ToolName == "" && runtimeLikelyPendingAgentToolArgs(event) {
 				return
 			}
-			m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
+			m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning, false)
 		default:
 			m.appendOutput(agent, event.Content)
 		}
@@ -83,7 +83,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 			}
 			display := toolmeta.FormatToolDisplay(tool.Function.Name)
 			key := events.ToolCallRefAt(event, tool, i)
-			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
+			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning, true)
 		}
 	case events.EventToolCallCompleted, events.EventToolCallResult:
 		m.activeOutput = -1
@@ -142,7 +142,7 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 		case events.DeltaToolArgs:
 			member.ActiveOutput = -1
 			member.ActiveReason = -1
-			member.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
+			member.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning, false)
 		default:
 			member.appendOutput(agent, event.Content)
 		}
@@ -157,7 +157,7 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 		for i, tool := range events.ToolCallsFromEvent(event) {
 			key := events.ToolCallRefAt(event, tool, i)
 			display := toolmeta.FormatToolDisplay(tool.Function.Name)
-			member.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
+			member.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning, true)
 		}
 	case events.EventToolCallCompleted, events.EventToolCallResult:
 		member.ActiveOutput = -1

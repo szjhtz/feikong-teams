@@ -615,9 +615,9 @@ func runtimeRenderToolBlock(block runtimeBlock) string {
 		block.ToolName = runtimeDefaultToolName
 	}
 	if block.ToolHasResult {
-		return tui.ToolResult(block.ToolName, block.ToolArgs, block.ToolResult, block.ToolStatus)
+		return tui.ToolResultWithArgsReady(block.ToolName, block.ToolArgs, block.ToolResult, block.ToolStatus, block.ToolArgsReady)
 	}
-	return tui.ToolCall(block.ToolName, block.ToolArgs, block.ToolStatus)
+	return tui.ToolCallWithArgsReady(block.ToolName, block.ToolArgs, block.ToolStatus, block.ToolArgsReady)
 }
 
 func (m runtimeModel) renderAskPanel(askState runtimeAskState) string {

@@ -1112,6 +1112,61 @@ func TestRuntimeUnnamedAgentArgsDeltaDoesNotRenderToolBlock(t *testing.T) {
 	}
 }
 
+func TestRuntimeToolArgsPendingBecomesReadyOnToolStart(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	callIndex := 0
+	toolRef := "tool|stream|seq:1|coordinator|idx:0"
+
+	model.applyEvent(events.Event{
+		Type:          events.EventToolCallArguments,
+		DeltaKind:     events.DeltaToolArgs,
+		ToolName:      "command",
+		ToolCallID:    "call_command",
+		ToolCallRef:   toolRef,
+		ToolCallIndex: &callIndex,
+		Content:       `{"command":"go test`,
+	})
+	if len(model.blocks) == 0 {
+		t.Fatal("tool args delta should create a pending tool block")
+	}
+	block := model.blocks[len(model.blocks)-1]
+	if block.Kind != runtimeBlockTool || block.ToolArgsReady {
+		t.Fatalf("tool args delta should keep args pending, got %#v", block)
+	}
+	pendingView := tui.StripANSI(runtimeRenderToolBlock(block))
+	if !strings.Contains(pendingView, "参数准备中...") || strings.Contains(pendingView, "go test") {
+		t.Fatalf("pending args should render stable placeholder, got %q", pendingView)
+	}
+
+	model.applyEvent(events.Event{
+		Type:      events.EventToolCallStarted,
+		AgentName: "coordinator",
+		ToolCallRefs: map[int]string{
+			callIndex: toolRef,
+		},
+		ToolCalls: []domainmessage.ToolCall{{
+			ID:    "call_command",
+			Index: &callIndex,
+			Function: domainmessage.FunctionCall{
+				Name:      "command",
+				Arguments: `{"command":"go test ./..."}`,
+			},
+		}},
+	})
+	block = model.blocks[len(model.blocks)-1]
+	if !block.ToolArgsReady {
+		t.Fatalf("tool call started should mark args ready, got %#v", block)
+	}
+	readyView := tui.StripANSI(runtimeRenderToolBlock(block))
+	if !strings.Contains(readyView, "go test ./...") || strings.Contains(readyView, "参数准备中") {
+		t.Fatalf("ready args should render final args, got %q", readyView)
+	}
+}
+
 func ctrlCKeyMsg() tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl})
 }

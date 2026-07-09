@@ -44,3 +44,57 @@ func TestPanelRenderHelpers(t *testing.T) {
 		t.Fatalf("expected long tool label to be truncated")
 	}
 }
+
+func TestToolPanelKeepsArgsHiddenUntilReady(t *testing.T) {
+	model := newToolModel()
+	model.applyEvent(ToolEvent{Key: "tool-1", Name: "command", Type: "start", Content: `{"command":"go test ./..."}`})
+
+	preparing := stripANSI(model.View())
+	if strings.Contains(preparing, "go test") {
+		t.Fatalf("preparing tool should not render args, got %q", preparing)
+	}
+	if !strings.Contains(preparing, "准备参数") {
+		t.Fatalf("preparing tool should show pending status, got %q", preparing)
+	}
+
+	model.applyEvent(ToolEvent{Key: "tool-1", Name: "command", Type: "args", Content: `{"command":"go test ./..."}`})
+
+	ready := stripANSI(model.View())
+	if !strings.Contains(ready, "go test ./...") {
+		t.Fatalf("ready tool should render final args, got %q", ready)
+	}
+}
+
+func TestMemberPanelKeepsToolArgsHiddenUntilReady(t *testing.T) {
+	model := newMemberModel("")
+	model.applyEvent(MemberEvent{
+		Key:      "member-1",
+		Name:     "coder",
+		Type:     "tool_prepare",
+		ToolKey:  "tool-1",
+		ToolName: "command",
+		Content:  `{"command":"go test ./..."}`,
+	})
+
+	preparing := stripANSI(model.View())
+	if strings.Contains(preparing, "go test") {
+		t.Fatalf("preparing member tool should not render args, got %q", preparing)
+	}
+	if !strings.Contains(preparing, "参数准备中") {
+		t.Fatalf("preparing member tool should show pending status, got %q", preparing)
+	}
+
+	model.applyEvent(MemberEvent{
+		Key:      "member-1",
+		Name:     "coder",
+		Type:     "tool_args",
+		ToolKey:  "tool-1",
+		ToolName: "command",
+		Content:  `{"command":"go test ./..."}`,
+	})
+
+	ready := stripANSI(model.View())
+	if !strings.Contains(ready, "go test ./...") {
+		t.Fatalf("ready member tool should render final args, got %q", ready)
+	}
+}
