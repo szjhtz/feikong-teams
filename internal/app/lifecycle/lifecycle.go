@@ -226,7 +226,6 @@ func (app *Application) startServices(ctx context.Context) error {
 	app.mu.Unlock()
 
 	for _, svc := range services {
-		log.Printf("[lifecycle] starting service: %s", svc.Name())
 		if err := svc.Start(ctx); err != nil {
 			return fmt.Errorf("service %s start failed: %w", svc.Name(), err)
 		}
@@ -244,7 +243,6 @@ func (app *Application) stopServices(ctx context.Context) {
 
 	for i := len(services) - 1; i >= 0; i-- {
 		svc := services[i]
-		log.Printf("[lifecycle] stopping service: %s", svc.Name())
 		if err := svc.Stop(ctx); err != nil {
 			log.Printf("[lifecycle] service %s stop error: %v", svc.Name(), err)
 		} else {

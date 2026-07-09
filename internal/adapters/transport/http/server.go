@@ -124,11 +124,9 @@ func (s *httpService) Stop(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	log.Println("[http] 正在关闭 HTTP 服务...")
 	if err := s.server.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("http shutdown error: %w", err)
 	}
-	log.Println("[http] HTTP 服务已关闭")
 	return nil
 }
 

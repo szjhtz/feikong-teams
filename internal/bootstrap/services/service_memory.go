@@ -39,7 +39,6 @@ func (s *MemoryService) Start(ctx context.Context) error {
 		return nil
 	}
 	s.state.SetMemory(memory.NewManager(s.workspaceDir, llmClient, nil))
-	log.Println("[memory] 长期记忆服务已启动")
 	return nil
 }
 

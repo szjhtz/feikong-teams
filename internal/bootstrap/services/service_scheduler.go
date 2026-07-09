@@ -73,7 +73,6 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	sched.Start()
 	s.scheduler = sched
 	s.service = appService
-	log.Println("[scheduler] 定时任务调度服务已启动")
 	return nil
 }
 
@@ -86,6 +85,5 @@ func (s *SchedulerService) Stop(ctx context.Context) error {
 		s.scheduler = nil
 	}
 	s.service = nil
-	log.Println("[scheduler] 定时任务调度服务已停止")
 	return nil
 }
