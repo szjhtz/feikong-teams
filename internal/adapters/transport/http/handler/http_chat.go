@@ -29,14 +29,8 @@ type ChatRequest struct {
 }
 
 // ChatHandler HTTP POST 聊天处理器，支持普通 JSON 响应和 SSE 流式响应
-func ChatHandler() gin.HandlerFunc {
-	return NewRuntime().ChatHandlerWithState(nil)
-}
 
 // ChatHandlerWithState HTTP POST 聊天处理器，使用显式应用状态。
-func ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
-	return NewRuntime().ChatHandlerWithState(state)
-}
 
 // ChatHandlerWithState HTTP POST 聊天处理器，使用当前 HTTP runtime 的显式依赖。
 func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
@@ -89,7 +83,7 @@ func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
-	taskCtx = rt.withRuntimeContext(taskCtx)
+	taskCtx = rt.withExecutionDependencies(taskCtx)
 
 	var collectedEvents []events.Event
 

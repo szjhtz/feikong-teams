@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fkteams/internal/runtime/log"
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	appschedule "fkteams/internal/app/schedule"
+	appsession "fkteams/internal/app/session"
 	appskill "fkteams/internal/app/skill"
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -32,6 +34,7 @@ type Runtime struct {
 	ChunkUploads   *ChunkUploadStore
 	PreviewLinks   *PreviewLinkStore
 	SessionShares  *SessionShareStore
+	SessionService *appsession.Service
 	Favicons       *FaviconProxy
 	Scheduler      *appschedule.Service
 	AgentRegistry  *agents.Registry
@@ -55,6 +58,7 @@ type RuntimeOptions struct {
 	ChunkUploads   *ChunkUploadStore
 	PreviewLinks   *PreviewLinkStore
 	SessionShares  *SessionShareStore
+	SessionService *appsession.Service
 	Favicons       *FaviconProxy
 	Scheduler      *appschedule.Service
 	AgentRegistry  *agents.Registry
@@ -76,7 +80,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	}
 	streams := opt.Streams
 	if streams == nil {
-		streams = newStreamManager()
+		streams = taskstream.NewManager()
 	}
 	rt := &Runtime{
 		Streams:        streams,
@@ -87,6 +91,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		ChunkUploads:   opt.ChunkUploads,
 		PreviewLinks:   opt.PreviewLinks,
 		SessionShares:  opt.SessionShares,
+		SessionService: opt.SessionService,
 		Favicons:       opt.Favicons,
 		Scheduler:      opt.Scheduler,
 		AgentRegistry:  opt.AgentRegistry,
@@ -120,6 +125,9 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	if rt.SessionShares == nil {
 		rt.SessionShares = NewSessionShareStore("")
 	}
+	if rt.SessionService == nil {
+		rt.SessionService = appsession.NewService(eventlog.NewSessionRepository(rt.HistoryDir))
+	}
 	if rt.Favicons == nil {
 		rt.Favicons = NewFaviconProxy(FaviconProxyOptions{})
 	}
@@ -127,15 +135,44 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		rt.ToolDisplays = toolmeta.NewRegistry()
 	}
 	if rt.SkillProviders == nil {
-		rt.SkillProviders = appskill.NewDefaultProviderRegistry()
+		rt.SkillProviders = appskill.NewProviderRegistry()
 	}
 	return rt
 }
 
-func newStreamManager() *taskstream.Manager {
-	m := taskstream.NewManager()
-	m.StartCleanup(1 * time.Minute)
-	return m
+// Start 启动当前 HTTP runtime 的后台任务。
+func (rt *Runtime) Start(ctx context.Context) error {
+	if rt == nil || rt.Streams == nil {
+		return nil
+	}
+	if err := rt.InitializationError(); err != nil {
+		return err
+	}
+	rt.Streams.StartCleanup(ctx, time.Minute)
+	return nil
+}
+
+// InitializationError 返回持久化状态加载期间发生的错误。
+func (rt *Runtime) InitializationError() error {
+	if rt == nil {
+		return nil
+	}
+	if rt.PreviewLinks != nil && rt.PreviewLinks.LoadError() != nil {
+		return fmt.Errorf("initialize preview links: %w", rt.PreviewLinks.LoadError())
+	}
+	if rt.SessionShares != nil && rt.SessionShares.LoadError() != nil {
+		return fmt.Errorf("initialize session shares: %w", rt.SessionShares.LoadError())
+	}
+	return nil
+}
+
+// Close 停止后台任务并取消仍在运行的流。
+func (rt *Runtime) Close() {
+	if rt == nil || rt.Streams == nil {
+		return
+	}
+	rt.Streams.StopCleanup()
+	rt.Streams.CancelAll()
 }
 
 func (rt *Runtime) recorder(sessionID string) *eventlog.HistoryRecorder {
@@ -158,11 +195,13 @@ func (rt *Runtime) clearRunnerCache() {
 }
 
 func (rt *Runtime) resolveRunner(ctx context.Context, mode, agentName string) (runtimeport.Runner, error) {
-	ctx = rt.withRuntimeContext(ctx)
+	ctx = rt.withExecutionDependencies(ctx)
 	return rt.RunnerCache.ResolveWithTeamFallback(ctx, mode, agentName)
 }
 
-func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
+// withExecutionDependencies 为一次智能体执行装配请求级依赖。
+// 普通 HTTP 查询直接使用 Runtime 字段，不经过 context 服务定位。
+func (rt *Runtime) withExecutionDependencies(ctx context.Context) context.Context {
 	ctx = runtimeport.WithRuntime(ctx, rt.Runtime)
 	ctx = runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, rt.ModelRegistry)

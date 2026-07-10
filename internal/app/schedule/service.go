@@ -2,21 +2,21 @@ package schedule
 
 import (
 	"context"
-	"fmt"
 
+	"fkteams/internal/domain/apperror"
 	domainschedule "fkteams/internal/domain/schedule"
 	schedulerport "fkteams/internal/ports/scheduler"
 )
 
 // Service 是调度任务的应用用例入口。
 type Service struct {
-	scheduler schedulerport.Scheduler
+	scheduler schedulerport.TaskService
 }
 
 type serviceContextKey struct{}
 
 // NewService 创建调度用例服务。
-func NewService(scheduler schedulerport.Scheduler) *Service {
+func NewService(scheduler schedulerport.TaskService) *Service {
 	return &Service{scheduler: scheduler}
 }
 
@@ -47,9 +47,9 @@ func (SchedulerNotReadyError) Error() string {
 	return "scheduler service is not initialized"
 }
 
-func (s *Service) requireScheduler() (schedulerport.Scheduler, error) {
+func (s *Service) requireScheduler() (schedulerport.TaskService, error) {
 	if s == nil || s.scheduler == nil {
-		return nil, SchedulerNotReadyError{}
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler service is not initialized", SchedulerNotReadyError{})
 	}
 	return s.scheduler, nil
 }
@@ -70,7 +70,7 @@ func (s *Service) UpdateTask(ctx context.Context, taskID string, req schedulerpo
 		return nil, err
 	}
 	if taskID == "" {
-		return nil, fmt.Errorf("task ID is required")
+		return nil, apperror.New(apperror.CodeInvalidArgument, "task ID is required")
 	}
 	return scheduler.UpdateTask(ctx, taskID, req)
 }
@@ -80,6 +80,9 @@ func (s *Service) ListTasks(ctx context.Context, statusFilter domainschedule.Sta
 	scheduler, err := s.requireScheduler()
 	if err != nil {
 		return nil, err
+	}
+	if statusFilter != "" && !domainschedule.ValidStatus(statusFilter) {
+		return nil, apperror.Errorf(apperror.CodeInvalidArgument, "invalid task status: %s", statusFilter)
 	}
 	return scheduler.ListTasks(ctx, statusFilter)
 }
@@ -91,7 +94,7 @@ func (s *Service) CancelTask(ctx context.Context, taskID string) error {
 		return err
 	}
 	if taskID == "" {
-		return fmt.Errorf("task ID is required")
+		return apperror.New(apperror.CodeInvalidArgument, "task ID is required")
 	}
 	return scheduler.CancelTask(ctx, taskID)
 }
@@ -103,7 +106,7 @@ func (s *Service) DeleteTask(ctx context.Context, taskID string) error {
 		return err
 	}
 	if taskID == "" {
-		return fmt.Errorf("task ID is required")
+		return apperror.New(apperror.CodeInvalidArgument, "task ID is required")
 	}
 	return scheduler.DeleteTask(ctx, taskID)
 }
@@ -114,6 +117,9 @@ func (s *Service) ReadTaskResult(ctx context.Context, taskID string) (string, er
 	if err != nil {
 		return "", err
 	}
+	if taskID == "" {
+		return "", apperror.New(apperror.CodeInvalidArgument, "task ID is required")
+	}
 	return scheduler.ReadTaskResult(ctx, taskID)
 }
 
@@ -123,6 +129,9 @@ func (s *Service) ListHistoryEntries(ctx context.Context, taskID string) ([]doma
 	if err != nil {
 		return nil, err
 	}
+	if taskID == "" {
+		return nil, apperror.New(apperror.CodeInvalidArgument, "task ID is required")
+	}
 	return scheduler.ListHistoryEntries(ctx, taskID)
 }
 
@@ -131,6 +140,9 @@ func (s *Service) ReadHistoryFile(ctx context.Context, taskID string, filename s
 	scheduler, err := s.requireScheduler()
 	if err != nil {
 		return "", err
+	}
+	if taskID == "" || filename == "" {
+		return "", apperror.New(apperror.CodeInvalidArgument, "task ID and filename are required")
 	}
 	return scheduler.ReadHistoryFile(ctx, taskID, filename)
 }

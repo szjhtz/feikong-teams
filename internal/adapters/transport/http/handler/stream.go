@@ -32,14 +32,8 @@ type StreamStartRequest struct {
 }
 
 // StreamStartHandler 启动流式任务（任务在后台执行，前端通过 SSE 订阅事件流）
-func StreamStartHandler() gin.HandlerFunc {
-	return NewRuntime().StreamStartHandlerWithState(nil)
-}
 
 // StreamStartHandlerWithState 启动流式任务并使用显式应用状态。
-func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
-	return NewRuntime().StreamStartHandlerWithState(state)
-}
 
 // StreamStartHandlerWithState 启动流式任务并使用当前 HTTP runtime。
 func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
@@ -129,9 +123,6 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 }
 
 // StreamSteerHandler 在运行中的流式任务下一次模型调用前注入转向消息。
-func StreamSteerHandler() gin.HandlerFunc {
-	return NewRuntime().StreamSteerHandler()
-}
 
 // StreamSteerHandler 在当前 HTTP runtime 中注入转向消息。
 func (rt *Runtime) StreamSteerHandler() gin.HandlerFunc {
@@ -173,9 +164,6 @@ func (rt *Runtime) StreamSteerHandler() gin.HandlerFunc {
 }
 
 // StreamQueueHandler 返回运行中任务的未消费队列快照。
-func StreamQueueHandler() gin.HandlerFunc {
-	return NewRuntime().StreamQueueHandler()
-}
 
 func (rt *Runtime) StreamQueueHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -195,9 +183,6 @@ func (rt *Runtime) StreamQueueHandler() gin.HandlerFunc {
 }
 
 // StreamQueueUpdateHandler 修改尚未执行的队列项。
-func StreamQueueUpdateHandler() gin.HandlerFunc {
-	return NewRuntime().StreamQueueUpdateHandler()
-}
 
 func (rt *Runtime) StreamQueueUpdateHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -233,9 +218,6 @@ func (rt *Runtime) StreamQueueUpdateHandler() gin.HandlerFunc {
 }
 
 // StreamQueueDeleteHandler 删除尚未执行的队列项。
-func StreamQueueDeleteHandler() gin.HandlerFunc {
-	return NewRuntime().StreamQueueDeleteHandler()
-}
 
 func (rt *Runtime) StreamQueueDeleteHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -269,9 +251,6 @@ type StreamQueueKindRequest struct {
 }
 
 // StreamQueueKindHandler 切换尚未执行队列项的语义类型。
-func StreamQueueKindHandler() gin.HandlerFunc {
-	return NewRuntime().StreamQueueKindHandler()
-}
 
 func (rt *Runtime) StreamQueueKindHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -307,9 +286,6 @@ func (rt *Runtime) StreamQueueKindHandler() gin.HandlerFunc {
 }
 
 // StreamQueueMoveHandler 调整尚未执行队列项在同类队列中的顺序。
-func StreamQueueMoveHandler() gin.HandlerFunc {
-	return NewRuntime().StreamQueueMoveHandler()
-}
 
 func (rt *Runtime) StreamQueueMoveHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -364,7 +340,7 @@ func (rt *Runtime) streamForQueueRequest(c *gin.Context, sessionID string) *task
 
 // runStreamTask 后台执行流式任务
 func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
-	ctx = rt.withRuntimeContext(ctx)
+	ctx = rt.withExecutionDependencies(ctx)
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
@@ -437,9 +413,6 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 }
 
 // StreamStopHandler 停止正在运行的流式任务
-func StreamStopHandler() gin.HandlerFunc {
-	return NewRuntime().StreamStopHandler()
-}
 
 func (rt *Runtime) StreamStopHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -474,9 +447,6 @@ func (rt *Runtime) StreamStopHandler() gin.HandlerFunc {
 // 前端通过 Last-Event-ID 或 ?offset= 指定起始位置，
 // 重连后可无损续接之前断开的事件流。
 // 仅对内存中有活跃/刚完成任务的 session 有效；已完成的历史数据应通过会话接口获取。
-func StreamSubscribeHandler() gin.HandlerFunc {
-	return NewRuntime().StreamSubscribeHandler()
-}
 
 func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -569,14 +539,8 @@ func clearSSEWriteDeadline(w http.ResponseWriter) {
 }
 
 // StreamStatusHandler 获取流式任务状态。
-func StreamStatusHandler() gin.HandlerFunc {
-	return NewRuntime().StreamStatusHandler()
-}
 
 // StreamSnapshotHandler 返回运行中任务的轻量快照，供新连接先同步缓存再追实时事件。
-func StreamSnapshotHandler() gin.HandlerFunc {
-	return NewRuntime().StreamSnapshotHandler()
-}
 
 func (rt *Runtime) StreamSnapshotHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -720,9 +684,6 @@ func snapshotTailOffset(eventCount, limit int) uint64 {
 }
 
 // StreamApprovalHandler 提交 HITL 审批决定
-func StreamApprovalHandler() gin.HandlerFunc {
-	return NewRuntime().StreamApprovalHandler()
-}
 
 func (rt *Runtime) StreamApprovalHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -754,9 +715,6 @@ func (rt *Runtime) StreamApprovalHandler() gin.HandlerFunc {
 }
 
 // StreamAskResponseHandler 提交 ask_questions 回答
-func StreamAskResponseHandler() gin.HandlerFunc {
-	return NewRuntime().StreamAskResponseHandler()
-}
 
 func (rt *Runtime) StreamAskResponseHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -795,9 +753,6 @@ func (rt *Runtime) StreamAskResponseHandler() gin.HandlerFunc {
 }
 
 // StreamEventsHandler 获取当前任务的已缓冲事件（非 SSE，一次性拉取）。
-func StreamEventsHandler() gin.HandlerFunc {
-	return NewRuntime().StreamEventsHandler()
-}
 
 func (rt *Runtime) StreamEventsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {

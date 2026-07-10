@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sync"
 
@@ -11,7 +12,6 @@ import (
 	appschedule "fkteams/internal/app/schedule"
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/log"
 	modelregistry "fkteams/internal/runtime/model"
 )
 
@@ -50,8 +50,7 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 
 	sched, err := filecron.NewScheduler(s.schedulerDir)
 	if err != nil {
-		log.Printf("[scheduler] 初始化定时任务调度器失败: %v", err)
-		return nil // 调度器初始化失败不阻止应用启动
+		return fmt.Errorf("initialize scheduler: %w", err)
 	}
 
 	appService := appschedule.NewService(sched)

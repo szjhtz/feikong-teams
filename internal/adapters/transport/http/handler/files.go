@@ -437,9 +437,6 @@ func NewChunkUploadStore() *ChunkUploadStore {
 
 // UploadChunkHandler 处理分片上传
 // 参数: file(分片内容), uploadId(上传标识), chunkIndex(分片序号,0-based), totalChunks(总分片数), fileName(文件名), path(可选子目录)
-func UploadChunkHandler() gin.HandlerFunc {
-	return NewRuntime().UploadChunkHandler()
-}
 
 // UploadChunkHandler 处理当前 HTTP runtime 的分片上传。
 func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {

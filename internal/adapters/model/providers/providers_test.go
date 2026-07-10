@@ -71,6 +71,17 @@ func TestNewChatModelUsesFactoryAndAutoDetection(t *testing.T) {
 	}
 }
 
+func TestRegistryProvidersReflectRegisteredFactories(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(Type("custom"), func(context.Context, *providerkit.Config) (runtimeport.ChatModel, error) {
+		return testmodel.New(testmodel.AssistantMessage("ok")), nil
+	}, ProviderInfo{ID: "custom", Name: "Custom Provider"})
+	providers := registry.Providers()
+	if len(providers) != 1 || providers[0].ID != "custom" || providers[0].Name != "Custom Provider" {
+		t.Fatalf("unexpected providers: %#v", providers)
+	}
+}
+
 func TestNewChatModelReportsUnknownAndFactoryErrors(t *testing.T) {
 	registry := NewRegistry()
 

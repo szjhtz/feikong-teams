@@ -131,7 +131,8 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 	}
 
 	router := gin.New()
-	router.POST("/config", UpdateConfigHandlerWithState(nil))
+	rt := NewRuntime()
+	router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
 	resp := performJSON(router, http.MethodPost, "/config", string(body))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("update config status = %d: %s", resp.Code, resp.Body.String())
@@ -178,7 +179,8 @@ func TestUpdateConfigHandlerFiltersBuiltinAgents(t *testing.T) {
 	}
 
 	router := gin.New()
-	router.POST("/config", UpdateConfigHandlerWithState(nil))
+	rt := NewRuntime()
+	router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
 	resp := performJSON(router, http.MethodPost, "/config", string(body))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("update config status = %d: %s", resp.Code, resp.Body.String())
@@ -213,7 +215,8 @@ func TestUpdateConfigHandlerRejectsDuplicateModelNames(t *testing.T) {
 
 	body := `{"models":[{"id":"main","name":"主力模型","use_for":["chat"]},{"id":"main","name":"重复模型"}]}`
 	router := gin.New()
-	router.POST("/config", UpdateConfigHandlerWithState(nil))
+	rt := NewRuntime()
+	router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
 
 	resp := performJSON(router, http.MethodPost, "/config", body)
 	if resp.Code != http.StatusBadRequest {
@@ -227,7 +230,8 @@ func TestUpdateConfigHandlerRejectsNegativeRoundtableIterations(t *testing.T) {
 
 	body := `{"models":[{"id":"main","name":"主力模型","use_for":["chat"]}],"roundtable":{"max_iterations":-1}}`
 	router := gin.New()
-	router.POST("/config", UpdateConfigHandlerWithState(nil))
+	rt := NewRuntime()
+	router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
 
 	resp := performJSON(router, http.MethodPost, "/config", body)
 	if resp.Code != http.StatusBadRequest {

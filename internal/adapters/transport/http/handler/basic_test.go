@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"fkteams/internal/domain/apperror"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,6 +17,9 @@ func TestOKFailAndBasicHandlers(t *testing.T) {
 	router := gin.New()
 	router.GET("/ok", func(c *gin.Context) { OK(c, gin.H{"value": "done"}) })
 	router.GET("/fail", func(c *gin.Context) { Fail(c, http.StatusTeapot, "failed") })
+	router.GET("/not-found", func(c *gin.Context) {
+		FailError(c, apperror.New(apperror.CodeNotFound, "resource not found"))
+	})
 	router.GET("/health", HealthHandler())
 	router.GET("/version", VersionHandler())
 
@@ -27,6 +32,7 @@ func TestOKFailAndBasicHandlers(t *testing.T) {
 	}{
 		{path: "/ok", status: http.StatusOK, code: 0, message: "success", hasValue: true},
 		{path: "/fail", status: http.StatusTeapot, code: 1, message: "failed"},
+		{path: "/not-found", status: http.StatusNotFound, code: 1, message: "resource not found"},
 		{path: "/health", status: http.StatusOK, code: 0, message: "success", hasValue: true},
 		{path: "/version", status: http.StatusOK, code: 0, message: "success", hasValue: true},
 	}

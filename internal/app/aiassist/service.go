@@ -75,15 +75,14 @@ func New(model runtimeport.ChatModel) *Service {
 	return &Service{model: model}
 }
 
-func NewDefault(ctx context.Context) (*Service, error) {
+func NewDefault(ctx context.Context, registry *modelregistry.Registry) (*Service, error) {
 	cfg := config.Get()
 	modelCfg := cfg.ResolveDefaultModel(config.ModelUseChat)
 	if modelCfg == nil || (modelCfg.APIKey == "" && modelCfg.Provider == "") {
 		return nil, fmt.Errorf("default chat model is not configured")
 	}
-	registry, err := modelregistry.RequireRegistry(ctx)
-	if err != nil {
-		return nil, err
+	if registry == nil {
+		return nil, fmt.Errorf("model registry is not configured")
 	}
 	model, err := registry.NewChatModel(ctx, &modelregistry.Config{
 		Provider:     modelregistry.Type(modelCfg.Provider),

@@ -16,10 +16,6 @@ import (
 
 const statusClientClosedRequest = 499
 
-func GenerateAgentDraftsHandler() gin.HandlerFunc {
-	return NewRuntime().GenerateAgentDraftsHandler()
-}
-
 func (rt *Runtime) GenerateAgentDraftsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req appaiassist.AgentDraftRequest
@@ -27,10 +23,10 @@ func (rt *Runtime) GenerateAgentDraftsHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
 			return
 		}
-		ctx, cancel := context.WithTimeout(rt.withRuntimeContext(c.Request.Context()), 60*time.Second)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 		defer cancel()
-		enrichAgentDraftRequest(ctx, &req, config.Get())
-		service, err := appaiassist.NewDefault(ctx)
+		enrichAgentDraftRequest(ctx, &req, config.Get(), rt.ToolRegistry)
+		service, err := appaiassist.NewDefault(ctx, rt.ModelRegistry)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
@@ -44,10 +40,6 @@ func (rt *Runtime) GenerateAgentDraftsHandler() gin.HandlerFunc {
 	}
 }
 
-func GenerateSkillDraftHandler() gin.HandlerFunc {
-	return NewRuntime().GenerateSkillDraftHandler()
-}
-
 func (rt *Runtime) GenerateSkillDraftHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req appaiassist.SkillDraftRequest
@@ -55,10 +47,10 @@ func (rt *Runtime) GenerateSkillDraftHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
 			return
 		}
-		ctx, cancel := context.WithTimeout(rt.withRuntimeContext(c.Request.Context()), 60*time.Second)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 		defer cancel()
 		enrichSkillDraftRequest(&req)
-		service, err := appaiassist.NewDefault(ctx)
+		service, err := appaiassist.NewDefault(ctx, rt.ModelRegistry)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
@@ -70,10 +62,6 @@ func (rt *Runtime) GenerateSkillDraftHandler() gin.HandlerFunc {
 		}
 		OK(c, resp)
 	}
-}
-
-func RewriteTextHandler() gin.HandlerFunc {
-	return NewRuntime().RewriteTextHandler()
 }
 
 func enrichSkillDraftRequest(req *appaiassist.SkillDraftRequest) {
@@ -99,9 +87,9 @@ func (rt *Runtime) RewriteTextHandler() gin.HandlerFunc {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(rt.withRuntimeContext(c.Request.Context()), 60*time.Second)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 		defer cancel()
-		service, err := appaiassist.NewDefault(ctx)
+		service, err := appaiassist.NewDefault(ctx, rt.ModelRegistry)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
@@ -123,7 +111,7 @@ func failAIAssistError(c *gin.Context, err error) {
 	Fail(c, http.StatusBadRequest, err.Error())
 }
 
-func enrichAgentDraftRequest(ctx context.Context, req *appaiassist.AgentDraftRequest, cfg *config.Config) {
+func enrichAgentDraftRequest(ctx context.Context, req *appaiassist.AgentDraftRequest, cfg *config.Config, toolRegistry *apptools.ToolGroupRegistry) {
 	if req == nil || cfg == nil {
 		return
 	}
@@ -146,7 +134,9 @@ func enrichAgentDraftRequest(ctx context.Context, req *appaiassist.AgentDraftReq
 		}
 	}
 	if len(req.AvailableTools) == 0 {
-		req.AvailableTools = apptools.GetAllToolNames(ctx)
+		if toolRegistry != nil {
+			req.AvailableTools = toolRegistry.GetAllToolNames(ctx)
+		}
 	}
 	if req.DefaultModelID == "" {
 		if model := cfg.ResolveDefaultModel(config.ModelUseChat); model != nil {

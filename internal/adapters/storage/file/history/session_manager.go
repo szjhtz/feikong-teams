@@ -2,24 +2,16 @@ package eventlog
 
 import (
 	"encoding/json"
+	domainsession "fkteams/internal/domain/session"
 	"fkteams/internal/runtime/atomicfile"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 )
 
-// SessionMetadata 会话元数据，存储于 metadata.json
-type SessionMetadata struct {
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Status       string    `json:"status"`
-	CurrentAgent string    `json:"current_agent,omitempty"`
-	Favorite     bool      `json:"favorite,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
+// SessionMetadata 保留历史存储包的兼容名称。
+type SessionMetadata = domainsession.Metadata
 
 // SaveMetadata 保存会话元数据到指定目录
 func SaveMetadata(sessionDir string, meta *SessionMetadata) error {

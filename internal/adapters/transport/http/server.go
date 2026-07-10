@@ -21,6 +21,7 @@ import (
 	"fkteams/internal/app/version"
 	bootstrapchannels "fkteams/internal/bootstrap/channels"
 	bootstrapservices "fkteams/internal/bootstrap/services"
+	bootstrapskills "fkteams/internal/bootstrap/skills"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
 	modelregistry "fkteams/internal/runtime/model"
@@ -75,14 +76,15 @@ func (s *httpService) Start(ctx context.Context) error {
 	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	toolDisplays, _ := toolmeta.RegistryFromContext(ctx)
 	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
-		Runtime:       runtimeAdapter,
-		Interrupt:     interrupt,
-		AgentRegistry: agentRegistry,
-		ToolRegistry:  toolRegistry,
-		ToolDisplays:  toolDisplays,
-		ModelRegistry: modelRegistry,
-		Providers:     providerRegistry,
-		ResetChannels: s.resetChannels,
+		Runtime:        runtimeAdapter,
+		Interrupt:      interrupt,
+		AgentRegistry:  agentRegistry,
+		ToolRegistry:   toolRegistry,
+		ToolDisplays:   toolDisplays,
+		ModelRegistry:  modelRegistry,
+		Providers:      providerRegistry,
+		SkillProviders: bootstrapskills.NewDefaultProviderRegistry(),
+		ResetChannels:  s.resetChannels,
 	})
 	if s.scheduler != nil {
 		s.runtime.Scheduler = s.scheduler.AppService()
@@ -94,6 +96,9 @@ func (s *httpService) Start(ctx context.Context) error {
 	}
 	if err != nil {
 		return fmt.Errorf("init router: %w", err)
+	}
+	if err := s.runtime.Start(ctx); err != nil {
+		return fmt.Errorf("start HTTP runtime: %w", err)
 	}
 
 	s.server = &http.Server{
@@ -117,6 +122,9 @@ func (s *httpService) Start(ctx context.Context) error {
 
 // Stop 优雅关闭 HTTP 服务（5 秒超时）
 func (s *httpService) Stop(ctx context.Context) error {
+	if s.runtime != nil {
+		defer s.runtime.Close()
+	}
 	if s.server == nil {
 		return nil
 	}

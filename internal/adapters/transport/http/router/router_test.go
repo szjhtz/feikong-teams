@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fkteams/internal/adapters/transport/http/handler"
 	"fkteams/web"
 	"net/http"
 	"net/http/httptest"
@@ -14,11 +15,13 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 
-	registerAPIRoutes(engine, false)
+	registerAPIRoutesWithRuntime(engine, false, nil, handler.NewRuntime())
 
 	routes := routeSet(engine.Routes())
 	for _, route := range []string{
 		"GET /health",
+		"GET /live",
+		"GET /ready",
 		"GET /ws",
 		"GET /v1/models",
 		"POST /v1/chat/completions",
@@ -35,6 +38,7 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 		"POST /api/fkteams/session-shares",
 		"GET /api/fkteams/public/session-shares/:shareID/info",
 		"GET /api/fkteams/sessions/:sessionID",
+		"PATCH /api/fkteams/sessions/:sessionID",
 		"POST /api/fkteams/schedules",
 		"PUT /api/fkteams/schedules/:id",
 		"DELETE /api/fkteams/schedules/:id",
@@ -65,7 +69,7 @@ func TestRegisterAPIRoutesAddsLoginWhenAuthEnabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 
-	registerAPIRoutes(engine, true)
+	registerAPIRoutesWithRuntime(engine, true, nil, handler.NewRuntime())
 
 	routes := routeSet(engine.Routes())
 	if !routes["POST /api/fkteams/login"] {
@@ -77,7 +81,7 @@ func TestNewEngineAddsMiddlewareAndRoutesCanBeRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	engine := newEngine(false)
-	registerAPIRoutes(engine, false)
+	registerAPIRoutesWithRuntime(engine, false, nil, handler.NewRuntime())
 
 	if len(engine.Routes()) == 0 {
 		t.Fatal("engine should have registered routes")

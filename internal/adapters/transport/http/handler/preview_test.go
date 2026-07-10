@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -33,7 +34,9 @@ func TestSaveShareLinksWritesToAppDir(t *testing.T) {
 	}
 	store.Unlock()
 
-	store.Save()
+	if err := store.Save(); err != nil {
+		t.Fatal(err)
+	}
 
 	data, err := os.ReadFile(filepath.Join(appDir, "share", "share.json"))
 	if err != nil {
@@ -71,6 +74,39 @@ func TestLoadShareLinksReadsFromAppDir(t *testing.T) {
 	}
 	if got := entry.FilePaths[0]; got != "docs/manual.md" {
 		t.Fatalf("unexpected loaded file path: %q", got)
+	}
+}
+
+func TestRuntimeStartRejectsCorruptedShareState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "share.json")
+	if err := os.WriteFile(path, []byte(`{broken`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := NewPreviewLinkStore(path)
+	if store.LoadError() == nil {
+		t.Fatal("expected corrupted share state to fail loading")
+	}
+	runtime := NewRuntime(RuntimeOptions{PreviewLinks: store})
+	if err := runtime.Start(context.Background()); err == nil {
+		t.Fatal("expected runtime start to reject corrupted share state")
+	}
+}
+
+func TestPreviewStoreSaveReportsFilesystemFailure(t *testing.T) {
+	root := t.TempDir()
+	blocker := filepath.Join(root, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := NewPreviewLinkStore(filepath.Join(blocker, "share.json"))
+	if err := store.Put("link-1", &previewLinkEntry{FilePaths: []string{"a.txt"}, CreatedAt: time.Now()}); err == nil {
+		t.Fatal("expected save failure")
+	}
+	store.RLock()
+	_, exists := store.m["link-1"]
+	store.RUnlock()
+	if exists {
+		t.Fatal("failed transaction should roll back in-memory state")
 	}
 }
 

@@ -1,10 +1,6 @@
 package handler
 
-import (
-	"fkteams/internal/app/agent/catalog"
-
-	"github.com/gin-gonic/gin"
-)
+import "github.com/gin-gonic/gin"
 
 // AgentInfoResponse 智能体信息响应
 type AgentInfoResponse struct {
@@ -20,17 +16,14 @@ type AgentInfoResponse struct {
 }
 
 // GetAgentsHandler 获取所有可用智能体
-func GetAgentsHandler() gin.HandlerFunc {
-	return NewRuntime().GetAgentsHandler()
-}
 
 func (rt *Runtime) GetAgentsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		registry, err := agents.List(rt.withRuntimeContext(c.Request.Context()))
-		if err != nil {
-			Fail(c, 500, err.Error())
+		if rt.AgentRegistry == nil {
+			Fail(c, 503, "agent registry is not configured")
 			return
 		}
+		registry := rt.AgentRegistry.List()
 
 		agentList := make([]AgentInfoResponse, 0, len(registry))
 		for _, agent := range registry {

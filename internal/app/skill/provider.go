@@ -49,11 +49,6 @@ func NewProviderRegistry(providers ...Provider) *ProviderRegistry {
 	return registry
 }
 
-// NewDefaultProviderRegistry 创建内置技能市场后端注册表。
-func NewDefaultProviderRegistry() *ProviderRegistry {
-	return NewProviderRegistry(NewSkillHubProvider("https://lightmake.site/api/skills"))
-}
-
 // Providers 返回所有后端。
 func (r *ProviderRegistry) Providers() []Provider {
 	if r == nil || len(r.providers) == 0 {

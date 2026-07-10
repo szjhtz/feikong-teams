@@ -20,6 +20,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	router := gin.New()
 	router.GET("/sessions", rt.ListSessionsHandler())
 	router.POST("/sessions", rt.CreateSessionHandler())
+	router.PATCH("/sessions/:sessionID", rt.UpdateSessionHandler())
 	router.DELETE("/sessions/:sessionID", rt.DeleteSessionHandler())
 	router.POST("/sessions/rename", rt.RenameSessionHandler())
 	router.POST("/sessions/favorite", rt.FavoriteSessionHandler())
@@ -27,7 +28,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 
 	longTitle := strings.Repeat("题", 55)
 	resp := performJSON(router, http.MethodPost, "/sessions", `{"session_id":"session-1","title":"`+longTitle+`"}`)
-	if resp.Code != http.StatusOK {
+	if resp.Code != http.StatusCreated {
 		t.Fatalf("create session status = %d: %s", resp.Code, resp.Body.String())
 	}
 	meta, err := eventlog.LoadMetadata(rt.sessionDirPath("session-1"))
@@ -79,6 +80,19 @@ func TestSessionCRUDHandlers(t *testing.T) {
 		t.Fatalf("current agent = %q", meta.CurrentAgent)
 	}
 
+	patchTitle := strings.Repeat("新", 55)
+	resp = performJSON(router, http.MethodPatch, "/sessions/session-1", `{"title":"`+patchTitle+`","favorite":false,"current_agent":" analyst "}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("patch session status = %d: %s", resp.Code, resp.Body.String())
+	}
+	meta, err = eventlog.LoadMetadata(rt.sessionDirPath("session-1"))
+	if err != nil {
+		t.Fatalf("load metadata after patch: %v", err)
+	}
+	if meta.Title != strings.Repeat("新", 50)+"..." || meta.Favorite || meta.CurrentAgent != "analyst" {
+		t.Fatalf("patched metadata = %#v", meta)
+	}
+
 	resp = performRequest(router, http.MethodGet, "/sessions", nil)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("list sessions status = %d: %s", resp.Code, resp.Body.String())
@@ -90,7 +104,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	if len(list.Sessions) != 1 {
 		t.Fatalf("sessions = %#v", list.Sessions)
 	}
-	if list.Sessions[0].SessionID != "session-1" || list.Sessions[0].Title != "新标题" || list.Sessions[0].CurrentAgent != "coder" || !list.Sessions[0].Favorite {
+	if list.Sessions[0].SessionID != "session-1" || list.Sessions[0].Title != strings.Repeat("新", 50)+"..." || list.Sessions[0].CurrentAgent != "analyst" || list.Sessions[0].Favorite {
 		t.Fatalf("listed session = %#v", list.Sessions[0])
 	}
 

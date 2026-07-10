@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/runtime/atomicfile"
+	"fkteams/internal/runtime/log"
 	"fkteams/internal/runtime/pathguard"
 	"fmt"
 	"io"
@@ -37,6 +39,7 @@ type PreviewLinkStore struct {
 	sync.RWMutex
 	filePath string
 	m        map[string]*previewLinkEntry
+	loadErr  error
 }
 
 const shareFileName = "share.json"
@@ -58,7 +61,7 @@ func NewPreviewLinkStore(filePath string) *PreviewLinkStore {
 		filePath: filePath,
 		m:        make(map[string]*previewLinkEntry),
 	}
-	store.Load()
+	store.loadErr = store.Load()
 	return store
 }
 
@@ -67,13 +70,16 @@ func shareLinksFilePath() string {
 }
 
 // Load 从持久化文件加载未过期的预览分享链接。
-func (s *PreviewLinkStore) Load() {
+func (s *PreviewLinkStore) Load() error {
 	if s == nil {
-		return
+		return nil
 	}
 	entries, err := readShareEntries(s.filePath)
 	if err != nil {
-		return
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("load preview links: %w", err)
 	}
 	loaded := make(map[string]*previewLinkEntry, len(entries))
 	now := time.Now()
@@ -95,6 +101,14 @@ func (s *PreviewLinkStore) Load() {
 	s.Lock()
 	s.m = loaded
 	s.Unlock()
+	return nil
+}
+
+func (s *PreviewLinkStore) LoadError() error {
+	if s == nil {
+		return nil
+	}
+	return s.loadErr
 }
 
 func readShareEntries(filePath string) (map[string]*shareFileEntry, error) {
@@ -110,11 +124,11 @@ func readShareEntries(filePath string) (map[string]*shareFileEntry, error) {
 }
 
 // Save 将预览分享链接持久化。
-func (s *PreviewLinkStore) Save() {
+func (s *PreviewLinkStore) Save() error {
 	if s == nil {
-		return
+		return nil
 	}
-	_ = s.SaveTo(s.filePath)
+	return s.SaveTo(s.filePath)
 }
 
 // SaveTo 将预览分享链接写入指定文件。
@@ -123,6 +137,11 @@ func (s *PreviewLinkStore) SaveTo(filePath string) error {
 		return nil
 	}
 	s.RLock()
+	defer s.RUnlock()
+	return s.saveLockedTo(filePath)
+}
+
+func (s *PreviewLinkStore) saveLockedTo(filePath string) error {
 	entries := make(map[string]*shareFileEntry, len(s.m))
 	for id, e := range s.m {
 		entries[id] = &shareFileEntry{
@@ -132,8 +151,6 @@ func (s *PreviewLinkStore) SaveTo(filePath string) error {
 			CreatedAt:    e.CreatedAt.Unix(),
 		}
 	}
-	s.RUnlock()
-
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return err
@@ -141,12 +158,57 @@ func (s *PreviewLinkStore) SaveTo(filePath string) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
-	tmpFile := filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	return atomicfile.WriteFile(filePath, data, 0644)
+}
+
+func (s *PreviewLinkStore) Put(id string, entry *previewLinkEntry) error {
+	s.Lock()
+	defer s.Unlock()
+	previous, existed := s.m[id]
+	s.m[id] = entry
+	if err := s.saveLockedTo(s.filePath); err != nil {
+		if existed {
+			s.m[id] = previous
+		} else {
+			delete(s.m, id)
+		}
 		return err
 	}
-	if err := os.Rename(tmpFile, filePath); err != nil {
-		_ = os.Remove(tmpFile)
+	return nil
+}
+
+func (s *PreviewLinkStore) Delete(id string) (bool, error) {
+	s.Lock()
+	defer s.Unlock()
+	previous, existed := s.m[id]
+	if !existed {
+		return false, nil
+	}
+	delete(s.m, id)
+	if err := s.saveLockedTo(s.filePath); err != nil {
+		s.m[id] = previous
+		return true, err
+	}
+	return true, nil
+}
+
+func (s *PreviewLinkStore) DeleteMany(ids []string) error {
+	s.Lock()
+	defer s.Unlock()
+	previous := make(map[string]*previewLinkEntry, len(ids))
+	for _, id := range ids {
+		if entry, ok := s.m[id]; ok {
+			previous[id] = entry
+			delete(s.m, id)
+		}
+	}
+	if len(previous) == 0 {
+		return nil
+	}
+	if err := s.saveLockedTo(s.filePath); err != nil {
+		for id, entry := range previous {
+			s.m[id] = entry
+		}
 		return err
 	}
 	return nil
@@ -162,9 +224,6 @@ type previewLinkEntry struct {
 
 // CreatePreviewLinkHandler 创建文件预览链接
 // 参数: file_path(单文件路径) 或 file_paths(多文件路径数组), password(可选密码), expires_in(过期时间,秒)
-func CreatePreviewLinkHandler() gin.HandlerFunc {
-	return NewRuntime().CreatePreviewLinkHandler()
-}
 
 // CreatePreviewLinkHandler 创建当前 HTTP runtime 的文件预览链接。
 func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
@@ -244,10 +303,11 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 		}
 
 		store := rt.PreviewLinks
-		store.Lock()
-		store.m[linkID] = entry
-		store.Unlock()
-		store.Save()
+		if err := store.Put(linkID, entry); err != nil {
+			log.Printf("failed to persist preview link: id=%s, err=%v", linkID, err)
+			Fail(c, http.StatusInternalServerError, "failed to save preview link")
+			return
+		}
 
 		// 响应保持 file_path 兼容
 		filePath := cleanPaths[0]
@@ -267,9 +327,6 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 }
 
 // PreviewFileHandler 通过预览链接访问文件。
-func PreviewFileHandler() gin.HandlerFunc {
-	return NewRuntime().PreviewFileHandler()
-}
 
 // PreviewFileHandler 通过当前 HTTP runtime 的预览链接访问文件。
 func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
@@ -293,10 +350,9 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 		}
 
 		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
-			store.Lock()
-			delete(store.m, linkID)
-			store.Unlock()
-			store.Save()
+			if _, err := store.Delete(linkID); err != nil {
+				log.Printf("failed to remove expired preview link: id=%s, err=%v", linkID, err)
+			}
 			Fail(c, http.StatusGone, "链接已过期")
 			return
 		}
@@ -398,9 +454,6 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 }
 
 // DeletePreviewLinkHandler 删除预览链接
-func DeletePreviewLinkHandler() gin.HandlerFunc {
-	return NewRuntime().DeletePreviewLinkHandler()
-}
 
 // DeletePreviewLinkHandler 删除当前 HTTP runtime 的预览链接。
 func (rt *Runtime) DeletePreviewLinkHandler() gin.HandlerFunc {
@@ -412,28 +465,23 @@ func (rt *Runtime) DeletePreviewLinkHandler() gin.HandlerFunc {
 		}
 
 		store := rt.PreviewLinks
-		store.Lock()
-		_, exists := store.m[linkID]
-		if exists {
-			delete(store.m, linkID)
-		}
-		store.Unlock()
-
+		exists, err := store.Delete(linkID)
 		if !exists {
 			Fail(c, http.StatusNotFound, "链接不存在")
 			return
 		}
 
-		store.Save()
+		if err != nil {
+			log.Printf("failed to persist preview link deletion: id=%s, err=%v", linkID, err)
+			Fail(c, http.StatusInternalServerError, "failed to delete preview link")
+			return
+		}
 		OK(c, nil)
 	}
 }
 
 // PreviewInfoHandler 获取预览链接的文件信息（不需要密码）
 // 返回文件名、大小、类型、是否需要密码、是否可预览等
-func PreviewInfoHandler() gin.HandlerFunc {
-	return NewRuntime().PreviewInfoHandler()
-}
 
 // PreviewInfoHandler 获取当前 HTTP runtime 的预览链接文件信息。
 func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
@@ -457,10 +505,9 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 		}
 
 		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
-			store.Lock()
-			delete(store.m, linkID)
-			store.Unlock()
-			store.Save()
+			if _, err := store.Delete(linkID); err != nil {
+				log.Printf("failed to remove expired preview link: id=%s, err=%v", linkID, err)
+			}
 			Fail(c, http.StatusGone, "链接已过期")
 			return
 		}
@@ -524,9 +571,6 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 }
 
 // ListPreviewLinksHandler 列出所有预览链接
-func ListPreviewLinksHandler() gin.HandlerFunc {
-	return NewRuntime().ListPreviewLinksHandler()
-}
 
 // ListPreviewLinksHandler 列出当前 HTTP runtime 的所有预览链接。
 func (rt *Runtime) ListPreviewLinksHandler() gin.HandlerFunc {
@@ -561,12 +605,9 @@ func (rt *Runtime) ListPreviewLinksHandler() gin.HandlerFunc {
 		// 异步清理过期链接
 		if len(expired) > 0 {
 			go func() {
-				store.Lock()
-				for _, id := range expired {
-					delete(store.m, id)
+				if err := store.DeleteMany(expired); err != nil {
+					log.Printf("failed to persist expired preview link cleanup: err=%v", err)
 				}
-				store.Unlock()
-				store.Save()
 			}()
 		}
 
@@ -653,9 +694,6 @@ func isPreviewable(contentType string) bool {
 // PreviewRenderHandler 直接渲染预览文件（HTML 完整预览，支持相对路径资源加载）
 // 当 filepath 为空或 "/" 时返回主文件；否则解析为主文件目录下的相对路径资源
 // 密码校验支持 query 参数 password 或 cookie fk_preview_{linkId}
-func PreviewRenderHandler() gin.HandlerFunc {
-	return NewRuntime().PreviewRenderHandler()
-}
 
 // PreviewRenderHandler 渲染当前 HTTP runtime 的预览文件。
 func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
@@ -679,10 +717,9 @@ func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 		}
 
 		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
-			store.Lock()
-			delete(store.m, linkID)
-			store.Unlock()
-			store.Save()
+			if _, err := store.Delete(linkID); err != nil {
+				log.Printf("failed to remove expired preview link: id=%s, err=%v", linkID, err)
+			}
 			Fail(c, http.StatusGone, "链接已过期")
 			return
 		}

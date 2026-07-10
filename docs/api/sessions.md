@@ -40,7 +40,7 @@
 
 | 状态码 | message                  | 说明         |
 | ------ | ------------------------ | ------------ |
-| 500    | failed to read directory | 读取目录失败 |
+| 503    | session storage unavailable | 会话存储不可用 |
 
 > 会话目录不存在时返回空数组，不报错。
 
@@ -62,9 +62,9 @@
 | 字段         | 类型   | 必填 | 说明            |
 | ------------ | ------ | ---- | --------------- |
 | `session_id` | string | 否   | 会话 ID；不提供时后端生成 UUID |
-| `title`      | string | 否   | 初始标题，默认 `"未命名会话"`，最长 50 个 rune |
+| `title`      | string | 否   | 初始标题，默认 `"未命名会话"`；超长时保留前 50 个 rune 并追加省略号 |
 
-**成功响应** (200)：
+**成功响应**：新建时返回 201；指定 ID 已存在时返回 200。
 
 新建会话：
 
@@ -100,8 +100,26 @@
 | 状态码 | message                  | 说明                 |
 | ------ | ------------------------ | -------------------- |
 | 400    | invalid request body     | 请求体解析失败       |
-| 400    | invalid session ID       | ID 含 `..`、`/`、`\` |
-| 500    | failed to create session | 创建目录或写文件失败 |
+| 400    | invalid session ID       | ID 为空、为 `.`/`..`、含路径分隔符或控制字符 |
+| 503    | session storage unavailable | 会话存储不可用 |
+
+---
+
+## PATCH /api/fkteams/sessions/:sessionID
+
+按资源路径更新会话元数据。`title`、`favorite`、`current_agent` 至少提供一个；标题会去除首尾空白，超长时保留前 50 个 rune 并追加省略号。
+
+```json
+{
+  "title": "新的标题",
+  "favorite": true,
+  "current_agent": "coder"
+}
+```
+
+成功时返回更新后的完整 metadata。失败状态包括 400（参数无效）、404（会话不存在）和 503（会话存储不可用）。
+
+旧的 `/sessions/rename`、`/sessions/favorite`、`/sessions/agent` 继续保留兼容，但新客户端应优先使用本接口。
 
 ---
 
@@ -134,7 +152,7 @@
 
 | 状态码 | message                 | 说明                   |
 | ------ | ----------------------- | ---------------------- |
-| 400    | invalid session ID      | 会话 ID 含 `..` 或 `/` |
+| 400    | invalid session ID      | 会话 ID 不符合资源标识规则 |
 | 404    | session not found       | 历史和元数据均不存在，且没有活跃任务 |
 | 500    | failed to read history  | 读取文件失败           |
 

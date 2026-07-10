@@ -60,6 +60,7 @@ type SessionShareStore struct {
 	sync.RWMutex
 	filePath string
 	m        map[string]*sessionShareEntry
+	loadErr  error
 }
 
 // NewSessionShareStore 创建会话分享存储，并从持久化文件加载现有分享。
@@ -71,7 +72,7 @@ func NewSessionShareStore(filePath string) *SessionShareStore {
 		filePath: filePath,
 		m:        make(map[string]*sessionShareEntry),
 	}
-	store.Load()
+	store.loadErr = store.Load()
 	return store
 }
 
@@ -80,13 +81,16 @@ func sessionSharesFilePath() string {
 }
 
 // Load 从持久化文件加载未过期的会话分享。
-func (s *SessionShareStore) Load() {
+func (s *SessionShareStore) Load() error {
 	if s == nil {
-		return
+		return nil
 	}
 	entries, err := readSessionShareEntries(s.filePath)
 	if err != nil {
-		return
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("load session shares: %w", err)
 	}
 	loaded := make(map[string]*sessionShareEntry, len(entries))
 	now := time.Now()
@@ -116,6 +120,14 @@ func (s *SessionShareStore) Load() {
 	s.Lock()
 	s.m = loaded
 	s.Unlock()
+	return nil
+}
+
+func (s *SessionShareStore) LoadError() error {
+	if s == nil {
+		return nil
+	}
+	return s.loadErr
 }
 
 func readSessionShareEntries(filePath string) (map[string]*sessionShareFileEntry, error) {
@@ -131,13 +143,11 @@ func readSessionShareEntries(filePath string) (map[string]*sessionShareFileEntry
 }
 
 // Save 将会话分享持久化。
-func (s *SessionShareStore) Save() {
+func (s *SessionShareStore) Save() error {
 	if s == nil {
-		return
+		return nil
 	}
-	if err := s.SaveTo(s.filePath); err != nil {
-		log.Printf("failed to save session shares: %v", err)
-	}
+	return s.SaveTo(s.filePath)
 }
 
 // SaveTo 将会话分享写入指定文件。
@@ -146,6 +156,11 @@ func (s *SessionShareStore) SaveTo(filePath string) error {
 		return nil
 	}
 	s.RLock()
+	defer s.RUnlock()
+	return s.saveLockedTo(filePath)
+}
+
+func (s *SessionShareStore) saveLockedTo(filePath string) error {
 	entries := make(map[string]*sessionShareFileEntry, len(s.m))
 	for id, e := range s.m {
 		entries[id] = &sessionShareFileEntry{
@@ -159,8 +174,6 @@ func (s *SessionShareStore) SaveTo(filePath string) error {
 			LastAccessedAt:   expiresAtUnix(e.LastAccessedAt),
 		}
 	}
-	s.RUnlock()
-
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal session shares: %w", err)
@@ -170,6 +183,75 @@ func (s *SessionShareStore) SaveTo(filePath string) error {
 	}
 	if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("write session shares: %w", err)
+	}
+	return nil
+}
+
+func (s *SessionShareStore) Put(id string, entry *sessionShareEntry) error {
+	s.Lock()
+	defer s.Unlock()
+	previous, existed := s.m[id]
+	s.m[id] = entry
+	if err := s.saveLockedTo(s.filePath); err != nil {
+		if existed {
+			s.m[id] = previous
+		} else {
+			delete(s.m, id)
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *SessionShareStore) Delete(id string) (bool, error) {
+	s.Lock()
+	defer s.Unlock()
+	previous, existed := s.m[id]
+	if !existed {
+		return false, nil
+	}
+	delete(s.m, id)
+	if err := s.saveLockedTo(s.filePath); err != nil {
+		s.m[id] = previous
+		return true, err
+	}
+	return true, nil
+}
+
+func (s *SessionShareStore) DeleteMany(ids []string) error {
+	s.Lock()
+	defer s.Unlock()
+	previous := make(map[string]*sessionShareEntry, len(ids))
+	for _, id := range ids {
+		if entry, ok := s.m[id]; ok {
+			previous[id] = entry
+			delete(s.m, id)
+		}
+	}
+	if len(previous) == 0 {
+		return nil
+	}
+	if err := s.saveLockedTo(s.filePath); err != nil {
+		for id, entry := range previous {
+			s.m[id] = entry
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *SessionShareStore) Touch(id string, at time.Time) error {
+	s.Lock()
+	defer s.Unlock()
+	entry := s.m[id]
+	if entry == nil {
+		return nil
+	}
+	previous := entry.LastAccessedAt
+	entry.LastAccessedAt = at
+	if err := s.saveLockedTo(s.filePath); err != nil {
+		entry.LastAccessedAt = previous
+		return err
 	}
 	return nil
 }
@@ -249,19 +331,15 @@ func (s *SessionShareStore) entryByID(id string) (*sessionShareEntry, bool, bool
 		return nil, false, false
 	}
 	if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
-		s.Lock()
-		delete(s.m, id)
-		s.Unlock()
-		s.Save()
+		if _, err := s.Delete(id); err != nil {
+			log.Printf("failed to persist expired session share cleanup: id=%s, err=%v", id, err)
+		}
 		return nil, false, true
 	}
 	return entry, true, false
 }
 
 // CreateSessionShareHandler 创建会话分享
-func CreateSessionShareHandler() gin.HandlerFunc {
-	return NewRuntime().CreateSessionShareHandler()
-}
 
 func (rt *Runtime) CreateSessionShareHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -338,19 +416,17 @@ func (rt *Runtime) CreateSessionShareHandler() gin.HandlerFunc {
 		}
 
 		store := rt.SessionShares
-		store.Lock()
-		store.m[linkID] = entry
-		store.Unlock()
-		store.Save()
+		if err := store.Put(linkID, entry); err != nil {
+			log.Printf("failed to persist session share: id=%s, err=%v", linkID, err)
+			Fail(c, http.StatusInternalServerError, "failed to save session share")
+			return
+		}
 
 		OK(c, sessionShareResponse(linkID, entry))
 	}
 }
 
 // ListSessionSharesHandler 列出会话分享
-func ListSessionSharesHandler() gin.HandlerFunc {
-	return NewRuntime().ListSessionSharesHandler()
-}
 
 func (rt *Runtime) ListSessionSharesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -370,12 +446,9 @@ func (rt *Runtime) ListSessionSharesHandler() gin.HandlerFunc {
 		store.RUnlock()
 
 		if len(expired) > 0 {
-			store.Lock()
-			for _, id := range expired {
-				delete(store.m, id)
+			if err := store.DeleteMany(expired); err != nil {
+				log.Printf("failed to persist expired session share cleanup: err=%v", err)
 			}
-			store.Unlock()
-			store.Save()
 		}
 
 		sort.Slice(shares, func(i, j int) bool {
@@ -386,9 +459,6 @@ func (rt *Runtime) ListSessionSharesHandler() gin.HandlerFunc {
 }
 
 // DeleteSessionShareHandler 删除会话分享
-func DeleteSessionShareHandler() gin.HandlerFunc {
-	return NewRuntime().DeleteSessionShareHandler()
-}
 
 func (rt *Runtime) DeleteSessionShareHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -399,25 +469,21 @@ func (rt *Runtime) DeleteSessionShareHandler() gin.HandlerFunc {
 		}
 
 		store := rt.SessionShares
-		store.Lock()
-		_, exists := store.m[shareID]
-		if exists {
-			delete(store.m, shareID)
-		}
-		store.Unlock()
+		exists, err := store.Delete(shareID)
 		if !exists {
 			Fail(c, http.StatusNotFound, "share not found")
 			return
 		}
-		store.Save()
+		if err != nil {
+			log.Printf("failed to persist session share deletion: id=%s, err=%v", shareID, err)
+			Fail(c, http.StatusInternalServerError, "failed to delete session share")
+			return
+		}
 		OK(c, gin.H{"message": "share deleted"})
 	}
 }
 
 // GetPublicSessionShareInfoHandler 返回公开分享基础信息
-func GetPublicSessionShareInfoHandler() gin.HandlerFunc {
-	return NewRuntime().GetPublicSessionShareInfoHandler()
-}
 
 func (rt *Runtime) GetPublicSessionShareInfoHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -444,9 +510,6 @@ func (rt *Runtime) GetPublicSessionShareInfoHandler() gin.HandlerFunc {
 }
 
 // AccessPublicSessionShareHandler 访问公开分享内容
-func AccessPublicSessionShareHandler() gin.HandlerFunc {
-	return NewRuntime().AccessPublicSessionShareHandler()
-}
 
 func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -484,13 +547,9 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 			return
 		}
 
-		now := time.Now()
-		store.Lock()
-		if current := store.m[shareID]; current != nil {
-			current.LastAccessedAt = now
+		if err := store.Touch(shareID, time.Now()); err != nil {
+			log.Printf("failed to persist session share access time: id=%s, err=%v", shareID, err)
 		}
-		store.Unlock()
-		store.Save()
 
 		OK(c, gin.H{
 			"id":                 shareID,

@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"fkteams/internal/domain/apperror"
 	domainschedule "fkteams/internal/domain/schedule"
 	schedulerport "fkteams/internal/ports/scheduler"
+	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/log"
 
 	"github.com/google/uuid"
@@ -61,7 +63,7 @@ func NewScheduler(baseDir string) (*Scheduler, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal task list: %w", err)
 		}
-		if err := os.WriteFile(filePath, data, 0644); err != nil {
+		if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
 			return nil, fmt.Errorf("failed to create task list file: %w", err)
 		}
 	}
@@ -125,11 +127,11 @@ func (s *Scheduler) AddTask(ctx context.Context, req schedulerport.AddTaskReques
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return nil, fmt.Errorf("load task list: %w", err)
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	tasks.Tasks = append(tasks.Tasks, task)
 	if err := s.saveTasks(tasks); err != nil {
-		return nil, fmt.Errorf("save task list: %w", err)
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	return &task, nil
 }
@@ -137,7 +139,7 @@ func (s *Scheduler) AddTask(ctx context.Context, req schedulerport.AddTaskReques
 // UpdateTask 更新非运行中的调度任务，并重新计算下次执行时间。
 func (s *Scheduler) UpdateTask(ctx context.Context, taskID string, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
 	if taskID == "" {
-		return nil, fmt.Errorf("task ID is required")
+		return nil, apperror.New(apperror.CodeInvalidArgument, "task ID is required")
 	}
 
 	s.mu.Lock()
@@ -145,14 +147,14 @@ func (s *Scheduler) UpdateTask(ctx context.Context, taskID string, req scheduler
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return nil, fmt.Errorf("load task list: %w", err)
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	for i := range tasks.Tasks {
 		if tasks.Tasks[i].ID != taskID {
 			continue
 		}
 		if tasks.Tasks[i].Status == domainschedule.StatusRunning {
-			return nil, fmt.Errorf("cannot update a running task")
+			return nil, apperror.New(apperror.CodeConflict, "cannot update a running task")
 		}
 		next := tasks.Tasks[i]
 		next.Status = domainschedule.StatusPending
@@ -162,22 +164,22 @@ func (s *Scheduler) UpdateTask(ctx context.Context, taskID string, req scheduler
 		}
 		tasks.Tasks[i] = next
 		if err := s.saveTasks(tasks); err != nil {
-			return nil, fmt.Errorf("save task list: %w", err)
+			return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 		}
 		return &next, nil
 	}
-	return nil, fmt.Errorf("task not found")
+	return nil, apperror.New(apperror.CodeNotFound, "task not found")
 }
 
 func (s *Scheduler) applyTaskSchedule(task *domainschedule.Task, req schedulerport.AddTaskRequest) error {
 	if strings.TrimSpace(req.Task) == "" {
-		return fmt.Errorf("task description is required")
+		return apperror.New(apperror.CodeInvalidArgument, "task description is required")
 	}
 	if req.CronExpr == "" && req.ExecuteAt == "" {
-		return fmt.Errorf("must provide cron_expr (recurring) or execute_at (one-time)")
+		return apperror.New(apperror.CodeInvalidArgument, "must provide cron_expr (recurring) or execute_at (one-time)")
 	}
 	if req.CronExpr != "" && req.ExecuteAt != "" {
-		return fmt.Errorf("cron_expr and execute_at are mutually exclusive")
+		return apperror.New(apperror.CodeInvalidArgument, "cron_expr and execute_at are mutually exclusive")
 	}
 
 	task.Task = strings.TrimSpace(req.Task)
@@ -187,7 +189,7 @@ func (s *Scheduler) applyTaskSchedule(task *domainschedule.Task, req schedulerpo
 		expr := strings.TrimSpace(req.CronExpr)
 		nextRun, err := s.ParseCronExpr(expr)
 		if err != nil {
-			return fmt.Errorf("invalid cron expression: %w", err)
+			return apperror.Wrap(apperror.CodeInvalidArgument, "invalid cron expression", err)
 		}
 		task.CronExpr = expr
 		task.NextRunAt = nextRun
@@ -196,10 +198,10 @@ func (s *Scheduler) applyTaskSchedule(task *domainschedule.Task, req schedulerpo
 
 	executeAt, err := time.Parse(time.RFC3339, req.ExecuteAt)
 	if err != nil {
-		return fmt.Errorf("invalid time format, use ISO 8601: %w", err)
+		return apperror.Wrap(apperror.CodeInvalidArgument, "invalid time format, use ISO 8601", err)
 	}
 	if executeAt.Before(time.Now()) {
-		return fmt.Errorf("execute_at must be in the future")
+		return apperror.New(apperror.CodeInvalidArgument, "execute_at must be in the future")
 	}
 	task.OneTime = true
 	task.NextRunAt = executeAt
@@ -213,7 +215,7 @@ func (s *Scheduler) ListTasks(ctx context.Context, statusFilter domainschedule.S
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	if statusFilter == "" {
 		return tasks.Tasks, nil
@@ -231,7 +233,7 @@ func (s *Scheduler) ListTasks(ctx context.Context, statusFilter domainschedule.S
 // CancelTask 取消尚未执行的任务。
 func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
 	if taskID == "" {
-		return fmt.Errorf("task ID is required")
+		return apperror.New(apperror.CodeInvalidArgument, "task ID is required")
 	}
 
 	s.mu.Lock()
@@ -239,7 +241,7 @@ func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return fmt.Errorf("load task list: %w", err)
+		return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 
 	for i := range tasks.Tasks {
@@ -247,21 +249,21 @@ func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
 			continue
 		}
 		if tasks.Tasks[i].Status != domainschedule.StatusPending {
-			return fmt.Errorf("task status is %s, only pending tasks can be cancelled", tasks.Tasks[i].Status)
+			return apperror.Errorf(apperror.CodeConflict, "task status is %s, only pending tasks can be cancelled", tasks.Tasks[i].Status)
 		}
 		tasks.Tasks[i].Status = domainschedule.StatusCancelled
 		if err := s.saveTasks(tasks); err != nil {
-			return fmt.Errorf("save task list: %w", err)
+			return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 		}
 		return nil
 	}
-	return fmt.Errorf("task not found")
+	return apperror.New(apperror.CodeNotFound, "task not found")
 }
 
 // DeleteTask 删除非运行中的任务及其结果。
 func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
 	if taskID == "" {
-		return fmt.Errorf("task ID is required")
+		return apperror.New(apperror.CodeInvalidArgument, "task ID is required")
 	}
 
 	s.mu.Lock()
@@ -269,7 +271,7 @@ func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return fmt.Errorf("load task list: %w", err)
+		return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 
 	found := false
@@ -280,20 +282,20 @@ func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
 			continue
 		}
 		if task.Status == domainschedule.StatusRunning {
-			return fmt.Errorf("cannot delete a running task, cancel it first")
+			return apperror.New(apperror.CodeConflict, "cannot delete a running task, cancel it first")
 		}
 		found = true
 	}
 	if !found {
-		return fmt.Errorf("task not found")
+		return apperror.New(apperror.CodeNotFound, "task not found")
 	}
 
 	if err := os.RemoveAll(s.taskDir(taskID)); err != nil {
-		return fmt.Errorf("remove task dir: %w", err)
+		return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	tasks.Tasks = remaining
 	if err := s.saveTasks(tasks); err != nil {
-		return fmt.Errorf("save task list: %w", err)
+		return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	return nil
 }
@@ -651,12 +653,8 @@ func (s *Scheduler) saveTasks(list *domainschedule.TaskList) error {
 		return fmt.Errorf("failed to marshal task list: %w", err)
 	}
 
-	tmpPath := s.filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, s.filePath); err != nil {
-		return fmt.Errorf("failed to rename temp file: %w", err)
+	if err := atomicfile.WriteFile(s.filePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write task list: %w", err)
 	}
 
 	return nil
@@ -669,19 +667,19 @@ func (s *Scheduler) ReadTaskResult(ctx context.Context, taskID string) (string, 
 
 	task, err := s.loadTaskByID(taskID)
 	if err != nil {
-		return "", fmt.Errorf("load task: %w", err)
+		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	if task == nil {
-		return "", fmt.Errorf("task not found: %s", taskID)
+		return "", apperror.Errorf(apperror.CodeNotFound, "task not found: %s", taskID)
 	}
 	resultPath := s.taskResultPath(taskID)
 	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("task %s has no result yet", taskID)
+		return "", apperror.Errorf(apperror.CodeConflict, "task %s has no result yet", taskID)
 	}
 
 	data, err := os.ReadFile(resultPath)
 	if err != nil {
-		return "", fmt.Errorf("read result file: %w", err)
+		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler result unavailable", err)
 	}
 	return string(data), nil
 }
@@ -697,7 +695,7 @@ func (s *Scheduler) ListHistoryEntries(ctx context.Context, taskID string) ([]do
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read history dir: %w", err)
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", err)
 	}
 
 	var result []domainschedule.HistoryEntry
@@ -727,13 +725,16 @@ func (s *Scheduler) ReadHistoryFile(ctx context.Context, taskID string, filename
 
 	filename = filepath.Base(filename)
 	if filepath.Ext(filename) != ".md" {
-		return "", fmt.Errorf("invalid file type")
+		return "", apperror.New(apperror.CodeInvalidArgument, "invalid file type")
 	}
 
 	filePath := filepath.Join(s.taskDir(taskID), "history", filename)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("read history file: %w", err)
+		if os.IsNotExist(err) {
+			return "", apperror.New(apperror.CodeNotFound, "history file not found")
+		}
+		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", err)
 	}
 	return string(data), nil
 }

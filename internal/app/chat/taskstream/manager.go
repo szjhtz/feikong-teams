@@ -1,6 +1,7 @@
 package taskstream
 
 import (
+	"context"
 	"fkteams/internal/runtime/log"
 	"sync"
 	"time"
@@ -8,8 +9,10 @@ import (
 
 // Manager 全局任务流注册表，管理所有活跃和已完成的任务流。
 type Manager struct {
-	mu      sync.Mutex
-	streams map[string]*Stream
+	mu            sync.Mutex
+	streams       map[string]*Stream
+	cleanupMu     sync.Mutex
+	cleanupCancel context.CancelFunc
 }
 
 // NewManager 创建新的 Manager
@@ -104,14 +107,48 @@ func (m *Manager) CancelAndRemove(sessionID string) {
 }
 
 // StartCleanup 启动后台清理协程，定期移除已完成且超过 TTL 的流。
-func (m *Manager) StartCleanup(interval time.Duration) {
+// 重复调用会替换已有清理协程。
+func (m *Manager) StartCleanup(ctx context.Context, interval time.Duration) {
+	if m == nil || interval <= 0 {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cleanupCtx, cancel := context.WithCancel(ctx)
+	m.cleanupMu.Lock()
+	previous := m.cleanupCancel
+	m.cleanupCancel = cancel
+	m.cleanupMu.Unlock()
+	if previous != nil {
+		previous()
+	}
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for range ticker.C {
-			m.cleanup()
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-ticker.C:
+				m.cleanup()
+			}
 		}
 	}()
+}
+
+// StopCleanup 停止后台清理协程。
+func (m *Manager) StopCleanup() {
+	if m == nil {
+		return
+	}
+	m.cleanupMu.Lock()
+	cancel := m.cleanupCancel
+	m.cleanupCancel = nil
+	m.cleanupMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (m *Manager) cleanup() {

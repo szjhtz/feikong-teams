@@ -13,6 +13,16 @@ const (
 	StatusCancelled Status = "cancelled"
 )
 
+// ValidStatus 判断状态是否属于调度任务生命周期。
+func ValidStatus(status Status) bool {
+	switch status {
+	case StatusPending, StatusRunning, StatusCompleted, StatusFailed, StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Task 是调度任务的领域模型，只表达业务状态，不泄露文件路径等存储细节。
 type Task struct {
 	ID        string     `json:"id"`

@@ -60,9 +60,6 @@ type faviconCacheEntry struct {
 }
 
 // FaviconHandler 代理来源站点图标，避免浏览器侧大量外部 favicon 404 噪音。
-func FaviconHandler() gin.HandlerFunc {
-	return NewRuntime().FaviconHandler()
-}
 
 // FaviconHandler 代理当前 HTTP runtime 的来源站点图标。
 func (rt *Runtime) FaviconHandler() gin.HandlerFunc {

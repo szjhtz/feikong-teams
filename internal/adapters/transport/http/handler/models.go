@@ -12,20 +12,18 @@ import (
 )
 
 // GetProvidersHandler 获取所有已注册的提供者信息
-func GetProvidersHandler() gin.HandlerFunc {
-	return NewRuntime().GetProvidersHandler()
-}
 
 func (rt *Runtime) GetProvidersHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		OK(c, providers.ListProviders())
+		if rt.Providers == nil {
+			OK(c, []providers.ProviderInfo{})
+			return
+		}
+		OK(c, rt.Providers.Providers())
 	}
 }
 
 // GetProviderModelsHandler 获取指定提供者配置的可用模型列表
-func GetProviderModelsHandler() gin.HandlerFunc {
-	return NewRuntime().GetProviderModelsHandler()
-}
 
 func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -55,9 +53,9 @@ func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 		defer cancel()
 
-		registry, err := providers.RequireRegistry(rt.withRuntimeContext(ctx))
-		if err != nil {
-			Fail(c, http.StatusInternalServerError, err.Error())
+		registry := rt.Providers
+		if registry == nil {
+			Fail(c, http.StatusServiceUnavailable, "model provider registry is not configured")
 			return
 		}
 

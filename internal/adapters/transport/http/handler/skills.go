@@ -26,9 +26,6 @@ func GetInstalledSkillsHandler() gin.HandlerFunc {
 }
 
 // SearchSkillsHandler 搜索技能市场。
-func SearchSkillsHandler() gin.HandlerFunc {
-	return NewRuntime().SearchSkillsHandler()
-}
 
 // SearchSkillsHandler 搜索技能市场。
 func (rt *Runtime) SearchSkillsHandler() gin.HandlerFunc {
@@ -82,9 +79,6 @@ func (rt *Runtime) SearchSkillsHandler() gin.HandlerFunc {
 }
 
 // InstallSkillHandler 从技能市场安装技能。
-func InstallSkillHandler() gin.HandlerFunc {
-	return NewRuntime().InstallSkillHandler()
-}
 
 // InstallSkillHandler 从技能市场安装技能。
 func (rt *Runtime) InstallSkillHandler() gin.HandlerFunc {

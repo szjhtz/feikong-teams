@@ -391,6 +391,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 			"github.com/pterm/pterm",
+			"net/http",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
 	case strings.HasPrefix(rel, "internal/runtime/"):
@@ -465,6 +466,21 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/commands" || strings.HasPrefix(importPath, "fkteams/commands/") {
 		t.Errorf("%s imports removed root commands package; use internal/adapters/transport/cli/commands or move reusable behavior into internal/app", rel)
+	}
+}
+
+func TestHTTPSessionHandlersUseApplicationService(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "adapters", "transport", "http", "handler", "session.go")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, forbidden := range []string{"eventlog.LoadMetadata", "eventlog.SaveMetadata", "os.ReadDir", "os.RemoveAll"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("HTTP session handler contains %q; session resource behavior belongs in internal/app/session", forbidden)
+		}
 	}
 }
 

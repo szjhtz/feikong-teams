@@ -31,18 +31,10 @@ func newEngine(authEnabled bool) *gin.Engine {
 	return r
 }
 
-// registerAPIRoutes 注册公共 API 路由
-func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
-	registerAPIRoutesWithRuntime(r, authEnabled, nil, handler.NewRuntime())
-}
-
-// registerAPIRoutesWithState 注册带应用状态的公共 API 路由。
-func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate.State) {
-	registerAPIRoutesWithRuntime(r, authEnabled, state, handler.NewRuntime())
-}
-
 func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appstate.State, runtime *handler.Runtime) {
 	r.GET("/health", handler.HealthHandler())
+	r.GET("/live", handler.HealthHandler())
+	r.GET("/ready", runtime.ReadinessHandler())
 	r.GET("/ws", runtime.WebSocketHandlerWithState(state))
 
 	// OpenAI 兼容 API（独立的 API Key 认证）
@@ -142,6 +134,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 			sessions.GET("", runtime.ListSessionsHandler())
 			sessions.POST("", runtime.CreateSessionHandler())
 			sessions.GET("/:sessionID", runtime.GetSessionHandler())
+			sessions.PATCH("/:sessionID", runtime.UpdateSessionHandler())
 			sessions.DELETE("/:sessionID", runtime.DeleteSessionHandler())
 			sessions.POST("/rename", runtime.RenameSessionHandler())
 			sessions.POST("/favorite", runtime.FavoriteSessionHandler())
@@ -222,6 +215,9 @@ func InitWithRuntime(state *appstate.State, runtime *handler.Runtime) (*gin.Engi
 	}
 	if runtime == nil {
 		runtime = handler.NewRuntime()
+	}
+	if err := runtime.InitializationError(); err != nil {
+		return nil, fmt.Errorf("initialize HTTP runtime: %w", err)
 	}
 
 	r := newEngine(authEnabled)
@@ -333,6 +329,9 @@ func InitAPIWithRuntime(state *appstate.State, runtime *handler.Runtime) (*gin.E
 	}
 	if runtime == nil {
 		runtime = handler.NewRuntime()
+	}
+	if err := runtime.InitializationError(); err != nil {
+		return nil, fmt.Errorf("initialize HTTP runtime: %w", err)
 	}
 
 	r := newEngine(authEnabled)

@@ -48,6 +48,8 @@ type Registry struct {
 	mu           sync.RWMutex
 	factories    map[Type]Factory
 	modelListers map[Type]ModelLister
+	providerInfo map[Type]ProviderInfo
+	order        []Type
 }
 
 // NewRegistry 创建空模型 provider 注册表。
@@ -55,6 +57,7 @@ func NewRegistry() *Registry {
 	return &Registry{
 		factories:    make(map[Type]Factory),
 		modelListers: make(map[Type]ModelLister),
+		providerInfo: make(map[Type]ProviderInfo),
 	}
 }
 
@@ -87,13 +90,24 @@ func RequireRegistry(ctx context.Context) (*Registry, error) {
 }
 
 // Register 注册提供者工厂函数
-func (r *Registry) Register(t Type, f Factory) {
+func (r *Registry) Register(t Type, f Factory, info ...ProviderInfo) {
 	if r == nil || f == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, exists := r.factories[t]; !exists {
+		r.order = append(r.order, t)
+	}
 	r.factories[t] = f
+	metadata := providerInfoFor(t)
+	if len(info) > 0 {
+		metadata = info[0]
+	}
+	if metadata.ID == "" {
+		metadata.ID = string(t)
+	}
+	r.providerInfo[t] = metadata
 }
 
 // NewChatModel 根据配置创建聊天模型
@@ -235,6 +249,20 @@ type ProviderInfo struct {
 	Name string `json:"name"`
 }
 
+// Providers 返回当前注册表实际可创建的 provider 快照。
+func (r *Registry) Providers() []ProviderInfo {
+	if r == nil {
+		return []ProviderInfo{}
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]ProviderInfo, 0, len(r.order))
+	for _, providerType := range r.order {
+		result = append(result, r.providerInfo[providerType])
+	}
+	return result
+}
+
 // ListProviders 返回所有已注册的提供者信息
 func ListProviders() []ProviderInfo {
 	return []ProviderInfo{
@@ -248,4 +276,13 @@ func ListProviders() []ProviderInfo {
 		{ID: string(Ark), Name: "火山方舟"},
 		{ID: string(Copilot), Name: "GitHub Copilot"},
 	}
+}
+
+func providerInfoFor(t Type) ProviderInfo {
+	for _, info := range ListProviders() {
+		if info.ID == string(t) {
+			return info
+		}
+	}
+	return ProviderInfo{ID: string(t), Name: string(t)}
 }

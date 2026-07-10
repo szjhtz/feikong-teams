@@ -24,14 +24,8 @@ func (r scheduleTaskRequest) toAddTaskRequest() schedulerport.AddTaskRequest {
 }
 
 // GetScheduleTasksHandler 返回调度任务列表。
-func GetScheduleTasksHandler() gin.HandlerFunc {
-	return NewRuntime().GetScheduleTasksHandler()
-}
 
 // CreateScheduleTaskHandler 创建调度任务。
-func CreateScheduleTaskHandler() gin.HandlerFunc {
-	return NewRuntime().CreateScheduleTaskHandler()
-}
 
 func (rt *Runtime) CreateScheduleTaskHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -48,7 +42,7 @@ func (rt *Runtime) CreateScheduleTaskHandler() gin.HandlerFunc {
 
 		task, err := service.AddTask(c, req.toAddTaskRequest())
 		if err != nil {
-			Fail(c, http.StatusBadRequest, err.Error())
+			FailError(c, err)
 			return
 		}
 		OK(c, gin.H{"task": task})
@@ -56,9 +50,6 @@ func (rt *Runtime) CreateScheduleTaskHandler() gin.HandlerFunc {
 }
 
 // UpdateScheduleTaskHandler 更新调度任务。
-func UpdateScheduleTaskHandler() gin.HandlerFunc {
-	return NewRuntime().UpdateScheduleTaskHandler()
-}
 
 func (rt *Runtime) UpdateScheduleTaskHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -80,7 +71,7 @@ func (rt *Runtime) UpdateScheduleTaskHandler() gin.HandlerFunc {
 
 		task, err := service.UpdateTask(c, taskID, req.toAddTaskRequest())
 		if err != nil {
-			Fail(c, http.StatusBadRequest, err.Error())
+			FailError(c, err)
 			return
 		}
 		OK(c, gin.H{"task": task})
@@ -88,9 +79,6 @@ func (rt *Runtime) UpdateScheduleTaskHandler() gin.HandlerFunc {
 }
 
 // DeleteScheduleTaskHandler 删除调度任务。
-func DeleteScheduleTaskHandler() gin.HandlerFunc {
-	return NewRuntime().DeleteScheduleTaskHandler()
-}
 
 func (rt *Runtime) DeleteScheduleTaskHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -106,7 +94,7 @@ func (rt *Runtime) DeleteScheduleTaskHandler() gin.HandlerFunc {
 		}
 
 		if err := service.DeleteTask(c, taskID); err != nil {
-			Fail(c, http.StatusBadRequest, err.Error())
+			FailError(c, err)
 			return
 		}
 		OK(c, gin.H{"message": "task deleted"})
@@ -125,7 +113,7 @@ func (rt *Runtime) GetScheduleTasksHandler() gin.HandlerFunc {
 		tasks, err := service.ListTasks(c, domainschedule.Status(statusFilter))
 		if err != nil {
 			log.Printf("failed to get schedule tasks: %v", err)
-			Fail(c, http.StatusInternalServerError, err.Error())
+			FailError(c, err)
 			return
 		}
 		if tasks == nil {
@@ -137,9 +125,6 @@ func (rt *Runtime) GetScheduleTasksHandler() gin.HandlerFunc {
 }
 
 // CancelScheduleTaskHandler 取消调度任务。
-func CancelScheduleTaskHandler() gin.HandlerFunc {
-	return NewRuntime().CancelScheduleTaskHandler()
-}
 
 func (rt *Runtime) CancelScheduleTaskHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -157,7 +142,7 @@ func (rt *Runtime) CancelScheduleTaskHandler() gin.HandlerFunc {
 
 		if err := service.CancelTask(c, taskID); err != nil {
 			log.Printf("failed to cancel schedule task: id=%s, err=%v", taskID, err)
-			Fail(c, http.StatusBadRequest, err.Error())
+			FailError(c, err)
 			return
 		}
 
@@ -166,9 +151,6 @@ func (rt *Runtime) CancelScheduleTaskHandler() gin.HandlerFunc {
 }
 
 // GetTaskResultHandler 返回任务最新结果。
-func GetTaskResultHandler() gin.HandlerFunc {
-	return NewRuntime().GetTaskResultHandler()
-}
 
 func (rt *Runtime) GetTaskResultHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -186,7 +168,7 @@ func (rt *Runtime) GetTaskResultHandler() gin.HandlerFunc {
 
 		result, err := service.ReadTaskResult(c, taskID)
 		if err != nil {
-			Fail(c, http.StatusNotFound, err.Error())
+			FailError(c, err)
 			return
 		}
 
@@ -195,9 +177,6 @@ func (rt *Runtime) GetTaskResultHandler() gin.HandlerFunc {
 }
 
 // GetTaskHistoryHandler 返回任务历史结果列表。
-func GetTaskHistoryHandler() gin.HandlerFunc {
-	return NewRuntime().GetTaskHistoryHandler()
-}
 
 func (rt *Runtime) GetTaskHistoryHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -215,7 +194,7 @@ func (rt *Runtime) GetTaskHistoryHandler() gin.HandlerFunc {
 
 		entries, err := service.ListHistoryEntries(c, taskID)
 		if err != nil {
-			Fail(c, http.StatusInternalServerError, err.Error())
+			FailError(c, err)
 			return
 		}
 		if entries == nil {
@@ -227,9 +206,6 @@ func (rt *Runtime) GetTaskHistoryHandler() gin.HandlerFunc {
 }
 
 // GetTaskHistoryFileHandler 返回指定历史结果内容。
-func GetTaskHistoryFileHandler() gin.HandlerFunc {
-	return NewRuntime().GetTaskHistoryFileHandler()
-}
 
 func (rt *Runtime) GetTaskHistoryFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -248,7 +224,7 @@ func (rt *Runtime) GetTaskHistoryFileHandler() gin.HandlerFunc {
 
 		content, err := service.ReadHistoryFile(c, taskID, filename)
 		if err != nil {
-			Fail(c, http.StatusNotFound, err.Error())
+			FailError(c, err)
 			return
 		}
 

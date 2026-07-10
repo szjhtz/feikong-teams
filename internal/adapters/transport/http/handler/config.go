@@ -4,11 +4,11 @@ import (
 	"context"
 	memorymodel "fkteams/internal/adapters/model/memory"
 	"fkteams/internal/app/agent/catalog"
-	agentcommon "fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/tools"
 	"fkteams/internal/runtime/log"
+	modelregistry "fkteams/internal/runtime/model"
 	"net/http"
 	"runtime"
 	"strings"
@@ -72,14 +72,8 @@ func GetConfigHandler() gin.HandlerFunc {
 }
 
 // UpdateConfigHandler 更新配置（敏感字段合并旧值）
-func UpdateConfigHandler() gin.HandlerFunc {
-	return NewRuntime().UpdateConfigHandlerWithState(nil)
-}
 
 // UpdateConfigHandlerWithState 更新配置并使用显式应用状态重载依赖。
-func UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
-	return NewRuntime().UpdateConfigHandlerWithState(state)
-}
 
 // UpdateConfigHandlerWithState 更新配置并清理当前 HTTP runtime 的运行缓存。
 func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
@@ -153,15 +147,17 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		}
 
 		// 重载智能体注册表、清除 Runner 缓存和 MCP 工具缓存
-		if err := agents.Reload(rt.withRuntimeContext(c.Request.Context())); err != nil {
-			log.Printf("[agent] reload registry failed: %v", err)
+		if rt.AgentRegistry != nil {
+			rt.AgentRegistry.Reload()
 		}
 		rt.clearRunnerCache()
-		tools.ClearMCPToolCache(rt.withRuntimeContext(c.Request.Context()))
+		if rt.ToolRegistry != nil {
+			rt.ToolRegistry.ClearMCPToolCache()
+		}
 		if rt.ResetChannels != nil {
 			rt.ResetChannels()
 		}
-		resetMemoryLLM(rt.withRuntimeContext(c.Request.Context()), state)
+		resetMemoryLLM(c.Request.Context(), state, rt.ModelRegistry)
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
@@ -215,12 +211,24 @@ func restoreAgentSSHPasswords(items []config.AgentConfig, oldCfg *config.Config)
 }
 
 // resetMemoryLLM 使用当前配置重建 MemoryManager 的 LLM 客户端
-func resetMemoryLLM(ctx context.Context, state *appstate.State) {
+func resetMemoryLLM(ctx context.Context, state *appstate.State, registry *modelregistry.Registry) {
 	manager := memoryFromState(state)
 	if manager == nil {
 		return
 	}
-	chatModel, err := agentcommon.NewChatModel(ctx)
+	cfg := config.Get()
+	modelCfg := cfg.ResolveDefaultModel(config.ModelUseChat)
+	if registry == nil || modelCfg == nil {
+		log.Printf("[memory] model registry or default chat model is not configured")
+		return
+	}
+	chatModel, err := registry.NewChatModel(ctx, &modelregistry.Config{
+		Provider:     modelregistry.Type(modelCfg.Provider),
+		APIKey:       modelCfg.APIKey,
+		BaseURL:      modelCfg.BaseURL,
+		Model:        modelCfg.Model,
+		ExtraHeaders: modelCfg.ParseExtraHeaders(),
+	})
 	if err != nil {
 		log.Printf("[memory] 重建模型失败，记忆服务继续使用旧模型: %v", err)
 		return
@@ -235,24 +243,26 @@ func resetMemoryLLM(ctx context.Context, state *appstate.State) {
 }
 
 // GetToolNamesHandler 获取可用工具名列表
-func GetToolNamesHandler() gin.HandlerFunc {
-	return NewRuntime().GetToolNamesHandler()
-}
 
 func (rt *Runtime) GetToolNamesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		OK(c, tools.GetAllToolNames(rt.withRuntimeContext(c.Request.Context())))
+		if rt.ToolRegistry == nil {
+			OK(c, []string{})
+			return
+		}
+		OK(c, rt.ToolRegistry.GetAllToolNames(c.Request.Context()))
 	}
 }
 
 // GetToolCatalogHandler 获取可配置工具组详情
-func GetToolCatalogHandler() gin.HandlerFunc {
-	return NewRuntime().GetToolCatalogHandler()
-}
 
 func (rt *Runtime) GetToolCatalogHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		OK(c, tools.GetAllToolInfos(rt.withRuntimeContext(c.Request.Context())))
+		if rt.ToolRegistry == nil {
+			OK(c, []tools.ToolGroupInfo{})
+			return
+		}
+		OK(c, rt.ToolRegistry.GetAllToolInfos(c.Request.Context()))
 	}
 }
 

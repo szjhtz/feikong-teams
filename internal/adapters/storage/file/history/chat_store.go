@@ -7,6 +7,7 @@ import (
 	"time"
 
 	appchat "fkteams/internal/app/chat"
+	domainsession "fkteams/internal/domain/session"
 )
 
 type ChatSessionStore struct {
@@ -36,14 +37,14 @@ func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.Meta
 		meta = &SessionMetadata{
 			ID:        update.SessionID,
 			Title:     titleFromSource(update.TitleSource, update.DefaultTitle),
-			Status:    update.Status,
+			Status:    domainsession.Status(update.Status),
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
 	} else {
 		meta.UpdatedAt = now
 		if update.Status != "" {
-			meta.Status = update.Status
+			meta.Status = domainsession.Status(update.Status)
 		}
 		if update.UpdateDefaultTitle && update.TitleSource != "" && isDefaultTitle(meta.Title) {
 			meta.Title = truncateTitle(update.TitleSource)

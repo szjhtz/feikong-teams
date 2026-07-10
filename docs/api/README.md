@@ -19,6 +19,7 @@
 ```json
 {
   "code": 1,
+  "error_code": "not_found",
   "message": "error message"
 }
 ```
@@ -26,6 +27,7 @@
 | 字段 | 说明 |
 | ---- | ---- |
 | `code` | `0` 成功，`1` 失败 |
+| `error_code` | 稳定错误码，例如 `invalid_argument`、`not_found`、`conflict`、`unavailable`、`internal` |
 | `message` | 响应描述 |
 | `data` | 业务数据，失败时通常省略 |
 
@@ -110,7 +112,9 @@ Authorization: Bearer <api_key>
 
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
-| GET | `/health` | 健康检查 |
+| GET | `/health` | 兼容健康检查（等同存活检查） |
+| GET | `/live` | 进程存活检查 |
+| GET | `/ready` | 核心 Runtime 就绪检查 |
 | GET | `/ws` | WebSocket 聊天和任务事件通道 |
 | POST | `/api/fkteams/login` | 登录获取 Token，仅启用认证时注册 |
 | GET | `/api/fkteams/version` | 版本信息 |
@@ -145,6 +149,7 @@ Authorization: Bearer <api_key>
 | GET | `/api/fkteams/sessions` | 会话列表 |
 | POST | `/api/fkteams/sessions` | 创建会话 |
 | GET | `/api/fkteams/sessions/:sessionID` | 加载会话历史 |
+| PATCH | `/api/fkteams/sessions/:sessionID` | 更新会话标题、收藏状态或当前智能体 |
 | DELETE | `/api/fkteams/sessions/:sessionID` | 删除会话 |
 | POST | `/api/fkteams/sessions/rename` | 重命名会话 |
 | POST | `/api/fkteams/sessions/agent` | 更新会话当前智能体 |
