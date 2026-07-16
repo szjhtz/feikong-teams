@@ -172,7 +172,8 @@ const chatSlice = createSlice({
       applyChatEvent(state, action.payload);
     },
     receiveEvents(state, action: PayloadAction<ChatEvent[]>) {
-      for (const event of action.payload) applyChatEvent(state, event);
+      const messagesByID = new Map(state.messages.map((message) => [message.id, message]));
+      for (const event of action.payload) applyChatEvent(state, event, messagesByID);
     },
     setQueue(state, action: PayloadAction<QueueItem[]>) {
       state.queue = action.payload;
@@ -186,7 +187,11 @@ const chatSlice = createSlice({
   },
 });
 
-function applyChatEvent(state: ChatState, payload: ChatEvent) {
+function applyChatEvent(
+  state: ChatState,
+  payload: ChatEvent,
+  messagesByID?: Map<string, ChatViewMessage>,
+) {
   const event = { ...payload };
   if (event.session_id && state.activeSessionID && event.session_id !== state.activeSessionID) {
     applyTaskLifecycleEvent(state, event);
@@ -229,7 +234,7 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
   if (isMemberActivityEvent(event)) {
     const key = memberActivityKey(event);
     const id = `member-${key}`;
-    let message = state.messages.find((item) => item.id === id);
+    let message = messagesByID?.get(id) || state.messages.find((item) => item.id === id);
     if (!message) {
       message = {
         id,
@@ -242,12 +247,13 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
       const parentIndex = findParentToolMessageIndex(state.messages, event);
       if (parentIndex >= 0) state.messages.splice(parentIndex + 1, 0, message);
       else state.messages.push(message);
+      messagesByID?.set(id, message);
     }
     appendBufferedChatEvent(message.events, event, assistantMessageKey(event));
   }
   if (shouldAttachAssistantMessage(event)) {
     const key = assistantMessageKey(event);
-    let message = state.messages.find((item) => item.id === key);
+    let message = messagesByID?.get(key) || state.messages.find((item) => item.id === key);
     if (!message) {
       message = {
         id: key,
@@ -257,6 +263,7 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
         events: [],
       };
       state.messages.push(message);
+      messagesByID?.set(key, message);
     }
     const content = eventText(event);
     if (isAssistantTextDelta(event) && content) {

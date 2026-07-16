@@ -1,4 +1,4 @@
-import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send, ShieldAlert } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
@@ -123,6 +123,18 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
   const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
   const canAnswerAsk = Boolean(isProcessing && activeSessionID);
   const canAnswerApproval = canAnswerAsk;
+  const handleAskAnswered = useCallback((ask: AskActivity, selected: string[], freeText: string) => {
+    setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
+    dispatch(chatActions.receiveEvent({
+      type: "ask_answered",
+      session_id: ask.sessionID || activeSessionID,
+      ask_id: ask.id,
+      detail: ask.id,
+      selected,
+      free_text: freeText,
+      content: askResponseSummary(selected, freeText),
+    }));
+  }, [activeSessionID, dispatch]);
   const timeline = useMemo(
     () => buildTimelineModel(messages, displayEvents, submittedAskIDs, submittedApprovalIDs, isProcessing),
     [messages, displayEvents, submittedAskIDs, submittedApprovalIDs, isProcessing],
@@ -177,19 +189,6 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
     stickToBottomRef.current = atBottom;
     setScrollDistanceFromBottom(Math.round(distance));
     setShowJumpToBottom(!atBottom);
-  }
-
-  function handleAskAnswered(ask: AskActivity, selected: string[], freeText: string) {
-    setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
-    dispatch(chatActions.receiveEvent({
-      type: "ask_answered",
-      session_id: ask.sessionID || activeSessionID,
-      ask_id: ask.id,
-      detail: ask.id,
-      selected,
-      free_text: freeText,
-      content: askResponseSummary(selected, freeText),
-    }));
   }
 
   function handleApprovalAnswered(approval: ApprovalActivity, decision: 0 | 1 | 2) {
@@ -414,7 +413,18 @@ function ThinkingDots() {
   );
 }
 
-function MessageRow({
+interface MessageRowProps {
+  message: ChatViewMessage;
+  parts: MessageRenderPart[];
+  sessionID?: string;
+  agents: AgentInfo[];
+  showAgentLabel: boolean;
+  showCopyAction: boolean;
+  canAnswerAsk: boolean;
+  onAskAnswered: AskAnsweredHandler;
+}
+
+const MessageRow = memo(function MessageRow({
   message,
   parts,
   sessionID,
@@ -423,16 +433,7 @@ function MessageRow({
   showCopyAction,
   canAnswerAsk,
   onAskAnswered,
-}: {
-  message: ChatViewMessage;
-  parts: MessageRenderPart[];
-  sessionID?: string;
-  agents: AgentInfo[];
-  showAgentLabel: boolean;
-  showCopyAction: boolean;
-  canAnswerAsk: boolean;
-  onAskAnswered: (ask: AskActivity, selected: string[], freeText: string) => void;
-}) {
+}: MessageRowProps) {
   const hasContent = Boolean(message.content.trim());
   if (message.role === "system") {
     return (
@@ -494,6 +495,37 @@ function MessageRow({
       {showCopyAction && (hasContent || copyContent) ? <MessageActions content={copyContent || message.content} compact /> : null}
     </article>
   );
+}, messageRowPropsEqual);
+
+function messageRowPropsEqual(previous: MessageRowProps, next: MessageRowProps) {
+  return previous.message === next.message
+    && previous.sessionID === next.sessionID
+    && previous.agents === next.agents
+    && previous.showAgentLabel === next.showAgentLabel
+    && previous.showCopyAction === next.showCopyAction
+    && previous.canAnswerAsk === next.canAnswerAsk
+    && previous.onAskAnswered === next.onAskAnswered
+    && messageRenderPartsEqual(previous.parts, next.parts);
+}
+
+function messageRenderPartsEqual(previous: MessageRenderPart[], next: MessageRenderPart[]) {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  return previous.every((part, index) => {
+    const candidate = next[index];
+    if (part.type !== candidate.type) return false;
+    if (part.type === "text" || part.type === "reasoning") {
+      return candidate.type === part.type
+        && part.content === candidate.content
+        && part.key === candidate.key
+        && part.streaming === candidate.streaming;
+    }
+    if (part.type === "ask") {
+      return candidate.type === "ask" && JSON.stringify(part.ask) === JSON.stringify(candidate.ask);
+    }
+    return candidate.type === "tool"
+      && JSON.stringify([part.tool, part.member]) === JSON.stringify([candidate.tool, candidate.member]);
+  });
 }
 
 function UserAttachmentPills({ attachments }: { attachments: ContentPartDTO[] }) {

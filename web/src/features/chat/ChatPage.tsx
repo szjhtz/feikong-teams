@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { shallowEqual } from "react-redux";
 import { ArrowDown, CalendarClock, FolderOpen, ListTree, Settings, Share2, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { appActions, chatActions, sessionsActions, type AppPanel } from "@/app/store";
@@ -17,15 +18,15 @@ export function ChatPage() {
   const isProcessing = useAppSelector((state) => Boolean(
     state.chat.activeSessionID && state.chat.runningTasks[state.chat.activeSessionID],
   ));
-  const messages = useAppSelector((state) => state.chat.messages);
-  const events = useAppSelector((state) => state.chat.events);
-  const queue = useAppSelector((state) => state.chat.queue);
+  const messageCount = useAppSelector((state) => state.chat.messages.length);
+  const eventCount = useAppSelector((state) => state.chat.events.length);
+  const queueCount = useAppSelector((state) => state.chat.queue.length);
   const error = useAppSelector((state) => state.chat.error);
   const [failedSessionID, setFailedSessionID] = useState("");
   const [showSessionLoading, setShowSessionLoading] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
-  const hasConversation = messages.length > 0 || events.length > 0 || queue.length > 0 || isProcessing || Boolean(error);
+  const hasConversation = messageCount > 0 || eventCount > 0 || queueCount > 0 || isProcessing || Boolean(error);
   const isLoadingSession = Boolean(
     activeSessionID &&
       activeSessionID !== viewSessionID &&
@@ -105,21 +106,23 @@ function ChatSessionLoading() {
   );
 }
 
-function QuestionNavigator({
+const QuestionNavigator = memo(function QuestionNavigator({
   hideMobile,
   jumpControls,
 }: {
   hideMobile: boolean;
   jumpControls: { distanceFromBottom: number; jump: () => void };
 }) {
-  const messages = useAppSelector((state) => state.chat.messages);
+  const questions = useAppSelector(
+    (state) => state.chat.messages.filter((message) => message.role === "user" && Boolean(message.content.trim())),
+    shallowEqual,
+  );
   const panelRef = useRef<HTMLDivElement | null>(null);
   const mobileRef = useRef<HTMLDivElement | null>(null);
   const [activeQuestionID, setActiveQuestionID] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileQuestionVisible, setMobileQuestionVisible] = useState(false);
   const [mobileBottomVisible, setMobileBottomVisible] = useState(false);
-  const questions = messages.filter((message) => message.role === "user" && message.content.trim());
   const orderedQuestions = questions.map((question, index) => ({ question, index: index + 1 }));
   const latestQuestionID = orderedQuestions[orderedQuestions.length - 1]?.question.id || "";
   const visibleQuestions = orderedQuestions.slice(-8);
@@ -272,7 +275,7 @@ function QuestionNavigator({
       ) : null}
     </>
   );
-}
+});
 
 function QuestionButton({ active, index, content, onClick }: { active: boolean; index: number; content: string; onClick: () => void }) {
   return (
