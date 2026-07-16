@@ -8,25 +8,36 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+const maxKnownHostsBytes int64 = 16 << 20
 
 type SshClient struct {
 	user       string
 	pwd        string
 	addr       string
+	knownHosts string
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
 }
 
-func NewClient(user, pwd, addr string) *SshClient {
+func NewClient(user, pwd, addr string, knownHostsFile ...string) *SshClient {
+	knownHosts := ""
+	if len(knownHostsFile) > 0 {
+		knownHosts = knownHostsFile[0]
+	}
 	return &SshClient{
-		user: user,
-		pwd:  pwd,
-		addr: addr,
+		user:       user,
+		pwd:        pwd,
+		addr:       addr,
+		knownHosts: knownHosts,
 	}
 }
 
@@ -34,13 +45,26 @@ func (c *SshClient) Addr() string {
 	return c.addr
 }
 
+func (c *SshClient) String() string {
+	if c == nil {
+		return "SshClient<nil>"
+	}
+	return fmt.Sprintf("SshClient{user:%q, addr:%q}", c.user, c.addr)
+}
+
 func (c *SshClient) Connect() error {
+	defer func() { c.pwd = "" }()
+	hostKeyCallback, err := loadHostKeyCallback(c.knownHosts)
+	if err != nil {
+		return err
+	}
 	config := &ssh.ClientConfig{
 		User: c.user,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(c.pwd),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
+		Timeout:         15 * time.Second,
 	}
 
 	sshClient, err := ssh.Dial("tcp", c.addr, config)
@@ -56,6 +80,50 @@ func (c *SshClient) Connect() error {
 	}
 	c.sftpClient = sftpClient
 	return nil
+}
+
+func loadHostKeyCallback(path string) (ssh.HostKeyCallback, error) {
+	resolvedPath, err := resolveKnownHostsPath(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("inspect known hosts file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("known hosts path is not a regular file")
+	}
+	if info.Size() > maxKnownHostsBytes {
+		return nil, fmt.Errorf("known hosts file exceeds %d bytes", maxKnownHostsBytes)
+	}
+	callback, err := knownhosts.New(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("load known hosts file: %w", err)
+	}
+	return callback, nil
+}
+
+func resolveKnownHostsPath(path string) (string, error) {
+	if path == "" || path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user home directory: %w", err)
+		}
+		switch {
+		case path == "" || path == "~":
+			path = filepath.Join(home, ".ssh", "known_hosts")
+		default:
+			path = filepath.Join(home, path[2:])
+		}
+	} else if strings.HasPrefix(path, "~") {
+		return "", fmt.Errorf("unsupported home directory shorthand in known hosts path")
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve known hosts path: %w", err)
+	}
+	return absPath, nil
 }
 
 func (c *SshClient) Close() error {

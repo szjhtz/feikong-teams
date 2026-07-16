@@ -119,9 +119,10 @@ func (s Server) Validate() error {
 
 // AgentSSH 描述智能体专属 SSH 连接信息。
 type AgentSSH struct {
-	Host     string `toml:"host" json:"host"`
-	Username string `toml:"username" json:"username"`
-	Password string `toml:"password" json:"password"`
+	Host           string `toml:"host" json:"host"`
+	Username       string `toml:"username" json:"username"`
+	Password       string `toml:"password" json:"password"`
+	KnownHostsFile string `toml:"known_hosts_file,omitempty" json:"known_hosts_file,omitempty"`
 }
 
 // AgentConfig 描述一个可全局调用的智能体配置。
@@ -719,9 +720,10 @@ func GenerateExample() error {
 					Prompt:      "",
 					Tools:       []string{"ssh"},
 					SSH: &AgentSSH{
-						Host:     "ip:port",
-						Username: "your_ssh_user",
-						Password: "your_ssh_password",
+						Host:           "ip:port",
+						Username:       "your_ssh_user",
+						Password:       "your_ssh_password",
+						KnownHostsFile: "~/.ssh/known_hosts",
 					},
 					Enabled: false,
 				},

@@ -22,9 +22,10 @@ type ToolResolveContext struct {
 }
 
 type SSHConfig struct {
-	Host     string
-	Username string
-	Password string
+	Host           string
+	Username       string
+	Password       string
+	KnownHostsFile string
 }
 
 type resolveContextPatchKey struct{}

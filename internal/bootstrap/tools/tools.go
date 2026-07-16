@@ -245,7 +245,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				if host == "" || username == "" || password == "" {
 					return nil, fmt.Errorf("SSH 连接信息未配置，请在当前智能体的 ssh 配置中设置 host, username, password")
 				}
-				sshTools, err := sshtool.NewSSHTools(host, username, password)
+				sshTools, err := sshtool.NewSSHTools(host, username, password, sshCfg.KnownHostsFile)
 				if err != nil {
 					return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
 				}

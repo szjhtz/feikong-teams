@@ -441,9 +441,10 @@ func buildConfiguredDefinition(ctx context.Context, cfg *config.Config, def comm
 		applySSHConfigToDefinition(&def, agentCfg.SSH)
 		ctx = apptools.WithResolveContextPatch(ctx, apptools.ToolResolveContext{
 			SSH: &apptools.SSHConfig{
-				Host:     agentCfg.SSH.Host,
-				Username: agentCfg.SSH.Username,
-				Password: agentCfg.SSH.Password,
+				Host:           agentCfg.SSH.Host,
+				Username:       agentCfg.SSH.Username,
+				Password:       agentCfg.SSH.Password,
+				KnownHostsFile: agentCfg.SSH.KnownHostsFile,
 			},
 		})
 	}
@@ -508,9 +509,10 @@ func customAgentInfo(cfg *config.Config, agentCfg config.AgentConfig) AgentInfo 
 			if agentCfg.SSH != nil {
 				ctx = apptools.WithResolveContextPatch(ctx, apptools.ToolResolveContext{
 					SSH: &apptools.SSHConfig{
-						Host:     agentCfg.SSH.Host,
-						Username: agentCfg.SSH.Username,
-						Password: agentCfg.SSH.Password,
+						Host:           agentCfg.SSH.Host,
+						Username:       agentCfg.SSH.Username,
+						Password:       agentCfg.SSH.Password,
+						KnownHostsFile: agentCfg.SSH.KnownHostsFile,
 					},
 				})
 			}

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"fkteams/internal/runtime/executil"
-	"fkteams/internal/runtime/log"
 )
 
 const maxSSHCommandOutputBytes int64 = 1 << 20
@@ -17,14 +16,13 @@ type SSHTools struct {
 }
 
 // NewSSHTools 创建一个新的SSH工具实例
-func NewSSHTools(host, username, password string) (*SSHTools, error) {
+func NewSSHTools(host, username, password string, knownHostsFile ...string) (*SSHTools, error) {
 	if host == "" || username == "" || password == "" {
 		return nil, fmt.Errorf("host, username 和 password 都是必需的")
 	}
 
-	client := NewClient(username, password, host)
+	client := NewClient(username, password, host, knownHostsFile...)
 	if err := client.Connect(); err != nil {
-		log.Printf("%+v", client)
 		return nil, fmt.Errorf("SSH 连接失败: %v", err)
 	}
 

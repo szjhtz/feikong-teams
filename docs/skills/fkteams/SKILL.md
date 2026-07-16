@@ -325,7 +325,7 @@ id = "remote-prod"
 name = "生产服务器"
 description = "通过 SSH 管理生产服务器"
 tools = ["ssh"]
-ssh = { host = "ip:port", username = "user", password = "pass" }
+ssh = { host = "ip:port", username = "user", password = "pass", known_hosts_file = "~/.ssh/known_hosts" }
 enabled = true
 
 # 长期记忆

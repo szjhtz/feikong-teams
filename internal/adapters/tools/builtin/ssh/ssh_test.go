@@ -3,14 +3,45 @@ package ssh
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
 
 func TestNewClientAndAddr(t *testing.T) {
-	client := NewClient("user", "pwd", "127.0.0.1:22")
-	if client.user != "user" || client.pwd != "pwd" || client.Addr() != "127.0.0.1:22" {
+	client := NewClient("user", "pwd", "127.0.0.1:22", "/tmp/known_hosts")
+	if client.user != "user" || client.pwd != "pwd" || client.Addr() != "127.0.0.1:22" || client.knownHosts != "/tmp/known_hosts" {
 		t.Fatalf("client = %#v", client)
+	}
+	if strings.Contains(client.String(), "pwd") {
+		t.Fatalf("client string exposes password: %s", client)
+	}
+}
+
+func TestResolveKnownHostsPathAndLimits(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path, err := resolveKnownHostsPath("~/.ssh/custom_hosts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(home, ".ssh", "custom_hosts") {
+		t.Fatalf("resolved path = %q", path)
+	}
+	large := filepath.Join(t.TempDir(), "known_hosts")
+	file, err := os.Create(large)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxKnownHostsBytes + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadHostKeyCallback(large); err == nil {
+		t.Fatal("loadHostKeyCallback accepted oversized file")
 	}
 }
 
