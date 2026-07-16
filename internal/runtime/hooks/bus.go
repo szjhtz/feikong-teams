@@ -21,6 +21,11 @@ type registeredHandler struct {
 	handler Handler
 	options Options
 	seq     int64
+	state   *handlerInvocationState
+}
+
+type handlerInvocationState struct {
+	slot chan struct{}
 }
 
 type Bus struct {
@@ -56,7 +61,12 @@ func (b *Bus) Register(handler Handler, opts Options) func() {
 		if pointOpts.ErrorPolicy == "" {
 			pointOpts.ErrorPolicy = defaultErrorPolicy(point)
 		}
-		entry := registeredHandler{handler: handler, options: pointOpts, seq: seq}
+		entry := registeredHandler{
+			handler: handler,
+			options: pointOpts,
+			seq:     seq,
+			state:   &handlerInvocationState{slot: make(chan struct{}, 1)},
+		}
 		b.handlers[point] = append(b.handlers[point], entry)
 		sortHandlers(b.handlers[point])
 	}
@@ -93,6 +103,9 @@ func (b *Bus) unregister(handler Handler) {
 }
 
 func (b *Bus) Invoke(ctx context.Context, inv Invocation) (Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if inv.HookPoint == "" && inv.Payload != nil {
 		inv.HookPoint = inv.Payload.HookPoint()
 	}
@@ -156,6 +169,13 @@ func invokeHandler(ctx context.Context, entry registeredHandler, inv Invocation)
 	}
 	hookCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if entry.state != nil {
+		select {
+		case entry.state.slot <- struct{}{}:
+		case <-hookCtx.Done():
+			return Result{}, fmt.Errorf("hook %s timeout: %w", entry.handler.Name(), hookCtx.Err())
+		}
+	}
 
 	type response struct {
 		result Result
@@ -166,6 +186,9 @@ func invokeHandler(ctx context.Context, entry registeredHandler, inv Invocation)
 		var result Result
 		var err error
 		defer func() {
+			if entry.state != nil {
+				<-entry.state.slot
+			}
 			if recovered := recover(); recovered != nil {
 				err = fmt.Errorf("hook %s panic: %v", entry.handler.Name(), recovered)
 			}

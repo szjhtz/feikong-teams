@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,6 +105,27 @@ func TestBusTimesOutHandler(t *testing.T) {
 	if _, err := bus.Invoke(context.Background(), Invocation{HookPoint: HookBeforeRun}); err == nil {
 		t.Fatal("expected timeout")
 	}
+}
+
+func TestBusDoesNotSpawnRepeatedStuckHandlerCalls(t *testing.T) {
+	bus := NewBus()
+	blocked := make(chan struct{})
+	var calls atomic.Int32
+	bus.RegisterFunc("stuck", []HookPoint{HookBeforeRun}, func(ctx Context, inv Invocation) (Result, error) {
+		calls.Add(1)
+		<-blocked
+		return Result{}, nil
+	}, Options{Timeout: 5 * time.Millisecond})
+
+	for i := 0; i < 5; i++ {
+		if _, err := bus.Invoke(context.Background(), Invocation{HookPoint: HookBeforeRun}); err == nil {
+			t.Fatalf("invoke %d should time out", i)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("stuck handler call count = %d, want 1", got)
+	}
+	close(blocked)
 }
 
 func TestNilBusIsNoop(t *testing.T) {
