@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
+
+const maxPackageJSONBytes int64 = 4 << 20
 
 // BunTools 基于 bun 的 JavaScript 脚本执行工具实例
 type BunTools struct {
@@ -274,7 +278,7 @@ func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*
 
 	// 读取 package.json 获取依赖列表
 	packageJSONPath := filepath.Join(bt.envDir, "package.json")
-	data, err := os.ReadFile(packageJSONPath)
+	data, err := readLimitedFile(packageJSONPath, maxPackageJSONBytes)
 	if err != nil {
 		return &ListPackageResponse{
 			Success:      false,
@@ -301,6 +305,12 @@ func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*
 	for name, version := range pkgJSON.DevDependencies {
 		packages = append(packages, PackageInfo{Name: name, Version: version + " (dev)"})
 	}
+	sort.Slice(packages, func(i, j int) bool {
+		if packages[i].Name == packages[j].Name {
+			return packages[i].Version < packages[j].Version
+		}
+		return packages[i].Name < packages[j].Name
+	})
 
 	message := fmt.Sprintf("共有 %d 个已安装的包", len(packages))
 
@@ -309,6 +319,28 @@ func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*
 		Packages: packages,
 		Message:  message,
 	}, nil
+}
+
+func readLimitedFile(path string, limit int64) ([]byte, error) {
+	if limit < 0 {
+		return nil, fmt.Errorf("file size limit must not be negative")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, limit+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("file exceeds %d bytes", limit)
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return data, nil
 }
 
 // CleanEnvRequest 清理环境请求

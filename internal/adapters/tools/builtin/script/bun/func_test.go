@@ -225,10 +225,27 @@ func TestBunListPackage(t *testing.T) {
 	if packages["lodash"] != "^4.17.21" || packages["vite"] != "^5.0.0 (dev)" {
 		t.Fatalf("packages = %#v", packages)
 	}
+	if resp.Packages[0].Name != "lodash" || resp.Packages[1].Name != "vite" {
+		t.Fatalf("packages are not sorted: %#v", resp.Packages)
+	}
 
 	writePackageJSON(t, bt, `{bad json`)
 	if resp, err := bt.ListPackage(context.Background(), &ListPackageRequest{}); err != nil || resp.Success || !strings.Contains(resp.ErrorMessage, "解析 package.json") {
 		t.Fatalf("invalid package.json list resp=%#v err=%v", resp, err)
+	}
+}
+
+func TestReadLimitedFileRejectsOversizedContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "package.json")
+	if err := os.WriteFile(path, []byte("12345"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readLimitedFile(path, 4); err == nil {
+		t.Fatal("readLimitedFile accepted oversized content")
+	}
+	data, err := readLimitedFile(path, 5)
+	if err != nil || string(data) != "12345" {
+		t.Fatalf("data = %q, err = %v", data, err)
 	}
 }
 
