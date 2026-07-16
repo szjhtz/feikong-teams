@@ -9,92 +9,122 @@ import (
 	"strings"
 )
 
+const (
+	maxUpdateArchiveEntries       = 1_000
+	maxUpdateExtractedBytes int64 = 1 << 30
+)
+
 // UnzipCallback 定义进度回调函数
 type UnzipCallback func(processed int, total int, fileName string, isDir bool)
 
-// Unzip 带进度回调的解压函数
+// Unzip 带进度回调并在固定资源边界内解压更新包。
 func Unzip(source, destination string, callback UnzipCallback) error {
-	// 1. 打开 zip 文件
+	return unzipWithLimits(source, destination, callback, maxUpdateArchiveEntries, maxUpdateExtractedBytes)
+}
+
+func unzipWithLimits(source, destination string, callback UnzipCallback, maxEntries int, maxBytes int64) error {
+	if maxEntries < 0 || maxBytes < 0 {
+		return fmt.Errorf("update archive limits must not be negative")
+	}
 	reader, err := zip.OpenReader(source)
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
+	if len(reader.File) > maxEntries {
+		return fmt.Errorf("update archive exceeds %d entries", maxEntries)
+	}
 
-	// 2. 确保目标目录存在
 	destDir := filepath.Clean(destination)
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err
 	}
-
-	totalFiles := len(reader.File)
-
-	// 3. 遍历文件
-	for i, f := range reader.File {
-		// 触发进度回调
-		if callback != nil {
-			callback(i+1, totalFiles, f.Name, f.FileInfo().IsDir())
-		}
-
-		// 将单个文件的处理逻辑抽取出来，便于使用 defer 管理资源
-		err := extractFile(f, destDir)
+	seen := make(map[string]struct{}, len(reader.File))
+	var extractedBytes int64
+	for index, file := range reader.File {
+		targetPath, err := safeUpdateArchiveTarget(destDir, file.Name)
 		if err != nil {
-			return fmt.Errorf("解压文件 %s 失败: %w", f.Name, err)
+			return err
 		}
+		if _, exists := seen[targetPath]; exists {
+			return fmt.Errorf("duplicate update archive path: %s", file.Name)
+		}
+		seen[targetPath] = struct{}{}
+		mode := file.Mode()
+		if mode&os.ModeSymlink != 0 || (!file.FileInfo().IsDir() && !mode.IsRegular()) {
+			return fmt.Errorf("unsupported update archive entry: %s", file.Name)
+		}
+		if callback != nil {
+			callback(index+1, len(reader.File), file.Name, file.FileInfo().IsDir())
+		}
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+			continue
+		}
+		if file.UncompressedSize64 > uint64(maxBytes-extractedBytes) {
+			return fmt.Errorf("extracted update exceeds %d bytes", maxBytes)
+		}
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return err
+		}
+		written, err := extractUpdateFile(file, targetPath, maxBytes-extractedBytes)
+		if err != nil {
+			return fmt.Errorf("extract update file %s: %w", file.Name, err)
+		}
+		extractedBytes += written
 	}
 	return nil
 }
 
-// extractFile 处理单个文件的解压逻辑
-func extractFile(f *zip.File, destDir string) error {
-	// 拼接路径
-	fpath := filepath.Join(destDir, f.Name)
-
-	// --- 安全检查 (Zip Slip) ---
-	// 必须校验 fpath 是否真的在 destDir 目录下
-	if !strings.HasPrefix(fpath, destDir+string(os.PathSeparator)) {
-		return fmt.Errorf("非法路径 (Zip Slip): %s", fpath)
+func safeUpdateArchiveTarget(destination, archivePath string) (string, error) {
+	if archivePath == "" || strings.ContainsRune(archivePath, '\x00') {
+		return "", fmt.Errorf("invalid update archive path")
 	}
-
-	// 如果是目录，直接创建
-	if f.FileInfo().IsDir() {
-		return os.MkdirAll(fpath, os.ModePerm)
+	cleanRelative := filepath.Clean(filepath.FromSlash(archivePath))
+	if cleanRelative == "." || filepath.IsAbs(cleanRelative) || filepath.VolumeName(cleanRelative) != "" {
+		return "", fmt.Errorf("invalid update archive path: %s", archivePath)
 	}
-
-	// 确保父目录存在 (防止 Zip 中文件顺序乱序，即文件在目录之前出现)
-	if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-		return err
+	targetPath := filepath.Join(destination, cleanRelative)
+	relative, err := filepath.Rel(destination, targetPath)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || filepath.IsAbs(relative) {
+		return "", fmt.Errorf("invalid update archive path: %s", archivePath)
 	}
+	return targetPath, nil
+}
 
-	// --- 打开源文件 ---
-	rc, err := f.Open()
+func extractUpdateFile(file *zip.File, targetPath string, limit int64) (int64, error) {
+	reader, err := file.Open()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer rc.Close()
-
-	// --- 修正文件权限 ---
-	// 如果 zip 来自不同系统，Mode 可能会有问题。
-	// 这里通过位运算确保当前用户至少有读写权限 (0600)，防止解压出无法操作的死文件
-	mode := f.Mode()
-	if mode&0200 == 0 { // 如果没有写权限
-		mode |= 0200 // 强制加上写权限
+	permissions := os.FileMode(0644)
+	if file.Mode().Perm()&0111 != 0 {
+		permissions = 0755
 	}
-
-	// --- 处理软链接 ---
-	if f.Mode()&os.ModeSymlink != 0 {
-		return nil // 跳过软链接处理
-	}
-
-	// --- 创建目标文件 ---
-	outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, permissions)
 	if err != nil {
-		return err
+		_ = reader.Close()
+		return 0, err
 	}
-	defer outFile.Close()
-
-	// --- 写入数据 ---
-	// 为了防止大文件解压占用过多内存，io.Copy 是正确的选择
-	_, err = io.Copy(outFile, rc)
-	return err
+	written, copyErr := io.Copy(target, io.LimitReader(reader, limit+1))
+	if copyErr == nil && written > limit {
+		copyErr = fmt.Errorf("extracted update exceeds size limit")
+	}
+	if copyErr == nil {
+		copyErr = target.Sync()
+	}
+	readerCloseErr := reader.Close()
+	targetCloseErr := target.Close()
+	if copyErr != nil {
+		return written, copyErr
+	}
+	if readerCloseErr != nil {
+		return written, readerCloseErr
+	}
+	if targetCloseErr != nil {
+		return written, targetCloseErr
+	}
+	return written, nil
 }

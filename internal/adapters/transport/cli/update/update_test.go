@@ -2,9 +2,11 @@ package update
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha1"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -79,6 +81,9 @@ func TestAssetAndPlatformHelpers(t *testing.T) {
 	if !(Asset{ContentType: "application/x-gzip"}).IsCompressedFile() {
 		t.Fatal("gzip asset should be compressed")
 	}
+	if !(Asset{BrowserDownloadURL: "https://example.com/fkteams.zip"}).IsCompressedFile() {
+		t.Fatal("zip URL should be compressed even without a content type")
+	}
 	if (Asset{ContentType: "application/octet-stream"}).IsCompressedFile() {
 		t.Fatal("octet-stream asset should not be compressed")
 	}
@@ -147,12 +152,80 @@ func TestUnzipRejectsZipSlip(t *testing.T) {
 	})
 
 	err := Unzip(zipPath, filepath.Join(tmp, "out"), nil)
-	if err == nil || !strings.Contains(err.Error(), "Zip Slip") {
+	if err == nil || !strings.Contains(err.Error(), "invalid update archive path") {
 		t.Fatalf("Unzip error = %v, want Zip Slip rejection", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(tmp, "evil.txt")); !os.IsNotExist(statErr) {
 		t.Fatalf("evil file exists or unexpected stat error: %v", statErr)
 	}
+}
+
+func TestUnzipRejectsExtractionLimit(t *testing.T) {
+	tmp := t.TempDir()
+	zipPath := filepath.Join(tmp, "large.zip")
+	createZip(t, zipPath, map[string]string{"large.bin": "12345"})
+	if err := unzipWithLimits(zipPath, filepath.Join(tmp, "out"), nil, 10, 4); err == nil {
+		t.Fatal("oversized extracted update was accepted")
+	}
+}
+
+func TestUnzipRejectsSymlink(t *testing.T) {
+	tmp := t.TempDir()
+	zipPath := filepath.Join(tmp, "symlink.zip")
+	file, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	header := &zip.FileHeader{Name: "link"}
+	header.SetMode(os.ModeSymlink | 0777)
+	entry, err := writer.CreateHeader(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte("target")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Unzip(zipPath, filepath.Join(tmp, "out"), nil); err == nil {
+		t.Fatal("symlink update archive entry was accepted")
+	}
+}
+
+func TestReadLimitedResponseRejectsOversizedBody(t *testing.T) {
+	if _, err := readLimitedResponse(strings.NewReader("12345"), 4); err == nil {
+		t.Fatal("oversized update response was accepted")
+	}
+}
+
+func TestDownloadUpdateAssetRejectsOversizedBody(t *testing.T) {
+	client := &http.Client{Transport: updateRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			ContentLength: -1,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(strings.NewReader("12345")),
+			Request:       request,
+		}, nil
+	})}
+	destination := filepath.Join(t.TempDir(), "update.zip")
+	if err := downloadUpdateAsset(context.Background(), client, "https://example.com/update.zip", destination, 4, nil); err == nil {
+		t.Fatal("oversized update download was accepted")
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("rejected update archive was not removed: %v", err)
+	}
+}
+
+type updateRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn updateRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
 }
 
 func createZip(t *testing.T, path string, files map[string]string) {

@@ -1,11 +1,14 @@
 package update
 
 import (
-	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 	"strings"
+	"time"
 	"unicode"
 
 	"fkteams/internal/app/version"
@@ -62,26 +65,33 @@ func findChecksum(items []Asset) (algo Algorithm, expectedChecksum string, err e
 		return SHA256, "", ErrChecksumFileNotFound
 	}
 
-	resp, err := http.Get(checksumFileURL)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(checksumFileURL)
 	if err != nil {
 		return SHA256, "", err
 	}
 	defer resp.Body.Close()
 
 	if !IsHttpSuccess(resp.StatusCode) {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		return "", "", fmt.Errorf("URL %q is unreachable", checksumFileURL)
 	}
-
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
+	data, err := readLimitedResponse(resp.Body, 1<<20)
+	if err != nil {
+		return SHA256, "", fmt.Errorf("read checksum file: %w", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
 		if !strings.HasSuffix(line, suffix) {
 			continue
 		}
-		return SHA256, strings.Fields(line)[0], nil
-	}
-	if err = scanner.Err(); err != nil {
-		return SHA256, "", err
+		fields := strings.Fields(line)
+		if len(fields) < 2 || len(fields[0]) != sha256.Size*2 {
+			continue
+		}
+		if _, err := hex.DecodeString(fields[0]); err != nil {
+			continue
+		}
+		return SHA256, strings.ToLower(fields[0]), nil
 	}
 	return SHA256, "", ErrChecksumFileNotFound
 }
