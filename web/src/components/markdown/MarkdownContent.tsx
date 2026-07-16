@@ -3,6 +3,8 @@ import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { renderMarkdown } from "@/lib/markdown";
 
+const copyResetTimers = new WeakMap<HTMLButtonElement, number>();
+
 export function MarkdownContent({ content, className }: { content?: string; className?: string }) {
   return (
     <div
@@ -30,8 +32,12 @@ async function handleMarkdownClick(event: MouseEvent<HTMLDivElement>) {
   const previous = button.textContent || "复制";
   button.textContent = "已复制";
   button.dataset.copied = "true";
-  window.setTimeout(() => {
+  const previousTimer = copyResetTimers.get(button);
+  if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+  const timer = window.setTimeout(() => {
     button.textContent = previous;
     delete button.dataset.copied;
+    copyResetTimers.delete(button);
   }, 1200);
+  copyResetTimers.set(button, timer);
 }

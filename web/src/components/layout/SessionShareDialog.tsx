@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { copyText } from "@/lib/clipboard";
 import { shortID } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useTimedState } from "@/lib/useTimedState";
 
 export interface ShareableSession {
   session_id: string;
@@ -34,7 +35,7 @@ export function SessionShareDialog({
   const [allowToolDetails, setAllowToolDetails] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createdShare, setCreatedShare] = useState<SessionShare | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, showCopied, resetCopied] = useTimedState(false);
   const [error, setError] = useState("");
 
   const sessionID = session?.session_id || "";
@@ -45,9 +46,9 @@ export function SessionShareDialog({
     setPassword("");
     setAllowToolDetails(false);
     setCreatedShare(null);
-    setCopied(false);
+    resetCopied();
     setError("");
-  }, [sessionID]);
+  }, [resetCopied, sessionID]);
 
   if (!session) return null;
 
@@ -76,9 +77,8 @@ export function SessionShareDialog({
     if (!shareURL) return;
     try {
       await copyText(shareURL);
-      setCopied(true);
+      showCopied(true);
       dispatch(appActions.showToast("分享链接已复制"));
-      window.setTimeout(() => setCopied(false), 1200);
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
     }

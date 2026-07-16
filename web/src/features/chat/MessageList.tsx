@@ -7,6 +7,7 @@ import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { copyText } from "@/lib/clipboard";
+import { useTimedState } from "@/lib/useTimedState";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
@@ -995,7 +996,7 @@ function MessageActions({
   time?: string;
   compact?: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, showCopied] = useTimedState(false);
 
   async function copyContent() {
     try {
@@ -1003,8 +1004,7 @@ function MessageActions({
     } catch {
       return;
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    showCopied(true);
   }
 
   return (

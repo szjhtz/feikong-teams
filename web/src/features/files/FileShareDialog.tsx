@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
+import { useTimedState } from "@/lib/useTimedState";
 import type { FileEntry, PreviewLink } from "@/types/files";
 
 const fileShareExpiryOptions = [
@@ -28,7 +29,7 @@ export function FileShareDialog({
   const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
   const [createdLink, setCreatedLink] = useState<PreviewLink | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, showCopied, resetCopied] = useTimedState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -37,9 +38,9 @@ export function FileShareDialog({
     setPassword("");
     setCreating(false);
     setCreatedLink(null);
-    setCopied(false);
+    resetCopied();
     setError("");
-  }, [file]);
+  }, [file, resetCopied]);
 
   if (!file) return null;
 
@@ -67,9 +68,8 @@ export function FileShareDialog({
     if (!previewURL) return;
     try {
       await copyText(previewURL);
-      setCopied(true);
+      showCopied(true);
       dispatch(appActions.showToast("分享链接已复制"));
-      window.setTimeout(() => setCopied(false), 1200);
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
     }

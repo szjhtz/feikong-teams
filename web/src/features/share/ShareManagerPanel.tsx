@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { copyText } from "@/lib/clipboard";
+import { useTimedState } from "@/lib/useTimedState";
 import { cn } from "@/lib/cn";
 import { formatTime, shortID } from "@/lib/format";
 import type { PreviewLink } from "@/types/files";
@@ -35,7 +36,7 @@ export function ShareManagerPanel() {
   const [filter, setFilter] = useState<ShareFilter>("all");
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState("");
-  const [copiedKey, setCopiedKey] = useState("");
+  const [copiedKey, showCopiedKey] = useTimedState("");
   const [deleteTarget, setDeleteTarget] = useState<SessionShare | null>(null);
   const [deleteFileTarget, setDeleteFileTarget] = useState<PreviewLink | null>(null);
   const counts = useMemo(() => countShares(shares, fileShares), [shares, fileShares]);
@@ -89,9 +90,8 @@ export function ShareManagerPanel() {
     const url = shareURL(id);
     try {
       await copyText(url);
-      setCopiedKey(shareKey("session", id));
+      showCopiedKey(shareKey("session", id));
       dispatch(appActions.showToast("分享链接已复制"));
-      window.setTimeout(() => setCopiedKey(""), 1200);
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
     }
@@ -103,9 +103,8 @@ export function ShareManagerPanel() {
     const url = previewURL(id);
     try {
       await copyText(url);
-      setCopiedKey(shareKey("file", id));
+      showCopiedKey(shareKey("file", id));
       dispatch(appActions.showToast("分享链接已复制"));
-      window.setTimeout(() => setCopiedKey(""), 1200);
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : "复制失败"));
     }

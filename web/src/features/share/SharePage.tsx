@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { copyText } from "@/lib/clipboard";
+import { useTimedState } from "@/lib/useTimedState";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { ToolCallCard } from "@/features/chat/ToolCallCard";
@@ -349,7 +350,7 @@ const shareRuntimeAgents: Record<string, ShareAgentInfo> = {
 };
 
 function ShareMessageActions({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, showCopied] = useTimedState(false);
 
   async function copyContent() {
     try {
@@ -357,8 +358,7 @@ function ShareMessageActions({ content }: { content: string }) {
     } catch {
       return;
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    showCopied(true);
   }
 
   return (
