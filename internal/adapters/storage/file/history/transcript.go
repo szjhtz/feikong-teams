@@ -23,6 +23,9 @@ const (
 
 	longToolResultChars = 4000
 	resultSummaryChars  = 1200
+
+	maxTranscriptRecordBytes = 16 << 20
+	maxSubagentMetadataBytes = 1 << 20
 )
 
 func newPrefixedID(prefix string) string {
@@ -77,9 +80,17 @@ func writeSubagentMetadata(sessionDir string, metadata SubagentMetadata) error {
 }
 
 func loadSubagentMetadata(filePath string) (SubagentMetadata, error) {
-	data, err := os.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return SubagentMetadata{}, fmt.Errorf("read subagent metadata: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxSubagentMetadataBytes+1))
+	if err != nil {
+		return SubagentMetadata{}, fmt.Errorf("read subagent metadata: %w", err)
+	}
+	if len(data) > maxSubagentMetadataBytes {
+		return SubagentMetadata{}, fmt.Errorf("read subagent metadata: file exceeds %d bytes", maxSubagentMetadataBytes)
 	}
 	var metadata SubagentMetadata
 	if err := json.Unmarshal(data, &metadata); err != nil {
@@ -124,6 +135,10 @@ func appendJSONL(filePath string, value any) error {
 		_ = file.Close()
 		return fmt.Errorf("append jsonl: %w", err)
 	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("sync jsonl: %w", err)
+	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close jsonl: %w", err)
 	}
@@ -152,7 +167,10 @@ func loadTranscriptRecords(filePath string, repairTail bool) ([]TranscriptEvent,
 	truncateTo := int64(-1)
 	appendNewline := false
 	for line := 1; ; line++ {
-		record, readErr := reader.ReadBytes('\n')
+		record, readErr := readTranscriptRecord(reader, maxTranscriptRecordBytes)
+		if readErr != nil && readErr != io.EOF {
+			return nil, fmt.Errorf("read transcript record %d: %w", line, readErr)
+		}
 		offset += int64(len(record))
 		trimmed := bytes.TrimSpace(record)
 		if len(trimmed) > 0 {
@@ -173,9 +191,6 @@ func loadTranscriptRecords(filePath string, repairTail bool) ([]TranscriptEvent,
 		if readErr == io.EOF {
 			appendNewline = repairTail && len(record) > 0 && record[len(record)-1] != '\n'
 			break
-		}
-		if readErr != nil {
-			return nil, fmt.Errorf("read transcript record %d: %w", line, readErr)
 		}
 	}
 	if err := file.Close(); err != nil {
@@ -199,6 +214,21 @@ func loadTranscriptRecords(filePath string, repairTail bool) ([]TranscriptEvent,
 		}
 	}
 	return events, nil
+}
+
+func readTranscriptRecord(reader *bufio.Reader, limit int) ([]byte, error) {
+	record := make([]byte, 0, min(reader.Size(), limit))
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		if len(fragment) > limit-len(record) {
+			return nil, fmt.Errorf("record exceeds %d bytes", limit)
+		}
+		record = append(record, fragment...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		return record, err
+	}
 }
 
 func shouldExternalizeToolResult(toolName, content string) bool {

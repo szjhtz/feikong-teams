@@ -1,14 +1,16 @@
 package eventlog
 
 import (
-	appchat "fkteams/internal/app/chat"
-	domainevent "fkteams/internal/domain/event"
-	"fkteams/internal/domain/message"
-	"fkteams/internal/runtime/events"
+	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	appchat "fkteams/internal/app/chat"
+	domainevent "fkteams/internal/domain/event"
+	"fkteams/internal/domain/message"
+	"fkteams/internal/runtime/events"
 )
 
 func TestTranscriptProjectionBuildsTurnInput(t *testing.T) {
@@ -770,6 +772,68 @@ func TestTranscriptRecorderWritesSubagentTranscriptSeparately(t *testing.T) {
 	}
 	if metadata.ParentCallID != "call_1" || metadata.Agent != "researcher" || metadata.ToolName != "ask_fkagent_researcher" {
 		t.Fatalf("subagent metadata = %#v", metadata)
+	}
+}
+
+func TestReadTranscriptRecordRejectsOversizedLine(t *testing.T) {
+	reader := bufio.NewReaderSize(strings.NewReader("12345\n"), 2)
+	if _, err := readTranscriptRecord(reader, 4); err == nil {
+		t.Fatal("oversized transcript record was accepted")
+	}
+}
+
+func TestLoadTranscriptForResumeRepairsIncompleteTail(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, TranscriptFileName)
+	valid := `{"id":"msg_1","type":"user_message","content":"hello"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(valid+`{"id":"msg_2"`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := loadTranscriptForResume(filePath)
+	if err != nil {
+		t.Fatalf("loadTranscriptForResume() error = %v", err)
+	}
+	if len(events) != 1 || events[0].Content != "hello" {
+		t.Fatalf("events = %#v", events)
+	}
+	repaired, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(repaired) != valid {
+		t.Fatalf("repaired transcript = %q, want %q", repaired, valid)
+	}
+}
+
+func TestLoadSubagentMetadataRejectsOversizedFile(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "metadata.json")
+	if err := os.WriteFile(filePath, make([]byte, maxSubagentMetadataBytes+1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadSubagentMetadata(filePath); err == nil {
+		t.Fatal("oversized subagent metadata was accepted")
+	}
+}
+
+func TestLoadSessionTranscriptRecordsReportsCorruptSubagent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, TranscriptFileName), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	subagentDir := filepath.Join(dir, subagentsDirName, "run-1")
+	if err := os.MkdirAll(subagentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentDir, TranscriptFileName), []byte("{}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentDir, "metadata.json"), []byte("{"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadSessionTranscriptRecords(dir); err == nil {
+		t.Fatal("corrupt subagent metadata was silently ignored")
 	}
 }
 

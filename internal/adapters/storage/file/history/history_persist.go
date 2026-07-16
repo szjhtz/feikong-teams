@@ -36,7 +36,11 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 		return err
 	}
 	h.persistErr = nil
-	h.messages = projectTranscriptEvents(h.sessionDir, events)
+	messages, err := projectTranscriptEvents(h.sessionDir, events)
+	if err != nil {
+		return err
+	}
+	h.messages = messages
 	h.reconstructSummaryFromEvents()
 	h.activeMessages = make(map[string]*activeMessageContext)
 	h.activeOrder = nil
@@ -63,7 +67,11 @@ func LoadSessionTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord,
 	for _, event := range mainEvents {
 		records = append(records, SessionTranscriptRecord{Event: event})
 	}
-	records = append(records, loadSubagentTranscriptRecords(sessionDir)...)
+	subagentRecords, err := loadSubagentTranscriptRecords(sessionDir)
+	if err != nil {
+		return nil, err
+	}
+	records = append(records, subagentRecords...)
 	sort.SliceStable(records, func(i, j int) bool {
 		left := records[i].Event.At
 		right := records[j].Event.At
@@ -75,7 +83,7 @@ func LoadSessionTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord,
 	return records, nil
 }
 
-func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []AgentMessage {
+func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) ([]AgentMessage, error) {
 	var messages []AgentMessage
 	var current *AgentMessage
 	toolEventIndex := make(map[string]int)
@@ -183,12 +191,19 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 		}
 	}
 	flush()
-	messages = append(messages, projectSubagentTranscriptFiles(sessionDir)...)
-	return messages
+	subagentMessages, err := projectSubagentTranscriptFiles(sessionDir)
+	if err != nil {
+		return nil, err
+	}
+	messages = append(messages, subagentMessages...)
+	return messages, nil
 }
 
-func projectSubagentTranscriptFiles(sessionDir string) []AgentMessage {
-	records := loadSubagentTranscriptRecords(sessionDir)
+func projectSubagentTranscriptFiles(sessionDir string) ([]AgentMessage, error) {
+	records, err := loadSubagentTranscriptRecords(sessionDir)
+	if err != nil {
+		return nil, err
+	}
 	messages := make([]AgentMessage, 0, len(records))
 	eventsByParent := make(map[string][]TranscriptEvent)
 	metadataByParent := make(map[string]SubagentMetadata)
@@ -214,30 +229,33 @@ func projectSubagentTranscriptFiles(sessionDir string) []AgentMessage {
 			messages = append(messages, msg)
 		}
 	}
-	return messages
+	return messages, nil
 }
 
-func loadSubagentTranscriptRecords(sessionDir string) []SessionTranscriptRecord {
+func loadSubagentTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord, error) {
 	matches, err := filepath.Glob(filepath.Join(sessionDir, subagentsDirName, "*", TranscriptFileName))
-	if err != nil || len(matches) == 0 {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("find subagent transcripts: %w", err)
+	}
+	if len(matches) == 0 {
+		return nil, nil
 	}
 	records := make([]SessionTranscriptRecord, 0)
 	for _, filePath := range matches {
 		metadata, err := loadSubagentMetadata(filepath.Join(filepath.Dir(filePath), "metadata.json"))
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("load subagent transcript metadata: %w", err)
 		}
 		events, err := loadTranscript(filePath)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("load subagent transcript: %w", err)
 		}
 		for _, event := range events {
 			member := metadata
 			records = append(records, SessionTranscriptRecord{Event: event, Member: &member})
 		}
 	}
-	return records
+	return records, nil
 }
 
 func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetadata) AgentMessage {
