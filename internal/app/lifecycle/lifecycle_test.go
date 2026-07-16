@@ -216,19 +216,18 @@ func TestApplicationRunStopsOnContextCancel(t *testing.T) {
 	}
 }
 
-func TestApplicationShutdownTimeoutDoesNotBlockCleanup(t *testing.T) {
+func TestApplicationShutdownContextBoundsCooperativeService(t *testing.T) {
 	app := New(WithExitSignals(), WithShutdownTimeout(20*time.Millisecond))
 	var order []string
 	stopStarted := make(chan struct{})
-	releaseStop := make(chan struct{})
 	cleanupStarted := make(chan struct{})
 	app.RegisterService(&fakeService{
 		name:  "blocking",
 		order: &order,
-		stopFn: func(context.Context) error {
+		stopFn: func(ctx context.Context) error {
 			close(stopStarted)
-			<-releaseStop
-			return nil
+			<-ctx.Done()
+			return ctx.Err()
 		},
 	})
 	app.OnReady(func(context.Context) error {
@@ -257,7 +256,6 @@ func TestApplicationShutdownTimeoutDoesNotBlockCleanup(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cleanup hook was not attempted after timeout")
 	}
-	close(releaseStop)
 }
 
 func TestApplicationAccessorsAndShutdownBuffer(t *testing.T) {

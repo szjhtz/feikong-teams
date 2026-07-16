@@ -277,17 +277,8 @@ func (app *Application) executePhaseBounded(ctx context.Context, phase Phase) er
 	app.mu.Unlock()
 
 	for _, hook := range hooks {
-		result := make(chan error, 1)
-		go func(hook HookFunc) {
-			result <- hook(ctx)
-		}(hook)
-		select {
-		case err := <-result:
-			if err != nil {
-				return fmt.Errorf("[%s] hook error: %w", phase, err)
-			}
-		case <-ctx.Done():
-			return fmt.Errorf("[%s] hook timeout: %w", phase, ctx.Err())
+		if err := hook(ctx); err != nil {
+			return fmt.Errorf("[%s] hook error: %w", phase, err)
 		}
 	}
 	return nil
@@ -322,16 +313,7 @@ func (app *Application) stopServices(ctx context.Context) {
 
 	for i := len(services) - 1; i >= 0; i-- {
 		svc := services[i]
-		result := make(chan error, 1)
-		go func() {
-			result <- svc.Stop(ctx)
-		}()
-		var err error
-		select {
-		case err = <-result:
-		case <-ctx.Done():
-			err = ctx.Err()
-		}
+		err := svc.Stop(ctx)
 		if err != nil {
 			log.Printf("[lifecycle] service %s stop error: %v", svc.Name(), err)
 		} else {
