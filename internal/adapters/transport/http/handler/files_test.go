@@ -238,6 +238,26 @@ func TestServeFileHandler(t *testing.T) {
 	}
 }
 
+func TestServeFileHandlerRejectsSymlinks(t *testing.T) {
+	workspace := setupWorkspaceDir(t)
+	outsideFile := filepath.Join(t.TempDir(), "outside.html")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	if err := os.Symlink(outsideFile, filepath.Join(workspace, "linked.html")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/view/*filepath", ServeFileHandler())
+
+	resp := performRequest(router, http.MethodGet, "/view/linked.html", nil)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("symlink serve status = %d, want 400: %s", resp.Code, resp.Body.String())
+	}
+}
+
 func assertUntrustedContentHeaders(t *testing.T, resp *httptest.ResponseRecorder) {
 	t.Helper()
 

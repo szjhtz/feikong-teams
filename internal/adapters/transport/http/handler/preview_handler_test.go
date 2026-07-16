@@ -276,6 +276,109 @@ func TestCreatePreviewLinkRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
+func TestPreviewRenderUsesExplicitResourceManifest(t *testing.T) {
+	workspace := setupWorkspaceDir(t)
+	siteDir := filepath.Join(workspace, "site")
+	if err := os.MkdirAll(siteDir, 0755); err != nil {
+		t.Fatalf("mkdir site: %v", err)
+	}
+	for name, content := range map[string]string{
+		"index.html": "<link rel=\"stylesheet\" href=\"style.css\"><h1>site</h1>",
+		"style.css":  "body { color: black; }",
+		"secret.txt": "private",
+	} {
+		if err := os.WriteFile(filepath.Join(siteDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/preview-links", rt.CreatePreviewLinkHandler())
+	router.GET("/preview/:linkId/render/*filepath", rt.PreviewRenderHandler())
+
+	resp := performJSON(router, http.MethodPost, "/preview-links", `{"file_paths":["site/index.html","site/style.css"]}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("create preview link status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var link PreviewLink
+	decodeRawData(t, resp, &link)
+
+	for _, resource := range []string{"index.html", "style.css"} {
+		resp = performRequest(router, http.MethodGet, "/preview/"+link.ID+"/render/"+resource, nil)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("render %s status = %d: %s", resource, resp.Code, resp.Body.String())
+		}
+	}
+	resp = performRequest(router, http.MethodGet, "/preview/"+link.ID+"/render/secret.txt", nil)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("unshared sibling status = %d, want 403: %s", resp.Code, resp.Body.String())
+	}
+
+	outsideFile := filepath.Join(t.TempDir(), "outside.css")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	if err := os.Remove(filepath.Join(siteDir, "style.css")); err != nil {
+		t.Fatalf("remove style: %v", err)
+	}
+	if err := os.Symlink(outsideFile, filepath.Join(siteDir, "style.css")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	resp = performRequest(router, http.MethodGet, "/preview/"+link.ID+"/render/style.css", nil)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("replaced symlink status = %d, want 404: %s", resp.Code, resp.Body.String())
+	}
+	resp = performJSON(router, http.MethodPost, "/preview-links", `{"file_path":"site/style.css"}`)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("share symlink status = %d, want 400: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestPreviewDirectoryDownloadUsesCreationManifest(t *testing.T) {
+	workspace := setupWorkspaceDir(t)
+	docsDir := filepath.Join(workspace, "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(docsDir, "existing.txt"), []byte("existing"), 0644); err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/preview-links", rt.CreatePreviewLinkHandler())
+	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
+
+	resp := performJSON(router, http.MethodPost, "/preview-links", `{"file_path":"docs"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("create directory preview status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var link PreviewLink
+	decodeRawData(t, resp, &link)
+	if err := os.WriteFile(filepath.Join(docsDir, "late.txt"), []byte("late"), 0644); err != nil {
+		t.Fatalf("write late file: %v", err)
+	}
+
+	resp = performRequest(router, http.MethodGet, "/preview/"+link.ID+"/file", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("download directory preview status = %d: %s", resp.Code, resp.Body.String())
+	}
+	reader, err := zip.NewReader(bytes.NewReader(resp.Body.Bytes()), int64(resp.Body.Len()))
+	if err != nil {
+		t.Fatalf("read directory zip: %v", err)
+	}
+	names := make(map[string]bool)
+	for _, file := range reader.File {
+		names[file.Name] = true
+	}
+	if !names["docs/existing.txt"] || names["docs/late.txt"] {
+		t.Fatalf("directory manifest zip names = %#v", names)
+	}
+}
+
 func performRequestWithHeader(router http.Handler, method, path, header, value string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, nil)
 	req.Header.Set(header, value)

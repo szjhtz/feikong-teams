@@ -8,7 +8,6 @@ import (
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/log"
-	"fkteams/internal/runtime/pathguard"
 	"fmt"
 	"io"
 	"mime"
@@ -16,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -46,10 +46,11 @@ const shareFileName = "share.json"
 
 // shareFileEntry JSON 持久化条目
 type shareFileEntry struct {
-	FilePaths    []string `json:"file_paths"`
-	PasswordHash string   `json:"password_hash,omitempty"`
-	ExpiresAt    int64    `json:"expires_at"` // Unix 时间戳，0 表示永不过期
-	CreatedAt    int64    `json:"created_at"`
+	FilePaths     []string `json:"file_paths"`
+	ResourcePaths []string `json:"resource_paths"`
+	PasswordHash  string   `json:"password_hash,omitempty"`
+	ExpiresAt     int64    `json:"expires_at"` // Unix 时间戳，0 表示永不过期
+	CreatedAt     int64    `json:"created_at"`
 }
 
 // NewPreviewLinkStore 创建预览分享存储，并从持久化文件加载现有链接。
@@ -91,12 +92,13 @@ func (s *PreviewLinkStore) Load() error {
 				continue // 跳过已过期
 			}
 		}
-		loaded[id] = &previewLinkEntry{
-			FilePaths:    e.FilePaths,
-			PasswordHash: e.PasswordHash,
-			ExpiresAt:    expiresAt,
-			CreatedAt:    time.Unix(e.CreatedAt, 0),
-		}
+		loaded[id] = newPreviewLinkEntry(
+			e.FilePaths,
+			e.ResourcePaths,
+			e.PasswordHash,
+			expiresAt,
+			time.Unix(e.CreatedAt, 0),
+		)
 	}
 	s.Lock()
 	s.m = loaded
@@ -145,10 +147,11 @@ func (s *PreviewLinkStore) saveLockedTo(filePath string) error {
 	entries := make(map[string]*shareFileEntry, len(s.m))
 	for id, e := range s.m {
 		entries[id] = &shareFileEntry{
-			FilePaths:    e.FilePaths,
-			PasswordHash: e.PasswordHash,
-			ExpiresAt:    expiresAtUnix(e.ExpiresAt),
-			CreatedAt:    e.CreatedAt.Unix(),
+			FilePaths:     e.FilePaths,
+			ResourcePaths: e.ResourcePaths,
+			PasswordHash:  e.PasswordHash,
+			ExpiresAt:     expiresAtUnix(e.ExpiresAt),
+			CreatedAt:     e.CreatedAt.Unix(),
 		}
 	}
 	data, err := json.MarshalIndent(entries, "", "  ")
@@ -216,10 +219,153 @@ func (s *PreviewLinkStore) DeleteMany(ids []string) error {
 
 // previewLinkEntry 存储条目
 type previewLinkEntry struct {
-	FilePaths    []string // 文件在 workspace 内的相对路径列表
-	PasswordHash string   // bcrypt 哈希 (空字符串表示无密码)
-	ExpiresAt    time.Time
-	CreatedAt    time.Time
+	FilePaths     []string // 用户显式分享的工作区相对路径列表
+	ResourcePaths []string // 创建链接时授权的普通文件清单
+	PasswordHash  string   // bcrypt 哈希 (空字符串表示无密码)
+	ExpiresAt     time.Time
+	CreatedAt     time.Time
+	resourceSet   map[string]struct{}
+}
+
+func newPreviewLinkEntry(filePaths, resourcePaths []string, passwordHash string, expiresAt, createdAt time.Time) *previewLinkEntry {
+	var copiedResources []string
+	if resourcePaths != nil {
+		copiedResources = append([]string{}, resourcePaths...)
+	}
+	entry := &previewLinkEntry{
+		FilePaths:     append([]string(nil), filePaths...),
+		ResourcePaths: copiedResources,
+		PasswordHash:  passwordHash,
+		ExpiresAt:     expiresAt,
+		CreatedAt:     createdAt,
+	}
+	entry.indexResources()
+	return entry
+}
+
+func (e *previewLinkEntry) indexResources() {
+	if e == nil {
+		return
+	}
+	paths := e.ResourcePaths
+	if paths == nil {
+		paths = e.FilePaths
+	}
+	e.resourceSet = make(map[string]struct{}, len(paths))
+	for _, resourcePath := range paths {
+		e.resourceSet[filepath.Clean(resourcePath)] = struct{}{}
+	}
+}
+
+func (e *previewLinkEntry) allowsResource(resourcePath string) bool {
+	if e == nil {
+		return false
+	}
+	cleanPath := filepath.Clean(resourcePath)
+	if !e.resourceWithinSharedRoots(cleanPath) {
+		return false
+	}
+	if e.resourceSet != nil {
+		_, ok := e.resourceSet[cleanPath]
+		return ok
+	}
+	paths := e.ResourcePaths
+	if paths == nil {
+		paths = e.FilePaths
+	}
+	for _, allowedPath := range paths {
+		if filepath.Clean(allowedPath) == cleanPath {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *previewLinkEntry) resourceWithinSharedRoots(resourcePath string) bool {
+	for _, rootPath := range e.FilePaths {
+		cleanRoot := filepath.Clean(rootPath)
+		if rootPath == "" || cleanRoot == "." {
+			return true
+		}
+		if resourcePath == cleanRoot || strings.HasPrefix(resourcePath, cleanRoot+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+const maxPreviewResourceFiles = 10000
+
+func collectPreviewPaths(baseDir string, requested []string) ([]string, []string, error) {
+	cleanPaths := make([]string, 0, len(requested))
+	resources := make(map[string]struct{})
+	seenRoots := make(map[string]struct{})
+
+	for _, requestedPath := range requested {
+		resolved, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, requestedPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, exists := seenRoots[resolved.RelPath]; !exists {
+			seenRoots[resolved.RelPath] = struct{}{}
+			cleanPaths = append(cleanPaths, resolved.RelPath)
+		}
+
+		if !info.IsDir() {
+			if !info.Mode().IsRegular() {
+				return nil, nil, fmt.Errorf("shared path is not a regular file")
+			}
+			resources[resolved.RelPath] = struct{}{}
+			if len(resources) > maxPreviewResourceFiles {
+				return nil, nil, fmt.Errorf("share contains too many files")
+			}
+			continue
+		}
+
+		err = filepath.WalkDir(resolved.AbsPath, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if path != resolved.AbsPath && strings.HasPrefix(entry.Name(), ".") {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				return fmt.Errorf("symbolic links are not allowed in shared directories")
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			entryInfo, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if !entryInfo.Mode().IsRegular() {
+				return fmt.Errorf("shared directories may only contain regular files")
+			}
+			relativePath, err := filepath.Rel(resolved.BaseAbs, path)
+			if err != nil {
+				return err
+			}
+			resources[relativePath] = struct{}{}
+			if len(resources) > maxPreviewResourceFiles {
+				return fmt.Errorf("shared directory contains too many files")
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	resourcePaths := make([]string, 0, len(resources))
+	for resourcePath := range resources {
+		resourcePaths = append(resourcePaths, resourcePath)
+	}
+	sort.Strings(resourcePaths)
+	return cleanPaths, resourcePaths, nil
 }
 
 // CreatePreviewLinkHandler 创建文件预览链接
@@ -251,19 +397,14 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 校验所有路径
-		var cleanPaths []string
-		for _, p := range paths {
-			resolved, err := pathguard.ResolveWorkspace(baseDir, p)
-			if err != nil {
-				Fail(c, http.StatusBadRequest, "无效的文件路径")
-				return
+		cleanPaths, resourcePaths, err := collectPreviewPaths(baseDir, paths)
+		if err != nil {
+			status := http.StatusBadRequest
+			if os.IsNotExist(err) {
+				status = http.StatusNotFound
 			}
-			if _, err := os.Stat(resolved.AbsPath); err != nil {
-				Fail(c, http.StatusNotFound, fmt.Sprintf("文件不存在: %s", resolved.RelPath))
-				return
-			}
-			cleanPaths = append(cleanPaths, resolved.RelPath)
+			Fail(c, status, err.Error())
+			return
 		}
 
 		// 默认过期时间 1 天，最长 30 天；-1 表示永不过期
@@ -287,11 +428,7 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 		if expiresIn >= 0 {
 			expiresAt = now.Add(time.Duration(expiresIn) * time.Second)
 		}
-		entry := &previewLinkEntry{
-			FilePaths: cleanPaths,
-			ExpiresAt: expiresAt,
-			CreatedAt: now,
-		}
+		entry := newPreviewLinkEntry(cleanPaths, resourcePaths, "", expiresAt, now)
 
 		if req.Password != "" {
 			h := hashPassword(req.Password)
@@ -378,7 +515,17 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 		}
 
 		// 多文件或包含目录 → zip 打包下载
-		if len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0])) {
+		_, firstInfo, err := resolveWorkspaceEntryNoSymlinks(baseDir, entry.FilePaths[0])
+		if err != nil {
+			Fail(c, http.StatusNotFound, "shared file is unavailable")
+			return
+		}
+		if len(entry.FilePaths) > 1 || firstInfo.IsDir() {
+			resourcePaths, err := validatedPreviewResources(baseDir, entry)
+			if err != nil {
+				Fail(c, http.StatusConflict, err.Error())
+				return
+			}
 			c.Header("Content-Type", "application/zip")
 			c.Header("Content-Disposition", `attachment; filename="share.zip"`)
 			c.Status(http.StatusOK)
@@ -386,57 +533,25 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 			zw := zip.NewWriter(c.Writer)
 			defer zw.Close()
 
-			for _, fp := range entry.FilePaths {
-				fullPath := filepath.Join(baseDir, fp)
-				info, err := os.Stat(fullPath)
-				if err != nil {
-					continue
+			for _, resourcePath := range resourcePaths {
+				if err := writePreviewFileToZip(zw, baseDir, resourcePath); err != nil {
+					log.Printf("failed to add preview resource to zip: path=%s, err=%v", resourcePath, err)
+					return
 				}
-				if !info.IsDir() {
-					writeFileToZip(zw, fullPath, fp)
-					continue
-				}
-				// 目录递归写入
-				_ = filepath.WalkDir(fullPath, func(path string, d os.DirEntry, err error) error {
-					if err != nil || strings.HasPrefix(d.Name(), ".") {
-						if d != nil && d.IsDir() {
-							return filepath.SkipDir
-						}
-						return nil
-					}
-					rel, err := filepath.Rel(filepath.Dir(fullPath), path)
-					if err != nil {
-						return nil
-					}
-					if d.IsDir() {
-						_, _ = zw.Create(rel + "/")
-						return nil
-					}
-					writeFileToZip(zw, path, rel)
-					return nil
-				})
 			}
 			return
 		}
 
 		// 单文件预览
 		filePath := entry.FilePaths[0]
-		fullPath := filepath.Join(baseDir, filePath)
-		file, err := os.Open(fullPath)
+		file, info, err := openWorkspaceRegularFileNoSymlinks(baseDir, filePath)
 		if err != nil {
 			Fail(c, http.StatusNotFound, "文件不存在或已被删除")
 			return
 		}
 		defer file.Close()
 
-		info, err := file.Stat()
-		if err != nil {
-			Fail(c, http.StatusInternalServerError, "获取文件信息失败")
-			return
-		}
-
 		contentType := previewContentType(filePath)
-		setUntrustedContentHeaders(c)
 
 		disposition := "inline"
 		if c.Query("download") == "1" {
@@ -446,11 +561,7 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 		safeFileName := strings.NewReplacer(`"`, `\"`, "\r", "", "\n", "").Replace(fileName)
 		c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, safeFileName))
 		c.Header("Content-Type", contentType)
-		c.Header("Content-Length", fmt.Sprintf("%d", info.Size()))
-		c.Header("Cache-Control", "private, max-age=0")
-
-		c.Status(http.StatusOK)
-		io.Copy(c.Writer, file)
+		serveOpenedFileContent(c, file, filepath.Join(baseDir, filePath), info)
 	}
 }
 
@@ -512,12 +623,17 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 			Fail(c, http.StatusGone, "链接已过期")
 			return
 		}
+		_, primaryInfo, err := resolveWorkspaceEntryNoSymlinks(baseDir, entry.FilePaths[0])
+		if err != nil {
+			Fail(c, http.StatusNotFound, "shared file is unavailable")
+			return
+		}
+		isMulti := len(entry.FilePaths) > 1 || primaryInfo.IsDir()
 
 		// 密码保护链接：返回渲染所需的基本信息，但不泄露完整路径
 		if entry.PasswordHash != "" {
 			fileName := filepath.Base(entry.FilePaths[0])
 			contentType := previewContentType(entry.FilePaths[0])
-			isMulti := len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0]))
 			OK(c, gin.H{
 				"file_name":        fileName,
 				"file_count":       len(entry.FilePaths),
@@ -532,21 +648,16 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 		fileName := filepath.Base(entry.FilePaths[0])
 		contentType := previewContentType(entry.FilePaths[0])
 
-		isMulti := len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0]))
-
 		// 获取文件大小
 		var fileSize int64
 		if !isMulti {
-			if info, err := os.Stat(filepath.Join(baseDir, entry.FilePaths[0])); err == nil {
-				fileSize = info.Size()
-			}
+			fileSize = primaryInfo.Size()
 		}
 
 		// 构建文件列表信息
 		var fileList []gin.H
 		for _, fp := range entry.FilePaths {
-			fullPath := filepath.Join(baseDir, fp)
-			info, err := os.Stat(fullPath)
+			_, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, fp)
 			fInfo := gin.H{
 				"path":   fp,
 				"name":   filepath.Base(fp),
@@ -647,32 +758,49 @@ func expiresAtUnix(t time.Time) int64 {
 	return t.Unix()
 }
 
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+func validatedPreviewResources(baseDir string, entry *previewLinkEntry) ([]string, error) {
+	resourcePaths := append([]string(nil), entry.ResourcePaths...)
+	if entry.ResourcePaths == nil {
+		_, expanded, err := collectPreviewPaths(baseDir, entry.FilePaths)
+		if err != nil {
+			return nil, err
+		}
+		resourcePaths = expanded
+	}
+	for _, resourcePath := range resourcePaths {
+		if !entry.resourceWithinSharedRoots(filepath.Clean(resourcePath)) {
+			return nil, fmt.Errorf("shared resource is outside the selected paths")
+		}
+		_, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, resourcePath)
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("shared resource is not a regular file")
+		}
+	}
+	return resourcePaths, nil
 }
 
-func writeFileToZip(zw *zip.Writer, fullPath, relPath string) {
-	fi, err := os.Stat(fullPath)
+func writePreviewFileToZip(zw *zip.Writer, baseDir, relativePath string) error {
+	file, info, err := openWorkspaceRegularFileNoSymlinks(baseDir, relativePath)
 	if err != nil {
-		return
+		return err
 	}
-	header, err := zip.FileInfoHeader(fi)
+	defer file.Close()
+
+	header, err := zip.FileInfoHeader(info)
 	if err != nil {
-		return
+		return err
 	}
-	header.Name = relPath
+	header.Name = filepath.ToSlash(relativePath)
 	header.Method = zip.Deflate
-	w, err := zw.CreateHeader(header)
+	writer, err := zw.CreateHeader(header)
 	if err != nil {
-		return
+		return err
 	}
-	f, err := os.Open(fullPath)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = io.Copy(w, f)
+	_, err = io.Copy(writer, file)
+	return err
 }
 
 // isPreviewable 判断 MIME 类型是否可在浏览器中直接预览
@@ -780,27 +908,23 @@ func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 解析为工作目录下的完整路径并校验
-		resolved, err := pathguard.ResolveWorkspace(baseDir, cleanTarget)
-		if err != nil {
+		// 仅允许访问创建分享链接时记录的资源，不隐式授权同目录文件。
+		if !entry.allowsResource(cleanTarget) {
 			Fail(c, http.StatusForbidden, "禁止访问该路径")
 			return
 		}
-		fullPath := resolved.AbsPath
 
-		info, err := os.Stat(fullPath)
+		file, info, err := openWorkspaceRegularFileNoSymlinks(baseDir, cleanTarget)
 		if err != nil {
 			Fail(c, http.StatusNotFound, "文件不存在")
 			return
 		}
-		if info.IsDir() {
-			Fail(c, http.StatusBadRequest, "不支持目录")
-			return
-		}
+		defer file.Close()
 
-		c.Header("Content-Type", previewContentType(fullPath))
+		fullPath := filepath.Join(baseDir, cleanTarget)
+		c.Header("Content-Type", previewContentType(cleanTarget))
 		c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, strings.NewReplacer(`"`, `\"`, "\r", "", "\n", "").Replace(info.Name())))
-		serveFileContent(c, fullPath, info)
+		serveOpenedFileContent(c, file, fullPath, info)
 	}
 }
 

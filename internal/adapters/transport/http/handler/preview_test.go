@@ -28,8 +28,9 @@ func TestSaveShareLinksWritesToAppDir(t *testing.T) {
 	store.Lock()
 	store.m = map[string]*previewLinkEntry{
 		"link-1": {
-			FilePaths: []string{"docs/report.pdf"},
-			CreatedAt: time.Unix(100, 0),
+			FilePaths:     []string{"docs/report.pdf"},
+			ResourcePaths: []string{"docs/report.pdf", "docs/cover.png"},
+			CreatedAt:     time.Unix(100, 0),
 		},
 	}
 	store.Unlock()
@@ -48,6 +49,9 @@ func TestSaveShareLinksWritesToAppDir(t *testing.T) {
 	}
 	if got := entries["link-1"].FilePaths[0]; got != "docs/report.pdf" {
 		t.Fatalf("unexpected saved file path: %q", got)
+	}
+	if got := entries["link-1"].ResourcePaths; len(got) != 2 || got[1] != "docs/cover.png" {
+		t.Fatalf("unexpected saved resource paths: %#v", got)
 	}
 }
 
@@ -74,6 +78,9 @@ func TestLoadShareLinksReadsFromAppDir(t *testing.T) {
 	}
 	if got := entry.FilePaths[0]; got != "docs/manual.md" {
 		t.Fatalf("unexpected loaded file path: %q", got)
+	}
+	if !entry.allowsResource("docs/manual.md") || entry.allowsResource("docs/private.txt") {
+		t.Fatalf("legacy entry resource boundary is invalid: %#v", entry.ResourcePaths)
 	}
 }
 

@@ -58,6 +58,78 @@ func resolveAndValidatePath(baseDir, absBase, subPath string) (string, string, e
 	return resolved.AbsPath, resolved.RelPath, nil
 }
 
+// resolveWorkspaceEntryNoSymlinks 解析已存在的工作区条目，并拒绝路径中任意符号链接。
+// 分享和浏览器预览会在后续请求中重复调用，避免创建链接后的路径替换扩大访问范围。
+func resolveWorkspaceEntryNoSymlinks(baseDir, subPath string) (pathguard.ResolvedPath, os.FileInfo, error) {
+	resolved, err := pathguard.ResolveWorkspace(baseDir, subPath)
+	if err != nil {
+		return pathguard.ResolvedPath{}, nil, err
+	}
+	if err := rejectSymlinkComponents(resolved.BaseAbs, resolved.RelPath); err != nil {
+		return pathguard.ResolvedPath{}, nil, err
+	}
+	info, err := os.Lstat(resolved.AbsPath)
+	if err != nil {
+		return pathguard.ResolvedPath{}, nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return pathguard.ResolvedPath{}, nil, fmt.Errorf("symbolic links are not allowed")
+	}
+	return resolved, info, nil
+}
+
+func rejectSymlinkComponents(baseDir, relativePath string) error {
+	current := filepath.Clean(baseDir)
+	if relativePath == "" {
+		return nil
+	}
+	for _, component := range strings.Split(filepath.Clean(relativePath), string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symbolic links are not allowed")
+		}
+	}
+	return nil
+}
+
+func openWorkspaceRegularFileNoSymlinks(baseDir, relativePath string) (*os.File, os.FileInfo, error) {
+	resolved, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, relativePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("path is not a regular file")
+	}
+
+	file, err := os.Open(resolved.AbsPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+
+	// 打开后再次解析并比较文件身份，缩小校验与打开之间的替换窗口。
+	_, currentInfo, err := resolveWorkspaceEntryNoSymlinks(baseDir, relativePath)
+	if err != nil || !os.SameFile(openedInfo, currentInfo) {
+		file.Close()
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("file changed while opening")
+	}
+	return file, openedInfo, nil
+}
+
 func isPathWithinBase(absBase, path string) bool {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -885,20 +957,13 @@ func DeleteFileHandler() gin.HandlerFunc {
 	}
 }
 
-// serveFileContent 使用 http.ServeContent 提供文件内容，避免 http.ServeFile 对
-// index.html 路径的自动重定向行为，更好地支持 HTML 预览等场景
-func serveFileContent(c *gin.Context, fullPath string, info os.FileInfo) {
-	f, err := os.Open(fullPath)
-	if err != nil {
-		Fail(c, http.StatusInternalServerError, "无法读取文件")
-		return
-	}
-	defer f.Close()
+// serveOpenedFileContent 使用已校验并打开的文件描述符提供内容，避免再次按路径打开。
+func serveOpenedFileContent(c *gin.Context, file *os.File, fullPath string, info os.FileInfo) {
 	setUntrustedContentHeaders(c)
 	if c.Writer.Header().Get("Content-Type") == "" {
 		c.Header("Content-Type", previewContentType(fullPath))
 	}
-	http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), f)
+	http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), file)
 }
 
 // setUntrustedContentHeaders 将工作区文件限制在无脚本、无同源权限的文档沙箱中。
@@ -916,7 +981,7 @@ func setUntrustedContentHeaders(c *gin.Context) {
 // 相对路径通过 URL wildcard 传入，浏览器可自然解析相对引用
 func ServeFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, _, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -928,27 +993,22 @@ func ServeFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, relativePath)
+		resolved, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, relativePath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		info, err := os.Stat(fullPath)
-		if err != nil {
-			Fail(c, http.StatusNotFound, "文件不存在")
-			return
-		}
 		if info.IsDir() {
-			indexPath := filepath.Join(fullPath, "index.html")
-			if indexInfo, err := os.Stat(indexPath); err == nil && !indexInfo.IsDir() {
-				serveFileContent(c, indexPath, indexInfo)
-				return
-			}
-			Fail(c, http.StatusBadRequest, "不支持目录")
-			return
+			relativePath = filepath.Join(resolved.RelPath, "index.html")
 		}
 
-		serveFileContent(c, fullPath, info)
+		file, fileInfo, err := openWorkspaceRegularFileNoSymlinks(baseDir, relativePath)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		defer file.Close()
+		serveOpenedFileContent(c, file, filepath.Join(baseDir, relativePath), fileInfo)
 	}
 }
