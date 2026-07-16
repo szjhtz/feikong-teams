@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/runtime/env"
@@ -255,6 +258,64 @@ func TestServeFileHandlerRejectsSymlinks(t *testing.T) {
 	resp := performRequest(router, http.MethodGet, "/view/linked.html", nil)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("symlink serve status = %d, want 400: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestWorkspaceFileHandlersDoNotExposeOrDeleteSymlinks(t *testing.T) {
+	workspace := setupWorkspaceDir(t)
+	outsideFile := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideFile, filepath.Join(workspace, "linked.txt")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/files", GetFilesHandler())
+	router.GET("/search", SearchFilesHandler())
+	router.GET("/content", GetFileContentHandler())
+	router.POST("/delete", DeleteFileHandler())
+
+	response := performRequest(router, http.MethodGet, "/files", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status = %d: %s", response.Code, response.Body.String())
+	}
+	var files []FileInfo
+	decodeRawData(t, response, &files)
+	if len(files) != 0 {
+		t.Fatalf("symlink should be omitted from listing: %#v", files)
+	}
+
+	response = performRequest(router, http.MethodGet, "/search?q=linked", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("search status = %d: %s", response.Code, response.Body.String())
+	}
+	decodeRawData(t, response, &files)
+	if len(files) != 0 {
+		t.Fatalf("symlink should be omitted from search: %#v", files)
+	}
+
+	response = performRequest(router, http.MethodGet, "/content?path=linked.txt", nil)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("content status = %d, want 400", response.Code)
+	}
+	response = performJSON(router, http.MethodPost, "/delete", `{"path":"linked.txt","force":true}`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("delete status = %d, want 400", response.Code)
+	}
+	if content, err := os.ReadFile(outsideFile); err != nil || string(content) != "secret" {
+		t.Fatalf("outside file changed: content=%q err=%v", content, err)
+	}
+}
+
+func TestSearchWorkspaceFilesHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := searchWorkspaceFiles(ctx, fstest.MapFS{"file.txt": {Data: []byte("data")}}, "file")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("searchWorkspaceFiles() error = %v, want canceled", err)
 	}
 }
 

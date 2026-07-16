@@ -56,11 +56,14 @@ const (
 	maxArchiveUncompressedBytes int64 = 2 << 30
 	maxBatchDownloadPaths             = 128
 	maxConcurrentArchives             = 4
+	maxDirectoryEntries               = 10_000
+	maxSearchEntries                  = 50_000
 )
 
 var errChunkUploadCapacity = errors.New("chunk upload capacity exceeded")
 var errArchiveLimit = errors.New("archive resource limit exceeded")
 var archiveSlots = make(chan struct{}, maxConcurrentArchives)
+var errSearchLimit = errors.New("workspace search limit exceeded")
 
 const untrustedContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
@@ -137,7 +140,13 @@ func openWorkspaceRegularFileNoSymlinks(baseDir, relativePath string) (*os.File,
 		return nil, nil, fmt.Errorf("path is not a regular file")
 	}
 
-	file, err := os.Open(resolved.AbsPath)
+	root, err := os.OpenRoot(resolved.BaseAbs)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer root.Close()
+
+	file, err := root.Open(workspaceFSPath(resolved.RelPath))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -146,9 +155,17 @@ func openWorkspaceRegularFileNoSymlinks(baseDir, relativePath string) (*os.File,
 		file.Close()
 		return nil, nil, err
 	}
+	if !openedInfo.Mode().IsRegular() {
+		file.Close()
+		return nil, nil, fmt.Errorf("path is not a regular file")
+	}
 
-	// 打开后再次解析并比较文件身份，缩小校验与打开之间的替换窗口。
-	_, currentInfo, err := resolveWorkspaceEntryNoSymlinks(baseDir, relativePath)
+	// 根目录句柄保证打开过程不会逃逸工作区；打开后再校验组件与文件身份。
+	if err := rejectRootSymlinkComponents(root, resolved.RelPath); err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+	currentInfo, err := root.Lstat(workspaceFSPath(resolved.RelPath))
 	if err != nil || !os.SameFile(openedInfo, currentInfo) {
 		file.Close()
 		if err != nil {
@@ -157,6 +174,66 @@ func openWorkspaceRegularFileNoSymlinks(baseDir, relativePath string) (*os.File,
 		return nil, nil, fmt.Errorf("file changed while opening")
 	}
 	return file, openedInfo, nil
+}
+
+func openWorkspaceDirectoryNoSymlinks(baseDir, relativePath string) (*os.File, os.FileInfo, error) {
+	resolved, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, relativePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !info.IsDir() {
+		return nil, nil, fmt.Errorf("path is not a directory")
+	}
+
+	root, err := os.OpenRoot(resolved.BaseAbs)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer root.Close()
+	file, err := root.Open(workspaceFSPath(resolved.RelPath))
+	if err != nil {
+		return nil, nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+	if !openedInfo.IsDir() {
+		file.Close()
+		return nil, nil, fmt.Errorf("path is not a directory")
+	}
+	if err := rejectRootSymlinkComponents(root, resolved.RelPath); err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+	currentInfo, err := root.Lstat(workspaceFSPath(resolved.RelPath))
+	if err != nil || !os.SameFile(openedInfo, currentInfo) {
+		file.Close()
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("directory changed while opening")
+	}
+	return file, openedInfo, nil
+}
+
+func rejectRootSymlinkComponents(root *os.Root, relativePath string) error {
+	current := ""
+	for _, component := range strings.Split(filepath.Clean(relativePath), string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := root.Lstat(workspaceFSPath(current))
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symbolic links are not allowed")
+		}
+	}
+	return nil
 }
 
 func isPathWithinBase(absBase, path string) bool {
@@ -237,44 +314,47 @@ func saveUploadedFileAtomic(fileHeader *multipart.FileHeader, destination string
 // GetFilesHandler 获取指定目录下的文件和文件夹列表
 func GetFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, _, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		subPath := c.Query("path")
-		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		resolved, _, err := resolveWorkspaceEntryNoSymlinks(baseDir, subPath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		info, err := os.Stat(fullPath)
+		directory, _, err := openWorkspaceDirectoryNoSymlinks(baseDir, resolved.RelPath)
 		if err != nil {
-			Fail(c, http.StatusNotFound, "目录不存在或无法访问")
+			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if !info.IsDir() {
-			Fail(c, http.StatusBadRequest, "路径不是目录")
-			return
-		}
-
-		entries, err := os.ReadDir(fullPath)
-		if err != nil {
-			log.Printf("failed to read dir: path=%s, err=%v", fullPath, err)
+		entries, readErr := directory.ReadDir(maxDirectoryEntries + 1)
+		closeErr := directory.Close()
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			log.Printf("failed to read workspace directory: path=%s, err=%v", resolved.RelPath, readErr)
 			Fail(c, http.StatusInternalServerError, "读取目录失败")
+			return
+		}
+		if closeErr != nil {
+			log.Printf("failed to close workspace directory: path=%s, err=%v", resolved.RelPath, closeErr)
+		}
+		if len(entries) > maxDirectoryEntries {
+			Fail(c, http.StatusRequestEntityTooLarge, "directory contains too many entries")
 			return
 		}
 
 		fileList := make([]FileInfo, 0, len(entries))
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".") {
+			if strings.HasPrefix(entry.Name(), ".") || entry.Type()&os.ModeSymlink != 0 {
 				continue
 			}
 			relativePath := entry.Name()
-			if subPath != "" {
-				relativePath = filepath.Join(subPath, entry.Name())
+			if resolved.RelPath != "" {
+				relativePath = filepath.Join(resolved.RelPath, entry.Name())
 			}
 			fileInfo, err := entry.Info()
 			if err != nil {
@@ -307,7 +387,7 @@ func GetFilesHandler() gin.HandlerFunc {
 // SearchFilesHandler 递归搜索文件名和相对路径
 func SearchFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		_, absBase, err := getWorkspaceDir()
+		baseDir, _, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -319,52 +399,25 @@ func SearchFilesHandler() gin.HandlerFunc {
 			return
 		}
 
-		queryLower := strings.ToLower(filepath.ToSlash(query))
-		const maxResults = 100
-
-		const maxDepth = 10
-
-		var results []FileInfo
-		_ = filepath.WalkDir(absBase, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			// 跳过隐藏文件和目录
-			if strings.HasPrefix(d.Name(), ".") {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if len(results) >= maxResults {
-				return filepath.SkipAll
-			}
-
-			rel, err := filepath.Rel(absBase, path)
-			if err != nil || rel == "." {
-				return nil
-			}
-			relPath := filepath.ToSlash(rel)
-			// 限制搜索深度
-			if d.IsDir() && strings.Count(rel, string(os.PathSeparator)) >= maxDepth {
-				return filepath.SkipDir
-			}
-
-			if strings.Contains(strings.ToLower(d.Name()), queryLower) || strings.Contains(strings.ToLower(relPath), queryLower) {
-				info, err := d.Info()
-				if err != nil {
-					return nil
-				}
-				results = append(results, FileInfo{
-					Name:    d.Name(),
-					Path:    relPath,
-					IsDir:   d.IsDir(),
-					Size:    info.Size(),
-					ModTime: info.ModTime().Unix(),
-				})
-			}
-			return nil
-		})
+		root, err := os.OpenRoot(baseDir)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to open workspace")
+			return
+		}
+		results, err := searchWorkspaceFiles(c.Request.Context(), root.FS(), query)
+		root.Close()
+		if errors.Is(err, errSearchLimit) {
+			Fail(c, http.StatusRequestEntityTooLarge, err.Error())
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		if err != nil {
+			log.Printf("failed to search workspace: err=%v", err)
+			Fail(c, http.StatusInternalServerError, "failed to search workspace")
+			return
+		}
 
 		if results == nil {
 			results = []FileInfo{}
@@ -382,11 +435,68 @@ func SearchFilesHandler() gin.HandlerFunc {
 	}
 }
 
+func searchWorkspaceFiles(ctx context.Context, filesystem fs.FS, query string) ([]FileInfo, error) {
+	const maxResults = 100
+	const maxDepth = 10
+
+	queryLower := strings.ToLower(filepath.ToSlash(query))
+	results := make([]FileInfo, 0)
+	visited := 0
+	err := fs.WalkDir(filesystem, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if path == "." {
+			return nil
+		}
+		if strings.HasPrefix(entry.Name(), ".") {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		visited++
+		if visited > maxSearchEntries {
+			return errSearchLimit
+		}
+		if len(results) >= maxResults {
+			return fs.SkipAll
+		}
+
+		relativePath := strings.TrimPrefix(filepath.ToSlash(path), "./")
+		if entry.IsDir() && strings.Count(relativePath, "/") >= maxDepth {
+			return fs.SkipDir
+		}
+		if !strings.Contains(strings.ToLower(entry.Name()), queryLower) && !strings.Contains(strings.ToLower(relativePath), queryLower) {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		results = append(results, FileInfo{
+			Name:    entry.Name(),
+			Path:    relativePath,
+			IsDir:   entry.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Unix(),
+		})
+		return nil
+	})
+	return results, err
+}
+
 // GetFileContentHandler 读取工作目录中的文本文件内容。
 // Query: path(文件相对路径)
 func GetFileContentHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, _, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -398,30 +508,31 @@ func GetFileContentHandler() gin.HandlerFunc {
 			return
 		}
 
-		fullPath, cleanPath, err := resolveAndValidatePath(baseDir, absBase, filePath)
+		resolved, _, err := resolveWorkspaceEntryNoSymlinks(baseDir, filePath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		info, err := os.Stat(fullPath)
+		file, info, err := openWorkspaceRegularFileNoSymlinks(baseDir, resolved.RelPath)
 		if err != nil {
-			Fail(c, http.StatusNotFound, "文件不存在")
+			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if info.IsDir() {
-			Fail(c, http.StatusBadRequest, "路径不是文件")
-			return
-		}
+		defer file.Close()
 		if info.Size() > editableFileMaxBytes {
 			Fail(c, http.StatusBadRequest, "文件过大，无法编辑")
 			return
 		}
 
-		data, err := os.ReadFile(fullPath)
+		data, err := io.ReadAll(io.LimitReader(file, editableFileMaxBytes+1))
 		if err != nil {
-			log.Printf("failed to read file content: path=%s, err=%v", fullPath, err)
+			log.Printf("failed to read file content: path=%s, err=%v", resolved.RelPath, err)
 			Fail(c, http.StatusInternalServerError, "读取文件失败")
+			return
+		}
+		if len(data) > editableFileMaxBytes {
+			Fail(c, http.StatusBadRequest, "文件过大，无法编辑")
 			return
 		}
 		if !utf8.Valid(data) {
@@ -430,8 +541,8 @@ func GetFileContentHandler() gin.HandlerFunc {
 		}
 
 		OK(c, gin.H{
-			"path":     cleanPath,
-			"name":     filepath.Base(cleanPath),
+			"path":     resolved.RelPath,
+			"name":     filepath.Base(resolved.RelPath),
 			"content":  string(data),
 			"size":     info.Size(),
 			"mod_time": info.ModTime().Unix(),
@@ -1410,7 +1521,7 @@ func writeArchiveValidationError(c *gin.Context, err error) {
 // force 为 true 时可删除非空目录
 func DeleteFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, _, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -1425,45 +1536,66 @@ func DeleteFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, req.Path)
+		resolved, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, req.Path)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		// 不允许删除根工作目录
-		absFull, _ := filepath.Abs(fullPath)
-		if absFull == absBase {
+		if resolved.RelPath == "" {
 			Fail(c, http.StatusBadRequest, "无效的文件路径")
 			return
 		}
-
-		info, err := os.Stat(fullPath)
+		root, err := os.OpenRoot(baseDir)
 		if err != nil {
-			Fail(c, http.StatusNotFound, "文件或目录不存在")
+			Fail(c, http.StatusInternalServerError, "failed to open workspace")
+			return
+		}
+		defer root.Close()
+		if err := rejectRootSymlinkComponents(root, resolved.RelPath); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		currentInfo, err := root.Lstat(workspaceFSPath(resolved.RelPath))
+		if err != nil || !os.SameFile(info, currentInfo) {
+			Fail(c, http.StatusConflict, "path changed before deletion")
 			return
 		}
 
 		if info.IsDir() {
-			entries, err := os.ReadDir(fullPath)
-			if err != nil {
-				log.Printf("failed to read dir for delete: path=%s, err=%v", fullPath, err)
-				Fail(c, http.StatusInternalServerError, "读取目录失败")
-				return
-			}
-			if len(entries) > 0 && !req.Force {
-				Fail(c, http.StatusBadRequest, "目录非空，请设置 force:true 确认删除")
-				return
-			}
-			if err := os.RemoveAll(fullPath); err != nil {
-				log.Printf("failed to delete dir: path=%s, err=%v", fullPath, err)
-				Fail(c, http.StatusInternalServerError, fmt.Sprintf("删除目录失败: %v", err))
+			if !req.Force {
+				directory, _, err := openWorkspaceDirectoryNoSymlinks(baseDir, resolved.RelPath)
+				if err != nil {
+					Fail(c, http.StatusConflict, "path changed before deletion")
+					return
+				}
+				entries, readErr := directory.ReadDir(1)
+				closeErr := directory.Close()
+				if readErr != nil && !errors.Is(readErr, io.EOF) {
+					Fail(c, http.StatusInternalServerError, "读取目录失败")
+					return
+				}
+				if closeErr != nil {
+					log.Printf("failed to close directory before delete: path=%s, err=%v", resolved.RelPath, closeErr)
+				}
+				if len(entries) > 0 {
+					Fail(c, http.StatusBadRequest, "目录非空，请设置 force:true 确认删除")
+					return
+				}
+				if err := root.Remove(resolved.RelPath); err != nil {
+					log.Printf("failed to delete empty directory: path=%s, err=%v", resolved.RelPath, err)
+					Fail(c, http.StatusConflict, "directory changed before deletion")
+					return
+				}
+			} else if err := root.RemoveAll(resolved.RelPath); err != nil {
+				log.Printf("failed to delete directory: path=%s, err=%v", resolved.RelPath, err)
+				Fail(c, http.StatusInternalServerError, "删除目录失败")
 				return
 			}
 		} else {
-			if err := os.Remove(fullPath); err != nil {
-				log.Printf("failed to delete file: path=%s, err=%v", fullPath, err)
-				Fail(c, http.StatusInternalServerError, fmt.Sprintf("删除文件失败: %v", err))
+			if err := root.Remove(resolved.RelPath); err != nil {
+				log.Printf("failed to delete file: path=%s, err=%v", resolved.RelPath, err)
+				Fail(c, http.StatusInternalServerError, "删除文件失败")
 				return
 			}
 		}
