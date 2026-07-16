@@ -49,6 +49,7 @@
 - `/assets/*`
 - `/p/*`、`/s/*`
 - `GET` / `HEAD` `/api/fkteams/preview/*`
+- `POST /api/fkteams/preview/:linkId/auth`
 - `/api/fkteams/public/session-shares/*`
 - `/v1/*`，使用独立 API Key
 
@@ -78,6 +79,7 @@ Authorization: Bearer <api_key>
 | 能力 | 行为 |
 | ---- | ---- |
 | CORS | 默认允许同源和本机开发来源；跨域部署需配置 `[server] allow_origins` |
+| 客户端 IP | 默认忽略代理来源头；反向代理部署需配置 `[server] trusted_proxies` 并重启 |
 | Body Limit | 请求体上限 100MB，超出返回 413 `request body too large` |
 | 静态资源缓存 | Vite 构建产物 `/assets/*` 返回 `public, max-age=31536000, immutable`；HTML 返回 `no-cache` |
 
@@ -170,6 +172,7 @@ Authorization: Bearer <api_key>
 | GET | `/api/fkteams/preview` | 预览链接列表 |
 | GET | `/api/fkteams/preview/:linkId` | 访问预览链接 |
 | GET | `/api/fkteams/preview/:linkId/info` | 预览链接信息 |
+| POST | `/api/fkteams/preview/:linkId/auth` | 验证预览密码并签发短期凭据 |
 | GET | `/api/fkteams/preview/:linkId/render/*filepath` | 渲染预览资源 |
 | DELETE | `/api/fkteams/preview/:linkId` | 删除预览链接 |
 | POST | `/api/fkteams/session-shares` | 创建会话分享 |

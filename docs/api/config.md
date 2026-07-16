@@ -84,6 +84,7 @@
 | 400 | `model use_for "<use>" is configured by both <id> and <id>` | 模型用途重复 |
 | 400 | `model original_id is duplicated: <id>` | 多个模型尝试继承同一个旧模型身份 |
 | 400 | `server.auth.<field> is required when authentication is enabled` | 启用认证时用户名、密码或 Secret 缺失 |
+| 400 | `invalid server.trusted_proxies entry <value>` | 可信代理不是有效 IP 或 CIDR |
 | 500 | `failed to save config: ...` | 保存失败 |
 
 ---

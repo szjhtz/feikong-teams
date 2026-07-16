@@ -163,12 +163,18 @@ func LoginHandler() gin.HandlerFunc {
 		auth := config.Get().Server.Auth
 		expectedUser := auth.Username
 		expectedPass := auth.Password
+		attemptKey := "login:" + c.ClientIP()
+		if allowed, retryAfter := loginAttempts.Allow(attemptKey, time.Now()); !allowed {
+			rateLimitExceeded(c, retryAfter)
+			return
+		}
 
 		if !credentialsMatch(req.Username, req.Password, expectedUser, expectedPass) {
 			log.Printf("login failed: username=%s, ip=%s", req.Username, c.ClientIP())
 			Fail(c, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
+		loginAttempts.Reset(attemptKey)
 
 		token := generateToken(req.Username)
 		setAuthCookie(c, token, int(authTokenTTL/time.Second))

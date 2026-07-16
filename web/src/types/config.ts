@@ -27,6 +27,7 @@ export interface ServerConfig {
   port?: number;
   log_level?: string;
   allow_origins?: string[];
+  trusted_proxies?: string[];
   auth?: ServerAuthConfig;
 }
 

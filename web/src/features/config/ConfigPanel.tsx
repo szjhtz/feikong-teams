@@ -529,6 +529,12 @@ function ServerTab({ draft, updateDraft }: EditorProps) {
             placeholder="http://localhost:5173"
             onChange={(values) => updateDraft((next) => setServer(next, { allow_origins: values }))}
           />
+          <StringListField
+            label="可信反向代理"
+            values={server.trusted_proxies || []}
+            placeholder="127.0.0.1 或 10.0.0.0/8（重启生效）"
+            onChange={(values) => updateDraft((next) => setServer(next, { trusted_proxies: values }))}
+          />
         </PanelBody>
       </Panel>
 

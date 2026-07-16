@@ -2,7 +2,9 @@ package handler
 
 import (
 	"archive/zip"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fkteams/internal/app/appdata"
@@ -16,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -463,8 +466,6 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 	}
 }
 
-// PreviewFileHandler 通过预览链接访问文件。
-
 // PreviewFileHandler 通过当前 HTTP runtime 的预览链接访问文件。
 func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -494,24 +495,8 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 校验密码
-		if entry.PasswordHash != "" {
-			password := c.Query("password")
-			if password == "" {
-				password = c.GetHeader("X-Preview-Password")
-			}
-			if password == "" {
-				c.JSON(http.StatusUnauthorized, Response{
-					Code:    1,
-					Message: "需要输入访问密码",
-					Data:    gin.H{"require_password": true},
-				})
-				return
-			}
-			if !verifyPassword(password, entry.PasswordHash) {
-				Fail(c, http.StatusForbidden, "密码错误")
-				return
-			}
+		if !authorizePreviewPassword(c, linkID, entry.PasswordHash, c.GetHeader("X-Preview-Password")) {
+			return
 		}
 
 		// 多文件或包含目录 → zip 打包下载
@@ -592,8 +577,39 @@ func (rt *Runtime) DeletePreviewLinkHandler() gin.HandlerFunc {
 	}
 }
 
-// PreviewInfoHandler 获取预览链接的文件信息（不需要密码）
-// 返回文件名、大小、类型、是否需要密码、是否可预览等
+// PreviewAuthHandler 校验分享密码并签发短期 HttpOnly 预览凭证。
+func (rt *Runtime) PreviewAuthHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		linkID := c.Param("linkId")
+		store := rt.PreviewLinks
+		store.RLock()
+		entry, exists := store.m[linkID]
+		store.RUnlock()
+		if !exists {
+			Fail(c, http.StatusNotFound, "preview link not found")
+			return
+		}
+		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
+			if _, err := store.Delete(linkID); err != nil {
+				log.Printf("failed to remove expired preview link: id=%s, err=%v", linkID, err)
+			}
+			Fail(c, http.StatusGone, "preview link expired")
+			return
+		}
+
+		var req struct {
+			Password string `json:"password"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid preview authentication request")
+			return
+		}
+		if !authorizePreviewPassword(c, linkID, entry.PasswordHash, req.Password) {
+			return
+		}
+		OK(c, gin.H{"authenticated": true})
+	}
+}
 
 // PreviewInfoHandler 获取当前 HTTP runtime 的预览链接文件信息。
 func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
@@ -639,6 +655,7 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 				"file_count":       len(entry.FilePaths),
 				"content_type":     contentType,
 				"require_password": true,
+				"authorized":       hasValidPreviewGrant(c, linkID, entry.PasswordHash),
 				"previewable":      !isMulti && isPreviewable(contentType),
 				"expires_at":       expiresAtUnix(entry.ExpiresAt),
 			})
@@ -676,13 +693,12 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 			"files":            fileList,
 			"content_type":     contentType,
 			"require_password": entry.PasswordHash != "",
+			"authorized":       true,
 			"previewable":      !isMulti && isPreviewable(contentType),
 			"expires_at":       expiresAtUnix(entry.ExpiresAt),
 		})
 	}
 }
-
-// ListPreviewLinksHandler 列出所有预览链接
 
 // ListPreviewLinksHandler 列出当前 HTTP runtime 的所有预览链接。
 func (rt *Runtime) ListPreviewLinksHandler() gin.HandlerFunc {
@@ -748,6 +764,81 @@ func hashPassword(password string) string {
 // verifyPassword 校验密码
 func verifyPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+const previewGrantTTL = time.Hour
+
+func previewGrantCookieName(linkID string) string {
+	return "fk_preview_" + linkID
+}
+
+func generatePreviewGrant(linkID, passwordHash string, expiresAt time.Time) string {
+	payload := linkID + "|" + strconv.FormatInt(expiresAt.Unix(), 10)
+	key := sha256.Sum256([]byte(passwordHash))
+	mac := hmac.New(sha256.New, key[:])
+	_, _ = mac.Write([]byte(payload))
+	return strconv.FormatInt(expiresAt.Unix(), 10) + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+func validatePreviewGrant(grant, linkID, passwordHash string, now time.Time) bool {
+	parts := strings.SplitN(grant, ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	expiresAt, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || !now.Before(time.Unix(expiresAt, 0)) {
+		return false
+	}
+	expected := generatePreviewGrant(linkID, passwordHash, time.Unix(expiresAt, 0))
+	return hmac.Equal([]byte(grant), []byte(expected))
+}
+
+func hasValidPreviewGrant(c *gin.Context, linkID, passwordHash string) bool {
+	grant, err := c.Cookie(previewGrantCookieName(linkID))
+	return err == nil && validatePreviewGrant(grant, linkID, passwordHash, time.Now())
+}
+
+func setPreviewGrantCookie(c *gin.Context, linkID, passwordHash string) {
+	expiresAt := time.Now().Add(previewGrantTTL)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     previewGrantCookieName(linkID),
+		Value:    generatePreviewGrant(linkID, passwordHash, expiresAt),
+		Path:     "/api/fkteams/preview/" + linkID,
+		MaxAge:   int(previewGrantTTL / time.Second),
+		HttpOnly: true,
+		Secure:   requestUsesHTTPS(c.Request),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func authorizePreviewPassword(c *gin.Context, linkID, passwordHash, password string) bool {
+	if passwordHash == "" || hasValidPreviewGrant(c, linkID, passwordHash) {
+		return true
+	}
+	if password == "" {
+		c.JSON(http.StatusUnauthorized, Response{
+			Code:    1,
+			Message: "preview password is required",
+			Data:    gin.H{"require_password": true},
+		})
+		return false
+	}
+	attemptKey := "preview:" + linkID + ":" + c.ClientIP()
+	if allowed, retryAfter := publicShareAttempts.Allow(attemptKey, time.Now()); !allowed {
+		rateLimitExceeded(c, retryAfter)
+		return false
+	}
+	if !verifyPassword(password, passwordHash) {
+		c.JSON(http.StatusUnauthorized, Response{
+			Code:    1,
+			Message: "invalid preview password",
+			Data:    gin.H{"require_password": true},
+		})
+		return false
+	}
+	publicShareAttempts.Reset(attemptKey)
+	setPreviewGrantCookie(c, linkID, passwordHash)
+	return true
 }
 
 // expiresAtUnix 将过期时间转为 Unix 时间戳，零值（永不过期）返回 0
@@ -820,10 +911,6 @@ func isPreviewable(contentType string) bool {
 	return false
 }
 
-// PreviewRenderHandler 直接渲染预览文件（HTML 完整预览，支持相对路径资源加载）
-// 当 filepath 为空或 "/" 时返回主文件；否则解析为主文件目录下的相对路径资源
-// 密码校验支持 query 参数 password 或 cookie fk_preview_{linkId}
-
 // PreviewRenderHandler 渲染当前 HTTP runtime 的预览文件。
 func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -853,25 +940,8 @@ func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 校验密码：query param 或 cookie
-		if entry.PasswordHash != "" {
-			password := c.Query("password")
-			if password == "" {
-				password = c.GetHeader("X-Preview-Password")
-			}
-			if password == "" {
-				if cookie, err := c.Cookie("fk_preview_" + linkID); err == nil {
-					password = cookie
-				}
-			}
-			if password == "" || !verifyPassword(password, entry.PasswordHash) {
-				Fail(c, http.StatusUnauthorized, "需要输入访问密码")
-				return
-			}
-			// 设置 cookie 以便 iframe 内的相对资源请求自动携带密码凭据
-			// HttpOnly=true 防止 JS 读取，路径限制到当前预览链接
-			cookiePath := fmt.Sprintf("/api/fkteams/preview/%s/", linkID)
-			c.SetCookie("fk_preview_"+linkID, password, 3600, cookiePath, "", false, true)
+		if !authorizePreviewPassword(c, linkID, entry.PasswordHash, c.GetHeader("X-Preview-Password")) {
+			return
 		}
 
 		mainFile := entry.FilePaths[0]
@@ -884,9 +954,6 @@ func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 		if relativePath == "" {
 			baseName := url.PathEscape(filepath.Base(mainFile))
 			redirectURL := fmt.Sprintf("/api/fkteams/preview/%s/render/%s", linkID, baseName)
-			if q := c.Request.URL.RawQuery; q != "" {
-				redirectURL += "?" + q
-			}
 			c.Redirect(http.StatusFound, redirectURL)
 			return
 		}

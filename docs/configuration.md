@@ -53,6 +53,7 @@ host = "127.0.0.1"
 port = 23456
 log_level = "info"
 allow_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+trusted_proxies = []
 
 [server.auth]
 enabled = false
@@ -62,6 +63,8 @@ secret = "your_jwt_secret"
 ```
 
 认证配置支持热更新。启用认证或修改用户名、密码、Secret 后，已登录的 Web 页面会要求原地重新登录；关闭认证会立即停止校验。重新登录不会取消后台任务，任务输出会在认证恢复后继续同步。
+
+`trusted_proxies` 默认留空，此时服务端忽略 `X-Forwarded-For` 等代理来源头，防止客户端伪造 IP 绕过认证限流。通过 Nginx、Caddy 等反向代理部署时，只填写实际代理的 IP 或 CIDR（如 `127.0.0.1`、`10.0.0.0/8`），修改后需重启服务。不要使用 `0.0.0.0/0` 或 `::/0`。
 
 ## OpenAI 兼容 API
 

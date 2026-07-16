@@ -11,6 +11,8 @@ import (
 	"fkteams/internal/adapters/transport/http/handler"
 	"fkteams/internal/adapters/transport/http/middleware"
 	"fkteams/internal/app/appstate"
+	"fkteams/internal/app/config"
+	"fkteams/internal/runtime/log"
 	"fkteams/web"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +21,10 @@ import (
 // newEngine 创建带公共中间件的 Gin 引擎
 func newEngine(_ bool) *gin.Engine {
 	r := gin.New()
+	if err := r.SetTrustedProxies(config.Get().Server.TrustedProxies); err != nil {
+		log.Printf("invalid trusted proxy configuration, ignoring proxy headers: %v", err)
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(
 		gin.Logger(),
 		gin.Recovery(),
@@ -106,6 +112,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 			preview.GET("", runtime.ListPreviewLinksHandler())
 			preview.GET("/:linkId", runtime.PreviewFileHandler())
 			preview.GET("/:linkId/info", runtime.PreviewInfoHandler())
+			preview.POST("/:linkId/auth", runtime.PreviewAuthHandler())
 			preview.GET("/:linkId/render/*filepath", runtime.PreviewRenderHandler())
 			preview.DELETE("/:linkId", runtime.DeletePreviewLinkHandler())
 		}

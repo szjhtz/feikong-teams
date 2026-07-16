@@ -59,6 +59,10 @@ func Auth() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if c.Request.Method == "POST" && strings.HasPrefix(path, "/api/fkteams/preview/") && strings.HasSuffix(path, "/auth") {
+			c.Next()
+			return
+		}
 		if strings.HasPrefix(path, "/api/fkteams/public/session-shares/") {
 			c.Next()
 			return

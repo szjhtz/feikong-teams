@@ -72,12 +72,14 @@
 | -------- | ------ | ------- |
 | `linkId` | string | 链接 ID |
 
-**请求参数** (Query/Header)：
+设置密码的分享必须先调用 `POST /api/fkteams/preview/:linkId/auth`。浏览器会自动携带该接口签发的短期 Cookie；非浏览器客户端也可通过请求头直接提交密码。
 
-| 参数                 | 位置   | 说明                       |
-| -------------------- | ------ | -------------------------- |
-| `password`           | Query  | 访问密码（设置密码时必填） |
-| `X-Preview-Password` | Header | 访问密码（备选方式）       |
+| 参数                 | 位置   | 说明                               |
+| -------------------- | ------ | ---------------------------------- |
+| `X-Preview-Password` | Header | 访问密码，适用于非浏览器客户端     |
+| `fk_preview_{linkId}` | Cookie | 密码验证成功后自动签发的短期凭据   |
+
+密码不接受 Query 参数，避免进入访问日志、浏览器历史和 Referer。
 
 **成功响应** (200)：
 
@@ -89,10 +91,50 @@
 | ------ | -------------------- | -------------- |
 | 400    | 缺少链接 ID          | 路径参数为空   |
 | 401    | 需要输入访问密码     | 未提供密码     |
-| 403    | 密码错误             | 密码不匹配     |
+| 401    | 密码错误             | 密码不匹配     |
+| 429    | 尝试次数过多         | 需等待 `Retry-After` 指定的秒数 |
 | 404    | 链接不存在或已失效   | 链接未找到     |
 | 404    | 文件不存在或已被删除 | 原文件已被移除 |
 | 410    | 链接已过期           | 超过过期时间   |
+
+---
+
+## POST /api/fkteams/preview/:linkId/auth
+
+验证文件分享密码并签发有效期一小时的预览凭据。
+
+**请求 Body**：
+
+```json
+{
+  "password": "abc123"
+}
+```
+
+**成功响应** (200)：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "authenticated": true
+  }
+}
+```
+
+响应设置 `HttpOnly`、`SameSite=Strict` 的 `fk_preview_{linkId}` Cookie；HTTPS 请求同时设置 `Secure`。Cookie 保存的是与链接、密码哈希和过期时间绑定的 HMAC 签名，不包含原始密码。修改分享密码、链接失效或凭据到期后，旧凭据自动失效。
+
+**失败响应**：
+
+| 状态码 | message | 说明 |
+| ------ | ------- | ---- |
+| 400 | `invalid preview authentication request` | 请求体解析失败 |
+| 401 | `preview password is required` | 未提供密码 |
+| 401 | `invalid preview password` | 密码错误 |
+| 404 | `preview link not found` | 链接不存在 |
+| 410 | `preview link expired` | 链接已过期 |
+| 429 | `too many authentication attempts` | 尝试次数过多，响应包含 `Retry-After` |
 
 ---
 
@@ -126,9 +168,9 @@
     ],
     "content_type": "application/pdf",
     "require_password": false,
+    "authorized": true,
     "previewable": true,
-    "expires_at": 1700007200,
-    "created_at": 1700000000
+    "expires_at": 1700007200
   }
 }
 ```
@@ -141,9 +183,11 @@
 | `files`            | 文件列表信息                       |
 | `content_type`     | 文件 MIME 类型                     |
 | `require_password` | 是否需要密码                       |
+| `authorized`       | 当前请求是否已持有有效预览凭据     |
 | `previewable`      | 是否可在线预览（单文件且支持类型） |
 | `expires_at`       | 过期时间（Unix 时间戳）            |
-| `created_at`       | 创建时间（Unix 时间戳）            |
+
+密码保护的分享在授权前只返回渲染所需的基本信息，不返回完整路径、文件清单或文件大小。
 
 **失败响应**：
 
@@ -220,13 +264,12 @@
 | `linkId`   | string | 链接 ID                                  |
 | `filepath` | string | 相对路径资源（空或 `/` 表示主文件） |
 
-**请求参数** (Query/Cookie)：
+**请求参数** (Header/Cookie)：
 
-| 参数                    | 位置   | 说明                                        |
-| ----------------------- | ------ | ----------------------------------------- |
-| `password`              | Query  | 访问密码（设置密码时必填）                |
-| `X-Preview-Password`    | Header | 访问密码（备选）                          |
-| `fk_preview_{linkId}`   | Cookie | 认证通过后自动设置，用于 iframe 内资源请求 |
+| 参数                  | 位置   | 说明                                         |
+| --------------------- | ------ | -------------------------------------------- |
+| `X-Preview-Password`  | Header | 访问密码，适用于非浏览器客户端               |
+| `fk_preview_{linkId}` | Cookie | 认证通过后自动设置，用于 iframe 内资源请求    |
 
 **成功响应** (200)：
 
@@ -237,7 +280,8 @@
 | 状态码 | message              | 说明             |
 | ------ | -------------------- | ---------------- |
 | 400    | 缺少链接 ID          | 参数为空         |
-| 401    | 需要输入访问密码     | 未提供密码或错误   |
+| 401    | 需要输入访问密码     | 未提供密码或密码错误 |
+| 429    | 尝试次数过多         | 需等待 `Retry-After` 指定的秒数 |
 | 403    | 禁止访问该路径       | 尝试访问主文件目录外 |
 | 404    | 链接不存在或已失效   | 链接未找到       |
 | 404    | 文件不存在           | 原文件已被移除   |

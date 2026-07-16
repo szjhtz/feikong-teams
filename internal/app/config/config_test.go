@@ -61,6 +61,29 @@ func TestServerAuthValidate(t *testing.T) {
 	}
 }
 
+func TestServerValidateTrustedProxies(t *testing.T) {
+	tests := []struct {
+		name    string
+		proxies []string
+		wantErr bool
+	}{
+		{name: "empty"},
+		{name: "addresses", proxies: []string{"127.0.0.1", "::1"}},
+		{name: "networks", proxies: []string{"10.0.0.0/8", "2001:db8::/32"}},
+		{name: "blank", proxies: []string{""}, wantErr: true},
+		{name: "hostname", proxies: []string{"proxy.example.com"}, wantErr: true},
+		{name: "invalid cidr", proxies: []string{"10.0.0.0/99"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := (Server{TrustedProxies: tt.proxies}).Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestChannelsList(t *testing.T) {
 	channels := Channels{
 		QQ: ChannelQQ{

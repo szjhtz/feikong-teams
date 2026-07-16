@@ -2,6 +2,8 @@ package router
 
 import (
 	"fkteams/internal/adapters/transport/http/handler"
+	"fkteams/internal/app/config"
+	"fkteams/internal/runtime/env"
 	"fkteams/web"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +39,7 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 		"DELETE /api/fkteams/stream/queue/:sessionID/:queueID",
 		"GET /api/fkteams/files/serve/*filepath",
 		"GET /api/fkteams/preview/:linkId/render/*filepath",
+		"POST /api/fkteams/preview/:linkId/auth",
 		"POST /api/fkteams/session-shares",
 		"GET /api/fkteams/public/session-shares/:shareID/info",
 		"GET /api/fkteams/sessions/:sessionID",
@@ -83,6 +86,35 @@ func TestNewEngineAddsMiddlewareAndRoutesCanBeRegistered(t *testing.T) {
 
 	if len(engine.Routes()) == 0 {
 		t.Fatal("engine should have registered routes")
+	}
+}
+
+func TestNewEngineOnlyTrustsConfiguredProxyHeaders(t *testing.T) {
+	t.Setenv(env.AppDir, t.TempDir())
+	gin.SetMode(gin.TestMode)
+
+	clientIP := func(engine *gin.Engine) string {
+		engine.GET("/client-ip", func(c *gin.Context) { c.String(http.StatusOK, c.ClientIP()) })
+		request := httptest.NewRequest(http.MethodGet, "/client-ip", nil)
+		request.RemoteAddr = "203.0.113.10:4321"
+		request.Header.Set("X-Forwarded-For", "198.51.100.20")
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		return response.Body.String()
+	}
+
+	if err := config.Save(&config.Config{}); err != nil {
+		t.Fatalf("save default config: %v", err)
+	}
+	if got := clientIP(newEngine(false)); got != "203.0.113.10" {
+		t.Fatalf("untrusted proxy client IP = %q, want remote address", got)
+	}
+
+	if err := config.Save(&config.Config{Server: config.Server{TrustedProxies: []string{"203.0.113.10"}}}); err != nil {
+		t.Fatalf("save trusted proxy config: %v", err)
+	}
+	if got := clientIP(newEngine(false)); got != "198.51.100.20" {
+		t.Fatalf("trusted proxy client IP = %q, want forwarded address", got)
 	}
 }
 

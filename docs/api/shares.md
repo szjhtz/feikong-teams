@@ -185,7 +185,9 @@
 
 | 状态码 | message | 说明 |
 | ------ | ------- | ---- |
-| 401 | `password required` | 需要密码或密码错误 |
+| 401 | `password required` | 未提供密码 |
+| 401 | `invalid password` | 密码错误 |
 | 404 | `share not found` | 分享不存在 |
 | 410 | `share expired` | 分享已过期 |
 | 410 | `shared session unavailable` | 分享对应历史不可用 |
+| 429 | `too many authentication attempts` | 尝试次数过多，响应包含 `Retry-After` |

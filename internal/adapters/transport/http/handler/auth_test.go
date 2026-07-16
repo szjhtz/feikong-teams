@@ -188,6 +188,40 @@ func TestLoginCookieUsesSecureFlagForHTTPS(t *testing.T) {
 	assertAuthCookie(t, resp, token, true)
 }
 
+func TestLoginHandlerRateLimitsInvalidCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{Server: config.Server{Auth: config.ServerAuth{
+		Enabled: true, Username: "admin", Password: "secret", Secret: "token-secret",
+	}}})
+
+	router := gin.New()
+	router.POST("/login", LoginHandler())
+	const remoteIP = "198.51.100.32"
+	attemptKey := "login:" + remoteIP
+	loginAttempts.Reset(attemptKey)
+	t.Cleanup(func() { loginAttempts.Reset(attemptKey) })
+
+	for i := 0; i < 8; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(`{"username":"admin","password":"bad"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = remoteIP + ":1234"
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401: %s", i+1, resp.Code, resp.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(`{"username":"admin","password":"bad"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = remoteIP + ":1234"
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusTooManyRequests || resp.Header().Get("Retry-After") == "" {
+		t.Fatalf("rate-limited status = %d, Retry-After=%q: %s", resp.Code, resp.Header().Get("Retry-After"), resp.Body.String())
+	}
+}
+
 func TestLogoutHandlerClearsAuthCookie(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,11 +88,28 @@ func (a ServerAuth) Validate() error {
 
 // Server 服务端配置
 type Server struct {
-	Host         string     `toml:"host" json:"host"`
-	Port         int        `toml:"port" json:"port"`
-	LogLevel     string     `toml:"log_level" json:"log_level"`
-	AllowOrigins []string   `toml:"allow_origins,omitempty" json:"allow_origins"`
-	Auth         ServerAuth `toml:"auth" json:"auth"`
+	Host           string     `toml:"host" json:"host"`
+	Port           int        `toml:"port" json:"port"`
+	LogLevel       string     `toml:"log_level" json:"log_level"`
+	AllowOrigins   []string   `toml:"allow_origins,omitempty" json:"allow_origins"`
+	TrustedProxies []string   `toml:"trusted_proxies" json:"trusted_proxies"`
+	Auth           ServerAuth `toml:"auth" json:"auth"`
+}
+
+func (s Server) Validate() error {
+	for _, proxy := range s.TrustedProxies {
+		proxy = strings.TrimSpace(proxy)
+		if proxy == "" {
+			return fmt.Errorf("server.trusted_proxies contains an empty value")
+		}
+		if net.ParseIP(proxy) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(proxy); err != nil {
+			return fmt.Errorf("invalid server.trusted_proxies entry %q", proxy)
+		}
+	}
+	return s.Auth.Validate()
 }
 
 // ==================== 智能体 ====================
@@ -558,6 +576,9 @@ func InitAndValidate() error {
 	if err := Init(); err != nil {
 		return err
 	}
+	if err := Get().Server.Validate(); err != nil {
+		return err
+	}
 	return ensureDefaultModel()
 }
 
@@ -630,9 +651,10 @@ func GenerateExample() error {
 			Enabled: false,
 		},
 		Server: Server{
-			Host:     "127.0.0.1",
-			Port:     23456,
-			LogLevel: "info",
+			Host:           "127.0.0.1",
+			Port:           23456,
+			LogLevel:       "info",
+			TrustedProxies: []string{},
 			// 默认允许同源和 localhost；跨域部署时在这里显式添加前端地址。
 			AllowOrigins: []string{"http://localhost:23456", "http://127.0.0.1:23456"},
 			Auth: ServerAuth{

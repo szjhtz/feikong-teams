@@ -343,6 +343,30 @@ func TestUpdateConfigHandlerRejectsIncompleteEnabledAuth(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigHandlerRejectsInvalidTrustedProxy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{})
+	next := config.Config{
+		Models: []config.ModelConfig{{ID: "main", Name: "主力模型", UseFor: []string{config.ModelUseChat}}},
+		Server: config.Server{TrustedProxies: []string{"proxy.example.com"}},
+	}
+	body, err := json.Marshal(next)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	router := gin.New()
+	rt := NewRuntime()
+	router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
+
+	resp := performJSON(router, http.MethodPost, "/config", string(body))
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("invalid trusted proxy status = %d, want 400: %s", resp.Code, resp.Body.String())
+	}
+	if len(config.Get().Server.TrustedProxies) != 0 {
+		t.Fatal("invalid trusted proxy config must not be saved")
+	}
+}
+
 func TestMemoryHandlersUseInjectedState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

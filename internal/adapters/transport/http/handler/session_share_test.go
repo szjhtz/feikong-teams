@@ -108,6 +108,44 @@ func TestExpiredSessionShareReturnsGone(t *testing.T) {
 	}
 }
 
+func TestPublicSessionShareRateLimitsInvalidPasswords(t *testing.T) {
+	rt := newSessionShareTestRuntime(t, map[string]*sessionShareEntry{
+		"rate-limited": {
+			SessionID:    "session",
+			PasswordHash: hashPassword("secret"),
+			CreatedAt:    time.Now(),
+		},
+	})
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/public/session-shares/:shareID/access", rt.AccessPublicSessionShareHandler())
+
+	const remoteIP = "198.51.100.33"
+	attemptKey := "session-share:rate-limited:" + remoteIP
+	publicShareAttempts.Reset(attemptKey)
+	t.Cleanup(func() { publicShareAttempts.Reset(attemptKey) })
+
+	for i := 0; i < 8; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/public/session-shares/rate-limited/access", bytes.NewBufferString(`{"password":"bad"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = remoteIP + ":1234"
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401: %s", i+1, resp.Code, resp.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/public/session-shares/rate-limited/access", bytes.NewBufferString(`{"password":"bad"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = remoteIP + ":1234"
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusTooManyRequests || resp.Header().Get("Retry-After") == "" {
+		t.Fatalf("rate-limited status = %d, Retry-After=%q: %s", resp.Code, resp.Header().Get("Retry-After"), resp.Body.String())
+	}
+}
+
 func writeShareableSession(t *testing.T, rt *Runtime, sessionID, title string) {
 	t.Helper()
 	now := time.Now()

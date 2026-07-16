@@ -531,13 +531,29 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 		if c.Request.Body != nil {
 			_ = c.ShouldBindJSON(&req)
 		}
-		if entry.PasswordHash != "" && !verifyPassword(req.Password, entry.PasswordHash) {
-			c.JSON(http.StatusUnauthorized, Response{
-				Code:    1,
-				Message: "password required",
-				Data:    gin.H{"require_password": true},
-			})
-			return
+		if entry.PasswordHash != "" {
+			if req.Password == "" {
+				c.JSON(http.StatusUnauthorized, Response{
+					Code:    1,
+					Message: "password required",
+					Data:    gin.H{"require_password": true},
+				})
+				return
+			}
+			attemptKey := "session-share:" + shareID + ":" + c.ClientIP()
+			if allowed, retryAfter := publicShareAttempts.Allow(attemptKey, time.Now()); !allowed {
+				rateLimitExceeded(c, retryAfter)
+				return
+			}
+			if !verifyPassword(req.Password, entry.PasswordHash) {
+				c.JSON(http.StatusUnauthorized, Response{
+					Code:    1,
+					Message: "invalid password",
+					Data:    gin.H{"require_password": true},
+				})
+				return
+			}
+			publicShareAttempts.Reset(attemptKey)
 		}
 
 		transcript, err := sessionShareTranscript(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails)

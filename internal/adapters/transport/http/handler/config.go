@@ -133,7 +133,7 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		if isMasked(newCfg.Channels.Discord.Token) {
 			newCfg.Channels.Discord.Token = oldCfg.Channels.Discord.Token
 		}
-		if err := newCfg.Server.Auth.Validate(); err != nil {
+		if err := newCfg.Server.Validate(); err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}

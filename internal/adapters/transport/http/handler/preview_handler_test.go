@@ -112,6 +112,8 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	router := gin.New()
 	router.GET("/preview/:linkId/info", rt.PreviewInfoHandler())
 	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
+	router.POST("/preview/:linkId/auth", rt.PreviewAuthHandler())
+	router.GET("/preview/:linkId/render/*filepath", rt.PreviewRenderHandler())
 
 	resp := performRequest(router, http.MethodGet, "/preview/protected/info", nil)
 	if resp.Code != http.StatusOK {
@@ -119,7 +121,7 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	}
 	var info map[string]any
 	decodeRawData(t, resp, &info)
-	if info["require_password"] != true || info["file_name"] != "secret.txt" {
+	if info["require_password"] != true || info["authorized"] != false || info["file_name"] != "secret.txt" {
 		t.Fatalf("protected info = %#v", info)
 	}
 
@@ -127,17 +129,68 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("missing password status = %d, want 401", resp.Code)
 	}
-	resp = performRequest(router, http.MethodGet, "/preview/protected/file?password=bad", nil)
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("wrong password status = %d, want 403", resp.Code)
+	resp = performRequest(router, http.MethodGet, "/preview/protected/file?password=secret", nil)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("query password status = %d, want 401", resp.Code)
 	}
 
-	reqResp := performRequestWithHeader(router, http.MethodGet, "/preview/protected/file", "X-Preview-Password", "secret")
-	if reqResp.Code != http.StatusOK {
-		t.Fatalf("correct password status = %d: %s", reqResp.Code, reqResp.Body.String())
+	resp = performJSON(router, http.MethodPost, "/preview/protected/auth", `{"password":"bad"}`)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password status = %d, want 401", resp.Code)
 	}
-	if strings.TrimSpace(reqResp.Body.String()) != "secret body" {
-		t.Fatalf("protected file body = %q", reqResp.Body.String())
+
+	resp = performJSON(router, http.MethodPost, "/preview/protected/auth", `{"password":"secret"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("preview auth status = %d: %s", resp.Code, resp.Body.String())
+	}
+	cookies := resp.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("preview auth cookies = %#v", cookies)
+	}
+	grantCookie := cookies[0]
+	if grantCookie.Name != previewGrantCookieName("protected") || strings.Contains(grantCookie.Value, "secret") {
+		t.Fatalf("preview grant exposes password or uses wrong name: %#v", grantCookie)
+	}
+	if grantCookie.Path != "/api/fkteams/preview/protected" || !grantCookie.HttpOnly || grantCookie.Secure || grantCookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("insecure preview grant cookie: %#v", grantCookie)
+	}
+	if grantCookie.MaxAge != int(previewGrantTTL/time.Second) {
+		t.Fatalf("preview grant MaxAge = %d, want %d", grantCookie.MaxAge, int(previewGrantTTL/time.Second))
+	}
+
+	infoRequest := httptest.NewRequest(http.MethodGet, "/preview/protected/info", nil)
+	infoRequest.AddCookie(grantCookie)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, infoRequest)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("authorized info status = %d: %s", resp.Code, resp.Body.String())
+	}
+	info = nil
+	decodeRawData(t, resp, &info)
+	if info["authorized"] != true {
+		t.Fatalf("authorized preview info = %#v", info)
+	}
+
+	fileRequest := httptest.NewRequest(http.MethodGet, "/preview/protected/file", nil)
+	fileRequest.AddCookie(grantCookie)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, fileRequest)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("authorized file status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if strings.TrimSpace(resp.Body.String()) != "secret body" {
+		t.Fatalf("protected file body = %q", resp.Body.String())
+	}
+
+	renderRequest := httptest.NewRequest(http.MethodGet, "/preview/protected/render/?password=secret", nil)
+	renderRequest.AddCookie(grantCookie)
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, renderRequest)
+	if resp.Code != http.StatusFound {
+		t.Fatalf("render redirect status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if location := resp.Header().Get("Location"); strings.Contains(location, "?") || strings.Contains(location, "password=") {
+		t.Fatalf("render redirect leaked password: %q", location)
 	}
 
 	resp = performRequest(router, http.MethodGet, "/preview/expired/info", nil)
@@ -149,6 +202,65 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	rt.PreviewLinks.RUnlock()
 	if exists {
 		t.Fatal("expired preview link should be removed")
+	}
+}
+
+func TestPreviewGrantValidation(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	grant := generatePreviewGrant("link-1", "password-hash", now.Add(time.Hour))
+
+	if !validatePreviewGrant(grant, "link-1", "password-hash", now) {
+		t.Fatal("expected preview grant to be valid")
+	}
+	if validatePreviewGrant(grant, "link-2", "password-hash", now) {
+		t.Fatal("preview grant must be bound to its link")
+	}
+	if validatePreviewGrant(grant, "link-1", "changed-password-hash", now) {
+		t.Fatal("password change must invalidate preview grant")
+	}
+	if validatePreviewGrant(grant, "link-1", "password-hash", now.Add(time.Hour)) {
+		t.Fatal("expired preview grant must be rejected")
+	}
+	if validatePreviewGrant("malformed", "link-1", "password-hash", now) {
+		t.Fatal("malformed preview grant must be rejected")
+	}
+}
+
+func TestPreviewAuthRateLimitsInvalidPasswords(t *testing.T) {
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{
+		"rate-limited": {
+			FilePaths:    []string{"secret.txt"},
+			PasswordHash: hashPassword("secret"),
+			CreatedAt:    time.Now(),
+		},
+	})
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/preview/:linkId/auth", rt.PreviewAuthHandler())
+
+	const remoteIP = "198.51.100.31"
+	attemptKey := "preview:rate-limited:" + remoteIP
+	publicShareAttempts.Reset(attemptKey)
+	t.Cleanup(func() { publicShareAttempts.Reset(attemptKey) })
+
+	for i := 0; i < 8; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/preview/rate-limited/auth", strings.NewReader(`{"password":"bad"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = remoteIP + ":1234"
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401: %s", i+1, resp.Code, resp.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/preview/rate-limited/auth", strings.NewReader(`{"password":"bad"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = remoteIP + ":1234"
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusTooManyRequests || resp.Header().Get("Retry-After") == "" {
+		t.Fatalf("rate-limited status = %d, Retry-After=%q: %s", resp.Code, resp.Header().Get("Retry-After"), resp.Body.String())
 	}
 }
 

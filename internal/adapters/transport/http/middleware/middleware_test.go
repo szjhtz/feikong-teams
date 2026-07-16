@@ -135,6 +135,7 @@ func TestAuthRejectsAPIAndRedirectsPageToLogin(t *testing.T) {
 	router.GET("/chat/:sessionID", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 	router.GET("/api/fkteams/version", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 	router.POST("/api/fkteams/logout", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	router.POST("/api/fkteams/preview/:linkId/auth", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	pageTarget := "/chat/session-1?panel=details"
 	pageReq := httptest.NewRequest(http.MethodGet, pageTarget, nil)
@@ -160,6 +161,13 @@ func TestAuthRejectsAPIAndRedirectsPageToLogin(t *testing.T) {
 	router.ServeHTTP(logoutResp, logoutReq)
 	if logoutResp.Code != http.StatusOK {
 		t.Fatalf("logout status = %d, want %d", logoutResp.Code, http.StatusOK)
+	}
+
+	previewAuthReq := httptest.NewRequest(http.MethodPost, "/api/fkteams/preview/link-1/auth", nil)
+	previewAuthResp := httptest.NewRecorder()
+	router.ServeHTTP(previewAuthResp, previewAuthReq)
+	if previewAuthResp.Code != http.StatusOK {
+		t.Fatalf("preview auth status = %d, want %d", previewAuthResp.Code, http.StatusOK)
 	}
 }
 
