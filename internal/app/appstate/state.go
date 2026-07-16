@@ -34,7 +34,7 @@ type MemoryCatalog interface {
 
 // MemoryExtractor 提供对话结束后的记忆提取能力。
 type MemoryExtractor interface {
-	ExtractAndStore(ctx context.Context, messages []domainmemory.Message, sessionID string)
+	ExtractAndStoreAsync(messages []domainmemory.Message, sessionID string) bool
 	FlushExtract(ctx context.Context, messages []domainmemory.Message, sessionID string)
 }
 

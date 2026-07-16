@@ -2,7 +2,6 @@ package chat
 
 import (
 	"context"
-	"time"
 
 	"fkteams/internal/domain/event"
 	domainmemory "fkteams/internal/domain/memory"
@@ -46,7 +45,7 @@ type MetadataStore interface {
 
 // MemoryExtractor 是对话结束后长期记忆提取需要的最小能力。
 type MemoryExtractor interface {
-	ExtractAndStore(ctx context.Context, messages []domainmemory.Message, sessionID string)
+	ExtractAndStoreAsync(messages []domainmemory.Message, sessionID string) bool
 	FlushExtract(ctx context.Context, messages []domainmemory.Message, sessionID string)
 }
 
@@ -160,11 +159,7 @@ func ExtractMemoryAsync(manager MemoryExtractor, messages []domainmemory.Message
 		return
 	}
 	copied := append([]domainmemory.Message(nil), messages...)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		manager.ExtractAndStore(ctx, copied, sessionID)
-	}()
+	manager.ExtractAndStoreAsync(copied, sessionID)
 }
 
 func FlushMemory(ctx context.Context, manager MemoryExtractor, messages []domainmemory.Message, sessionID string) {

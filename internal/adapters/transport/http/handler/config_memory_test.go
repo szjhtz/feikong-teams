@@ -456,9 +456,8 @@ type handlerFakeMemory struct {
 	cleared     bool
 }
 
-func (m *handlerFakeMemory) Search(string, int) []memory.MemoryEntry { return nil }
-func (m *handlerFakeMemory) ExtractAndStore(context.Context, []memory.Message, string) {
-}
+func (m *handlerFakeMemory) Search(string, int) []memory.MemoryEntry                { return nil }
+func (m *handlerFakeMemory) ExtractAndStoreAsync([]memory.Message, string) bool     { return true }
 func (m *handlerFakeMemory) FlushExtract(context.Context, []memory.Message, string) {}
 func (m *handlerFakeMemory) List() []memory.MemoryEntry                             { return m.entries }
 func (m *handlerFakeMemory) Delete(summary string) int {

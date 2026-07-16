@@ -34,7 +34,9 @@ type Manager struct {
 	minScore     float64
 	evictionDays int
 
+	taskMu           sync.Mutex
 	wg               sync.WaitGroup
+	stopping         bool
 	extractedOffsets map[string]int
 	lastExtractTime  map[string]time.Time
 	dirty            bool
@@ -81,12 +83,10 @@ func NewManager(workspaceDir string, llmClient LLMClient, cfg *Config) *Manager 
 // ExtractAndStore 提取记忆并存储
 // 内部根据新增消息数量、内容长度和冷却时间智能判断是否触发 LLM 提取
 func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessionID string) {
-	m.wg.Add(1)
-	defer m.wg.Done()
-
 	m.mu.RLock()
 	offset := m.extractedOffsets[sessionID]
 	lastTime := m.lastExtractTime[sessionID]
+	llm := m.llm
 	m.mu.RUnlock()
 
 	if offset >= len(messages) {
@@ -99,7 +99,7 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 		return
 	}
 
-	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
+	entries, err := Extract(ctx, newMessages, sessionID, llm)
 	if err != nil {
 		log.Warnf("[memory] warn: extract failed: %v", err)
 		return
@@ -148,6 +148,21 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 	}
 }
 
+// ExtractAndStoreAsync 原子登记并异步执行一次记忆提取。
+func (m *Manager) ExtractAndStoreAsync(messages []Message, sessionID string) bool {
+	copied := append([]Message(nil), messages...)
+	if !m.beginTask() {
+		return false
+	}
+	go func() {
+		defer m.wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		m.ExtractAndStore(ctx, copied, sessionID)
+	}()
+	return true
+}
+
 // Search 检索记忆，使用 BM25 bigram 分词进行语义匹配
 func (m *Manager) Search(query string, topK int) []MemoryEntry {
 	m.mu.RLock()
@@ -168,7 +183,12 @@ func (m *Manager) Search(query string, topK int) []MemoryEntry {
 		for i := range entries {
 			hitIDs[i] = entries[i].ID
 		}
-		go m.updateHitStats(hitIDs)
+		if m.beginTask() {
+			go func() {
+				defer m.wg.Done()
+				m.updateHitStats(hitIDs)
+			}()
+		}
 	}
 
 	return entries
@@ -176,6 +196,9 @@ func (m *Manager) Search(query string, topK int) []MemoryEntry {
 
 // Wait 等待所有异步提取任务完成（用于优雅退出）
 func (m *Manager) Wait() {
+	m.taskMu.Lock()
+	m.stopping = true
+	m.taskMu.Unlock()
 	m.wg.Wait()
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -189,7 +212,9 @@ func (m *Manager) Wait() {
 
 // ResetLLM 替换底层 LLM 客户端（配置变更后调用，保留已有记忆数据）
 func (m *Manager) ResetLLM(llm LLMClient) {
-	m.wg.Wait() // 等待正在运行的提取任务完成
+	m.taskMu.Lock()
+	defer m.taskMu.Unlock()
+	m.wg.Wait()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.llm = llm
@@ -199,6 +224,7 @@ func (m *Manager) ResetLLM(llm LLMClient) {
 func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionID string) {
 	m.mu.RLock()
 	offset := m.extractedOffsets[sessionID]
+	llm := m.llm
 	m.mu.RUnlock()
 
 	if offset >= len(messages) {
@@ -215,7 +241,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 		return
 	}
 
-	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
+	entries, err := Extract(ctx, newMessages, sessionID, llm)
 	if err != nil {
 		log.Warnf("[memory] warn: flush extract failed: %v", err)
 		return
@@ -247,6 +273,16 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 		}
 	}
 	m.mu.Unlock()
+}
+
+func (m *Manager) beginTask() bool {
+	m.taskMu.Lock()
+	defer m.taskMu.Unlock()
+	if m.stopping {
+		return false
+	}
+	m.wg.Add(1)
+	return true
 }
 
 // List 列出所有记忆条目

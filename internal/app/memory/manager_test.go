@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -105,6 +106,60 @@ func TestManagerShouldExtract(t *testing.T) {
 	}
 }
 
+func TestManagerWaitTracksAsyncWorkAndRejectsNewTasks(t *testing.T) {
+	llm := &blockingLLMClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	manager := NewManager(t.TempDir(), llm, nil)
+	messages := []Message{
+		{Role: "user", Content: strings.Repeat("用户偏好", 80)},
+		{Role: "assistant", Content: "收到"},
+		{Role: "user", Content: strings.Repeat("继续补充", 80)},
+	}
+
+	if !manager.ExtractAndStoreAsync(messages, "session-1") {
+		t.Fatal("async extraction should be accepted before shutdown")
+	}
+	<-llm.started
+	waited := make(chan struct{})
+	go func() {
+		manager.Wait()
+		close(waited)
+	}()
+
+	select {
+	case <-waited:
+		t.Fatal("Wait returned before extraction completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(llm.release)
+	<-waited
+
+	if manager.ExtractAndStoreAsync(messages, "session-2") {
+		t.Fatal("async extraction should be rejected after shutdown starts")
+	}
+	if calls := llm.calls.Load(); calls != 1 {
+		t.Fatalf("llm calls = %d, want 1", calls)
+	}
+}
+
+func TestManagerWaitTracksHitStatsUpdate(t *testing.T) {
+	manager := NewManager(t.TempDir(), nil, nil)
+	manager.entries = []MemoryEntry{{
+		ID: "1", Type: Preference, Summary: "偏好中文", Detail: "使用中文回复",
+	}}
+	manager.rebuildIndex()
+
+	if entries := manager.Search("偏好中文", 1); len(entries) != 1 {
+		t.Fatalf("search entries = %#v, want one", entries)
+	}
+	manager.Wait()
+	if entries := manager.List(); entries[0].HitCount != 1 {
+		t.Fatalf("hit count = %d, want 1", entries[0].HitCount)
+	}
+}
+
 func TestManagerDuplicateDetection(t *testing.T) {
 	manager := NewManager(t.TempDir(), nil, nil)
 	manager.entries = []MemoryEntry{{
@@ -125,5 +180,22 @@ func TestManagerDuplicateDetection(t *testing.T) {
 	}
 	if action, _ := manager.checkDuplicate(MemoryEntry{Type: Fact, Summary: "偏好简洁回复"}); action != actionAdd {
 		t.Fatalf("different type action = %v, want add", action)
+	}
+}
+
+type blockingLLMClient struct {
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (c *blockingLLMClient) Complete(ctx context.Context, _ string) (string, error) {
+	c.calls.Add(1)
+	close(c.started)
+	select {
+	case <-c.release:
+		return `[]`, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
 	}
 }

@@ -42,9 +42,8 @@ func TestStateRunProcessCleanupExecutesAndClearsCallbacks(t *testing.T) {
 
 type fakeMemoryManager struct{}
 
-func (m *fakeMemoryManager) Search(string, int) []memory.MemoryEntry { return nil }
-func (m *fakeMemoryManager) ExtractAndStore(context.Context, []memory.Message, string) {
-}
+func (m *fakeMemoryManager) Search(string, int) []memory.MemoryEntry                { return nil }
+func (m *fakeMemoryManager) ExtractAndStoreAsync([]memory.Message, string) bool     { return true }
 func (m *fakeMemoryManager) FlushExtract(context.Context, []memory.Message, string) {}
 func (m *fakeMemoryManager) List() []memory.MemoryEntry                             { return nil }
 func (m *fakeMemoryManager) Delete(string) int                                      { return 0 }
