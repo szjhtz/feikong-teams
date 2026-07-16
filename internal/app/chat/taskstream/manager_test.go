@@ -2,6 +2,8 @@ package taskstream
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -69,4 +71,61 @@ func TestRegisterDoesNotRunCancelWhileHoldingManagerLock(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("replacement registration did not finish")
 	}
+}
+
+func TestRegisterIfIdleKeepsSingleActiveStream(t *testing.T) {
+	manager := NewManager()
+	const callers = 64
+	start := make(chan struct{})
+	results := make(chan *Stream, callers)
+	var created atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			stream, ok := manager.RegisterIfIdle(StreamConfig{SessionID: "session"})
+			if ok {
+				created.Add(1)
+			}
+			results <- stream
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	if got := created.Load(); got != 1 {
+		t.Fatalf("created streams = %d, want 1", got)
+	}
+	var active *Stream
+	for stream := range results {
+		if active == nil {
+			active = stream
+			continue
+		}
+		if stream != active {
+			t.Fatal("concurrent registration returned different active streams")
+		}
+	}
+	active.Done()
+}
+
+func TestRegisterIfIdleWaitsForPreviousStreamDone(t *testing.T) {
+	manager := NewManager()
+	first, created := manager.RegisterIfIdle(StreamConfig{SessionID: "session"})
+	if !created {
+		t.Fatal("expected first stream to be created")
+	}
+	first.SetStatus("completed")
+	if got, created := manager.RegisterIfIdle(StreamConfig{SessionID: "session"}); created || got != first {
+		t.Fatal("status change alone must not replace a stream that has not finished")
+	}
+	first.Done()
+	second, created := manager.RegisterIfIdle(StreamConfig{SessionID: "session"})
+	if !created || second == first {
+		t.Fatal("finished stream should be replaced")
+	}
+	second.Done()
 }

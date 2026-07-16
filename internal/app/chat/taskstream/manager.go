@@ -20,17 +20,21 @@ func NewManager() *Manager {
 	return &Manager{streams: make(map[string]*Stream)}
 }
 
-// Register 注册新的任务流。如果同一 session 已有活跃流，先取消旧流。
-func (m *Manager) Register(cfg StreamConfig) *Stream {
-	m.mu.Lock()
-	old := m.streams[cfg.SessionID]
-	s := &Stream{
+func (m *Manager) newStream(cfg StreamConfig) *Stream {
+	return &Stream{
 		config:      cfg,
 		status:      "processing",
 		createdAt:   time.Now(),
 		interruptCh: make(chan any, 1),
 		manager:     m,
 	}
+}
+
+// Register 注册新的任务流。如果同一 session 已有活跃流，先取消旧流。
+func (m *Manager) Register(cfg StreamConfig) *Stream {
+	m.mu.Lock()
+	old := m.streams[cfg.SessionID]
+	s := m.newStream(cfg)
 	m.streams[cfg.SessionID] = s
 	m.mu.Unlock()
 
@@ -39,6 +43,29 @@ func (m *Manager) Register(cfg StreamConfig) *Stream {
 		old.Cancel()
 	}
 	return s
+}
+
+// RegisterIfIdle 仅在 session 没有尚未结束的流时注册新流。
+// 返回 created=false 时，调用方应复用返回的现有流进行排队，不能启动第二个任务。
+func (m *Manager) RegisterIfIdle(cfg StreamConfig) (*Stream, bool) {
+	m.mu.Lock()
+	old := m.streams[cfg.SessionID]
+	if old != nil {
+		old.mu.Lock()
+		active := !old.done
+		old.mu.Unlock()
+		if active {
+			m.mu.Unlock()
+			return old, false
+		}
+	}
+	s := m.newStream(cfg)
+	m.streams[cfg.SessionID] = s
+	m.mu.Unlock()
+	if old != nil {
+		old.Cancel()
+	}
+	return s, true
 }
 
 // Get 获取指定 session 的流（可能是活跃或已完成的）

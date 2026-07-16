@@ -75,6 +75,7 @@
 | 400 | `message or contents is required` | 消息为空 |
 | 400 | `invalid session ID` | 会话 ID 不合法 |
 | 400 | Runner 错误详情 | `agent_name` 指定的智能体不可用 |
+| 409 | `task is finishing; retry the request` | 前一任务正在完成或取消，消息未入队，可稍后重试 |
 | 500 | Runner 错误详情 | Runner 创建失败 |
 
 ## POST /api/fkteams/stream/steer
@@ -115,6 +116,7 @@
 | 400 | `message or contents is required` | 消息为空 |
 | 400 | `invalid session ID` | 会话 ID 不合法 |
 | 404 | `no running task for this session` | 会话没有运行中任务 |
+| 409 | `task is finishing; steering was not queued` | 任务已进入完成或取消阶段，消息未入队 |
 
 ## 队列管理
 

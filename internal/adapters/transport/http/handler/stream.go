@@ -59,16 +59,10 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		}
 
 		if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
-			queued := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents)
-			OK(c, gin.H{
-				"session_id":   sessionID,
-				"status":       "queued",
-				"message":      "message queued",
-				"queue_kind":   queued.Kind,
-				"queue":        existing.QueueSnapshot(),
-				"queued_count": existing.QueuedCount(),
-			})
-			return
+			if queued, ok := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents); ok {
+				writeStreamQueuedResponse(c, sessionID, existing, queued)
+				return
+			}
 		}
 
 		mode := req.Mode
@@ -88,20 +82,28 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			return
 		}
 
-		recorder := rt.recorder(sessionID)
-		manager := memoryFromState(state)
-		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
-
 		// 创建任务并交给当前 HTTP runtime 的 stream hub 管理。
 		taskCtx, taskCancel := context.WithCancel(ctx)
-		stream := rt.Streams.Register(taskstream.StreamConfig{
+		stream, created := rt.Streams.RegisterIfIdle(taskstream.StreamConfig{
 			SessionID:  sessionID,
 			Cancel:     taskCancel,
 			CleanupTTL: 5 * time.Minute,
 			Mode:       mode,
 			AgentName:  req.AgentName,
 		})
+		if !created {
+			taskCancel()
+			if queued, ok := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents); ok {
+				writeStreamQueuedResponse(c, sessionID, stream, queued)
+				return
+			}
+			Fail(c, http.StatusConflict, "task is finishing; retry the request")
+			return
+		}
 		rt.restorePersistentQueue(sessionID, stream)
+		recorder := rt.recorder(sessionID)
+		manager := memoryFromState(state)
+		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
 		rt.updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 		initialRunID := newTurnRunID(sessionID)
@@ -120,6 +122,17 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			"queued_count": stream.QueuedCount(),
 		})
 	}
+}
+
+func writeStreamQueuedResponse(c *gin.Context, sessionID string, stream *taskstream.Stream, queued taskstream.QueuedMessage) {
+	OK(c, gin.H{
+		"session_id":   sessionID,
+		"status":       "queued",
+		"message":      "message queued",
+		"queue_kind":   queued.Kind,
+		"queue":        stream.QueueSnapshot(),
+		"queued_count": stream.QueuedCount(),
+	})
 }
 
 // StreamSteerHandler 在运行中的流式任务下一次模型调用前注入转向消息。
@@ -151,7 +164,11 @@ func (rt *Runtime) StreamSteerHandler() gin.HandlerFunc {
 			return
 		}
 
-		queued := rt.enqueueTaskMessage(stream, req.SessionID, taskstream.QueueSteering, req.Message, req.Contents)
+		queued, ok := rt.enqueueTaskMessage(stream, req.SessionID, taskstream.QueueSteering, req.Message, req.Contents)
+		if !ok {
+			Fail(c, http.StatusConflict, "task is finishing; steering was not queued")
+			return
+		}
 		OK(c, gin.H{
 			"session_id":   req.SessionID,
 			"status":       "queued",
@@ -394,7 +411,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 
 		recorder.FinalizeCurrent()
 		rt.saveTurnHistory(recorder, sessionID)
-		if queued, ok := stream.DequeueNextMessage(); ok {
+		if queued, ok := stream.DequeueNextMessageOrComplete(); ok {
 			publishQueueUpdated(stream, sessionID)
 			rt.persistQueueSnapshot(sessionID, stream)
 			currentDisplayText = queued.DisplayText
@@ -405,7 +422,12 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			continue
 		}
 
-		stream.SetStatus("completed")
+		if stream.Status() != "completed" {
+			if stream.Status() == "cancelled" {
+				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
+			}
+			return
+		}
 		stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
 		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
@@ -432,8 +454,10 @@ func (rt *Runtime) StreamStopHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream.Cancel()
-		stream.SetStatus("cancelled")
+		if !stream.CancelIfProcessing() {
+			Fail(c, http.StatusConflict, "任务已结束，无法取消")
+			return
+		}
 		runID, _ := stream.CurrentTurn()
 		stream.Publish(cancelledEventPayload(sessionID, runID, "任务已取消"))
 		OK(c, gin.H{

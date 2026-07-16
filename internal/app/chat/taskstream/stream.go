@@ -431,9 +431,36 @@ func (s *Stream) Cancel() {
 	})
 }
 
+// CancelIfProcessing 原子地将运行中任务切换为 cancelled，并触发底层取消。
+func (s *Stream) CancelIfProcessing() bool {
+	s.mu.Lock()
+	if s.done || s.status != "processing" {
+		s.mu.Unlock()
+		return false
+	}
+	s.status = "cancelled"
+	s.mu.Unlock()
+	s.Cancel()
+	return true
+}
+
 func (s *Stream) EnqueueMessage(msg QueuedMessage) QueuedMessage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.enqueueMessageLocked(msg)
+}
+
+// EnqueueMessageIfProcessing 仅在任务仍可消费队列时追加消息。
+func (s *Stream) EnqueueMessageIfProcessing(msg QueuedMessage) (QueuedMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done || s.status != "processing" {
+		return QueuedMessage{}, false
+	}
+	return s.enqueueMessageLocked(msg), true
+}
+
+func (s *Stream) enqueueMessageLocked(msg QueuedMessage) QueuedMessage {
 	msg = normalizeQueuedMessage(msg)
 	switch msg.Kind {
 	case QueueSteering:
@@ -480,6 +507,25 @@ func (s *Stream) TakeSteeringMessages(limit int) []QueuedMessage {
 func (s *Stream) DequeueNextMessage() (QueuedMessage, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.dequeueNextMessageLocked()
+}
+
+// DequeueNextMessageOrComplete 原子地取得下一条消息；队列为空时将 processing 切换为 completed。
+// 与 EnqueueMessageIfProcessing 配合，保证已接受的消息不会落入“检查空队列”和“任务完成”之间的缝隙。
+func (s *Stream) DequeueNextMessageOrComplete() (QueuedMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done || s.status != "processing" {
+		return QueuedMessage{}, false
+	}
+	if msg, ok := s.dequeueNextMessageLocked(); ok {
+		return msg, true
+	}
+	s.status = "completed"
+	return QueuedMessage{}, false
+}
+
+func (s *Stream) dequeueNextMessageLocked() (QueuedMessage, bool) {
 	if len(s.steering) > 0 {
 		msg := s.steering[0]
 		s.steering = s.steering[1:]

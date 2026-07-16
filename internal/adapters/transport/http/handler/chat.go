@@ -98,16 +98,22 @@ func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.Que
 	return appchat.BuildTurnInputWithMemory(recorder, msg.Text, manager)
 }
 
-func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
-	queued := stream.EnqueueMessage(queuedChatMessage(kind, message, contents))
+func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, bool) {
+	queued, ok := stream.EnqueueMessageIfProcessing(queuedChatMessage(kind, message, contents))
+	if !ok {
+		return taskstream.QueuedMessage{}, false
+	}
 	publishQueueUpdated(stream, sessionID)
-	return queued
+	return queued, true
 }
 
-func (rt *Runtime) enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
-	queued := enqueueTaskMessage(stream, sessionID, kind, message, contents)
+func (rt *Runtime) enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, bool) {
+	queued, ok := enqueueTaskMessage(stream, sessionID, kind, message, contents)
+	if !ok {
+		return taskstream.QueuedMessage{}, false
+	}
 	rt.persistQueueSnapshot(sessionID, stream)
-	return queued
+	return queued, true
 }
 
 func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {

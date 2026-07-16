@@ -462,6 +462,80 @@ func TestSteeringQueueIsConsumedBeforeFollowUpFallback(t *testing.T) {
 	}
 }
 
+func TestEnqueueAndCompletionTransitionAreAtomic(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		s := newTestStream()
+		start := make(chan struct{})
+		var accepted bool
+		var dequeued bool
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, accepted = s.EnqueueMessageIfProcessing(QueuedMessage{Kind: QueueFollowUp, Text: "follow-up"})
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			_, dequeued = s.DequeueNextMessageOrComplete()
+		}()
+		close(start)
+		wg.Wait()
+
+		if accepted != dequeued {
+			t.Fatalf("iteration %d accepted=%v dequeued=%v", i, accepted, dequeued)
+		}
+		if accepted {
+			if s.Status() != "processing" {
+				t.Fatalf("iteration %d status = %q after dequeue", i, s.Status())
+			}
+			if _, ok := s.DequeueNextMessageOrComplete(); ok || s.Status() != "completed" {
+				t.Fatalf("iteration %d empty queue did not complete stream", i)
+			}
+		} else if s.Status() != "completed" {
+			t.Fatalf("iteration %d rejected enqueue status = %q", i, s.Status())
+		}
+		if _, ok := s.EnqueueMessageIfProcessing(QueuedMessage{Text: "too late"}); ok {
+			t.Fatalf("iteration %d accepted message after completion", i)
+		}
+	}
+}
+
+func TestCancellationAndCompletionTransitionAreAtomic(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		s := newTestStream()
+		start := make(chan struct{})
+		var cancelled bool
+		var dequeued bool
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			cancelled = s.CancelIfProcessing()
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			_, dequeued = s.DequeueNextMessageOrComplete()
+		}()
+		close(start)
+		wg.Wait()
+
+		if dequeued {
+			t.Fatalf("iteration %d unexpectedly dequeued an empty queue", i)
+		}
+		if cancelled {
+			if s.Status() != "cancelled" {
+				t.Fatalf("iteration %d status = %q, want cancelled", i, s.Status())
+			}
+		} else if s.Status() != "completed" {
+			t.Fatalf("iteration %d status = %q, want completed", i, s.Status())
+		}
+	}
+}
+
 func TestQueuedMessagesCanBeManagedBeforeConsumption(t *testing.T) {
 	s := newTestStream()
 

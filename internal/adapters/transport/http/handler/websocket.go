@@ -159,10 +159,17 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 
 			case "cancel":
 				sid := wsMsg.SessionID
-				if sid != "" {
-					rt.Streams.CancelAndRemove(sid)
-					sm.cancelTask(sid)
+				if !validateSessionID(sid) {
+					_ = writeJSON(errorEventPayload(sid, "invalid session ID"))
+					continue
 				}
+				stream := rt.Streams.Get(sid)
+				if stream == nil || !stream.CancelIfProcessing() {
+					_ = writeJSON(errorEventPayload(sid, "no running task for this session"))
+					continue
+				}
+				runID, _ := stream.CurrentTurn()
+				stream.Publish(cancelledEventPayload(sid, runID, "任务已取消"))
 				_ = writeJSON(map[string]any{"type": "cancellation_requested", "session_id": sid, "message": "取消请求已发送"})
 
 			case "approval":
@@ -289,8 +296,9 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	}
 
 	if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
-		rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents)
-		return
+		if _, ok := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); ok {
+			return
+		}
 	}
 
 	// 任务 context 独立于连接——断连不会自动取消任务
@@ -299,11 +307,17 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	taskCtx = rt.withExecutionDependencies(taskCtx)
 
 	// 注册到统一 TaskStream（支持断线重连 + Push/Pull 消费）
-	stream := rt.Streams.Register(taskstream.StreamConfig{
+	stream, created := rt.Streams.RegisterIfIdle(taskstream.StreamConfig{
 		SessionID:  sessionID,
 		Cancel:     taskCancel,
 		CleanupTTL: 5 * time.Minute,
 	})
+	if !created {
+		if _, ok := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); !ok {
+			_ = writeJSON(errorEventPayload(sessionID, "task is finishing; retry the request"))
+		}
+		return
+	}
 	rt.restorePersistentQueue(sessionID, stream)
 	// 绑定当前 WS 连接为 Push 订阅者
 	_, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {
@@ -321,6 +335,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	r, err := rt.resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
+		stream.SetStatus("error")
 		stream.Publish(errorEventPayload(sessionID, err.Error()))
 		return
 	}
@@ -370,8 +385,10 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		if runErr != nil {
 			if isConnectionClosed(taskCtx, runErr) {
 				log.Printf("task cancelled: session=%s", sessionID)
-				stream.SetStatus("cancelled")
-				stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
+				if stream.Status() != "cancelled" {
+					stream.SetStatus("cancelled")
+					stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
+				}
 				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
 			}
@@ -384,7 +401,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 
 		recorder.FinalizeCurrent()
 		rt.saveTurnHistory(recorder, sessionID)
-		if queued, ok := stream.DequeueNextMessage(); ok {
+		if queued, ok := stream.DequeueNextMessageOrComplete(); ok {
 			publishQueueUpdated(stream, sessionID)
 			rt.persistQueueSnapshot(sessionID, stream)
 			currentDisplayText = queued.DisplayText
@@ -395,7 +412,12 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 			continue
 		}
 
-		stream.SetStatus("completed")
+		if stream.Status() != "completed" {
+			if stream.Status() == "cancelled" {
+				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
+			}
+			return
+		}
 		stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
 		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
@@ -417,5 +439,7 @@ func (rt *Runtime) handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) er
 		_ = writeJSON(errorEventPayload(sessionID, "no running task to steer"))
 		return
 	}
-	rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents)
+	if _, ok := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents); !ok {
+		_ = writeJSON(errorEventPayload(sessionID, "task is finishing; steering was not queued"))
+	}
 }

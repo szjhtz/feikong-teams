@@ -2,7 +2,6 @@ package handler
 
 import (
 	"testing"
-	"time"
 
 	"fkteams/internal/app/chat/taskstream"
 )
@@ -57,23 +56,4 @@ func TestSessionManagerStartTaskDetachesAndCancelsPreviousTask(t *testing.T) {
 	}
 	sm.removeTask("session", secondTaskID)
 	second.Done()
-}
-
-func TestSessionManagerCancelTaskDoesNotHoldManagerLock(t *testing.T) {
-	sm := &sessionManager{tasks: make(map[string]*sessionTask)}
-	cancelled := make(chan struct{})
-	sm.tasks["session"] = &sessionTask{
-		cancel: func() {
-			sm.removeTask("session", 1)
-			close(cancelled)
-		},
-		id: 1,
-	}
-
-	go sm.cancelTask("session")
-	select {
-	case <-cancelled:
-	case <-time.After(time.Second):
-		t.Fatal("cancel callback deadlocked on session manager lock")
-	}
 }

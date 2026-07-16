@@ -90,16 +90,6 @@ func detachSessionTask(task *sessionTask, replacement *taskstream.Stream, replac
 	}
 }
 
-// cancelTask 取消指定会话的任务
-func (sm *sessionManager) cancelTask(sessionID string) {
-	sm.mu.Lock()
-	task := sm.tasks[sessionID]
-	sm.mu.Unlock()
-	if task != nil && task.cancel != nil {
-		task.cancel()
-	}
-}
-
 // removeTask 移除已完成的会话任务，仅当 taskID 匹配时才删除（防止误删新任务）
 func (sm *sessionManager) removeTask(sessionID string, taskID uint64) {
 	sm.mu.Lock()
