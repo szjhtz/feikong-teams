@@ -216,6 +216,25 @@
 | 404 | `no running task for this session` | 无运行中任务 |
 | 404 | `queued message not found` | 队列项不存在或已被消费 |
 
+## GET /api/fkteams/stream/snapshot/:sessionID
+
+返回事件、队列和任务元数据的轻量快照。未指定 `offset` 时返回日志尾部；指定后按页顺序返回，适合页面恢复时先追平缓存再接入 SSE。
+
+| 参数 | 类型 | 默认 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `offset` | uint | 日志尾页起点 | 可选的起始事件 ID |
+| `limit` | int | `300` | 单页事件数，最大 `1000` |
+
+响应中的 `snapshot_offset`、`next_offset`、`event_count` 和 `more_available` 与该页事件在同一次锁内读取，不会因并发推送出现互相矛盾的分页元数据。
+
+**失败响应**：
+
+| 状态码 | message | 说明 |
+| ------ | ------- | ---- |
+| 400 | `invalid session ID` | 会话 ID 不合法 |
+| 400 | `invalid offset` | offset 不是无符号整数 |
+| 404 | `no active task for this session` | 内存中没有活跃或保留中的任务 |
+
 ## GET /api/fkteams/stream/subscribe/:sessionID
 
 SSE 订阅后台任务事件。支持通过 `Last-Event-ID` 或 `?offset=N` 从指定事件继续接收。
@@ -241,6 +260,8 @@ data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_
 
 服务端优先使用 `Last-Event-ID`，并从 `Last-Event-ID + 1` 开始回放；没有该 header 时使用 `offset` query 参数。
 
+空闲期间服务端每 15 秒发送一次 SSE 注释心跳；单次写入最多等待 15 秒，失联或停止读取的客户端不会长期占用服务端 goroutine。
+
 启用登录认证时，服务端会在长连接期间周期复核 Token。Token 过期或认证配置变更后会关闭当前订阅，但不会取消后台任务；客户端重新登录后可用最后保存的 offset 继续订阅。
 
 **失败响应**：
@@ -248,6 +269,8 @@ data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_
 | 状态码 | message | 说明 |
 | ------ | ------- | ---- |
 | 400 | `invalid session ID` | 会话 ID 不合法 |
+| 400 | `invalid offset` | offset 不是无符号整数 |
+| 400 | `invalid Last-Event-ID` | 重连事件 ID 非法或加一后会溢出 |
 | 401 | `未登录或登录已过期` | 建立订阅时 Token 无效 |
 | 404 | `no active task for this session` | 内存中没有活跃或保留中的任务 |
 
@@ -260,6 +283,7 @@ data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_
 | 参数 | 类型 | 默认 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `offset` | uint | `0` | 起始事件 ID |
+| `limit` | int | `300` | 单页事件数，最大 `1000` |
 
 **成功响应**：
 
@@ -287,10 +311,15 @@ data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_
       }
     ],
     "event_count": 1,
+    "next_offset": 1,
+    "more_available": false,
+    "limit": 300,
     "done": false
   }
 }
 ```
+
+当 `more_available=true` 时，使用响应中的 `next_offset` 请求下一页。非法 offset 返回 `400 invalid offset`。
 
 ## GET /api/fkteams/stream/status/:sessionID
 
@@ -474,8 +503,8 @@ data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_
 
 1. `GET /api/fkteams/sessions/:sessionID` 加载已持久化历史。
 2. `GET /api/fkteams/stream/status/:sessionID` 判断是否存在内存任务。
-3. 若 `has_task=true`，用 `GET /api/fkteams/stream/events/:sessionID?offset=0` 拉取当前轮次缓冲。
-4. 再用 `GET /api/fkteams/stream/subscribe/:sessionID?offset=<last_id+1>` 接入实时流。
+3. 若 `has_task=true`，分页调用 `GET /api/fkteams/stream/snapshot/:sessionID?offset=0&limit=1000` 拉取当前轮次缓冲和队列。
+4. 再用最后一页的 `next_offset` 调用 `GET /api/fkteams/stream/subscribe/:sessionID?offset=<next_offset>` 接入实时流。
 5. 若状态接口返回 404，则该会话不存在或未保存，客户端应切回主页。
 
 任务完成后内存流会短暂保留，完整历史以会话 API 为准。

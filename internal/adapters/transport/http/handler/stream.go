@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"fkteams/internal/adapters/storage/file/history"
@@ -488,16 +490,11 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 
 		clearSSEWriteDeadline(c.Writer)
 
-		// 解析起始 offset：优先 Last-Event-ID（SSE 标准重连机制），其次 query 参数
-		var offset uint64
-		if lastID := c.GetHeader("Last-Event-ID"); lastID != "" {
-			if parsed, err := strconv.ParseUint(lastID, 10, 64); err == nil {
-				offset = parsed + 1
-			}
-		} else if offsetStr := c.Query("offset"); offsetStr != "" {
-			if parsed, err := strconv.ParseUint(offsetStr, 10, 64); err == nil {
-				offset = parsed
-			}
+		// 解析起始 offset：优先 Last-Event-ID（SSE 标准重连机制），其次 query 参数。
+		offset, err := parseSSEOffset(c)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
 
 		c.Header("Content-Type", "text/event-stream")
@@ -513,36 +510,47 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 		authToken := RequestAuthToken(c)
 		authTicker := time.NewTicker(30 * time.Second)
 		defer authTicker.Stop()
+		heartbeatTicker := time.NewTicker(15 * time.Second)
+		defer heartbeatTicker.Stop()
 
 		writeSSE := func(event taskstream.IndexedEvent) bool {
-			data, _ := json.Marshal(event.Data)
-			_, err := fmt.Fprintf(flusher, "id: %d\ndata: %s\n\n", event.ID, data)
-			flusher.Flush()
-			return err == nil
+			data, err := json.Marshal(event.Data)
+			if err != nil {
+				log.Printf("[stream] marshal SSE event failed: session=%s, event=%d, err=%v", sessionID, event.ID, err)
+				return false
+			}
+			return writeSSEChunk(flusher, fmt.Sprintf("id: %d\ndata: %s\n\n", event.ID, data))
+		}
+		writePending := func() bool {
+			for {
+				page := stream.EventsPage(offset, 1000)
+				for _, event := range page.Events {
+					if !writeSSE(event) {
+						return false
+					}
+					offset = event.ID + 1
+				}
+				if !page.MoreAvailable {
+					return true
+				}
+			}
 		}
 		writeDone := func() {
-			_, _ = fmt.Fprint(flusher, "data: [DONE]\n\n")
-			flusher.Flush()
+			_ = writeSSEChunk(flusher, "data: [DONE]\n\n")
 		}
 
 		for {
 			if !streamSubscriptionAuthorized(authToken) {
 				return
 			}
-			events := stream.EventsSince(offset)
-			for _, e := range events {
-				if !writeSSE(e) {
-					return
-				}
-				offset = e.ID + 1
+			if !writePending() {
+				return
 			}
 
 			if stream.IsDone() {
 				// 任务已结束，最后再读一次确保不丢失尾部事件
-				for _, e := range stream.EventsSince(offset) {
-					if !writeSSE(e) {
-						return
-					}
+				if !writePending() {
+					return
 				}
 				writeDone()
 				return
@@ -553,9 +561,25 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 				return
 			case <-notify:
 			case <-authTicker.C:
+			case <-heartbeatTicker.C:
+				if !writeSSEChunk(flusher, ": keepalive\n\n") {
+					return
+				}
 			}
 		}
 	}
+}
+
+func parseSSEOffset(c *gin.Context) (uint64, error) {
+	if raw := strings.TrimSpace(c.GetHeader("Last-Event-ID")); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || parsed == ^uint64(0) {
+			return 0, fmt.Errorf("invalid Last-Event-ID")
+		}
+		return parsed + 1, nil
+	}
+	offset, _, err := parseOptionalOffset(c.Query("offset"))
+	return offset, err
 }
 
 func streamSubscriptionAuthorized(token string) bool {
@@ -568,8 +592,22 @@ func streamSubscriptionAuthorized(token string) bool {
 
 func clearSSEWriteDeadline(w http.ResponseWriter) {
 	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
-		log.Printf("[stream] clear SSE write deadline failed: %v", err)
+		if !errors.Is(err, http.ErrNotSupported) {
+			log.Printf("[stream] clear SSE write deadline failed: %v", err)
+		}
 	}
+}
+
+func writeSSEChunk(w gin.ResponseWriter, chunk string) bool {
+	controller := http.NewResponseController(w)
+	if err := controller.SetWriteDeadline(time.Now().Add(15 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		log.Printf("[stream] set SSE write deadline failed: %v", err)
+	}
+	if _, err := fmt.Fprint(w, chunk); err != nil {
+		return false
+	}
+	w.Flush()
+	return true
 }
 
 // StreamStatusHandler 获取流式任务状态。
@@ -590,25 +628,23 @@ func (rt *Runtime) StreamSnapshotHandler() gin.HandlerFunc {
 			return
 		}
 
-		eventCount := stream.EventCount()
 		limit := parseSnapshotLimit(c.Query("limit"))
-		offset, hasOffset := parseOptionalOffset(c.Query("offset"))
-		if !hasOffset {
-			offset = snapshotTailOffset(eventCount, limit)
+		offset, hasOffset, err := parseOptionalOffset(c.Query("offset"))
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
 
-		events := stream.EventsSince(offset)
-		if len(events) > limit {
-			events = events[:limit]
+		var page taskstream.EventPage
+		if hasOffset {
+			page = stream.EventsPage(offset, limit)
+		} else {
+			page = stream.TailEventsPage(limit)
 		}
 
-		items := make([]taskstream.Event, 0, len(events))
-		nextOffset := uint64(eventCount)
-		if len(events) > 0 {
-			nextOffset = events[len(events)-1].ID + 1
-			for _, event := range events {
-				items = append(items, event.Data)
-			}
+		items := make([]taskstream.Event, 0, len(page.Events))
+		for _, event := range page.Events {
+			items = append(items, event.Data)
 		}
 
 		result := gin.H{
@@ -616,12 +652,12 @@ func (rt *Runtime) StreamSnapshotHandler() gin.HandlerFunc {
 			"status":          stream.Status(),
 			"has_task":        true,
 			"mode":            stream.Mode(),
-			"event_count":     eventCount,
-			"next_offset":     nextOffset,
-			"more_available":  nextOffset < uint64(eventCount),
+			"event_count":     page.EventCount,
+			"next_offset":     page.NextOffset,
+			"more_available":  page.MoreAvailable,
 			"queue":           stream.QueueSnapshot(),
 			"events":          items,
-			"snapshot_offset": offset,
+			"snapshot_offset": page.SnapshotOffset,
 			"limit":           limit,
 			"created_at":      stream.CreatedAt(),
 		}
@@ -699,22 +735,15 @@ func parseSnapshotLimit(raw string) int {
 	return parsed
 }
 
-func parseOptionalOffset(raw string) (uint64, bool) {
+func parseOptionalOffset(raw string) (uint64, bool, error) {
 	if raw == "" {
-		return 0, false
+		return 0, false, nil
 	}
 	parsed, err := strconv.ParseUint(raw, 10, 64)
 	if err != nil {
-		return 0, false
+		return 0, false, fmt.Errorf("invalid offset")
 	}
-	return parsed, true
-}
-
-func snapshotTailOffset(eventCount, limit int) uint64 {
-	if eventCount <= limit {
-		return 0
-	}
-	return uint64(eventCount - limit)
+	return parsed, true, nil
 }
 
 // StreamApprovalHandler 提交 HITL 审批决定
@@ -802,20 +831,22 @@ func (rt *Runtime) StreamEventsHandler() gin.HandlerFunc {
 			return
 		}
 
-		var offset uint64
-		if offsetStr := c.Query("offset"); offsetStr != "" {
-			if parsed, err := strconv.ParseUint(offsetStr, 10, 64); err == nil {
-				offset = parsed
-			}
+		offset, _, err := parseOptionalOffset(c.Query("offset"))
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
-
-		events := stream.EventsSince(offset)
+		limit := parseSnapshotLimit(c.Query("limit"))
+		page := stream.EventsPage(offset, limit)
 		OK(c, gin.H{
-			"session_id":  sessionID,
-			"status":      stream.Status(),
-			"events":      events,
-			"event_count": stream.EventCount(),
-			"done":        stream.IsDone(),
+			"session_id":     sessionID,
+			"status":         stream.Status(),
+			"events":         page.Events,
+			"event_count":    page.EventCount,
+			"next_offset":    page.NextOffset,
+			"more_available": page.MoreAvailable,
+			"limit":          limit,
+			"done":           stream.IsDone(),
 		})
 	}
 }

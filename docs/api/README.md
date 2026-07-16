@@ -144,6 +144,7 @@ Authorization: Bearer <api_key>
 | POST | `/api/fkteams/stream/queue/:sessionID/:queueID/move` | 调整同类队列项顺序 |
 | POST | `/api/fkteams/stream/stop/:sessionID` | 请求停止运行中任务 |
 | GET | `/api/fkteams/stream/subscribe/:sessionID` | SSE 订阅事件流 |
+| GET | `/api/fkteams/stream/snapshot/:sessionID` | 分页读取事件与队列快照 |
 | GET | `/api/fkteams/stream/status/:sessionID` | 查询任务或会话状态 |
 | GET | `/api/fkteams/stream/events/:sessionID` | 拉取已缓冲事件 |
 | POST | `/api/fkteams/stream/approval` | 提交 HITL 审批决定 |

@@ -51,6 +51,15 @@ type IndexedEvent struct {
 	Data Event  `json:"data"`
 }
 
+// EventPage 是一次原子读取的事件分页结果。
+type EventPage struct {
+	Events         []IndexedEvent
+	EventCount     int
+	SnapshotOffset uint64
+	NextOffset     uint64
+	MoreAvailable  bool
+}
+
 // SubscriptionID 标识一个 Push 订阅者。
 type SubscriptionID uint64
 
@@ -371,13 +380,57 @@ func (s *Stream) EventsSince(offset uint64) []IndexedEvent {
 	return s.eventsSinceLocked(offset)
 }
 
+// EventsPage 从指定 offset 原子读取至多 limit 个事件及分页元数据。
+func (s *Stream) EventsPage(offset uint64, limit int) EventPage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.eventsPageLocked(offset, limit)
+}
+
+// TailEventsPage 原子读取事件日志尾部的一页。
+func (s *Stream) TailEventsPage(limit int) EventPage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	offset := uint64(0)
+	if limit > 0 && len(s.events) > limit {
+		offset = s.events[len(s.events)-limit].ID
+	}
+	return s.eventsPageLocked(offset, limit)
+}
+
+func (s *Stream) eventsPageLocked(offset uint64, limit int) EventPage {
+	count := len(s.events)
+	page := EventPage{EventCount: count, SnapshotOffset: offset}
+	if offset > s.nextID {
+		page.SnapshotOffset = s.nextID
+		page.NextOffset = s.nextID
+		return page
+	}
+	start := sort.Search(count, func(i int) bool { return s.events[i].ID >= offset })
+	end := count
+	if limit > 0 && start+limit < end {
+		end = start + limit
+	}
+	page.Events = cloneIndexedEvents(s.events[start:end])
+	page.NextOffset = offset
+	if len(page.Events) > 0 {
+		page.NextOffset = page.Events[len(page.Events)-1].ID + 1
+	}
+	page.MoreAvailable = page.NextOffset < s.nextID
+	return page
+}
+
 func (s *Stream) eventsSinceLocked(offset uint64) []IndexedEvent {
 	start := sort.Search(len(s.events), func(i int) bool { return s.events[i].ID >= offset })
 	if start >= len(s.events) {
 		return nil
 	}
-	result := make([]IndexedEvent, len(s.events)-start)
-	for i, event := range s.events[start:] {
+	return cloneIndexedEvents(s.events[start:])
+}
+
+func cloneIndexedEvents(events []IndexedEvent) []IndexedEvent {
+	result := make([]IndexedEvent, len(events))
+	for i, event := range events {
 		result[i] = IndexedEvent{ID: event.ID, Data: cloneEvent(event.Data)}
 	}
 	return result

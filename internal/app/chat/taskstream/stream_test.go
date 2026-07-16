@@ -320,6 +320,34 @@ func TestPublishedAndReturnedEventsAreIsolated(t *testing.T) {
 	}
 }
 
+func TestEventPagesReturnAtomicPaginationMetadata(t *testing.T) {
+	s := newTestStream()
+	for i := 0; i < 5; i++ {
+		s.Publish(Event{"type": "message", "index": i})
+	}
+
+	page := s.EventsPage(1, 2)
+	if page.EventCount != 5 || page.SnapshotOffset != 1 || page.NextOffset != 3 || !page.MoreAvailable {
+		t.Fatalf("page metadata = %#v", page)
+	}
+	if len(page.Events) != 2 || page.Events[0].ID != 1 || page.Events[1].ID != 2 {
+		t.Fatalf("page events = %#v", page.Events)
+	}
+
+	tail := s.TailEventsPage(2)
+	if tail.EventCount != 5 || tail.SnapshotOffset != 3 || tail.NextOffset != 5 || tail.MoreAvailable {
+		t.Fatalf("tail metadata = %#v", tail)
+	}
+	if len(tail.Events) != 2 || tail.Events[0].ID != 3 || tail.Events[1].ID != 4 {
+		t.Fatalf("tail events = %#v", tail.Events)
+	}
+
+	beyond := s.EventsPage(100, 2)
+	if beyond.SnapshotOffset != 5 || beyond.NextOffset != 5 || len(beyond.Events) != 0 || beyond.MoreAvailable {
+		t.Fatalf("beyond-tail page = %#v", beyond)
+	}
+}
+
 func TestReplayDoesNotHoldStreamLockDuringSubscriberWrite(t *testing.T) {
 	s := newTestStream()
 	s.Publish(Event{"type": "message", "content": "replay"})

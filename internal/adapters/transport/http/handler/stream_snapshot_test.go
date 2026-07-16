@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -83,6 +84,65 @@ func TestCompletedStreamSubscribeFromZeroReplaysEventsBeforeDone(t *testing.T) {
 	doneIndex := strings.Index(body, "data: [DONE]")
 	if eventIndex < 0 || doneIndex < 0 || eventIndex > doneIndex {
 		t.Fatalf("completed zero-offset subscribe should replay events before done, got %q", body)
+	}
+}
+
+func TestStreamEndpointsRejectInvalidOffsets(t *testing.T) {
+	rt := newTestRuntime(t)
+	gin.SetMode(gin.TestMode)
+	rt.Streams.Register(taskstream.StreamConfig{SessionID: "session-1", Cancel: func() {}})
+	router := gin.New()
+	router.GET("/stream/snapshot/:sessionID", rt.StreamSnapshotHandler())
+	router.GET("/stream/events/:sessionID", rt.StreamEventsHandler())
+	router.GET("/stream/subscribe/:sessionID", rt.StreamSubscribeHandler())
+
+	for _, path := range []string{
+		"/stream/snapshot/session-1?offset=invalid",
+		"/stream/events/session-1?offset=invalid",
+		"/stream/subscribe/session-1?offset=invalid",
+	} {
+		resp := performRequest(router, http.MethodGet, path, nil)
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want 400: %s", path, resp.Code, resp.Body.String())
+		}
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/stream/subscribe/session-1", nil)
+	request.Header.Set("Last-Event-ID", "18446744073709551615")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, request)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("overflowing Last-Event-ID status = %d, want 400: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestStreamEventsHandlerPaginatesBufferedEvents(t *testing.T) {
+	rt := newTestRuntime(t)
+	gin.SetMode(gin.TestMode)
+	stream := rt.Streams.Register(taskstream.StreamConfig{SessionID: "session-1", Cancel: func() {}})
+	for i := 0; i < 5; i++ {
+		stream.Publish(taskstream.Event{"type": "system_notice", "index": i})
+	}
+	router := gin.New()
+	router.GET("/stream/events/:sessionID", rt.StreamEventsHandler())
+
+	resp := performRequest(router, http.MethodGet, "/stream/events/session-1?offset=1&limit=2", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("events status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var got struct {
+		EventCount    int                       `json:"event_count"`
+		NextOffset    uint64                    `json:"next_offset"`
+		MoreAvailable bool                      `json:"more_available"`
+		Limit         int                       `json:"limit"`
+		Events        []taskstream.IndexedEvent `json:"events"`
+	}
+	decodeRawData(t, resp, &got)
+	if got.EventCount != 5 || got.NextOffset != 3 || !got.MoreAvailable || got.Limit != 2 {
+		t.Fatalf("events metadata = %#v", got)
+	}
+	if len(got.Events) != 2 || got.Events[0].ID != 1 || got.Events[1].ID != 2 {
+		t.Fatalf("events page = %#v", got.Events)
 	}
 }
 
