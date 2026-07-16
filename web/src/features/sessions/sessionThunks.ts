@@ -13,7 +13,7 @@ export const loadSessions = createAsyncThunk(
     sessionsRequest = listSessions();
     try {
       const result = await sessionsRequest;
-      dispatch(sessionsActions.setSessions(result.sessions || []));
+      dispatch(sessionsActions.setSessions({ items: result.sessions || [], requestStartedAt }));
       dispatch(chatActions.syncRunningSessions({
         sessionIDs: (result.sessions || []).filter((session) => session.active_task).map((session) => session.session_id),
         requestStartedAt,

@@ -438,32 +438,39 @@ const sessionsSlice = createSlice({
     items: [] as SessionSummary[],
     loading: false,
     search: "",
+    localPatches: {} as Record<string, { observedAt: number; values: Partial<SessionSummary> }>,
   },
   reducers: {
-    setSessions(state, action: PayloadAction<SessionSummary[]>) {
-      const activeSessions = new Map(
-        state.items.filter((session) => session.active_task).map((session) => [session.session_id, session]),
+    setSessions(state, action: PayloadAction<{ items: SessionSummary[]; requestStartedAt: number }>) {
+      const currentSessions = new Map(state.items.map((session) => [session.session_id, session]));
+      const received = new Set(action.payload.items.map((session) => session.session_id));
+      const hasNewerPatch = (sessionID: string) => {
+        const patch = state.localPatches[sessionID];
+        return Boolean(patch && patch.observedAt >= action.payload.requestStartedAt);
+      };
+      const missingLocalSessions = state.items.filter(
+        (session) => !received.has(session.session_id) && hasNewerPatch(session.session_id),
       );
-      const received = new Set(action.payload.map((session) => session.session_id));
-      const missingActiveSessions = [...activeSessions.values()].filter((session) => !received.has(session.session_id));
       state.items = [
-        ...missingActiveSessions,
-        ...action.payload.map((session) => {
-          const active = activeSessions.get(session.session_id);
-          if (!active) return session;
-          return {
-            ...session,
-            status: active.status || session.status,
-            active_task: true,
-            mod_time: active.mod_time || session.mod_time,
-            updated_at: active.updated_at || session.updated_at,
-          };
+        ...missingLocalSessions,
+        ...action.payload.items.map((session) => {
+          const current = currentSessions.get(session.session_id);
+          const patch = state.localPatches[session.session_id];
+          if (!current || !hasNewerPatch(session.session_id) || !patch) return session;
+          return { ...session, ...patch.values };
         }),
       ];
+      for (const [sessionID, patch] of Object.entries(state.localPatches)) {
+        if (patch.observedAt < action.payload.requestStartedAt) delete state.localPatches[sessionID];
+      }
       state.loading = false;
     },
     upsertSession(state, action: PayloadAction<SessionSummary>) {
       const next = action.payload;
+      state.localPatches[next.session_id] = {
+        observedAt: Date.now(),
+        values: { ...state.localPatches[next.session_id]?.values, ...next },
+      };
       const index = state.items.findIndex((item) => item.session_id === next.session_id);
       if (index < 0) {
         state.items.unshift(next);
@@ -489,17 +496,37 @@ const sessionsSlice = createSlice({
         session.mod_time = updatedAt;
         session.updated_at = updatedAt;
       }
+      state.localPatches[sessionID] = {
+        observedAt: Date.now(),
+        values: {
+          ...state.localPatches[sessionID]?.values,
+          ...(status ? { status } : {}),
+          active_task: activeTask,
+          ...(updatedAt ? { mod_time: updatedAt, updated_at: updatedAt } : {}),
+        },
+      };
     },
     renameSessionLocal(state, action: PayloadAction<{ sessionID: string; title: string }>) {
       const session = state.items.find((item) => item.session_id === action.payload.sessionID);
-      if (session) session.title = action.payload.title;
+      if (!session) return;
+      session.title = action.payload.title;
+      state.localPatches[action.payload.sessionID] = {
+        observedAt: Date.now(),
+        values: { ...state.localPatches[action.payload.sessionID]?.values, title: action.payload.title },
+      };
     },
     setSessionFavorite(state, action: PayloadAction<{ sessionID: string; favorite: boolean }>) {
       const session = state.items.find((item) => item.session_id === action.payload.sessionID);
-      if (session) session.favorite = action.payload.favorite;
+      if (!session) return;
+      session.favorite = action.payload.favorite;
+      state.localPatches[action.payload.sessionID] = {
+        observedAt: Date.now(),
+        values: { ...state.localPatches[action.payload.sessionID]?.values, favorite: action.payload.favorite },
+      };
     },
     removeSession(state, action: PayloadAction<string>) {
       state.items = state.items.filter((item) => item.session_id !== action.payload);
+      delete state.localPatches[action.payload];
     },
     setSessionsLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;
