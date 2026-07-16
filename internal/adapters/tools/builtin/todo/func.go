@@ -3,7 +3,9 @@ package todo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,6 +13,14 @@ import (
 
 	"fkteams/internal/domain/session"
 	"fkteams/internal/runtime/atomicfile"
+	"fkteams/internal/runtime/pathguard"
+
+	"github.com/google/uuid"
+)
+
+const (
+	maxTodoStoreBytes int64 = 8 << 20
+	maxTodoItems            = 10_000
 )
 
 // Todo 待办事项结构
@@ -48,37 +58,65 @@ func NewTodoTools(sessionsDir string) (*TodoTools, error) {
 // getFilePath 从 context 中提取会话 ID，返回该会话的 todos.json 路径
 func (tt *TodoTools) getFilePath(ctx context.Context) (string, error) {
 	sessionID, ok := session.IDFromContext(ctx)
-	if !ok || sessionID == "" {
+	if !ok || !session.ValidID(sessionID) {
 		return "", fmt.Errorf("会话 ID 未设置，todo 工具需要在会话上下文中使用")
 	}
-	sessionDir := filepath.Join(tt.sessionsDir, filepath.Base(sessionID))
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+	if err := os.MkdirAll(tt.sessionsDir, 0755); err != nil {
+		return "", fmt.Errorf("无法创建会话根目录: %w", err)
+	}
+	root, err := os.OpenRoot(tt.sessionsDir)
+	if err != nil {
+		return "", fmt.Errorf("无法打开会话根目录: %w", err)
+	}
+	defer root.Close()
+	if err := pathguard.EnsureRootDirectory(root, sessionID, 0755); err != nil {
 		return "", fmt.Errorf("无法创建会话目录: %w", err)
 	}
-	filePath := filepath.Join(sessionDir, "todos.json")
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		emptyList := TodoList{Todos: []Todo{}}
-		data, err := json.MarshalIndent(emptyList, "", "  ")
-		if err != nil {
-			return "", fmt.Errorf("无法序列化待办列表: %w", err)
-		}
-		if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
-			return "", fmt.Errorf("无法创建待办列表文件: %w", err)
-		}
-	}
-	return filePath, nil
+	relativePath := filepath.Join(sessionID, "todos.json")
+	return filepath.Join(tt.sessionsDir, relativePath), nil
 }
 
 // loadFrom 从指定路径加载待办列表
 func (tt *TodoTools) loadFrom(filePath string) (*TodoList, error) {
-	data, err := os.ReadFile(filePath)
+	relativePath, err := filepath.Rel(tt.sessionsDir, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("无法解析待办列表路径: %w", err)
+	}
+	root, err := os.OpenRoot(tt.sessionsDir)
+	if err != nil {
+		return nil, fmt.Errorf("无法打开会话根目录: %w", err)
+	}
+	defer root.Close()
+	if _, err := root.Lstat(relativePath); errors.Is(err, os.ErrNotExist) {
+		return &TodoList{Todos: []Todo{}}, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("无法检查待办列表: %w", err)
+	}
+	if err := pathguard.RejectRootSymlinkComponents(root, relativePath); err != nil {
+		return nil, fmt.Errorf("待办列表路径无效: %w", err)
+	}
+	file, err := root.Open(relativePath)
 	if err != nil {
 		return nil, fmt.Errorf("无法读取待办列表: %w", err)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maxTodoStoreBytes+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("无法读取待办列表: %w", readErr)
+	}
+	if int64(len(data)) > maxTodoStoreBytes {
+		return nil, fmt.Errorf("待办列表超过 %d 字节", maxTodoStoreBytes)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("无法关闭待办列表: %w", closeErr)
 	}
 
 	var list TodoList
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, fmt.Errorf("无法解析待办列表: %w", err)
+	}
+	if len(list.Todos) > maxTodoItems {
+		return nil, fmt.Errorf("待办列表超过 %d 项", maxTodoItems)
 	}
 
 	return &list, nil
@@ -86,12 +124,27 @@ func (tt *TodoTools) loadFrom(filePath string) (*TodoList, error) {
 
 // saveTo 保存待办列表到指定路径
 func (tt *TodoTools) saveTo(filePath string, list *TodoList) error {
+	if len(list.Todos) > maxTodoItems {
+		return fmt.Errorf("待办列表超过资源限制")
+	}
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
 		return fmt.Errorf("无法序列化待办列表: %w", err)
 	}
+	if int64(len(data)) > maxTodoStoreBytes {
+		return fmt.Errorf("待办列表超过资源限制")
+	}
 
-	if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
+	relativePath, err := filepath.Rel(tt.sessionsDir, filePath)
+	if err != nil {
+		return fmt.Errorf("无法解析待办列表路径: %w", err)
+	}
+	root, err := os.OpenRoot(tt.sessionsDir)
+	if err != nil {
+		return fmt.Errorf("无法打开会话根目录: %w", err)
+	}
+	defer root.Close()
+	if err := atomicfile.WriteFileInRoot(root, relativePath, data, 0644); err != nil {
 		return fmt.Errorf("无法保存待办列表: %w", err)
 	}
 
@@ -100,7 +153,7 @@ func (tt *TodoTools) saveTo(filePath string, list *TodoList) error {
 
 // generateID 生成唯一的 ID
 func generateID() string {
-	return fmt.Sprintf("todo_%d", time.Now().UnixNano())
+	return "todo_" + uuid.NewString()
 }
 
 // TodoAddRequest 添加待办事项请求
@@ -149,6 +202,9 @@ func (tt *TodoTools) TodoAdd(ctx context.Context, req *TodoAddRequest) (*TodoAdd
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("加载待办列表失败: %v", err),
 		}, nil
+	}
+	if len(list.Todos) >= maxTodoItems {
+		return &TodoAddResponse{Success: false, ErrorMessage: "待办列表已达到数量上限"}, nil
 	}
 
 	now := time.Now()
@@ -483,6 +539,9 @@ func (tt *TodoTools) TodoBatchAdd(ctx context.Context, req *TodoBatchAddRequest)
 			ErrorMessage: fmt.Sprintf("加载待办列表失败: %v", err),
 		}, nil
 	}
+	if len(req.Todos) > maxTodoItems-len(list.Todos) {
+		return &TodoBatchAddResponse{Success: false, ErrorMessage: "待办列表已达到数量上限"}, nil
+	}
 
 	now := time.Now()
 	var addedTodos []Todo
@@ -499,9 +558,6 @@ func (tt *TodoTools) TodoBatchAdd(ctx context.Context, req *TodoBatchAddRequest)
 		}
 		list.Todos = append(list.Todos, todo)
 		addedTodos = append(addedTodos, todo)
-
-		// 添加微小延迟以确保 ID 唯一
-		time.Sleep(time.Microsecond)
 	}
 
 	if err := tt.saveTo(filePath, list); err != nil {

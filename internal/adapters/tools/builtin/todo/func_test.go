@@ -2,7 +2,10 @@ package todo
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"fkteams/internal/domain/session"
@@ -112,6 +115,15 @@ func TestTodoValidationAndSessionRequired(t *testing.T) {
 			},
 			want: "会话 ID 未设置",
 		},
+		{
+			name: "invalid session",
+			run: func() string {
+				invalidCtx := session.WithID(context.Background(), "..")
+				resp, _ := tools.TodoListFunc(invalidCtx, &TodoListRequest{})
+				return resp.ErrorMessage
+			},
+			want: "会话 ID 未设置",
+		},
 	}
 
 	for _, tt := range tests {
@@ -120,6 +132,76 @@ func TestTodoValidationAndSessionRequired(t *testing.T) {
 				t.Fatalf("error = %q, want containing %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTodoConcurrentFirstWritesPreserveAllItems(t *testing.T) {
+	tools, ctx := newTestTodoTools(t)
+	const count = 32
+
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp, err := tools.TodoAdd(ctx, &TodoAddRequest{Title: "item"})
+			if err != nil || !resp.Success {
+				t.Errorf("TodoAdd(%d) resp=%#v err=%v", i, resp, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	resp, err := tools.TodoListFunc(ctx, &TodoListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.TotalCount != count {
+		t.Fatalf("todo count = %d, want %d", resp.TotalCount, count)
+	}
+}
+
+func TestTodoRejectsSymlinkStore(t *testing.T) {
+	tools, ctx := newTestTodoTools(t)
+	sessionDir := filepath.Join(tools.sessionsDir, "session-a")
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte(`{"todos":[]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(sessionDir, "todos.json")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	resp, err := tools.TodoListFunc(ctx, &TodoListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Success || !strings.Contains(resp.ErrorMessage, "路径无效") {
+		t.Fatalf("response = %#v, want symlink rejection", resp)
+	}
+}
+
+func TestTodoEnforcesStorageLimits(t *testing.T) {
+	tools, ctx := newTestTodoTools(t)
+	filePath, err := tools.getFilePath(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tools.saveTo(filePath, &TodoList{Todos: make([]Todo, maxTodoItems+1)}); err == nil {
+		t.Fatal("saveTo accepted too many todo items")
+	}
+	if err := os.WriteFile(filePath, []byte(strings.Repeat(" ", int(maxTodoStoreBytes+1))), 0644); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := tools.TodoListFunc(ctx, &TodoListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Success || !strings.Contains(resp.ErrorMessage, "超过") {
+		t.Fatalf("response = %#v, want size limit rejection", resp)
 	}
 }
 
