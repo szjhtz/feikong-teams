@@ -19,6 +19,7 @@ export interface ChatComposerProps {
   value: string;
   mode: string;
   processing: boolean;
+  submitting?: boolean;
   agents?: AgentInfo[];
   selectedAgent?: string;
   fileSuggestions?: FileEntry[];
@@ -41,6 +42,7 @@ export function ChatComposer({
   value,
   mode,
   processing,
+  submitting = false,
   agents = [],
   selectedAgent,
   fileSuggestions = [],
@@ -314,7 +316,7 @@ export function ChatComposer({
             if (deleteToken(event)) return;
             if (event.key === "Enter" && !event.shiftKey && !composing) {
               event.preventDefault();
-              onSubmit();
+              if (!submitting) onSubmit();
             }
           }}
           className={cn(
@@ -366,8 +368,8 @@ export function ChatComposer({
               <Square className="h-4 w-4" />
             </Button>
           ) : null}
-          <Button size="icon" onClick={onSubmit} disabled={!canSubmit || attachmentBusy} aria-label={processing ? "加入队列" : "发送"}>
-            <Send className="h-4 w-4" />
+          <Button size="icon" onClick={onSubmit} disabled={submitting || !canSubmit || attachmentBusy} aria-label={submitting ? "发送中" : processing ? "加入队列" : "发送"}>
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
       </div>

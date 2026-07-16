@@ -38,6 +38,22 @@ describe("chat state", () => {
 
     expect(localStorage.getItem("fk_session_id")).toBeNull();
   });
+
+  test("rolls back a failed first submission without leaving a phantom session", () => {
+    dispatch(chatActions.appendUserMessage({ id: "local-message", content: "hello", sessionID: "new-session" }));
+    dispatch(chatActions.beginRunningSession({ sessionID: "new-session", startedAt: 1 }));
+    dispatch(chatActions.finishRunningSession("new-session"));
+    dispatch(chatActions.rollbackUserMessage({
+      id: "local-message",
+      sessionID: "new-session",
+      resetSession: true,
+    }));
+
+    expect(getState().chat.activeSessionID).toBe("");
+    expect(getState().chat.viewSessionID).toBe("");
+    expect(getState().chat.messages).toHaveLength(0);
+    expect(getState().chat.events).toHaveLength(0);
+  });
 });
 
 describe("session list state", () => {

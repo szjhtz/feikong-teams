@@ -150,6 +150,22 @@ const chatSlice = createSlice({
         events: [{ ...event }],
       });
     },
+    rollbackUserMessage(state, action: PayloadAction<{ id: string; sessionID: string; resetSession: boolean }>) {
+      const localEventID = `local:${action.payload.id}`;
+      state.messages = state.messages.filter((message) => !(
+        message.id === action.payload.id &&
+        message.events.some((event) => event.event_id === localEventID)
+      ));
+      state.events = state.events.filter((event) => event.event_id !== localEventID);
+      const eventKey = `event:${localEventID}`;
+      delete state.seenEventKeys[eventKey];
+      state.seenEventKeyOrder = state.seenEventKeyOrder.filter((key) => key !== eventKey);
+      if (action.payload.resetSession && state.activeSessionID === action.payload.sessionID) {
+        state.activeSessionID = "";
+        if (state.viewSessionID === action.payload.sessionID) state.viewSessionID = "";
+        state.queue = [];
+      }
+    },
     receiveEvent(state, action: PayloadAction<ChatEvent>) {
       applyChatEvent(state, action.payload);
     },

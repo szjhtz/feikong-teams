@@ -27,15 +27,17 @@ export function ChatInput({
   const runningTask = useAppSelector((state) => (sessionID ? state.chat.runningTasks[sessionID] : undefined));
   const mode = useAppSelector((state) => state.chat.mode);
   const currentAgent = useAppSelector((state) => state.chat.currentAgent);
-  const isProcessing = Boolean(runningTask);
+  const isProcessing = runningTask?.phase === "processing";
   const agents = useAppSelector((state) => state.app.agents);
   const [value, setValue] = useState("");
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
   const [attachments, setAttachments] = useState<ChatAttachmentDraft[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const [referenceLoading, setReferenceLoading] = useState(false);
   const referenceRequestID = useRef(0);
   const fileSuggestionCache = useRef(new Map<string, FileEntry[]>());
   const attachmentsRef = useRef<ChatAttachmentDraft[]>([]);
+  const submittingRef = useRef(false);
   const dockRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -65,6 +67,7 @@ export function ChatInput({
   }, [variant]);
 
   async function submit() {
+    if (submittingRef.current) return;
     const message = value.trim();
     const readyAttachments = attachments.filter((attachment) => attachment.status === "ready");
     if (!message && readyAttachments.length === 0) return;
@@ -82,11 +85,15 @@ export function ChatInput({
     const targetSessionID = sessionID || newSessionID();
     const queueing = Boolean(runningTask?.phase === "processing" && sessionID);
     const startedAt = Date.now();
+    const messageID = `user-${startedAt}`;
+    const submittedValue = value;
+    const submittedAttachmentIDs = new Set(readyAttachments.map((attachment) => attachment.id));
+    submittingRef.current = true;
+    setSubmitting(true);
     setValue("");
-    clearAttachments();
     dispatch(chatActions.setError(undefined));
     if (!queueing) {
-      dispatch(chatActions.appendUserMessage({ id: `user-${startedAt}`, content: displayText, sessionID: targetSessionID, contentParts: contents, createdAt: new Date(startedAt).toISOString() }));
+      dispatch(chatActions.appendUserMessage({ id: messageID, content: displayText, sessionID: targetSessionID, contentParts: contents, createdAt: new Date(startedAt).toISOString() }));
       dispatch(chatActions.beginRunningSession({ sessionID: targetSessionID, startedAt }));
     }
     try {
@@ -99,6 +106,7 @@ export function ChatInput({
           agent_name: currentAgent || undefined,
         });
         if (Array.isArray(result.queue)) dispatch(chatActions.setQueue(result.queue));
+        clearSubmittedAttachments(submittedAttachmentIDs);
         return;
       }
       const result = await startStream({
@@ -110,6 +118,8 @@ export function ChatInput({
       });
       if (result.status === "queued") {
         if (Array.isArray(result.queue)) dispatch(chatActions.setQueue(result.queue));
+        clearSubmittedAttachments(submittedAttachmentIDs);
+        dispatch(chatActions.rollbackUserMessage({ id: messageID, sessionID: targetSessionID, resetSession: false }));
         dispatch(sessionsActions.updateSessionRuntime({
           sessionID: result.session_id,
           status: "processing",
@@ -137,11 +147,19 @@ export function ChatInput({
         }));
       }
       clearStreamOffset(result.session_id);
+      clearSubmittedAttachments(submittedAttachmentIDs);
       dispatch(chatActions.activateRunningSession({ sessionID: result.session_id, initialOffset: 0, startedAt }));
       if (newSession) pushAppPath(chatPath(result.session_id));
     } catch (error) {
+      setValue((current) => restoreSubmittedValue(submittedValue, current));
+      if (!queueing) {
+        dispatch(chatActions.finishRunningSession(targetSessionID));
+        dispatch(chatActions.rollbackUserMessage({ id: messageID, sessionID: targetSessionID, resetSession: newSession }));
+      }
       dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
-      if (!queueing) dispatch(chatActions.finishRunningSession(targetSessionID));
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -247,10 +265,14 @@ export function ChatInput({
     });
   }
 
-  function clearAttachments() {
+  function clearSubmittedAttachments(submittedIDs: Set<string>) {
     setAttachments((current) => {
-      for (const attachment of current) revokeAttachmentPreview(attachment);
-      return [];
+      const next: ChatAttachmentDraft[] = [];
+      for (const attachment of current) {
+        if (submittedIDs.has(attachment.id)) revokeAttachmentPreview(attachment);
+        else next.push(attachment);
+      }
+      return next;
     });
   }
 
@@ -261,6 +283,7 @@ export function ChatInput({
         value={value}
         mode={mode}
         processing={isProcessing}
+        submitting={submitting}
         agents={agents}
         selectedAgent={currentAgent}
         fileSuggestions={fileSuggestions}
@@ -295,6 +318,7 @@ export function ChatInput({
           value={value}
           mode={mode}
           processing={isProcessing}
+          submitting={submitting}
           agents={agents}
           selectedAgent={currentAgent}
           fileSuggestions={fileSuggestions}
@@ -319,6 +343,12 @@ export function ChatInput({
 function sessionTitle(value: string) {
   const runes = Array.from(value);
   return runes.length <= 50 ? value : `${runes.slice(0, 50).join("")}...`;
+}
+
+function restoreSubmittedValue(submitted: string, current: string) {
+  if (!current) return submitted;
+  if (!submitted) return current;
+  return `${submitted.trimEnd()}\n${current}`;
 }
 
 function newSessionID() {
