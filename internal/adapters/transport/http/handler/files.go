@@ -2,11 +2,14 @@ package handler
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -38,20 +41,26 @@ type FileInfo struct {
 }
 
 const (
-	editableFileMaxBytes             = 2 * 1024 * 1024
-	maxUploadFiles                   = 32
-	maxUploadedFileBytes             = 100 << 20
-	maxUploadIDBytes                 = 128
-	maxUploadChunks                  = 1024
-	maxUploadChunkBytes              = 64 << 20
-	maxChunkedFileBytes              = 4 << 30
-	chunkUploadTTL                   = time.Hour
-	maxActiveChunkUploads            = 32
-	maxConcurrentChunkRequests       = 8
-	maxChunkUploadTempBytes    int64 = maxChunkedFileBytes
+	editableFileMaxBytes              = 2 * 1024 * 1024
+	maxUploadFiles                    = 32
+	maxUploadedFileBytes              = 100 << 20
+	maxUploadIDBytes                  = 128
+	maxUploadChunks                   = 1024
+	maxUploadChunkBytes               = 64 << 20
+	maxChunkedFileBytes               = 4 << 30
+	chunkUploadTTL                    = time.Hour
+	maxActiveChunkUploads             = 32
+	maxConcurrentChunkRequests        = 8
+	maxChunkUploadTempBytes     int64 = maxChunkedFileBytes
+	maxArchiveEntries                 = 10_000
+	maxArchiveUncompressedBytes int64 = 2 << 30
+	maxBatchDownloadPaths             = 128
+	maxConcurrentArchives             = 4
 )
 
 var errChunkUploadCapacity = errors.New("chunk upload capacity exceeded")
+var errArchiveLimit = errors.New("archive resource limit exceeded")
+var archiveSlots = make(chan struct{}, maxConcurrentArchives)
 
 const untrustedContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
@@ -1061,7 +1070,7 @@ func sanitizeUploadID(id string) string {
 // Query: path(文件相对路径)
 func DownloadFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, _, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -1073,84 +1082,65 @@ func DownloadFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, filePath)
+		resolved, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, filePath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		info, err := os.Stat(fullPath)
-		if err != nil {
-			Fail(c, http.StatusNotFound, "文件不存在")
-			return
-		}
-
 		if !info.IsDir() {
-			fileName := filepath.Base(fullPath)
-			c.FileAttachment(fullPath, fileName)
+			file, openedInfo, err := openWorkspaceRegularFileNoSymlinks(baseDir, resolved.RelPath)
+			if err != nil {
+				Fail(c, http.StatusBadRequest, err.Error())
+				return
+			}
+			defer file.Close()
+			c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
+				"filename": filepath.Base(resolved.RelPath),
+			}))
+			http.ServeContent(c.Writer, c.Request, openedInfo.Name(), openedInfo.ModTime(), file)
+			return
+		}
+		if !acquireArchiveSlot() {
+			Fail(c, http.StatusTooManyRequests, "too many archive requests")
+			return
+		}
+		defer releaseArchiveSlot()
+
+		root, err := os.OpenRoot(baseDir)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to open workspace")
+			return
+		}
+		defer root.Close()
+		source := workspaceFSPath(resolved.RelPath)
+		if err := validateArchive(c.Request.Context(), root.FS(), []archiveSource{{source: source}}); err != nil {
+			writeArchiveValidationError(c, err)
 			return
 		}
 
-		// 目录：打包为 zip 流式下载
-		dirName := filepath.Base(fullPath)
+		// 目录：校验规模后流式打包，避免遍历中途才发现资源超限。
+		dirName := filepath.Base(resolved.AbsPath)
 		c.Header("Content-Type", "application/zip")
-		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, dirName))
+		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
+			"filename": dirName + ".zip",
+		}))
 		c.Status(http.StatusOK)
 
 		zw := zip.NewWriter(c.Writer)
-		defer zw.Close()
-
-		_ = filepath.WalkDir(fullPath, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if strings.HasPrefix(d.Name(), ".") {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			rel, err := filepath.Rel(fullPath, path)
-			if err != nil || rel == "." {
-				return nil
-			}
-
-			if d.IsDir() {
-				_, _ = zw.Create(rel + "/")
-				return nil
-			}
-
-			fi, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			header, err := zip.FileInfoHeader(fi)
-			if err != nil {
-				return nil
-			}
-			header.Name = rel
-			header.Method = zip.Deflate
-
-			w, err := zw.CreateHeader(header)
-			if err != nil {
-				return nil
-			}
-			f, err := os.Open(path)
-			if err != nil {
-				return nil
-			}
-			defer f.Close()
-			_, _ = io.Copy(w, f)
-			return nil
-		})
+		if err := writeArchive(c.Request.Context(), root.FS(), zw, []archiveSource{{source: source}}); err != nil {
+			log.Printf("failed to stream directory archive: path=%s, err=%v", resolved.RelPath, err)
+		}
+		if err := zw.Close(); err != nil {
+			log.Printf("failed to close directory archive: path=%s, err=%v", resolved.RelPath, err)
+		}
 	}
 }
 
 // BatchDownloadHandler 批量下载：将多个文件/文件夹打包为单个 zip。
 func BatchDownloadHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, _, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -1163,24 +1153,47 @@ func BatchDownloadHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "缺少 paths 参数")
 			return
 		}
-
-		// 校验所有路径
-		type validatedPath struct {
-			fullPath string
-			relPath  string
+		if len(req.Paths) > maxBatchDownloadPaths {
+			Fail(c, http.StatusRequestEntityTooLarge, "too many download paths")
+			return
 		}
-		var validated []validatedPath
+
+		root, err := os.OpenRoot(baseDir)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to open workspace")
+			return
+		}
+		defer root.Close()
+
+		sources := make([]archiveSource, 0, len(req.Paths))
+		seen := make(map[string]bool, len(req.Paths))
 		for _, p := range req.Paths {
-			fullPath, cleanPath, err := resolveAndValidatePath(baseDir, absBase, p)
+			resolved, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, p)
 			if err != nil {
 				Fail(c, http.StatusBadRequest, err.Error())
 				return
 			}
-			if _, err := os.Stat(fullPath); err != nil {
-				Fail(c, http.StatusNotFound, fmt.Sprintf("文件不存在: %s", cleanPath))
-				return
+			if _, exists := seen[resolved.RelPath]; exists {
+				continue
 			}
-			validated = append(validated, validatedPath{fullPath: fullPath, relPath: cleanPath})
+			seen[resolved.RelPath] = info.IsDir()
+			sources = append(sources, archiveSource{
+				source:      workspaceFSPath(resolved.RelPath),
+				archiveBase: filepath.ToSlash(resolved.RelPath),
+			})
+		}
+		if archiveSourcesOverlap(seen) {
+			Fail(c, http.StatusBadRequest, "download paths must not overlap")
+			return
+		}
+		if !acquireArchiveSlot() {
+			Fail(c, http.StatusTooManyRequests, "too many archive requests")
+			return
+		}
+		defer releaseArchiveSlot()
+		if err := validateArchive(c.Request.Context(), root.FS(), sources); err != nil {
+			writeArchiveValidationError(c, err)
+			return
 		}
 
 		c.Header("Content-Type", "application/zip")
@@ -1188,82 +1201,208 @@ func BatchDownloadHandler() gin.HandlerFunc {
 		c.Status(http.StatusOK)
 
 		zw := zip.NewWriter(c.Writer)
-		defer zw.Close()
-
-		for _, vp := range validated {
-			info, err := os.Stat(vp.fullPath)
-			if err != nil {
-				continue
-			}
-
-			if !info.IsDir() {
-				// 单个文件
-				header, err := zip.FileInfoHeader(info)
-				if err != nil {
-					continue
-				}
-				header.Name = vp.relPath
-				header.Method = zip.Deflate
-				w, err := zw.CreateHeader(header)
-				if err != nil {
-					continue
-				}
-				f, err := os.Open(vp.fullPath)
-				if err != nil {
-					continue
-				}
-				_, _ = io.Copy(w, f)
-				f.Close()
-				continue
-			}
-
-			// 目录递归写入
-			_ = filepath.WalkDir(vp.fullPath, func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-				if strings.HasPrefix(d.Name(), ".") {
-					if d.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-
-				rel, err := filepath.Rel(filepath.Dir(vp.fullPath), path)
-				if err != nil {
-					return nil
-				}
-
-				if d.IsDir() {
-					_, _ = zw.Create(rel + "/")
-					return nil
-				}
-
-				fi, err := d.Info()
-				if err != nil {
-					return nil
-				}
-				header, err := zip.FileInfoHeader(fi)
-				if err != nil {
-					return nil
-				}
-				header.Name = rel
-				header.Method = zip.Deflate
-
-				w, err := zw.CreateHeader(header)
-				if err != nil {
-					return nil
-				}
-				f, err := os.Open(path)
-				if err != nil {
-					return nil
-				}
-				defer f.Close()
-				_, _ = io.Copy(w, f)
-				return nil
-			})
+		if err := writeArchive(c.Request.Context(), root.FS(), zw, sources); err != nil {
+			log.Printf("failed to stream batch archive: err=%v", err)
+		}
+		if err := zw.Close(); err != nil {
+			log.Printf("failed to close batch archive: err=%v", err)
 		}
 	}
+}
+
+type archiveSource struct {
+	source      string
+	archiveBase string
+}
+
+type archiveBudget struct {
+	entries int
+	bytes   int64
+}
+
+func acquireArchiveSlot() bool {
+	select {
+	case archiveSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseArchiveSlot() {
+	<-archiveSlots
+}
+
+func archiveSourcesOverlap(paths map[string]bool) bool {
+	for parent, isDir := range paths {
+		if !isDir {
+			continue
+		}
+		if parent == "" && len(paths) > 1 {
+			return true
+		}
+		prefix := parent + string(filepath.Separator)
+		for candidate := range paths {
+			if strings.HasPrefix(candidate, prefix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func workspaceFSPath(relativePath string) string {
+	path := filepath.ToSlash(relativePath)
+	if path == "" {
+		return "."
+	}
+	return path
+}
+
+func validateArchive(ctx context.Context, filesystem fs.FS, sources []archiveSource) error {
+	return processArchive(ctx, filesystem, nil, sources)
+}
+
+func writeArchive(ctx context.Context, filesystem fs.FS, writer *zip.Writer, sources []archiveSource) error {
+	return processArchive(ctx, filesystem, writer, sources)
+}
+
+func processArchive(ctx context.Context, filesystem fs.FS, writer *zip.Writer, sources []archiveSource) error {
+	budget := &archiveBudget{}
+	for _, source := range sources {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := processArchiveSource(ctx, filesystem, writer, source, budget); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func processArchiveSource(ctx context.Context, filesystem fs.FS, writer *zip.Writer, source archiveSource, budget *archiveBudget) error {
+	rootInfo, err := fs.Stat(filesystem, source.source)
+	if err != nil {
+		return err
+	}
+	if !rootInfo.IsDir() {
+		name := source.archiveBase
+		if name == "" {
+			name = rootInfo.Name()
+		}
+		return processArchiveEntry(ctx, filesystem, writer, source.source, name, rootInfo, budget)
+	}
+
+	return fs.WalkDir(filesystem, source.source, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if current != source.source && strings.HasPrefix(entry.Name(), ".") {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("symbolic links are not allowed in archives")
+		}
+		relative := strings.TrimPrefix(current, source.source)
+		relative = strings.TrimPrefix(relative, "/")
+		name := source.archiveBase
+		if relative != "" {
+			if name == "" {
+				name = relative
+			} else {
+				name += "/" + relative
+			}
+		}
+		if name == "" {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		return processArchiveEntry(ctx, filesystem, writer, current, name, info, budget)
+	})
+}
+
+func processArchiveEntry(ctx context.Context, filesystem fs.FS, writer *zip.Writer, sourcePath, name string, info fs.FileInfo, budget *archiveBudget) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	budget.entries++
+	if budget.entries > maxArchiveEntries {
+		return fmt.Errorf("%w: too many archive entries", errArchiveLimit)
+	}
+	if !info.IsDir() {
+		if info.Size() < 0 || budget.bytes+info.Size() > maxArchiveUncompressedBytes {
+			return fmt.Errorf("%w: archive is too large", errArchiveLimit)
+		}
+		budget.bytes += info.Size()
+	}
+	if writer == nil {
+		return nil
+	}
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	header.Name = filepath.ToSlash(name)
+	if info.IsDir() {
+		header.Name = strings.TrimSuffix(header.Name, "/") + "/"
+	} else {
+		header.Method = zip.Deflate
+	}
+	destination, err := writer.CreateHeader(header)
+	if err != nil || info.IsDir() {
+		return err
+	}
+	file, err := filesystem.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	remaining := maxArchiveUncompressedBytes - (budget.bytes - info.Size())
+	written, copyErr := io.Copy(destination, io.LimitReader(&contextReader{ctx: ctx, reader: file}, remaining+1))
+	closeErr := file.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if written > remaining {
+		return fmt.Errorf("%w: archive changed while streaming", errArchiveLimit)
+	}
+	budget.bytes += written - info.Size()
+	return ctx.Err()
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextReader) Read(buffer []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(buffer)
+}
+
+func writeArchiveValidationError(c *gin.Context, err error) {
+	if errors.Is(err, errArchiveLimit) {
+		Fail(c, http.StatusRequestEntityTooLarge, err.Error())
+		return
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	log.Printf("failed to validate archive: err=%v", err)
+	Fail(c, http.StatusInternalServerError, "failed to prepare archive")
 }
 
 // DeleteFileHandler 删除工作目录中的文件或目录
