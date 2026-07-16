@@ -236,6 +236,87 @@ func TestBunConfigureMirrorWritesAndSkipsExisting(t *testing.T) {
 	}
 }
 
+func TestConfigureMirrorPreservesExistingSettings(t *testing.T) {
+	home := bootstrapHome(t)
+	bunPath := bunConfigPath(home)
+	if err := os.WriteFile(bunPath, []byte("telemetry = false\n\n[install]\ncache = true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	uvPath := uvConfigPath(home)
+	if err := os.MkdirAll(filepath.Dir(uvPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(uvPath, []byte("concurrent-downloads = 4\n\n[[index]]\nurl = 'https://pypi.org/simple/'\ndefault = true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	(&bunInitializer{}).ConfigureMirror(true)
+	(&uvInitializer{}).ConfigureMirror(true)
+
+	bunData, err := os.ReadFile(bunPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"telemetry = false", "cache = true", "registry = '" + bunMirrorRegistry + "'"} {
+		if !strings.Contains(string(bunData), want) {
+			t.Fatalf("bun config = %q, missing %q", bunData, want)
+		}
+	}
+	uvData, err := os.ReadFile(uvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"concurrent-downloads = 4", "https://pypi.org/simple/", uvPackageMirror} {
+		if !strings.Contains(string(uvData), want) {
+			t.Fatalf("uv config = %q, missing %q", uvData, want)
+		}
+	}
+}
+
+func TestConfigureMirrorKeepsInvalidConfigUntouched(t *testing.T) {
+	home := bootstrapHome(t)
+	path := bunConfigPath(home)
+	original := []byte("[invalid\n")
+	if err := os.WriteFile(path, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+	(&bunInitializer{}).ConfigureMirror(true)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(original) {
+		t.Fatalf("invalid config was overwritten: %q", data)
+	}
+}
+
+func TestConfigureMirrorPreservesSymlinkAndPermissions(t *testing.T) {
+	home := bootstrapHome(t)
+	target := filepath.Join(t.TempDir(), "bunfig.toml")
+	if err := os.WriteFile(target, []byte("telemetry = false\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := bunConfigPath(home)
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	(&bunInitializer{}).ConfigureMirror(true)
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("mirror configuration replaced the symlink")
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if targetInfo.Mode().Perm() != 0600 {
+		t.Fatalf("target permissions = %o, want 600", targetInfo.Mode().Perm())
+	}
+}
+
 func TestUVRunInstallsWhenCommandMissing(t *testing.T) {
 	t.Setenv("FEIKONG_PROXY_URL", "http://proxy.example")
 	var calls []commandCall

@@ -92,29 +92,22 @@ func (u *uvInitializer) ConfigureMirror(mirror bool) {
 
 	configPath := filepath.Join(configDir, "uv.toml")
 
-	// 镜像源配置内容
-	mirrorConfig := `# 由 fkteams init 自动生成
-python-install-mirror = "https://gh-proxy.com/https://github.com/astral-sh/python-build-standalone/releases/download"
-
-[[index]]
-url = "https://mirrors.aliyun.com/pypi/simple/"
-default = true
-`
-
-	// 检查配置文件是否已存在且包含镜像配置
-	if data, err := os.ReadFile(configPath); err == nil {
-		if strings.Contains(string(data), "mirrors.aliyun.com") {
-			pterm.Info.Println("uv 镜像源已配置，跳过")
-			return
-		}
-	}
-
-	// 创建目录并写入配置
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		pterm.Error.Printfln("创建 uv 配置目录失败: %v", err)
+	existing, err := loadMirrorConfig(configPath)
+	if err != nil {
+		pterm.Error.Printfln("读取 uv 配置失败: %v", err)
 		return
 	}
-	if err := os.WriteFile(configPath, []byte(mirrorConfig), 0644); err != nil {
+	updated, changed, err := mergeUVMirrorConfig(existing)
+	if err != nil {
+		pterm.Error.Printfln("合并 uv 配置失败: %v", err)
+		return
+	}
+	if !changed {
+		pterm.Info.Println("uv 镜像源已配置，跳过")
+		return
+	}
+
+	if err := saveMirrorConfig(configPath, updated); err != nil {
 		pterm.Error.Printfln("写入 uv 配置失败: %v", err)
 		return
 	}

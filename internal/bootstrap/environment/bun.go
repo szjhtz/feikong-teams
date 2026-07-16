@@ -94,22 +94,22 @@ func (b *bunInitializer) ConfigureMirror(mirror bool) {
 		configPath = filepath.Join(home, ".bunfig.toml")
 	}
 
-	// 镜像源配置内容（使用 npmmirror）
-	mirrorConfig := `# 由 fkteams init 自动生成
-[install]
-registry = "https://registry.npmmirror.com"
-`
-
-	// 检查配置文件是否已存在且包含镜像配置
-	if data, err := os.ReadFile(configPath); err == nil {
-		if strings.Contains(string(data), "registry.npmmirror.com") {
-			pterm.Info.Println("bun 镜像源已配置，跳过")
-			return
-		}
+	existing, err := loadMirrorConfig(configPath)
+	if err != nil {
+		pterm.Error.Printfln("读取 bun 配置失败: %v", err)
+		return
+	}
+	updated, changed, err := mergeBunMirrorConfig(existing)
+	if err != nil {
+		pterm.Error.Printfln("合并 bun 配置失败: %v", err)
+		return
+	}
+	if !changed {
+		pterm.Info.Println("bun 镜像源已配置，跳过")
+		return
 	}
 
-	// 写入配置
-	if err := os.WriteFile(configPath, []byte(mirrorConfig), 0644); err != nil {
+	if err := saveMirrorConfig(configPath, updated); err != nil {
 		pterm.Error.Printfln("写入 bun 配置失败: %v", err)
 		return
 	}
