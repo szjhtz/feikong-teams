@@ -237,12 +237,14 @@ func (h *HistoryRecorder) ensureSubagentRun(event Event) *subagentRun {
 		AgentName:        agentName,
 		TranscriptPath:   subagentTranscriptPath(h.sessionDir, agentRunID),
 	}
-	writeSubagentMetadata(h.sessionDir, SubagentMetadata{
+	if err := writeSubagentMetadata(h.sessionDir, SubagentMetadata{
 		AgentRunID:   agentRunID,
 		Agent:        agentName,
 		ParentCallID: event.MemberCallID,
 		ToolName:     event.MemberToolName,
-	})
+	}); err != nil && h.persistErr == nil {
+		h.persistErr = err
+	}
 	for _, key := range memberCallKeys(event.MemberCallID) {
 		h.subagents[key] = run
 	}

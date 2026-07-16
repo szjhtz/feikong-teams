@@ -115,6 +115,7 @@ type HistoryRecorder struct {
 	subagents       map[string]*subagentRun
 	agentToolCalls  map[string]pendingToolCall
 	toolDisplays    toolmeta.Resolver
+	persistErr      error
 	summary         string // 上下文压缩摘要
 	summarizedCount int    // 已被摘要覆盖的消息数量
 }

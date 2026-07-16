@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	domainhistory "fkteams/internal/domain/history"
+	domainsession "fkteams/internal/domain/session"
 )
 
 // SessionMessageReader 将文件历史记录适配为存储读取端口。
@@ -25,11 +26,14 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 	if r == nil {
 		return nil, fmt.Errorf("session message reader is not initialized")
 	}
+	if !domainsession.ValidID(sessionID) {
+		return nil, fmt.Errorf("invalid session ID")
+	}
 	if recorder := r.manager.Get(sessionID); recorder != nil {
 		return recorder.GetMessages(), nil
 	}
 	recorder := NewHistoryRecorder()
-	sessionDir := filepath.Join(r.sessionsDir, filepath.Base(sessionID))
+	sessionDir := filepath.Join(r.sessionsDir, sessionID)
 	recorder.SetSessionDir(sessionDir)
 	transcriptFile := filepath.Join(sessionDir, TranscriptFileName)
 	if err := recorder.LoadFromFile(transcriptFile); err != nil {

@@ -173,6 +173,7 @@ func (h *HistoryRecorder) Clear() {
 	h.activeOrder = nil
 	h.subagents = make(map[string]*subagentRun)
 	h.agentToolCalls = make(map[string]pendingToolCall)
+	h.persistErr = nil
 	h.summary = ""
 	h.summarizedCount = 0
 }

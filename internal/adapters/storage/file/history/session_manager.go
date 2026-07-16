@@ -2,6 +2,7 @@ package eventlog
 
 import (
 	"encoding/json"
+	"errors"
 	domainsession "fkteams/internal/domain/session"
 	"fkteams/internal/runtime/atomicfile"
 	"fmt"
@@ -52,6 +53,11 @@ func NewSessionHistoryManager() *SessionHistoryManager {
 
 // GetOrCreate 获取或创建会话的 HistoryRecorder，不存在时尝试从 transcript 加载
 func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *HistoryRecorder {
+	if !domainsession.ValidID(sessionID) {
+		recorder := NewHistoryRecorder()
+		recorder.persistErr = fmt.Errorf("invalid session ID")
+		return recorder
+	}
 	m.mu.RLock()
 	if recorder, exists := m.sessions[sessionID]; exists {
 		m.mu.RUnlock()
@@ -66,11 +72,15 @@ func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *Histo
 		return recorder
 	}
 
-	sessionDir := filepath.Join(historyDir, filepath.Base(sessionID))
+	sessionDir := filepath.Join(historyDir, sessionID)
 	recorder := NewHistoryRecorder()
 	recorder.SetSessionDir(sessionDir)
 	filePath := filepath.Join(sessionDir, TranscriptFileName)
-	_ = recorder.LoadFromFile(filePath)
+	if err := recorder.LoadFromFile(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		recorder.mu.Lock()
+		recorder.persistErr = fmt.Errorf("load existing transcript: %w", err)
+		recorder.mu.Unlock()
+	}
 
 	m.sessions[sessionID] = recorder
 	return recorder
@@ -101,6 +111,9 @@ func (m *SessionHistoryManager) Clear(sessionID string) {
 
 // LoadForSession 从 transcript 加载历史并替换指定会话的 Recorder
 func (m *SessionHistoryManager) LoadForSession(sessionID, filePath string) (*HistoryRecorder, error) {
+	if !domainsession.ValidID(sessionID) {
+		return nil, fmt.Errorf("invalid session ID")
+	}
 	recorder := NewHistoryRecorder()
 	recorder.SetSessionDir(filepath.Dir(filePath))
 	if err := recorder.LoadFromFile(filePath); err != nil {
@@ -115,6 +128,9 @@ func (m *SessionHistoryManager) LoadForSession(sessionID, filePath string) (*His
 }
 
 func (m *SessionHistoryManager) SaveSession(sessionID, filePath string) error {
+	if !domainsession.ValidID(sessionID) {
+		return fmt.Errorf("invalid session ID")
+	}
 	m.mu.RLock()
 	recorder, exists := m.sessions[sessionID]
 	m.mu.RUnlock()

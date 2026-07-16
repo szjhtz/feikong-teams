@@ -19,6 +19,9 @@ func NewChatSessionStore(sessionsDir string) *ChatSessionStore {
 }
 
 func (s *ChatSessionStore) SaveHistory(_ context.Context, sessionID string, history appchat.SessionHistory) error {
+	if !domainsession.ValidID(sessionID) {
+		return fmt.Errorf("invalid session ID")
+	}
 	saver, ok := history.(interface{ SaveToFile(string) error })
 	if !ok {
 		return fmt.Errorf("history does not support file persistence")
@@ -27,6 +30,9 @@ func (s *ChatSessionStore) SaveHistory(_ context.Context, sessionID string, hist
 }
 
 func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.MetadataUpdate) error {
+	if !domainsession.ValidID(update.SessionID) {
+		return fmt.Errorf("invalid session ID")
+	}
 	sessionDir := s.sessionDir(update.SessionID)
 	now := time.Now()
 	meta, err := LoadMetadata(sessionDir)
@@ -54,7 +60,7 @@ func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.Meta
 }
 
 func (s *ChatSessionStore) sessionDir(sessionID string) string {
-	return filepath.Join(s.sessionsDir, filepath.Base(sessionID))
+	return filepath.Join(s.sessionsDir, sessionID)
 }
 
 func titleFromSource(source, fallback string) string {

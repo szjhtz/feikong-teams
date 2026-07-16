@@ -20,6 +20,9 @@ func (h *HistoryRecorder) SaveToFile(filePath string) error {
 	if err := os.MkdirAll(h.sessionDir, 0755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
 	}
+	if h.persistErr != nil {
+		return fmt.Errorf("persist transcript: %w", h.persistErr)
+	}
 	return nil
 }
 
@@ -28,10 +31,11 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	defer h.mu.Unlock()
 
 	h.sessionDir = filepath.Dir(filePath)
-	events, err := loadTranscript(filePath)
+	events, err := loadTranscriptForResume(filePath)
 	if err != nil {
 		return err
 	}
+	h.persistErr = nil
 	h.messages = projectTranscriptEvents(h.sessionDir, events)
 	h.reconstructSummaryFromEvents()
 	h.activeMessages = make(map[string]*activeMessageContext)

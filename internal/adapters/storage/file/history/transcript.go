@@ -1,6 +1,8 @@
 package eventlog
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,15 +62,18 @@ func subagentMetadataPath(sessionDir, agentRunID string) string {
 	return filepath.Join(sessionDir, subagentsDirName, filepath.Base(agentRunID), "metadata.json")
 }
 
-func writeSubagentMetadata(sessionDir string, metadata SubagentMetadata) {
+func writeSubagentMetadata(sessionDir string, metadata SubagentMetadata) error {
 	if sessionDir == "" || metadata.AgentRunID == "" {
-		return
+		return nil
 	}
 	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return
+		return fmt.Errorf("encode subagent metadata: %w", err)
 	}
-	_ = atomicfile.WriteFile(subagentMetadataPath(sessionDir, metadata.AgentRunID), data, 0644)
+	if err := atomicfile.WriteFile(subagentMetadataPath(sessionDir, metadata.AgentRunID), data, 0644); err != nil {
+		return fmt.Errorf("write subagent metadata: %w", err)
+	}
+	return nil
 }
 
 func loadSubagentMetadata(filePath string) (SubagentMetadata, error) {
@@ -84,7 +89,7 @@ func loadSubagentMetadata(filePath string) (SubagentMetadata, error) {
 }
 
 func (h *HistoryRecorder) appendTranscriptEvent(event TranscriptEvent, subagent *subagentRun) {
-	if h == nil || h.sessionDir == "" {
+	if h == nil || h.sessionDir == "" || h.persistErr != nil {
 		return
 	}
 	if event.ID == "" {
@@ -94,13 +99,17 @@ func (h *HistoryRecorder) appendTranscriptEvent(event TranscriptEvent, subagent 
 		event.At = time.Now()
 	}
 	if subagent == nil {
-		_ = appendJSONL(transcriptPath(h.sessionDir), event)
+		if err := appendJSONL(transcriptPath(h.sessionDir), event); err != nil {
+			h.persistErr = err
+		}
 		return
 	}
 	if event.Agent == "" {
 		event.Agent = subagent.AgentName
 	}
-	_ = appendJSONL(subagent.TranscriptPath, event)
+	if err := appendJSONL(subagent.TranscriptPath, event); err != nil {
+		h.persistErr = err
+	}
 }
 
 func appendJSONL(filePath string, value any) error {
@@ -111,31 +120,83 @@ func appendJSONL(filePath string, value any) error {
 	if err != nil {
 		return fmt.Errorf("open jsonl: %w", err)
 	}
-	defer file.Close()
 	if err := json.NewEncoder(file).Encode(value); err != nil {
+		_ = file.Close()
 		return fmt.Errorf("append jsonl: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close jsonl: %w", err)
 	}
 	return nil
 }
 
 func loadTranscript(filePath string) ([]TranscriptEvent, error) {
+	return loadTranscriptRecords(filePath, false)
+}
+
+func loadTranscriptForResume(filePath string) ([]TranscriptEvent, error) {
+	return loadTranscriptRecords(filePath, true)
+}
+
+func loadTranscriptRecords(filePath string, repairTail bool) ([]TranscriptEvent, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("read transcript: %w", err)
 	}
 	defer file.Close()
 
-	decoder := json.NewDecoder(file)
+	reader := bufio.NewReader(file)
 	var events []TranscriptEvent
+	var offset int64
+	var lastGoodOffset int64
+	truncateTo := int64(-1)
+	appendNewline := false
 	for line := 1; ; line++ {
-		var event TranscriptEvent
-		if err := decoder.Decode(&event); err != nil {
-			if err == io.EOF {
-				break
+		record, readErr := reader.ReadBytes('\n')
+		offset += int64(len(record))
+		trimmed := bytes.TrimSpace(record)
+		if len(trimmed) > 0 {
+			var event TranscriptEvent
+			if err := json.Unmarshal(trimmed, &event); err != nil {
+				// 进程异常退出可能留下未完成的最后一行，保留此前完整记录即可继续恢复。
+				if readErr == io.EOF {
+					if repairTail {
+						truncateTo = lastGoodOffset
+					}
+					break
+				}
+				return nil, fmt.Errorf("decode transcript record %d: %w", line, err)
 			}
-			return nil, fmt.Errorf("decode transcript record %d: %w", line, err)
+			events = append(events, event)
 		}
-		events = append(events, event)
+		lastGoodOffset = offset
+		if readErr == io.EOF {
+			appendNewline = repairTail && len(record) > 0 && record[len(record)-1] != '\n'
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("read transcript record %d: %w", line, readErr)
+		}
+	}
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("close transcript: %w", err)
+	}
+	if truncateTo >= 0 {
+		if err := os.Truncate(filePath, truncateTo); err != nil {
+			return nil, fmt.Errorf("repair transcript tail: %w", err)
+		}
+	} else if appendNewline {
+		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("open transcript tail: %w", err)
+		}
+		if _, err := file.WriteString("\n"); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("repair transcript newline: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return nil, fmt.Errorf("close transcript tail: %w", err)
+		}
 	}
 	return events, nil
 }
