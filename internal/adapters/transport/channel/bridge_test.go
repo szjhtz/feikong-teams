@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	domainmessage "fkteams/internal/domain/message"
@@ -33,6 +34,37 @@ func TestEnqueueSessionMessageRollsBackPendingWhenFull(t *testing.T) {
 	}
 	if pending := q.pending.Load(); pending != 1 {
 		t.Fatalf("pending after rejected enqueue = %d, want 1", pending)
+	}
+}
+
+func TestBridgeStopDrainsQueuedMessagesAndRejectsNewInput(t *testing.T) {
+	bridge := NewBridgeWithOptions(NewManager(nil, NewFactoryRegistry()), "team", BridgeOptions{HistoryDir: t.TempDir()})
+	bridge.Start(context.Background())
+	var released atomic.Int32
+	queue := &sessionQueue{ch: make(chan queuedMessage, 2)}
+	for i := 0; i < 2; i++ {
+		if _, ok := enqueueSessionMessage(queue, queuedMessage{releaseLease: func() { released.Add(1) }}); !ok {
+			t.Fatal("enqueue should succeed")
+		}
+	}
+	bridge.queueMu.Lock()
+	bridge.queues["session-1"] = queue
+	bridge.queueMu.Unlock()
+
+	if err := bridge.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop(): %v", err)
+	}
+	if got := released.Load(); got != 2 {
+		t.Fatalf("released leases = %d, want 2", got)
+	}
+	if pending := queue.pending.Load(); pending != 0 {
+		t.Fatalf("pending = %d, want 0", pending)
+	}
+	bridge.HandleMessage(context.Background(), "chat", "sender", Message{Content: "ignored"}, false)
+	bridge.queueMu.Lock()
+	defer bridge.queueMu.Unlock()
+	if len(bridge.queues) != 0 {
+		t.Fatalf("queues after stopped input = %d, want 0", len(bridge.queues))
 	}
 }
 

@@ -11,6 +11,7 @@ type fakeChannel struct {
 	name      string
 	running   bool
 	startErr  error
+	stopErr   error
 	sent      []sentMessage
 	handler   MessageHandler
 	started   int
@@ -38,7 +39,7 @@ func (c *fakeChannel) Stop(context.Context) error {
 	c.stopped++
 	c.stopCalls++
 	c.running = false
-	return nil
+	return c.stopErr
 }
 
 func (c *fakeChannel) Send(_ context.Context, chatID string, msg Message) error {
@@ -115,9 +116,62 @@ func TestManagerRegisterStartSendStop(t *testing.T) {
 		t.Fatalf("sent messages = %#v", created.sent)
 	}
 
-	manager.StopAll(context.Background())
+	if err := manager.StopAll(context.Background()); err != nil {
+		t.Fatalf("StopAll returned error: %v", err)
+	}
 	if created.IsRunning() || created.stopped != 1 {
 		t.Fatalf("channel running=%v stopped=%d, want stopped once", created.IsRunning(), created.stopped)
+	}
+}
+
+func TestManagerRollsBackStartedChannelsOnStartFailure(t *testing.T) {
+	factories := NewFactoryRegistry()
+	first := &fakeChannel{name: "a"}
+	second := &fakeChannel{name: "b", startErr: errors.New("boom")}
+	factories.Register("a", func(ChannelConfig, MessageHandler) (Channel, error) { return first, nil })
+	factories.Register("b", func(ChannelConfig, MessageHandler) (Channel, error) { return second, nil })
+	manager := NewManager(nil, factories)
+	if err := manager.Register("b", ChannelConfig{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Register("a", ChannelConfig{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.StartAll(context.Background()); err == nil {
+		t.Fatal("StartAll should return the second channel error")
+	}
+	if first.started != 1 || first.stopped != 1 || first.running {
+		t.Fatalf("first channel was not rolled back: %#v", first)
+	}
+	if second.started != 1 {
+		t.Fatalf("second channel start count = %d, want 1", second.started)
+	}
+}
+
+func TestManagerStopAllReturnsChannelErrorsInReverseOrder(t *testing.T) {
+	factories := NewFactoryRegistry()
+	first := &fakeChannel{name: "a", stopErr: errors.New("stop a")}
+	second := &fakeChannel{name: "b", stopErr: errors.New("stop b")}
+	factories.Register("a", func(ChannelConfig, MessageHandler) (Channel, error) { return first, nil })
+	factories.Register("b", func(ChannelConfig, MessageHandler) (Channel, error) { return second, nil })
+	manager := NewManager(nil, factories)
+	if err := manager.Register("a", ChannelConfig{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Register("b", ChannelConfig{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.StartAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	err := manager.StopAll(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "stop channel b") || !strings.Contains(err.Error(), "stop channel a") {
+		t.Fatalf("StopAll() error = %v", err)
+	}
+	if first.stopped != 1 || second.stopped != 1 {
+		t.Fatalf("stop counts = (%d, %d), want (1, 1)", first.stopped, second.stopped)
 	}
 }
 

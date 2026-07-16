@@ -3,7 +3,9 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -115,6 +117,7 @@ type Manager struct {
 	factories *FactoryRegistry
 	channels  map[string]Channel
 	handler   MessageHandler
+	started   []Channel
 	mu        sync.RWMutex
 }
 
@@ -156,22 +159,54 @@ func (m *Manager) Register(name string, cfg ChannelConfig) error {
 // StartAll 启动所有已注册的通道
 func (m *Manager) StartAll(ctx context.Context) error {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	for name, ch := range m.channels {
-		if err := ch.Start(ctx); err != nil {
-			return fmt.Errorf("start channel %s: %w", name, err)
-		}
+	if len(m.started) > 0 {
+		m.mu.RUnlock()
+		return fmt.Errorf("channels are already started")
 	}
+	names := make([]string, 0, len(m.channels))
+	for name := range m.channels {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	channels := make([]Channel, 0, len(names))
+	for _, name := range names {
+		channels = append(channels, m.channels[name])
+	}
+	m.mu.RUnlock()
+
+	started := make([]Channel, 0, len(channels))
+	for i, ch := range channels {
+		name := names[i]
+		if err := ch.Start(ctx); err != nil {
+			var rollbackErr error
+			for j := len(started) - 1; j >= 0; j-- {
+				if stopErr := started[j].Stop(ctx); stopErr != nil {
+					rollbackErr = errors.Join(rollbackErr, fmt.Errorf("rollback channel %s: %w", started[j].Name(), stopErr))
+				}
+			}
+			return errors.Join(fmt.Errorf("start channel %s: %w", name, err), rollbackErr)
+		}
+		started = append(started, ch)
+	}
+	m.mu.Lock()
+	m.started = started
+	m.mu.Unlock()
 	return nil
 }
 
-// StopAll 停止所有通道
-func (m *Manager) StopAll(ctx context.Context) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	for _, ch := range m.channels {
-		_ = ch.Stop(ctx)
+// StopAll 按启动逆序停止所有通道。
+func (m *Manager) StopAll(ctx context.Context) error {
+	m.mu.Lock()
+	started := append([]Channel(nil), m.started...)
+	m.started = nil
+	m.mu.Unlock()
+	var result error
+	for i := len(started) - 1; i >= 0; i-- {
+		if err := started[i].Stop(ctx); err != nil {
+			result = errors.Join(result, fmt.Errorf("stop channel %s: %w", started[i].Name(), err))
+		}
 	}
+	return result
 }
 
 // Get 获取指定通道

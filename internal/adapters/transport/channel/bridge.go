@@ -75,8 +75,14 @@ type Bridge struct {
 	displays  *toolmeta.Registry
 	scheduler func() *appschedule.Service
 
-	queueMu sync.Mutex
-	queues  map[string]*sessionQueue // per-session 消息队列
+	queueMu   sync.Mutex
+	queues    map[string]*sessionQueue // per-session 消息队列
+	accepting bool
+	runCtx    context.Context
+	cancelRun context.CancelFunc
+	stopCh    chan struct{}
+	stopDone  chan struct{}
+	workerWG  sync.WaitGroup
 }
 
 // BridgeOptions 描述通道桥接器的显式依赖。
@@ -120,6 +126,82 @@ func NewBridgeWithOptions(manager *Manager, mode string, options BridgeOptions) 
 		sessions:   sessions,
 		scheduler:  options.SchedulerProvider,
 		queues:     make(map[string]*sessionQueue),
+	}
+}
+
+// Start 开始接收消息，并为本轮生命周期创建统一取消上下文。
+func (b *Bridge) Start(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	b.queueMu.Lock()
+	defer b.queueMu.Unlock()
+	if b.accepting {
+		return
+	}
+	if b.stopDone != nil {
+		select {
+		case <-b.stopDone:
+			b.stopDone = nil
+		default:
+			return
+		}
+	}
+	b.runCtx, b.cancelRun = context.WithCancel(ctx)
+	b.stopCh = make(chan struct{})
+	b.accepting = true
+}
+
+// Stop 停止接收消息，释放未消费消息并等待 worker 退出。
+func (b *Bridge) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	b.queueMu.Lock()
+	if !b.accepting {
+		done := b.stopDone
+		b.queueMu.Unlock()
+		if done == nil {
+			return nil
+		}
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return fmt.Errorf("wait for channel workers: %w", ctx.Err())
+		}
+	}
+	b.accepting = false
+	b.stopDone = make(chan struct{})
+	done := b.stopDone
+	if b.cancelRun != nil {
+		b.cancelRun()
+	}
+	close(b.stopCh)
+	for sessionID, queue := range b.queues {
+		for {
+			select {
+			case message := <-queue.ch:
+				queue.pending.Add(-1)
+				releaseQueuedMessage(message)
+			default:
+				delete(b.queues, sessionID)
+				goto drained
+			}
+		}
+	drained:
+	}
+	b.queueMu.Unlock()
+
+	go func() {
+		b.workerWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for channel workers: %w", ctx.Err())
 	}
 }
 
@@ -193,22 +275,35 @@ func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg
 	sessionID := fmt.Sprintf("channel_%s_%s", channelName, chatID)
 
 	qm := queuedMessage{
-		ctx:          ctx,
-		channelName:  channelName,
-		chatID:       chatID,
-		senderID:     senderID,
-		msg:          msg,
-		isGroup:      isGroup,
-		userInput:    userInput,
-		releaseLease: eventlog.AcquireSessionLease(b.historyDir, sessionID),
+		ctx:         ctx,
+		channelName: channelName,
+		chatID:      chatID,
+		senderID:    senderID,
+		msg:         msg,
+		isGroup:     isGroup,
+		userInput:   userInput,
 	}
 
 	b.queueMu.Lock()
+	if !b.accepting {
+		b.queueMu.Unlock()
+		return
+	}
+	b.queueMu.Unlock()
+	qm.releaseLease = eventlog.AcquireSessionLease(b.historyDir, sessionID)
+
+	b.queueMu.Lock()
+	if !b.accepting {
+		b.queueMu.Unlock()
+		releaseQueuedMessage(qm)
+		return
+	}
 	q, exists := b.queues[sessionID]
 	if !exists {
 		q = &sessionQueue{ch: make(chan queuedMessage, sessionQueueBuffer)}
 		b.queues[sessionID] = q
-		go b.sessionWorker(sessionID, q)
+		b.workerWG.Add(1)
+		go b.sessionWorker(b.runCtx, b.stopCh, sessionID, q)
 	}
 	pos, accepted := enqueueSessionMessage(q, qm)
 	b.queueMu.Unlock()
@@ -242,7 +337,8 @@ func enqueueSessionMessage(q *sessionQueue, msg queuedMessage) (int, bool) {
 
 // sessionWorker 每个会话的消息处理协程，批量取出消息后串行执行
 // 空闲超时后自动退出并清理队列
-func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
+func (b *Bridge) sessionWorker(runCtx context.Context, stopCh <-chan struct{}, sessionID string, q *sessionQueue) {
+	defer b.workerWG.Done()
 	for {
 		// 阻塞等待第一条消息，带空闲超时
 		var first queuedMessage
@@ -254,6 +350,9 @@ func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
 			if !ok {
 				return
 			}
+		case <-stopCh:
+			idleTimer.Stop()
+			return
 		case <-idleTimer.C:
 			// 空闲超时：加锁后再次检查是否有新消息，避免竞态丢消息
 			b.queueMu.Lock()
@@ -275,6 +374,7 @@ func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
 		// 收到首条消息后短暂等待，收集同一时间段内的更多消息
 		batch := []queuedMessage{first}
 		timer := time.NewTimer(batchWaitDuration)
+		stopping := false
 	collect:
 		for len(batch) < maxBatchSize {
 			select {
@@ -285,22 +385,30 @@ func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
 				batch = append(batch, msg)
 			case <-timer.C:
 				break collect
+			case <-stopCh:
+				stopping = true
+				break collect
 			}
 		}
 		timer.Stop()
 
-		b.processBatch(sessionID, batch)
+		if stopping {
+			for _, message := range batch {
+				releaseQueuedMessage(message)
+			}
+			q.pending.Add(-int32(len(batch)))
+			return
+		}
+		b.processBatch(runCtx, sessionID, batch)
 		q.pending.Add(-int32(len(batch)))
 	}
 }
 
 // processBatch 处理一批消息：合并用户输入，通知用户，执行引擎
-func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
+func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []queuedMessage) {
 	defer func() {
 		for _, message := range batch {
-			if message.releaseLease != nil {
-				message.releaseLease()
-			}
+			releaseQueuedMessage(message)
 		}
 	}()
 	first := batch[0]
@@ -308,7 +416,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	chatID := first.chatID
 
 	// 使用独立 context：入队消息的原始 ctx 可能已被取消（如 typing ctx）
-	ctx := WithChannelName(context.Background(), channelName)
+	ctx := WithChannelName(runCtx, channelName)
 	ctx = appstate.WithState(ctx, b.state)
 	ctx = b.withRuntimeContext(ctx)
 
@@ -396,6 +504,12 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	})
 	if runErr != nil {
 		log.Printf("[bridge] task failed: session=%s, err=%v", sessionID, runErr)
+	}
+}
+
+func releaseQueuedMessage(message queuedMessage) {
+	if message.releaseLease != nil {
+		message.releaseLease()
 	}
 }
 

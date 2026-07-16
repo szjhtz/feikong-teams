@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/agent/catalog/toolmeta"
@@ -111,16 +112,26 @@ func (s *Service) Start(ctx context.Context) error {
 	displays, _ := toolmeta.RegistryFromContext(ctx)
 	for _, bridge := range s.bridges {
 		bridge.SetRuntimeDependencies(runtime, interrupt, agentRegistry, models, tools, displays)
+		bridge.Start(ctx)
 	}
 	log.Printf("[channels] starting all channels...")
-	return s.manager.StartAll(ctx)
+	if err := s.manager.StartAll(ctx); err != nil {
+		for i := len(s.bridges) - 1; i >= 0; i-- {
+			_ = s.bridges[i].Stop(ctx)
+		}
+		return err
+	}
+	return nil
 }
 
 // Stop 停止所有通道
 func (s *Service) Stop(ctx context.Context) error {
 	log.Printf("[channels] stopping all channels...")
-	s.manager.StopAll(ctx)
-	return nil
+	result := s.manager.StopAll(ctx)
+	for i := len(s.bridges) - 1; i >= 0; i-- {
+		result = errors.Join(result, s.bridges[i].Stop(ctx))
+	}
+	return result
 }
 
 // Manager 返回底层管理器
