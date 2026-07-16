@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"fkteams/internal/adapters/model/providers/providerkit"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/runtime/atomicfile"
 
 	"github.com/google/uuid"
 )
@@ -26,6 +28,10 @@ const (
 	editorPluginVersion = "copilot-chat/0.42.3"
 	integrationID       = "vscode-chat"
 	githubAPIVersion    = "2025-10-01"
+
+	maxDeviceIDFileBytes    int64 = 1 << 10
+	maxTokenFileBytes       int64 = 64 << 10
+	maxVSCodeTokenFileBytes int64 = 4 << 20
 )
 
 // Token 包含 GitHub OAuth token 和 Copilot API token
@@ -58,7 +64,11 @@ func NewTokenManager() *TokenManager {
 // GetToken 获取有效的 Copilot token，过期时自动刷新
 func (tm *TokenManager) GetToken(ctx context.Context) (string, error) {
 	tm.mu.RLock()
-	t := tm.token
+	var t *Token
+	if tm.token != nil {
+		copy := *tm.token
+		t = &copy
+	}
 	tm.mu.RUnlock()
 
 	if t == nil {
@@ -83,17 +93,26 @@ func (tm *TokenManager) GetToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("刷新 Copilot token 失败: %w", err)
 	}
 
+	if err := saveTokenToDisk(newToken); err != nil {
+		return "", fmt.Errorf("persist refreshed Copilot token: %w", err)
+	}
 	tm.token = newToken
-	_ = saveTokenToDisk(newToken)
 	return newToken.CopilotToken, nil
 }
 
 // SetToken 设置新的 token 并持久化
 func (tm *TokenManager) SetToken(t *Token) error {
+	if t == nil {
+		return fmt.Errorf("Copilot token is nil")
+	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	tm.token = t
-	return saveTokenToDisk(t)
+	copy := *t
+	if err := saveTokenToDisk(&copy); err != nil {
+		return err
+	}
+	tm.token = &copy
+	return nil
 }
 
 // HasToken 检查是否已有 token
@@ -165,7 +184,7 @@ func deviceIDFilePath() string {
 // getOrCreateDeviceID 获取或创建持久化的设备 ID
 func getOrCreateDeviceID() string {
 	path := deviceIDFilePath()
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := readLimitedFile(path, maxDeviceIDFileBytes); err == nil {
 		if id := string(data); len(id) > 0 {
 			return id
 		}
@@ -173,7 +192,7 @@ func getOrCreateDeviceID() string {
 	id := uuid.New().String()
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err == nil {
-		_ = os.WriteFile(path, []byte(id), 0600)
+		_ = atomicfile.WriteFile(path, []byte(id), 0600)
 	}
 	return id
 }
@@ -193,12 +212,12 @@ func saveTokenToDisk(t *Token) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(tokenFilePath(), data, 0600)
+	return atomicfile.WriteFile(tokenFilePath(), data, 0600)
 }
 
 // loadTokenFromDisk 从磁盘加载保存的 token
 func loadTokenFromDisk() (*Token, error) {
-	data, err := os.ReadFile(tokenFilePath())
+	data, err := readLimitedFile(tokenFilePath(), maxTokenFileBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +233,7 @@ func loadTokenFromDisk() (*Token, error) {
 
 // ImportFromVSCode 尝试从 VS Code 已保存的 Copilot token 导入
 func ImportFromVSCode() (string, bool) {
-	data, err := os.ReadFile(vsCodeTokenPath())
+	data, err := readLimitedFile(vsCodeTokenPath(), maxVSCodeTokenFileBytes)
 	if err != nil {
 		return "", false
 	}
@@ -231,6 +250,22 @@ func ImportFromVSCode() (string, bool) {
 		return app.OAuthToken, true
 	}
 	return "", false
+}
+
+func readLimitedFile(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("file %q exceeds %d bytes", path, limit)
+	}
+	return data, nil
 }
 
 func vsCodeTokenPath() string {

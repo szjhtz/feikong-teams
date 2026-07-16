@@ -37,6 +37,7 @@ func TestTokenManagerLoadsAndPersistsToken(t *testing.T) {
 	if err := tm.SetToken(token); err != nil {
 		t.Fatalf("SetToken() error = %v", err)
 	}
+	token.CopilotToken = "mutated-outside-manager"
 	if !tm.HasToken() {
 		t.Fatal("token manager should have token after SetToken")
 	}
@@ -72,6 +73,26 @@ func TestLoadTokenFromDiskRejectsInvalidContent(t *testing.T) {
 
 	if _, err := loadTokenFromDisk(); err == nil || !strings.Contains(err.Error(), "token 文件内容无效") {
 		t.Fatalf("loadTokenFromDisk() error = %v, want invalid content", err)
+	}
+}
+
+func TestLoadTokenFromDiskRejectsOversizedFile(t *testing.T) {
+	t.Setenv("FEIKONG_APP_DIR", t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(tokenFilePath()), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tokenFilePath(), make([]byte, maxTokenFileBytes+1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadTokenFromDisk(); err == nil {
+		t.Fatal("oversized Copilot token file was accepted")
+	}
+}
+
+func TestTokenManagerRejectsNilToken(t *testing.T) {
+	t.Setenv("FEIKONG_APP_DIR", t.TempDir())
+	if err := NewTokenManager().SetToken(nil); err == nil {
+		t.Fatal("nil Copilot token was accepted")
 	}
 }
 

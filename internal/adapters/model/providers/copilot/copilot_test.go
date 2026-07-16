@@ -151,6 +151,36 @@ func TestCopilotTransportUsesAgentInitiatorContext(t *testing.T) {
 	}
 }
 
+func TestReadRequestBodyRejectsOversizedBody(t *testing.T) {
+	if _, err := readRequestBody(strings.NewReader("12345"), 4); err == nil {
+		t.Fatal("oversized Copilot request body was accepted")
+	}
+}
+
+func TestSetReplayableRequestBodyRestoresContent(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setReplayableRequestBody(req, []byte("payload"))
+	first, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := req.GetBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replay.Close()
+	second, err := io.ReadAll(replay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != "payload" || string(second) != "payload" || req.ContentLength != 7 {
+		t.Fatalf("replayed bodies = %q, %q; length = %d", first, second, req.ContentLength)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

@@ -14,6 +14,8 @@ import (
 	"fkteams/internal/adapters/model/providers/providerkit"
 )
 
+const maxCopilotRequestBodyBytes int64 = 64 << 20
+
 type contextKey int
 
 const agentInitiatorKey contextKey = iota
@@ -108,10 +110,17 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	// 读取请求体用于判断 X-Initiator 和 Vision
 	var bodyBytes []byte
-	if req.Body != nil && req.Body != http.NoBody {
-		bodyBytes, _ = io.ReadAll(req.Body)
-		req.Body.Close()
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	hasRequestBody := req.Body != nil && req.Body != http.NoBody
+	if hasRequestBody {
+		bodyBytes, err = readRequestBody(req.Body, maxCopilotRequestBodyBytes)
+		closeErr := req.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read Copilot request body: %w", err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close Copilot request body: %w", closeErr)
+		}
+		setReplayableRequestBody(req, bodyBytes)
 	}
 
 	// 根据上下文和消息内容判断计费分类
@@ -149,7 +158,10 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	// 401 时尝试刷新 token 重试一次
 	if resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
+		if resp.Body != nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+			_ = resp.Body.Close()
+		}
 		t.tm.mu.Lock()
 		if t.tm.token != nil {
 			t.tm.token.ExpiresAt = 0 // 强制过期
@@ -160,19 +172,35 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		if refreshErr != nil {
 			return nil, refreshErr
 		}
-		req.Header.Set("Authorization", "Bearer "+newToken)
-
-		// 重置 body
-		if req.GetBody != nil {
-			body, bodyErr := req.GetBody()
-			if bodyErr == nil {
-				req.Body = body
-			}
+		retryReq := req.Clone(req.Context())
+		retryReq.Header = req.Header.Clone()
+		retryReq.Header.Set("Authorization", "Bearer "+newToken)
+		if hasRequestBody {
+			setReplayableRequestBody(retryReq, bodyBytes)
 		}
-		return t.base.RoundTrip(req)
+		return t.base.RoundTrip(retryReq)
 	}
 
 	return resp, nil
+}
+
+func readRequestBody(reader io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("request body exceeds %d bytes", limit)
+	}
+	return data, nil
+}
+
+func setReplayableRequestBody(req *http.Request, body []byte) {
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
 }
 
 // chatRequest 用于解析请求体中 messages 数组的最后一条消息 role
