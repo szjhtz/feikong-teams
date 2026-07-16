@@ -1,4 +1,5 @@
 import { Marked } from "marked";
+import createDOMPurify from "dompurify";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
@@ -18,6 +19,8 @@ const marked = new Marked({
   breaks: true,
   gfm: true,
 });
+
+const markdownSanitizer = createDOMPurify(window);
 
 marked.use(markedKatex({
   nonStandard: true,
@@ -55,10 +58,19 @@ export function renderMarkdown(value?: string) {
   try {
     const footnoteInput = normalizeFootnotes(value);
     const html = withTableWrappers(withCodeCopyButtons(marked.parse(normalizeMathDelimiters(footnoteInput.markdown)) as string)) + footnoteInput.html;
-    return withExternalLinkTargets(html);
+    return withExternalLinkTargets(sanitizeMarkdownHTML(html));
   } catch {
     return escapeHTML(value).replace(/\n/g, "<br />");
   }
+}
+
+function sanitizeMarkdownHTML(html: string) {
+  return markdownSanitizer.sanitize(html, {
+    ALLOW_DATA_ATTR: true,
+    ALLOW_UNKNOWN_PROTOCOLS: false,
+    FORBID_ATTR: ["srcdoc"],
+    FORBID_TAGS: ["base", "embed", "form", "iframe", "input", "link", "meta", "object", "option", "script", "select", "style", "textarea"],
+  });
 }
 
 function withExternalLinkTargets(html: string) {
