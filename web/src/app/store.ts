@@ -8,7 +8,7 @@ import type { ScheduleTask } from "@/types/schedules";
 import type { SkillInfo } from "@/types/skills";
 import { storageKeys } from "@/lib/storage";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
-import { appendBufferedChatEvent, stableChatEventIdentity } from "@/features/chat/eventBuffer";
+import { appendBufferedChatEvent, rememberChatEvent } from "@/features/chat/eventBuffer";
 
 export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "skills";
 
@@ -21,6 +21,7 @@ const initialChatState: ChatState = {
   messages: [],
   events: [],
   seenEventKeys: {},
+  seenEventKeyOrder: [],
   queue: [],
 };
 
@@ -63,6 +64,7 @@ const chatSlice = createSlice({
         startedAt: current?.startedAt ?? startedAt ?? 0,
         connectionState: current?.connectionState ?? "disconnected",
       };
+      if (initialOffset === 0 && state.viewSessionID === sessionID) state.seenStreamEventID = undefined;
       localStorage.setItem(storageKeys.sessionID, sessionID);
     },
     syncRunningSessions(state, action: PayloadAction<{ sessionIDs: string[]; requestStartedAt: number }>) {
@@ -92,6 +94,8 @@ const chatSlice = createSlice({
       state.messages = [];
       state.events = [];
       state.seenEventKeys = {};
+      state.seenEventKeyOrder = [];
+      state.seenStreamEventID = undefined;
       state.queue = [];
       state.error = undefined;
       state.errorTitle = undefined;
@@ -108,6 +112,8 @@ const chatSlice = createSlice({
       state.messages = [];
       state.events = [];
       state.seenEventKeys = {};
+      state.seenEventKeyOrder = [];
+      state.seenStreamEventID = undefined;
       state.queue = [];
       state.error = undefined;
       state.errorTitle = undefined;
@@ -140,8 +146,7 @@ const chatSlice = createSlice({
         content_parts: action.payload.contentParts,
         created_at: action.payload.createdAt,
       };
-      const identity = stableChatEventIdentity(event);
-      if (identity) state.seenEventKeys[identity] = true;
+      rememberChatEvent(state, event);
       state.events.push({ ...event });
       state.messages.push({
         id: action.payload.id,
@@ -172,24 +177,12 @@ const chatSlice = createSlice({
 
 function applyChatEvent(state: ChatState, payload: ChatEvent) {
   const event = { ...payload };
-  const eventSessionID = event.session_id || state.activeSessionID;
-  if (event.type === "processing_start" && eventSessionID) {
-    const current = state.runningTasks[eventSessionID];
-    state.runningTasks[eventSessionID] = {
-      phase: "processing",
-      startedAt: current?.startedAt ?? 0,
-      connectionState: current?.connectionState ?? "connected",
-    };
-  }
-  if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && eventSessionID) {
-    delete state.runningTasks[eventSessionID];
-  }
   if (event.session_id && state.activeSessionID && event.session_id !== state.activeSessionID) {
+    applyTaskLifecycleEvent(state, event);
     return;
   }
-  const identity = stableChatEventIdentity(event);
-  if (identity && state.seenEventKeys[identity]) return;
-  if (identity) state.seenEventKeys[identity] = true;
+  if (!rememberChatEvent(state, event)) return;
+  applyTaskLifecycleEvent(state, event);
   appendBufferedChatEvent(state.events, event, assistantMessageKey(event));
   if (event.type === "queue_updated" && Array.isArray(event.queue)) {
     state.queue = event.queue;
@@ -286,6 +279,21 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
       createdAt: event.created_at,
       events: [{ ...event }],
     });
+  }
+}
+
+function applyTaskLifecycleEvent(state: ChatState, event: ChatEvent) {
+  const eventSessionID = event.session_id || state.activeSessionID;
+  if (event.type === "processing_start" && eventSessionID) {
+    const current = state.runningTasks[eventSessionID];
+    state.runningTasks[eventSessionID] = {
+      phase: "processing",
+      startedAt: current?.startedAt ?? 0,
+      connectionState: current?.connectionState ?? "connected",
+    };
+  }
+  if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && eventSessionID) {
+    delete state.runningTasks[eventSessionID];
   }
 }
 

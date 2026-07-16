@@ -64,6 +64,8 @@ export interface ChatState {
   messages: ChatViewMessage[];
   events: ChatEvent[];
   seenEventKeys: Record<string, true>;
+  seenEventKeyOrder: string[];
+  seenStreamEventID?: number;
   queue: QueueItem[];
   error?: string;
   errorTitle?: string;

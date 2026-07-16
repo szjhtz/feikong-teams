@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatEvent } from "@/types/events";
-import { appendBufferedChatEvent, stableChatEventIdentity } from "./eventBuffer";
+import {
+  appendBufferedChatEvent,
+  maxFallbackEventKeys,
+  rememberChatEvent,
+  stableChatEventIdentity,
+  type ChatEventDedupState,
+} from "./eventBuffer";
 
 describe("chat event buffer", () => {
   test("uses stable protocol identities for replay deduplication", () => {
@@ -62,4 +68,38 @@ describe("chat event buffer", () => {
 
     expect(events.map((event) => event.content)).toEqual(["a", "b", "c"]);
   });
+
+  test("deduplicates stream events with a constant-size watermark", () => {
+    const state = dedupState();
+    for (let index = 0; index < 10_000; index += 1) {
+      expect(rememberChatEvent(state, {
+        type: "assistant_text_delta",
+        event_id: `event-${index}`,
+        stream_event_id: index,
+      })).toBe(true);
+    }
+    expect(state.seenStreamEventID).toBe(9_999);
+    expect(Object.keys(state.seenEventKeys)).toHaveLength(0);
+    expect(rememberChatEvent(state, { type: "assistant_text_delta", stream_event_id: 9_999 })).toBe(false);
+  });
+
+  test("bounds fallback identities and matches history against stream replay", () => {
+    const state = dedupState();
+    expect(rememberChatEvent(state, { type: "assistant_completed", event_id: "shared" })).toBe(true);
+    expect(rememberChatEvent(state, {
+      type: "assistant_completed",
+      event_id: "shared",
+      stream_event_id: 1,
+    })).toBe(false);
+
+    for (let index = 0; index < maxFallbackEventKeys + 600; index += 1) {
+      rememberChatEvent(state, { type: "system_notice", event_id: `fallback-${index}` });
+    }
+    expect(state.seenEventKeyOrder.length).toBeLessThanOrEqual(maxFallbackEventKeys);
+    expect(Object.keys(state.seenEventKeys).length).toBe(state.seenEventKeyOrder.length);
+  });
 });
+
+function dedupState(): ChatEventDedupState {
+  return { seenEventKeys: {}, seenEventKeyOrder: [] };
+}
