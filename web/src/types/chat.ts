@@ -57,6 +57,7 @@ export interface ChatState {
   mode: string;
   messages: ChatViewMessage[];
   events: ChatEvent[];
+  seenEventKeys: Record<string, true>;
   queue: QueueItem[];
   isProcessing: boolean;
   connectionState: "disconnected" | "connecting" | "connected";

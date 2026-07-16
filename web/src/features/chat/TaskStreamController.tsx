@@ -81,15 +81,17 @@ async function followTaskStream(
       const offset = await resolveSubscribeOffset(sessionID, fallbackOffset, dispatch, canConsume);
       if (offset === undefined || signal.aborted) return;
       dispatch(chatActions.setConnectionState("connecting"));
-      const result = await subscribeStream(sessionID, offset, (event) => {
+      const result = await subscribeStream(sessionID, offset, (events) => {
         if (!canConsume()) return;
         retryCount = 0;
         fallbackOffset = undefined;
-        if (event.stream_event_id !== undefined) {
-          writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
+        for (const event of events) {
+          if (event.stream_event_id !== undefined) {
+            writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
+          }
         }
         dispatch(chatActions.setConnectionState("connected"));
-        applyStreamEvent(sessionID, event, dispatch);
+        applyStreamEvents(sessionID, events, dispatch);
       }, signal);
       if (result === "done") {
         dispatch(chatActions.setConnectionState("connected"));
@@ -149,8 +151,8 @@ function applyStreamSnapshot(
     if (event.stream_event_id !== undefined) {
       writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
     }
-    applyStreamEvent(sessionID, event, dispatch);
   }
+  applyStreamEvents(sessionID, snapshot.events || [], dispatch);
   const nextOffset = Math.max(Number(snapshot.next_offset || 0), readStreamOffset(sessionID) || 0);
   writeStreamOffset(sessionID, nextOffset);
   if (isTerminalStreamStatus(snapshot.status) && !snapshot.more_available) {
@@ -160,10 +162,16 @@ function applyStreamSnapshot(
   return nextOffset;
 }
 
-function applyStreamEvent(sessionID: string, event: ChatEvent, dispatch: AppDispatch) {
-  dispatch(chatActions.receiveEvent(event));
-  const status = terminalEventStatus(event);
-  if (status) markSessionFinished(sessionID, status, event.created_at, dispatch);
+function applyStreamEvents(sessionID: string, events: ChatEvent[], dispatch: AppDispatch) {
+  if (events.length === 0) return;
+  dispatch(chatActions.receiveEvents(events));
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    const status = terminalEventStatus(event);
+    if (!status) continue;
+    markSessionFinished(sessionID, status, event.created_at, dispatch);
+    return;
+  }
 }
 
 async function shouldReconnect(sessionID: string, dispatch: AppDispatch) {

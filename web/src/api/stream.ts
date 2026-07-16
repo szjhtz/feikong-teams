@@ -96,7 +96,7 @@ export function submitApproval(sessionID: string, decision: 0 | 1 | 2) {
 export async function subscribeStream(
   sessionID: string,
   offset: number,
-  onEvent: (event: ChatEvent) => void,
+  onEvents: (events: ChatEvent[]) => void,
   signal?: AbortSignal,
 ): Promise<"done" | "eof"> {
   const response = await fetch(
@@ -118,6 +118,7 @@ export async function subscribeStream(
     buffer += decoder.decode(value, { stream: true });
     const chunks = buffer.split("\n\n");
     buffer = chunks.pop() || "";
+    const events: ChatEvent[] = [];
     for (const chunk of chunks) {
       const lines = chunk.split("\n");
       const idLine = lines.find((part) => part.startsWith("id:"));
@@ -125,14 +126,18 @@ export async function subscribeStream(
       if (dataLines.length === 0) continue;
       const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
       if (!raw) continue;
-      if (raw === "[DONE]") return "done";
+      if (raw === "[DONE]") {
+        if (events.length > 0) onEvents(events);
+        return "done";
+      }
       const event = JSON.parse(raw) as ChatEvent;
       if (idLine && event.stream_event_id === undefined) {
         const id = Number(idLine.replace(/^id:\s*/, ""));
         if (Number.isFinite(id)) event.stream_event_id = id;
       }
-      onEvent(event);
+      events.push(event);
     }
+    if (events.length > 0) onEvents(events);
   }
   return "eof";
 }

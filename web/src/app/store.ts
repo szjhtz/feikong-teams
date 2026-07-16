@@ -8,6 +8,7 @@ import type { ScheduleTask } from "@/types/schedules";
 import type { SkillInfo } from "@/types/skills";
 import { storageKeys } from "@/lib/storage";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
+import { appendBufferedChatEvent, stableChatEventIdentity } from "@/features/chat/eventBuffer";
 
 export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "skills";
 
@@ -19,6 +20,7 @@ const initialChatState: ChatState = {
   mode: "team",
   messages: [],
   events: [],
+  seenEventKeys: {},
   queue: [],
   isProcessing: false,
   connectionState: "disconnected",
@@ -70,6 +72,7 @@ const chatSlice = createSlice({
       state.viewSessionID = "";
       state.messages = [];
       state.events = [];
+      state.seenEventKeys = {};
       state.queue = [];
       state.isProcessing = false;
       state.runningSessionID = "";
@@ -88,6 +91,7 @@ const chatSlice = createSlice({
       else localStorage.removeItem(storageKeys.sessionID);
       state.messages = [];
       state.events = [];
+      state.seenEventKeys = {};
       state.queue = [];
       state.error = undefined;
       state.errorTitle = undefined;
@@ -119,18 +123,23 @@ const chatSlice = createSlice({
         content_parts: action.payload.contentParts,
         created_at: action.payload.createdAt,
       };
-      state.events.push(event);
+      const identity = stableChatEventIdentity(event);
+      if (identity) state.seenEventKeys[identity] = true;
+      state.events.push({ ...event });
       state.messages.push({
         id: action.payload.id,
         role: "user",
         content: action.payload.content,
         contentParts: action.payload.contentParts,
         createdAt: action.payload.createdAt,
-        events: [event],
+        events: [{ ...event }],
       });
     },
     receiveEvent(state, action: PayloadAction<ChatEvent>) {
       applyChatEvent(state, action.payload);
+    },
+    receiveEvents(state, action: PayloadAction<ChatEvent[]>) {
+      for (const event of action.payload) applyChatEvent(state, event);
     },
     setQueue(state, action: PayloadAction<QueueItem[]>) {
       state.queue = action.payload;
@@ -154,8 +163,10 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
     }
     return;
   }
-  if (state.events.some((item) => sameEventIdentity(item, event))) return;
-  state.events.push(event);
+  const identity = stableChatEventIdentity(event);
+  if (identity && state.seenEventKeys[identity]) return;
+  if (identity) state.seenEventKeys[identity] = true;
+  appendBufferedChatEvent(state.events, event, assistantMessageKey(event));
   if (event.type === "queue_updated" && Array.isArray(event.queue)) {
     state.queue = event.queue;
   }
@@ -171,15 +182,13 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
     const content = eventText(event);
     const contentParts = Array.isArray(event.content_parts) ? event.content_parts : [];
     if (!content && contentParts.length === 0) return;
-    const eventExists = state.messages.some((item) => item.role === "user" && item.events.some((messageEvent) => sameEventIdentity(messageEvent, event)));
-    if (eventExists) return;
     const mergeTarget = content
       ? findMergeableLocalUserMessage(state.messages, content)
       : findMergeableLocalUserAttachmentMessage(state.messages, contentParts);
     if (mergeTarget) {
       mergeTarget.createdAt = mergeTarget.createdAt || event.created_at;
       mergeTarget.contentParts = mergeTarget.contentParts?.length ? mergeTarget.contentParts : contentParts;
-      mergeTarget.events.push(event);
+      mergeTarget.events.push({ ...event });
       return;
     }
     state.messages.push({
@@ -188,7 +197,7 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
       content,
       contentParts,
       createdAt: event.created_at,
-      events: [event],
+      events: [{ ...event }],
     });
   }
   if (isMemberActivityEvent(event)) {
@@ -208,7 +217,7 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
       if (parentIndex >= 0) state.messages.splice(parentIndex + 1, 0, message);
       else state.messages.push(message);
     }
-    message.events.push(event);
+    appendBufferedChatEvent(message.events, event, assistantMessageKey(event));
   }
   if (shouldAttachAssistantMessage(event)) {
     const key = assistantMessageKey(event);
@@ -231,7 +240,7 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
       if (!message.content && content) message.content = content;
       if (event.reasoning_content) message.reasoningContent = String(event.reasoning_content);
     }
-    message.events.push(event);
+    appendBufferedChatEvent(message.events, event, key);
   }
   if (event.type === "system_notice") {
     state.statusText = eventText(event) || state.statusText;
@@ -254,16 +263,13 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
   }
   if (event.type === "cancelled") {
     const content = eventText(event) || "任务已取消";
-    const exists = state.messages.some((message) => message.role === "system" && message.events.some((item) => sameEventIdentity(item, event)));
-    if (!exists) {
-      state.messages.push({
-        id: `cancelled-${event.event_id ?? event.sequence ?? Date.now()}`,
-        role: "system",
-        content,
-        createdAt: event.created_at,
-        events: [event],
-      });
-    }
+    state.messages.push({
+      id: `cancelled-${event.event_id ?? event.sequence ?? Date.now()}`,
+      role: "system",
+      content,
+      createdAt: event.created_at,
+      events: [{ ...event }],
+    });
   }
 }
 
@@ -306,14 +312,6 @@ function contentPartsSignature(parts: ContentPartDTO[]) {
     .filter((part) => part.type !== "text")
     .map((part) => `${part.type}:${part.url || ""}:${part.mime_type || ""}:${part.base64_data?.slice(0, 64) || ""}`)
     .join("|");
-}
-
-function sameEventIdentity(left: ChatEvent, right: ChatEvent) {
-  if (left.event_id && right.event_id) return left.event_id === right.event_id;
-  if (left.run_id && right.run_id && left.sequence !== undefined && right.sequence !== undefined) {
-    return left.run_id === right.run_id && left.sequence === right.sequence;
-  }
-  return false;
 }
 
 function eventIdentityKey(event: ChatEvent) {
