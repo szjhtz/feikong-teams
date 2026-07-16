@@ -23,6 +23,8 @@ import (
 	"fkteams/internal/adapters/transport/channel/weixin/sdk/protocol"
 )
 
+const maxCDNMediaBytes = 100 << 20
+
 // MessageHandler 处理收到的用户消息。
 type MessageHandler func(msg *IncomingMessage)
 
@@ -432,7 +434,7 @@ func (b *Bot) cdnDownload(ctx context.Context, media *CDNMedia, aeskeyOverride s
 		return nil, fmt.Errorf("cdn download failed: HTTP %d", resp.StatusCode)
 	}
 
-	ciphertext, err := io.ReadAll(resp.Body)
+	ciphertext, err := readLimitedMedia(resp.Body, maxCDNMediaBytes+16)
 	if err != nil {
 		return nil, fmt.Errorf("cdn download read: %w", err)
 	}
@@ -454,6 +456,9 @@ func (b *Bot) cdnDownload(ctx context.Context, media *CDNMedia, aeskeyOverride s
 }
 
 func (b *Bot) cdnUpload(ctx context.Context, creds *auth.Credentials, data []byte, userID string, mediaType int) (*UploadResult, error) {
+	if len(data) > maxCDNMediaBytes {
+		return nil, fmt.Errorf("media exceeds %d bytes", maxCDNMediaBytes)
+	}
 	aesKey, err := crypto.GenerateAESKey()
 	if err != nil {
 		return nil, fmt.Errorf("generate aes key: %w", err)
@@ -528,6 +533,17 @@ func (b *Bot) cdnUpload(ctx context.Context, creds *auth.Credentials, data []byt
 		AESKey:            aesKey,
 		EncryptedFileSize: len(ciphertext),
 	}, nil
+}
+
+func readLimitedMedia(reader io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("media exceeds %d bytes", limit)
+	}
+	return data, nil
 }
 
 func cdnMediaMap(m *CDNMedia) map[string]any {

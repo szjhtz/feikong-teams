@@ -19,6 +19,9 @@ const (
 	DefaultBaseURL = "https://ilinkai.weixin.qq.com"
 	CDNBaseURL     = "https://novac2c.cdn.weixin.qq.com/c2c"
 	ChannelVersion = "2.0.0"
+
+	maxAPIResponseBytes = 16 << 20
+	maxAPIErrorBytes    = 4 << 10
 )
 
 // APIError 表示 iLink API 返回的业务或 HTTP 错误。
@@ -104,15 +107,18 @@ type GetConfigResponse struct {
 // GetQRCode 请求登录二维码。
 func (c *Client) GetQRCode(ctx context.Context, baseURL string) (*QRCodeResponse, error) {
 	u := baseURL + "/ilink/bot/get_bot_qrcode?bot_type=3"
-	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get_bot_qrcode request: %w", err)
+	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("get_bot_qrcode: %w", err)
 	}
 	defer resp.Body.Close()
 	var result QRCodeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("get_bot_qrcode decode: %w", err)
+	if err := decodeResponse(resp, &result); err != nil {
+		return nil, fmt.Errorf("get_bot_qrcode: %w", err)
 	}
 	return &result, nil
 }
@@ -120,26 +126,37 @@ func (c *Client) GetQRCode(ctx context.Context, baseURL string) (*QRCodeResponse
 // PollQRStatus 轮询二维码扫码状态。
 func (c *Client) PollQRStatus(ctx context.Context, baseURL, qrcode string) (*QRStatusResponse, error) {
 	u := baseURL + "/ilink/bot/get_qrcode_status?qrcode=" + url.QueryEscape(qrcode)
-	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get_qrcode_status request: %w", err)
+	}
 	req.Header.Set("iLink-App-ClientVersion", "1")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get_qrcode_status: %w", err)
 	}
 	defer resp.Body.Close()
 	var result QRStatusResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := decodeResponse(resp, &result); err != nil {
+		return nil, fmt.Errorf("get_qrcode_status: %w", err)
+	}
 	return &result, nil
 }
 
 // apiPost 发送 iLink POST 请求并解析响应。
 func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, body any, timeout time.Duration) (json.RawMessage, error) {
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("%s encode request: %w", endpoint, err)
+	}
 	u := baseURL + endpoint
 	httpCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(httpCtx, "POST", u, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(httpCtx, "POST", u, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("%s create request: %w", endpoint, err)
+	}
 	for k, v := range AuthHeaders(token) {
 		req.Header[k] = v
 	}
@@ -150,9 +167,12 @@ func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, b
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return nil, &APIError{Message: string(raw), HTTPStatus: resp.StatusCode}
+	raw, err := readLimitedBody(resp.Body, maxAPIResponseBytes)
+	if err != nil {
+		return nil, fmt.Errorf("%s read response: %w", endpoint, err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, responseAPIError(resp.StatusCode, raw)
 	}
 
 	var check struct {
@@ -160,7 +180,9 @@ func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, b
 		ErrCode int    `json:"errcode"`
 		ErrMsg  string `json:"errmsg"`
 	}
-	json.Unmarshal(raw, &check)
+	if err := json.Unmarshal(raw, &check); err != nil {
+		return nil, fmt.Errorf("%s decode response: %w", endpoint, err)
+	}
 	if check.Ret != 0 {
 		code := check.ErrCode
 		if code == 0 {
@@ -176,6 +198,55 @@ func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, b
 	return json.RawMessage(raw), nil
 }
 
+func decodeResponse(resp *http.Response, target any) error {
+	raw, err := readLimitedBody(resp.Body, maxAPIResponseBytes)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return responseAPIError(resp.StatusCode, raw)
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+func readLimitedBody(reader io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("response exceeds %d bytes", limit)
+	}
+	return data, nil
+}
+
+func responseAPIError(status int, raw []byte) *APIError {
+	var payload struct {
+		Ret     int    `json:"ret"`
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	_ = json.Unmarshal(raw, &payload)
+	code := payload.ErrCode
+	if code == 0 {
+		code = payload.Ret
+	}
+	message := payload.ErrMsg
+	if message == "" {
+		message = string(raw)
+	}
+	if len(message) > maxAPIErrorBytes {
+		message = message[:maxAPIErrorBytes] + "..."
+	}
+	if message == "" {
+		message = http.StatusText(status)
+	}
+	return &APIError{Message: message, HTTPStatus: status, ErrCode: code}
+}
+
 // GetUpdates 长轮询获取新消息。
 func (c *Client) GetUpdates(ctx context.Context, baseURL, token, cursor string) (*GetUpdatesResponse, error) {
 	body := map[string]any{
@@ -187,7 +258,9 @@ func (c *Client) GetUpdates(ctx context.Context, baseURL, token, cursor string) 
 		return nil, err
 	}
 	var result GetUpdatesResponse
-	json.Unmarshal(raw, &result)
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("getupdates decode: %w", err)
+	}
 	return &result, nil
 }
 
@@ -213,7 +286,9 @@ func (c *Client) GetConfig(ctx context.Context, baseURL, token, userID, contextT
 		return nil, err
 	}
 	var result GetConfigResponse
-	json.Unmarshal(raw, &result)
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("getconfig decode: %w", err)
+	}
 	return &result, nil
 }
 
