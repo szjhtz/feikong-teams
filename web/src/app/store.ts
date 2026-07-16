@@ -6,7 +6,6 @@ import type { AppConfig, ToolInfo } from "@/types/config";
 import type { FileEntry } from "@/types/files";
 import type { ScheduleTask } from "@/types/schedules";
 import type { SkillInfo } from "@/types/skills";
-import { storageKeys } from "@/lib/storage";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import { appendBufferedChatEvent, rememberChatEvent } from "@/features/chat/eventBuffer";
 
@@ -31,8 +30,6 @@ const chatSlice = createSlice({
   reducers: {
     setActiveSession(state, action: PayloadAction<string>) {
       state.activeSessionID = action.payload;
-      if (action.payload) localStorage.setItem(storageKeys.sessionID, action.payload);
-      else localStorage.removeItem(storageKeys.sessionID);
     },
     setMode(state, action: PayloadAction<string>) {
       state.mode = action.payload;
@@ -52,7 +49,6 @@ const chatSlice = createSlice({
         startedAt,
         connectionState: "disconnected",
       };
-      localStorage.setItem(storageKeys.sessionID, sessionID);
     },
     activateRunningSession(state, action: PayloadAction<{ sessionID: string; initialOffset?: number; startedAt?: number }>) {
       const { sessionID, initialOffset, startedAt } = action.payload;
@@ -65,7 +61,6 @@ const chatSlice = createSlice({
         connectionState: current?.connectionState ?? "disconnected",
       };
       if (initialOffset === 0 && state.viewSessionID === sessionID) state.seenStreamEventID = undefined;
-      localStorage.setItem(storageKeys.sessionID, sessionID);
     },
     syncRunningSessions(state, action: PayloadAction<{ sessionIDs: string[]; requestStartedAt: number }>) {
       const active = new Set(action.payload.sessionIDs);
@@ -107,8 +102,6 @@ const chatSlice = createSlice({
       const detail = action.payload;
       state.activeSessionID = detail.session_id;
       state.viewSessionID = detail.session_id;
-      if (detail.session_id) localStorage.setItem(storageKeys.sessionID, detail.session_id);
-      else localStorage.removeItem(storageKeys.sessionID);
       state.messages = [];
       state.events = [];
       state.seenEventKeys = {};
@@ -273,7 +266,7 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
   if (event.type === "cancelled") {
     const content = eventText(event) || "任务已取消";
     state.messages.push({
-      id: `cancelled-${event.event_id ?? event.sequence ?? Date.now()}`,
+      id: `cancelled-${eventIdentityKey(event, state.messages.length)}`,
       role: "system",
       content,
       createdAt: event.created_at,
@@ -338,12 +331,12 @@ function contentPartsSignature(parts: ContentPartDTO[]) {
     .join("|");
 }
 
-function eventIdentityKey(event: ChatEvent) {
+function eventIdentityKey(event: ChatEvent, fallbackOrdinal = 0) {
   if (event.event_id) return event.event_id;
   if (event.run_id && event.sequence !== undefined) return `${event.run_id}:${event.sequence}`;
   if (event.turn_id && event.sequence !== undefined) return `${event.turn_id}:${event.sequence}`;
   if (event.sequence !== undefined) return String(event.sequence);
-  return `${event.type}:${Date.now()}`;
+  return `${event.type}:${event.created_at || "unknown"}:${fallbackOrdinal}`;
 }
 
 function shouldAttachAssistantMessage(event: ChatEvent) {
@@ -439,7 +432,7 @@ const sessionsSlice = createSlice({
     loading: false,
     search: "",
     activeRequestStartedAt: undefined as number | undefined,
-    localPatches: {} as Record<string, { observedAt: number; values: Partial<SessionSummary> }>,
+    localPatches: {} as Record<string, Partial<SessionSummary>>,
   },
   reducers: {
     beginSessionsRequest(state, action: PayloadAction<number>) {
@@ -450,20 +443,18 @@ const sessionsSlice = createSlice({
     setSessions(state, action: PayloadAction<{ items: SessionSummary[]; requestStartedAt: number }>) {
       const currentSessions = new Map(state.items.map((session) => [session.session_id, session]));
       const received = new Set(action.payload.items.map((session) => session.session_id));
-      const hasNewerPatch = (sessionID: string) => {
-        const patch = state.localPatches[sessionID];
-        return Boolean(patch && patch.observedAt >= action.payload.requestStartedAt);
-      };
+      if (state.activeRequestStartedAt !== action.payload.requestStartedAt) return;
+      const hasLocalPatch = (sessionID: string) => Boolean(state.localPatches[sessionID]);
       const missingLocalSessions = state.items.filter(
-        (session) => !received.has(session.session_id) && hasNewerPatch(session.session_id),
+        (session) => !received.has(session.session_id) && hasLocalPatch(session.session_id),
       );
       state.items = [
         ...missingLocalSessions,
         ...action.payload.items.map((session) => {
           const current = currentSessions.get(session.session_id);
           const patch = state.localPatches[session.session_id];
-          if (!current || !hasNewerPatch(session.session_id) || !patch) return session;
-          return { ...session, ...patch.values };
+          if (!current || !patch) return session;
+          return { ...session, ...patch };
         }),
       ];
       state.localPatches = {};
@@ -473,10 +464,7 @@ const sessionsSlice = createSlice({
     upsertSession(state, action: PayloadAction<SessionSummary>) {
       const next = action.payload;
       if (state.activeRequestStartedAt !== undefined) {
-        state.localPatches[next.session_id] = {
-          observedAt: Date.now(),
-          values: { ...state.localPatches[next.session_id]?.values, ...next },
-        };
+        state.localPatches[next.session_id] = { ...state.localPatches[next.session_id], ...next };
       }
       const index = state.items.findIndex((item) => item.session_id === next.session_id);
       if (index < 0) {
@@ -505,13 +493,10 @@ const sessionsSlice = createSlice({
       }
       if (state.activeRequestStartedAt !== undefined) {
         state.localPatches[sessionID] = {
-          observedAt: Date.now(),
-          values: {
-            ...state.localPatches[sessionID]?.values,
-            ...(status ? { status } : {}),
-            active_task: activeTask,
-            ...(updatedAt ? { mod_time: updatedAt, updated_at: updatedAt } : {}),
-          },
+          ...state.localPatches[sessionID],
+          ...(status ? { status } : {}),
+          active_task: activeTask,
+          ...(updatedAt ? { mod_time: updatedAt, updated_at: updatedAt } : {}),
         };
       }
     },
@@ -521,8 +506,8 @@ const sessionsSlice = createSlice({
       session.title = action.payload.title;
       if (state.activeRequestStartedAt !== undefined) {
         state.localPatches[action.payload.sessionID] = {
-          observedAt: Date.now(),
-          values: { ...state.localPatches[action.payload.sessionID]?.values, title: action.payload.title },
+          ...state.localPatches[action.payload.sessionID],
+          title: action.payload.title,
         };
       }
     },
@@ -532,8 +517,8 @@ const sessionsSlice = createSlice({
       session.favorite = action.payload.favorite;
       if (state.activeRequestStartedAt !== undefined) {
         state.localPatches[action.payload.sessionID] = {
-          observedAt: Date.now(),
-          values: { ...state.localPatches[action.payload.sessionID]?.values, favorite: action.payload.favorite },
+          ...state.localPatches[action.payload.sessionID],
+          favorite: action.payload.favorite,
         };
       }
     },
