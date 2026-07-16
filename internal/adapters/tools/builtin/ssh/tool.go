@@ -36,7 +36,7 @@ func (st *SSHTools) GetTools() ([]runtimeport.Tool, error) {
 	tools = append(tools, downloadTool)
 
 	// 列出远程目录工具
-	listDirTool, err := runtimeport.InferTool("ssh_list_dir", "列出远程服务器指定目录下的文件和文件夹", st.SSHListDir)
+	listDirTool, err := runtimeport.InferTool("ssh_list_dir", "列出远程服务器指定目录下的文件和文件夹，最多返回 10000 项或 1 MiB 文本", st.SSHListDir)
 	if err != nil {
 		return nil, err
 	}

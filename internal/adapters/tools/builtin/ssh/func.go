@@ -3,12 +3,20 @@ package ssh
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"fkteams/internal/runtime/executil"
 )
 
-const maxSSHCommandOutputBytes int64 = 1 << 20
+const (
+	maxSSHCommandOutputBytes   int64 = 1 << 20
+	maxSSHCommandBytes               = 1 << 20
+	maxSSHPathBytes                  = 4 << 10
+	maxSSHDirectoryOutputBytes       = 1 << 20
+	sshDirectoryTimeout              = 30 * time.Second
+)
 
 // SSHTools SSH工具实例，每个agent可以有独立的实例
 type SSHTools struct {
@@ -65,6 +73,9 @@ func (st *SSHTools) SSHExecute(ctx context.Context, req *SSHExecuteRequest) (*SS
 		return &SSHExecuteResponse{
 			ErrorMessage: "command 参数是必需的",
 		}, nil
+	}
+	if len(req.Command) > maxSSHCommandBytes {
+		return &SSHExecuteResponse{ErrorMessage: "command exceeds size limit"}, nil
 	}
 
 	// 1. 安全过滤
@@ -139,6 +150,9 @@ func (st *SSHTools) SSHFileUpload(ctx context.Context, req *SSHFileUploadRequest
 			ErrorMessage: "local_path 和 remote_path 参数都是必需的",
 		}, nil
 	}
+	if len(req.LocalPath) > maxSSHPathBytes || len(req.RemotePath) > maxSSHPathBytes {
+		return &SSHFileUploadResponse{ErrorMessage: "file path exceeds size limit"}, nil
+	}
 
 	n, err := st.client.CopyLocalFileToRemote(ctx, req.LocalPath, req.RemotePath)
 	if err != nil {
@@ -179,6 +193,9 @@ func (st *SSHTools) SSHFileDownload(ctx context.Context, req *SSHFileDownloadReq
 			ErrorMessage: "remote_path 和 local_path 参数都是必需的",
 		}, nil
 	}
+	if len(req.LocalPath) > maxSSHPathBytes || len(req.RemotePath) > maxSSHPathBytes {
+		return &SSHFileDownloadResponse{ErrorMessage: "file path exceeds size limit"}, nil
+	}
 
 	n, err := st.client.CopyRemoteFileToLocal(ctx, req.RemotePath, req.LocalPath)
 	if err != nil {
@@ -217,20 +234,38 @@ func (st *SSHTools) SSHListDir(ctx context.Context, req *SSHListDirRequest) (*SS
 			ErrorMessage: "remote_path 参数是必需的",
 		}, nil
 	}
+	if len(req.RemotePath) > maxSSHPathBytes {
+		return &SSHListDirResponse{ErrorMessage: "remote path exceeds size limit"}, nil
+	}
 
-	fileNames, err := st.client.ReadRemoteDir(req.RemotePath)
+	listCtx, cancel := context.WithTimeout(ctx, sshDirectoryTimeout)
+	defer cancel()
+	fileNames, err := st.client.ReadRemoteDir(listCtx, req.RemotePath)
 	if err != nil {
 		return &SSHListDirResponse{
 			ErrorMessage: fmt.Sprintf("列出目录失败: %v", err),
 		}, nil
 	}
 
-	content := fmt.Sprintf("目录 %s 下的文件和文件夹：\n", req.RemotePath)
-	for _, name := range fileNames {
-		content += name + "\n"
+	content, err := formatRemoteDirectory(req.RemotePath, fileNames)
+	if err != nil {
+		return &SSHListDirResponse{ErrorMessage: err.Error()}, nil
 	}
 
 	return &SSHListDirResponse{
 		Content: content,
 	}, nil
+}
+
+func formatRemoteDirectory(remotePath string, fileNames []string) (string, error) {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "目录 %s 下的文件和文件夹：\n", strconv.Quote(remotePath))
+	for _, name := range fileNames {
+		quoted := strconv.Quote(name)
+		if builder.Len()+len(quoted)+1 > maxSSHDirectoryOutputBytes {
+			return "", fmt.Errorf("remote directory output exceeds size limit")
+		}
+		fmt.Fprintf(&builder, "%s\n", quoted)
+	}
+	return builder.String(), nil
 }

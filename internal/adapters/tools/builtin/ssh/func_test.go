@@ -44,6 +44,10 @@ func TestSSHExecuteValidation(t *testing.T) {
 	if err != nil || !strings.Contains(resp.ErrorMessage, "不能超过 300 秒") {
 		t.Fatalf("timeout resp=%#v err=%v", resp, err)
 	}
+	resp, err = tools.SSHExecute(context.Background(), &SSHExecuteRequest{Command: strings.Repeat("x", maxSSHCommandBytes+1)})
+	if err != nil || !strings.Contains(resp.ErrorMessage, "size limit") {
+		t.Fatalf("oversized command resp=%#v err=%v", resp, err)
+	}
 }
 
 func TestSSHFileAndListValidation(t *testing.T) {
@@ -75,9 +79,26 @@ func TestSSHFileAndListValidation(t *testing.T) {
 	if err != nil || !strings.Contains(listResp.ErrorMessage, "remote_path") {
 		t.Fatalf("empty list resp=%#v err=%v", listResp, err)
 	}
+	listResp, err = tools.SSHListDir(context.Background(), &SSHListDirRequest{RemotePath: strings.Repeat("x", maxSSHPathBytes+1)})
+	if err != nil || !strings.Contains(listResp.ErrorMessage, "size limit") {
+		t.Fatalf("oversized path resp=%#v err=%v", listResp, err)
+	}
 
 	uploadResp, err = tools.SSHFileUpload(context.Background(), &SSHFileUploadRequest{LocalPath: "/missing/local", RemotePath: "/tmp/remote"})
 	if err != nil || !strings.Contains(uploadResp.ErrorMessage, "文件上传失败") {
 		t.Fatalf("missing local upload resp=%#v err=%v", uploadResp, err)
+	}
+}
+
+func TestFormatRemoteDirectoryIsBoundedAndEscapesNames(t *testing.T) {
+	content, err := formatRemoteDirectory("/tmp", []string{"line\nbreak", "plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(content, `"line\nbreak"`) {
+		t.Fatalf("content = %q", content)
+	}
+	if _, err := formatRemoteDirectory("/tmp", []string{strings.Repeat("x", maxSSHDirectoryOutputBytes)}); err == nil {
+		t.Fatal("formatRemoteDirectory accepted oversized output")
 	}
 }

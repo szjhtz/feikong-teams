@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,8 +23,9 @@ import (
 )
 
 const (
-	maxKnownHostsBytes  int64 = 16 << 20
-	maxSSHTransferBytes       = 1 << 30
+	maxKnownHostsBytes     int64 = 16 << 20
+	maxSSHTransferBytes          = 1 << 30
+	maxSSHDirectoryEntries       = 10_000
 )
 
 type ClientOption func(*SshClient)
@@ -356,16 +358,21 @@ func (reader *sshContextReader) Read(data []byte) (int, error) {
 	}
 }
 
-func (c *SshClient) ReadRemoteDir(remotePath string) (fileNameList []string, err error) {
+func (c *SshClient) ReadRemoteDir(ctx context.Context, remotePath string) ([]string, error) {
 	if c == nil || c.sftpClient == nil {
 		return nil, fmt.Errorf("SFTP client is not connected")
 	}
-	fis, err := c.sftpClient.ReadDir(remotePath)
+	fis, err := c.sftpClient.ReadDirContext(ctx, remotePath)
 	if err != nil {
-		return fileNameList, err
+		return nil, err
 	}
+	if len(fis) > maxSSHDirectoryEntries {
+		return nil, fmt.Errorf("remote directory exceeds %d entries", maxSSHDirectoryEntries)
+	}
+	fileNameList := make([]string, 0, len(fis))
 	for _, fi := range fis {
 		fileNameList = append(fileNameList, fi.Name())
 	}
-	return
+	sort.Strings(fileNameList)
+	return fileNameList, nil
 }
