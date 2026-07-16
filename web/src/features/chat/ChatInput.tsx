@@ -1,24 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions, sessionsActions } from "@/app/store";
-import { APIError, isAbortError } from "@/api/client";
 import { startStream, stopStream } from "@/api/chat";
 import { listFiles, searchFiles, uploadFile } from "@/api/files";
-import { streamSnapshot, streamStatus, subscribeStream, type StreamSnapshot } from "@/api/stream";
-import { readJSON, storageKeys, writeJSON } from "@/lib/storage";
 import { cn } from "@/lib/cn";
 import { chatPath, pushAppPath } from "@/lib/navigation";
-import { loadSessions } from "@/features/sessions/sessionThunks";
 import { ChatComposer } from "./ChatComposer";
 import { QueuePanel } from "./QueuePanel";
+import { clearStreamOffset } from "./streamOffsets";
 import type { ChatAttachmentDraft } from "@/types/chat";
 import type { ContentPartDTO } from "@/types/events";
 import type { FileEntry } from "@/types/files";
 
 const maxPastedImageBytes = 12 * 1024 * 1024;
-const streamReconnectBaseDelayMs = 400;
-const streamReconnectMaxDelayMs = 5000;
-
 export function ChatInput({
   variant = "dock",
   className,
@@ -35,7 +29,6 @@ export function ChatInput({
   const currentAgent = useAppSelector((state) => state.chat.currentAgent);
   const isProcessing = useAppSelector((state) => state.chat.isProcessing);
   const agents = useAppSelector((state) => state.app.agents);
-  const authExpired = useAppSelector((state) => state.app.authExpired);
   const [value, setValue] = useState("");
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
   const [attachments, setAttachments] = useState<ChatAttachmentDraft[]>([]);
@@ -44,30 +37,6 @@ export function ChatInput({
   const fileSuggestionCache = useRef(new Map<string, FileEntry[]>());
   const attachmentsRef = useRef<ChatAttachmentDraft[]>([]);
   const dockRef = useRef<HTMLDivElement | null>(null);
-  const activeSessionRef = useRef(sessionID);
-  const streamSubscriptionsRef = useRef(new Map<string, AbortController>());
-
-  useEffect(() => {
-    activeSessionRef.current = sessionID;
-  }, [sessionID]);
-
-  useEffect(() => {
-    if (variant !== "dock") return;
-    if (authExpired) {
-      for (const controller of streamSubscriptionsRef.current.values()) controller.abort();
-      streamSubscriptionsRef.current.clear();
-      dispatch(chatActions.setConnectionState("disconnected"));
-      return;
-    }
-    if (!sessionID || runningSessionID !== sessionID || !isProcessing) return;
-    ensureStreamSubscription(sessionID);
-  }, [variant, sessionID, runningSessionID, isProcessing, authExpired]);
-
-  useEffect(() => () => {
-    for (const controller of streamSubscriptionsRef.current.values()) controller.abort();
-    streamSubscriptionsRef.current.clear();
-  }, []);
-
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
@@ -109,8 +78,9 @@ export function ChatInput({
     }
     const contents = readyAttachments.length ? buildContentParts(message, readyAttachments) : undefined;
     const displayText = message || attachmentSummary(readyAttachments);
-    const targetSessionID = sessionID;
-    const queueing = Boolean(isProcessing && runningSessionID === sessionID && targetSessionID);
+    const newSession = !sessionID;
+    const targetSessionID = sessionID || newSessionID();
+    const queueing = Boolean(isProcessing && runningSessionID === sessionID && sessionID);
     setValue("");
     clearAttachments();
     dispatch(chatActions.setError(undefined));
@@ -119,7 +89,7 @@ export function ChatInput({
       dispatch(chatActions.setProcessing(true));
     }
     try {
-      if (queueing && targetSessionID) {
+      if (queueing) {
         const result = await startStream({
           session_id: targetSessionID,
           message,
@@ -128,11 +98,10 @@ export function ChatInput({
           agent_name: currentAgent || undefined,
         });
         if (Array.isArray(result.queue)) dispatch(chatActions.setQueue(result.queue));
-        ensureStreamSubscription(targetSessionID);
         return;
       }
       const result = await startStream({
-        session_id: targetSessionID || undefined,
+        session_id: targetSessionID,
         message,
         contents,
         mode,
@@ -140,165 +109,39 @@ export function ChatInput({
       });
       if (result.status === "queued") {
         if (Array.isArray(result.queue)) dispatch(chatActions.setQueue(result.queue));
-        dispatch(chatActions.setRunningSession(result.session_id));
-        ensureStreamSubscription(result.session_id);
+        dispatch(sessionsActions.updateSessionRuntime({
+          sessionID: result.session_id,
+          status: "processing",
+          activeTask: true,
+        }));
+        dispatch(chatActions.activateRunningSession({ sessionID: result.session_id }));
         return;
       }
       const now = new Date().toISOString();
-      dispatch(sessionsActions.upsertSession({
-        session_id: result.session_id,
-        title: displayText,
-        status: "processing",
-        active_task: true,
-        mod_time: now,
-        updated_at: now,
-      }));
-      dispatch(chatActions.setRunningSession(result.session_id));
-      dispatch(chatActions.setActiveSession(result.session_id));
-      pushAppPath(chatPath(result.session_id));
-      dispatch(loadSessions());
-      resetOffset(result.session_id);
-      ensureStreamSubscription(result.session_id, 0);
+      if (newSession) {
+        dispatch(sessionsActions.upsertSession({
+          session_id: result.session_id,
+          title: sessionTitle(displayText),
+          status: "processing",
+          active_task: true,
+          mod_time: now,
+          updated_at: now,
+        }));
+      } else {
+        dispatch(sessionsActions.updateSessionRuntime({
+          sessionID: result.session_id,
+          status: "processing",
+          activeTask: true,
+          updatedAt: now,
+        }));
+      }
+      clearStreamOffset(result.session_id);
+      dispatch(chatActions.activateRunningSession({ sessionID: result.session_id, initialOffset: 0 }));
+      if (newSession) pushAppPath(chatPath(result.session_id));
     } catch (error) {
       dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
       if (!queueing) dispatch(chatActions.setProcessing(false));
     }
-  }
-
-  function ensureStreamSubscription(id: string, initialOffset?: number) {
-    if (streamSubscriptionsRef.current.has(id)) return;
-    const controller = new AbortController();
-    streamSubscriptionsRef.current.set(id, controller);
-    void subscribe(id, initialOffset, controller.signal).finally(() => {
-      if (streamSubscriptionsRef.current.get(id) === controller) {
-        streamSubscriptionsRef.current.delete(id);
-      }
-    });
-  }
-
-  async function subscribe(id: string, initialOffset: number | undefined, signal: AbortSignal) {
-    const offsets = readJSON<Record<string, number>>(storageKeys.streamOffsets, {});
-    let retryCount = 0;
-    let fallbackOffset = initialOffset;
-    for (;;) {
-      if (signal.aborted) return;
-      if (activeSessionRef.current !== id && fallbackOffset === undefined) return;
-      const offset = await resolveSubscribeOffset(id, fallbackOffset, offsets);
-      if (offset === undefined) return;
-      try {
-        dispatch(chatActions.setConnectionState("connecting"));
-        await subscribeStream(id, offset, (event) => {
-          retryCount = 0;
-          fallbackOffset = undefined;
-          dispatch(chatActions.setConnectionState("connected"));
-          dispatch(chatActions.receiveEvent(event));
-          if (event.type === "processing_end" || event.type === "cancelled") {
-            dispatch(loadSessions());
-          }
-          if (event.stream_event_id !== undefined) {
-            offsets[id] = Number(event.stream_event_id) + 1;
-            writeJSON(storageKeys.streamOffsets, offsets);
-          }
-        }, signal);
-        await handleSubscribeClosed(id);
-        return;
-      } catch (error) {
-        if (signal.aborted) return;
-        const shouldReconnect = await handleSubscribeError(id, error);
-        if (!shouldReconnect) return;
-        retryCount += 1;
-        await sleep(streamReconnectDelay(retryCount), signal);
-      }
-    }
-  }
-
-  async function resolveSubscribeOffset(id: string, fallbackOffset: number | undefined, offsets: Record<string, number>) {
-    const storedOffset = offsets[id];
-    if (storedOffset > 0) return replayStreamSnapshot(id, storedOffset, offsets);
-    if (fallbackOffset !== undefined) return fallbackOffset;
-    return loadTailStreamSnapshot(id, offsets);
-  }
-
-  async function handleSubscribeClosed(id: string) {
-    let status;
-    try {
-      status = await streamStatus(id);
-    } catch (error) {
-      if (isAuthenticationError(error)) return;
-    }
-    if (isTerminalStreamStatus(status?.status)) {
-      dispatch(loadSessions());
-      if (activeSessionRef.current === id) dispatch(chatActions.setProcessing(false));
-    }
-    dispatch(chatActions.setConnectionState("connected"));
-  }
-
-  async function replayStreamSnapshot(id: string, offset: number, offsets: Record<string, number>) {
-    let nextOffset = offset;
-    for (;;) {
-      const snapshot = await streamSnapshot(id, { offset: nextOffset, limit: 1000 }).catch(() => undefined);
-      if (!snapshot) return nextOffset;
-      const appliedOffset = applyStreamSnapshot(id, snapshot, offsets);
-      if (appliedOffset === undefined) return undefined;
-      if (!snapshot.more_available || appliedOffset <= nextOffset) return appliedOffset;
-      nextOffset = appliedOffset;
-    }
-  }
-
-  async function loadTailStreamSnapshot(id: string, offsets: Record<string, number>) {
-    const snapshot = await streamSnapshot(id).catch(() => undefined);
-    if (!snapshot) return undefined;
-    return applyStreamSnapshot(id, snapshot, offsets);
-  }
-
-  function applyStreamSnapshot(id: string, snapshot: StreamSnapshot, offsets: Record<string, number>) {
-    const isActiveSession = activeSessionRef.current === id;
-    if (isActiveSession && Array.isArray(snapshot.queue)) dispatch(chatActions.setQueue(snapshot.queue));
-    for (const event of snapshot.events || []) {
-      dispatch(chatActions.receiveEvent(event));
-      if (event.stream_event_id !== undefined) {
-        offsets[id] = Number(event.stream_event_id) + 1;
-      }
-    }
-    const nextOffset = Math.max(Number(snapshot.next_offset || 0), offsets[id] || 0);
-    offsets[id] = nextOffset;
-    writeJSON(storageKeys.streamOffsets, offsets);
-    if (isTerminalStreamStatus(snapshot.status)) {
-      dispatch(loadSessions());
-      if (isActiveSession) dispatch(chatActions.setProcessing(false));
-      return undefined;
-    }
-    return nextOffset;
-  }
-
-  function isTerminalStreamStatus(status?: string) {
-    return status === "completed" || status === "cancelled" || status === "failed" || status === "error";
-  }
-
-  async function handleSubscribeError(id: string, error: unknown) {
-    if (isAbortError(error) || isAuthenticationError(error)) return false;
-    dispatch(chatActions.setConnectionState("connecting"));
-    let status;
-    try {
-      status = await streamStatus(id);
-    } catch (statusError) {
-      if (isAuthenticationError(statusError)) return false;
-    }
-    if (isTerminalStreamStatus(status?.status)) {
-      dispatch(loadSessions());
-      if (activeSessionRef.current === id) dispatch(chatActions.setProcessing(false));
-      dispatch(chatActions.setConnectionState("connected"));
-      return false;
-    }
-    if (activeSessionRef.current !== id) {
-      dispatch(loadSessions());
-      dispatch(chatActions.setConnectionState("connected"));
-      return false;
-    }
-    if (status?.status === "processing" || status === undefined) return true;
-    dispatch(loadSessions());
-    dispatch(chatActions.setConnectionState("connected"));
-    return false;
   }
 
   async function stop() {
@@ -308,8 +151,6 @@ export function ChatInput({
       await stopStream(id);
     } catch (error) {
       dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
-    } finally {
-      dispatch(chatActions.setProcessing(false));
     }
   }
 
@@ -474,36 +315,18 @@ export function ChatInput({
   );
 }
 
-function resetOffset(sessionID: string) {
-  const offsets = readJSON<Record<string, number>>(storageKeys.streamOffsets, {});
-  delete offsets[sessionID];
-  writeJSON(storageKeys.streamOffsets, offsets);
+function sessionTitle(value: string) {
+  const runes = Array.from(value);
+  return runes.length <= 50 ? value : `${runes.slice(0, 50).join("")}...`;
 }
 
-function streamReconnectDelay(retryCount: number) {
-  const delay = streamReconnectBaseDelayMs * Math.max(1, 2 ** Math.min(retryCount - 1, 4));
-  return Math.min(delay, streamReconnectMaxDelayMs);
-}
-
-function sleep(ms: number, signal?: AbortSignal) {
-  return new Promise<void>((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = window.setTimeout(done, ms);
-    signal?.addEventListener("abort", done, { once: true });
-
-    function done() {
-      window.clearTimeout(timer);
-      signal?.removeEventListener("abort", done);
-      resolve();
-    }
-  });
-}
-
-function isAuthenticationError(error: unknown) {
-  return error instanceof APIError && error.status === 401;
+function newSessionID() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function fileReferenceSuggestions(query: string) {

@@ -1,7 +1,6 @@
 export const storageKeys = {
   token: "fk_token",
   sessionID: "fk_session_id",
-  streamOffsets: "fk_stream_offsets",
   sidebarCollapsed: "fk_sidebar_collapsed",
 } as const;
 

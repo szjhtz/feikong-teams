@@ -62,7 +62,7 @@ func TestStreamSnapshotReturnsPageFromOffset(t *testing.T) {
 	}
 }
 
-func TestCompletedStreamSubscribeFromZeroReturnsDoneOnly(t *testing.T) {
+func TestCompletedStreamSubscribeFromZeroReplaysEventsBeforeDone(t *testing.T) {
 	rt := newTestRuntime(t)
 	gin.SetMode(gin.TestMode)
 
@@ -79,8 +79,10 @@ func TestCompletedStreamSubscribeFromZeroReturnsDoneOnly(t *testing.T) {
 		t.Fatalf("subscribe status = %d: %s", resp.Code, resp.Body.String())
 	}
 	body := resp.Body.String()
-	if !strings.Contains(body, "data: [DONE]") || strings.Contains(body, "event-0") {
-		t.Fatalf("completed zero-offset subscribe should only return done frame, got %q", body)
+	eventIndex := strings.Index(body, "event-0")
+	doneIndex := strings.Index(body, "data: [DONE]")
+	if eventIndex < 0 || doneIndex < 0 || eventIndex > doneIndex {
+		t.Fatalf("completed zero-offset subscribe should replay events before done, got %q", body)
 	}
 }
 

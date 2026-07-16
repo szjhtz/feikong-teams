@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingSurface } from "@/components/ui/loading-surface";
 import { loadSessions } from "@/features/sessions/sessionThunks";
+import { TaskStreamController } from "@/features/chat/TaskStreamController";
 import { authExpiredEvent, authRestoredEvent } from "@/lib/auth-session";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import type { AgentInfo, VersionInfo } from "@/types/api";
@@ -121,7 +122,12 @@ function Workspace() {
     }
   })();
 
-  return <Suspense fallback={<PanelLoading />}>{panel}</Suspense>;
+  return (
+    <>
+      <TaskStreamController />
+      <Suspense fallback={<PanelLoading />}>{panel}</Suspense>
+    </>
+  );
 }
 
 function RouteLoading() {

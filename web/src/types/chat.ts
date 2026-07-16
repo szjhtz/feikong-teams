@@ -51,6 +51,7 @@ export interface ChatAttachmentDraft {
 export interface ChatState {
   activeSessionID: string;
   runningSessionID: string;
+  streamInitialOffset?: number;
   currentAgent: string;
   mode: string;
   messages: ChatViewMessage[];

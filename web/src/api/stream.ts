@@ -99,7 +99,7 @@ export async function subscribeStream(
   offset: number,
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
-) {
+): Promise<"done" | "eof"> {
   const headers = new Headers();
   const token = authToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -129,7 +129,7 @@ export async function subscribeStream(
       if (dataLines.length === 0) continue;
       const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
       if (!raw) continue;
-      if (raw === "[DONE]") return;
+      if (raw === "[DONE]") return "done";
       const event = JSON.parse(raw) as ChatEvent;
       if (idLine && event.stream_event_id === undefined) {
         const id = Number(idLine.replace(/^id:\s*/, ""));
@@ -138,4 +138,5 @@ export async function subscribeStream(
       onEvent(event);
     }
   }
+  return "eof";
 }

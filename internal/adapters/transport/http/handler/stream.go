@@ -501,11 +501,6 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 			flusher.Flush()
 		}
 
-		if stream.IsDone() && offset == 0 {
-			writeDone()
-			return
-		}
-
 		for {
 			if !streamSubscriptionAuthorized(authToken) {
 				return

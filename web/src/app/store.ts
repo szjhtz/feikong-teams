@@ -43,11 +43,27 @@ const chatSlice = createSlice({
     },
     setProcessing(state, action: PayloadAction<boolean>) {
       state.isProcessing = action.payload;
-      if (!action.payload) state.runningSessionID = "";
+      if (!action.payload) {
+        state.runningSessionID = "";
+        state.streamInitialOffset = undefined;
+      }
     },
-    setRunningSession(state, action: PayloadAction<string>) {
-      state.runningSessionID = action.payload;
-      state.isProcessing = Boolean(action.payload);
+    activateRunningSession(state, action: PayloadAction<{ sessionID: string; initialOffset?: number }>) {
+      const { sessionID, initialOffset } = action.payload;
+      state.activeSessionID = sessionID;
+      state.runningSessionID = sessionID;
+      state.streamInitialOffset = initialOffset;
+      state.isProcessing = true;
+      localStorage.setItem(storageKeys.sessionID, sessionID);
+    },
+    consumeStreamInitialOffset(state) {
+      state.streamInitialOffset = undefined;
+    },
+    finishRunningSession(state, action: PayloadAction<string>) {
+      if (state.runningSessionID !== action.payload) return;
+      state.runningSessionID = "";
+      state.streamInitialOffset = undefined;
+      state.isProcessing = false;
     },
     clearMessages(state) {
       state.messages = [];
@@ -55,6 +71,7 @@ const chatSlice = createSlice({
       state.queue = [];
       state.isProcessing = false;
       state.runningSessionID = "";
+      state.streamInitialOffset = undefined;
       state.error = undefined;
       state.errorTitle = undefined;
       state.errorSuggestions = undefined;
@@ -80,9 +97,11 @@ const chatSlice = createSlice({
       state.queue = detail.queue || [];
       if (detail.active_task) {
         state.runningSessionID = detail.session_id;
+        state.streamInitialOffset = undefined;
         state.isProcessing = true;
       } else {
         state.runningSessionID = "";
+        state.streamInitialOffset = undefined;
         state.isProcessing = false;
       }
     },
@@ -126,6 +145,7 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
     if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && state.runningSessionID === event.session_id) {
       state.isProcessing = false;
       state.runningSessionID = "";
+      state.streamInitialOffset = undefined;
     }
     return;
   }
@@ -218,11 +238,13 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
     state.technicalError = event.technical_error || event.error || event.content || event.message;
     state.isProcessing = false;
     state.runningSessionID = "";
+    state.streamInitialOffset = undefined;
     state.statusText = undefined;
   }
   if (event.type === "cancelled" || event.type === "processing_end") {
     state.isProcessing = false;
     state.runningSessionID = "";
+    state.streamInitialOffset = undefined;
     state.statusText = String(event.message || event.content || "");
   }
   if (event.type === "cancelled") {
@@ -392,7 +414,25 @@ const sessionsSlice = createSlice({
   },
   reducers: {
     setSessions(state, action: PayloadAction<SessionSummary[]>) {
-      state.items = action.payload;
+      const activeSessions = new Map(
+        state.items.filter((session) => session.active_task).map((session) => [session.session_id, session]),
+      );
+      const received = new Set(action.payload.map((session) => session.session_id));
+      const missingActiveSessions = [...activeSessions.values()].filter((session) => !received.has(session.session_id));
+      state.items = [
+        ...missingActiveSessions,
+        ...action.payload.map((session) => {
+          const active = activeSessions.get(session.session_id);
+          if (!active) return session;
+          return {
+            ...session,
+            status: active.status || session.status,
+            active_task: true,
+            mod_time: active.mod_time || session.mod_time,
+            updated_at: active.updated_at || session.updated_at,
+          };
+        }),
+      ];
       state.loading = false;
     },
     upsertSession(state, action: PayloadAction<SessionSummary>) {
@@ -411,6 +451,17 @@ const sessionsSlice = createSlice({
         mod_time: next.mod_time || current.mod_time,
         updated_at: next.updated_at || current.updated_at,
       };
+    },
+    updateSessionRuntime(state, action: PayloadAction<{ sessionID: string; status?: string; activeTask: boolean; updatedAt?: string }>) {
+      const { sessionID, status, activeTask, updatedAt } = action.payload;
+      const session = state.items.find((item) => item.session_id === sessionID);
+      if (!session) return;
+      if (status) session.status = status;
+      session.active_task = activeTask;
+      if (updatedAt) {
+        session.mod_time = updatedAt;
+        session.updated_at = updatedAt;
+      }
     },
     setSessionsLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;
