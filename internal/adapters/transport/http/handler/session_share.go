@@ -95,6 +95,9 @@ func (s *SessionShareStore) Load() error {
 	loaded := make(map[string]*sessionShareEntry, len(entries))
 	now := time.Now()
 	for id, e := range entries {
+		if e == nil {
+			return fmt.Errorf("invalid session share entry: %s", id)
+		}
 		var expiresAt time.Time
 		if e.ExpiresAt > 0 {
 			expiresAt = time.Unix(e.ExpiresAt, 0)
@@ -106,7 +109,7 @@ func (s *SessionShareStore) Load() error {
 		if e.LastAccessedAt > 0 {
 			lastAccessedAt = time.Unix(e.LastAccessedAt, 0)
 		}
-		loaded[id] = &sessionShareEntry{
+		entry := &sessionShareEntry{
 			SessionID:        e.SessionID,
 			Title:            e.Title,
 			PasswordHash:     e.PasswordHash,
@@ -116,6 +119,10 @@ func (s *SessionShareStore) Load() error {
 			CreatedAt:        time.Unix(e.CreatedAt, 0),
 			LastAccessedAt:   lastAccessedAt,
 		}
+		if err := validateSessionShareEntry(id, entry); err != nil {
+			return err
+		}
+		loaded[id] = entry
 	}
 	s.Lock()
 	s.m = loaded
@@ -131,13 +138,16 @@ func (s *SessionShareStore) LoadError() error {
 }
 
 func readSessionShareEntries(filePath string) (map[string]*sessionShareFileEntry, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := readPersistedShareStore(filePath)
 	if err != nil {
 		return nil, err
 	}
 	var entries map[string]*sessionShareFileEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
 		return nil, err
+	}
+	if len(entries) > maxPersistedShareEntries {
+		return nil, errShareStoreFull
 	}
 	return entries, nil
 }
@@ -178,6 +188,9 @@ func (s *SessionShareStore) saveLockedTo(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("marshal session shares: %w", err)
 	}
+	if err := validatePersistedShareStoreSize(data); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return fmt.Errorf("create share dir: %w", err)
 	}
@@ -190,7 +203,13 @@ func (s *SessionShareStore) saveLockedTo(filePath string) error {
 func (s *SessionShareStore) Put(id string, entry *sessionShareEntry) error {
 	s.Lock()
 	defer s.Unlock()
+	if err := validateSessionShareEntry(id, entry); err != nil {
+		return err
+	}
 	previous, existed := s.m[id]
+	if !existed && len(s.m) >= maxPersistedShareEntries {
+		return errShareStoreFull
+	}
 	s.m[id] = entry
 	if err := s.saveLockedTo(s.filePath); err != nil {
 		if existed {
@@ -247,11 +266,25 @@ func (s *SessionShareStore) Touch(id string, at time.Time) error {
 	if entry == nil {
 		return nil
 	}
+	const persistInterval = 5 * time.Minute
+	if !entry.LastAccessedAt.IsZero() && at.Sub(entry.LastAccessedAt) < persistInterval {
+		return nil
+	}
 	previous := entry.LastAccessedAt
 	entry.LastAccessedAt = at
 	if err := s.saveLockedTo(s.filePath); err != nil {
 		entry.LastAccessedAt = previous
 		return err
+	}
+	return nil
+}
+
+func validateSessionShareEntry(id string, entry *sessionShareEntry) error {
+	if id == "" || entry == nil || !validateSessionID(entry.SessionID) {
+		return fmt.Errorf("invalid session share entry")
+	}
+	if entry.MessageCount < 0 {
+		return fmt.Errorf("invalid session share message count")
 	}
 	return nil
 }

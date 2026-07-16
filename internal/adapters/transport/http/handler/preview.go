@@ -88,6 +88,9 @@ func (s *PreviewLinkStore) Load() error {
 	loaded := make(map[string]*previewLinkEntry, len(entries))
 	now := time.Now()
 	for id, e := range entries {
+		if e == nil {
+			return fmt.Errorf("invalid preview link entry: %s", id)
+		}
 		var expiresAt time.Time
 		if e.ExpiresAt > 0 {
 			expiresAt = time.Unix(e.ExpiresAt, 0)
@@ -95,13 +98,17 @@ func (s *PreviewLinkStore) Load() error {
 				continue // 跳过已过期
 			}
 		}
-		loaded[id] = newPreviewLinkEntry(
+		entry := newPreviewLinkEntry(
 			e.FilePaths,
 			e.ResourcePaths,
 			e.PasswordHash,
 			expiresAt,
 			time.Unix(e.CreatedAt, 0),
 		)
+		if err := validatePreviewLinkEntry(id, entry); err != nil {
+			return err
+		}
+		loaded[id] = entry
 	}
 	s.Lock()
 	s.m = loaded
@@ -117,13 +124,16 @@ func (s *PreviewLinkStore) LoadError() error {
 }
 
 func readShareEntries(filePath string) (map[string]*shareFileEntry, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := readPersistedShareStore(filePath)
 	if err != nil {
 		return nil, err
 	}
 	var entries map[string]*shareFileEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
 		return nil, err
+	}
+	if len(entries) > maxPersistedShareEntries {
+		return nil, errShareStoreFull
 	}
 	return entries, nil
 }
@@ -161,6 +171,9 @@ func (s *PreviewLinkStore) saveLockedTo(filePath string) error {
 	if err != nil {
 		return err
 	}
+	if err := validatePersistedShareStoreSize(data); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
@@ -170,7 +183,13 @@ func (s *PreviewLinkStore) saveLockedTo(filePath string) error {
 func (s *PreviewLinkStore) Put(id string, entry *previewLinkEntry) error {
 	s.Lock()
 	defer s.Unlock()
+	if err := validatePreviewLinkEntry(id, entry); err != nil {
+		return err
+	}
 	previous, existed := s.m[id]
+	if !existed && len(s.m) >= maxPersistedShareEntries {
+		return errShareStoreFull
+	}
 	s.m[id] = entry
 	if err := s.saveLockedTo(s.filePath); err != nil {
 		if existed {
@@ -244,6 +263,24 @@ func newPreviewLinkEntry(filePaths, resourcePaths []string, passwordHash string,
 	}
 	entry.indexResources()
 	return entry
+}
+
+func validatePreviewLinkEntry(id string, entry *previewLinkEntry) error {
+	if id == "" || entry == nil {
+		return fmt.Errorf("invalid preview link entry")
+	}
+	if len(entry.FilePaths) == 0 || len(entry.FilePaths) > maxPreviewResourceFiles {
+		return fmt.Errorf("invalid preview link file paths")
+	}
+	if len(entry.ResourcePaths) > maxPreviewResourceFiles {
+		return fmt.Errorf("invalid preview link resource paths")
+	}
+	for _, path := range entry.FilePaths {
+		if path == "" {
+			return fmt.Errorf("invalid preview link file path")
+		}
+	}
+	return nil
 }
 
 func (e *previewLinkEntry) indexResources() {
