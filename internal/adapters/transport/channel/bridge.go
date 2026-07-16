@@ -208,20 +208,32 @@ func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg
 		b.queues[sessionID] = q
 		go b.sessionWorker(sessionID, q)
 	}
+	pos, accepted := enqueueSessionMessage(q, qm)
 	b.queueMu.Unlock()
 
-	select {
-	case q.ch <- qm:
-		pos := int(q.pending.Add(1))
+	if accepted {
 		// 队列中有其他消息排队时通知用户位置和批次
 		if pos > 1 {
 			batchNum := (pos-1)/maxBatchSize + 1
 			notice := fmt.Sprintf("消息已加入队列（第 %d 位），预计在第 %d 批执行，前面还有 %d 条消息在处理中", pos, batchNum, pos-1)
 			_ = b.manager.SendText(ctx, channelName, chatID, notice)
 		}
+		return
+	}
+	log.Printf("[bridge] session queue full, dropping message: session=%s", sessionID)
+	_ = b.manager.SendText(ctx, channelName, chatID, "消息队列已满，请稍后再试")
+}
+
+// enqueueSessionMessage 必须在持有 Bridge.queueMu 时调用，保证空闲 worker
+// 不能在取出队列和发布消息之间删除该队列。
+func enqueueSessionMessage(q *sessionQueue, msg queuedMessage) (int, bool) {
+	pos := int(q.pending.Add(1))
+	select {
+	case q.ch <- msg:
+		return pos, true
 	default:
-		log.Printf("[bridge] session queue full, dropping message: session=%s", sessionID)
-		_ = b.manager.SendText(ctx, channelName, chatID, "消息队列已满，请稍后再试")
+		q.pending.Add(-1)
+		return 0, false
 	}
 }
 

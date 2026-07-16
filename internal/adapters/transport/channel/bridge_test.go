@@ -9,6 +9,33 @@ import (
 	"fkteams/internal/runtime/events"
 )
 
+func TestEnqueueSessionMessagePublishesAndCountsPending(t *testing.T) {
+	q := &sessionQueue{ch: make(chan queuedMessage, 1)}
+	pos, ok := enqueueSessionMessage(q, queuedMessage{userInput: "hello"})
+	if !ok || pos != 1 {
+		t.Fatalf("enqueue result = (%d, %v), want (1, true)", pos, ok)
+	}
+	if pending := q.pending.Load(); pending != 1 {
+		t.Fatalf("pending after enqueue = %d, want 1", pending)
+	}
+	if received := <-q.ch; received.userInput != "hello" {
+		t.Fatalf("received message = %#v", received)
+	}
+}
+
+func TestEnqueueSessionMessageRollsBackPendingWhenFull(t *testing.T) {
+	q := &sessionQueue{ch: make(chan queuedMessage, 1)}
+	if _, ok := enqueueSessionMessage(q, queuedMessage{userInput: "first"}); !ok {
+		t.Fatal("first enqueue should succeed")
+	}
+	if pos, ok := enqueueSessionMessage(q, queuedMessage{userInput: "second"}); ok || pos != 0 {
+		t.Fatalf("full enqueue result = (%d, %v), want (0, false)", pos, ok)
+	}
+	if pending := q.pending.Load(); pending != 1 {
+		t.Fatalf("pending after rejected enqueue = %d, want 1", pending)
+	}
+}
+
 func TestBuildUserInputCombinesContentAndAttachments(t *testing.T) {
 	msg := Message{
 		Content: "请看附件",
