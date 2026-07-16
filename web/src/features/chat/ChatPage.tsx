@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, CalendarClock, FolderOpen, ListTree, Settings, Share2, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
-import { appActions, chatActions, type AppPanel } from "@/app/store";
+import { appActions, chatActions, sessionsActions, type AppPanel } from "@/app/store";
 import { LoadingSurface } from "@/components/ui/loading-surface";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
 import { cn } from "@/lib/cn";
@@ -14,7 +14,9 @@ export function ChatPage() {
   const dispatch = useAppDispatch();
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const viewSessionID = useAppSelector((state) => state.chat.viewSessionID);
-  const isProcessing = useAppSelector((state) => state.chat.isProcessing);
+  const isProcessing = useAppSelector((state) => Boolean(
+    state.chat.activeSessionID && state.chat.runningTasks[state.chat.activeSessionID],
+  ));
   const messages = useAppSelector((state) => state.chat.messages);
   const events = useAppSelector((state) => state.chat.events);
   const queue = useAppSelector((state) => state.chat.queue);
@@ -45,6 +47,11 @@ export function ChatPage() {
       .then((detail) => {
         if (cancelled) return;
         dispatch(chatActions.setSessionDetail(detail));
+        dispatch(sessionsActions.updateSessionRuntime({
+          sessionID: detail.session_id,
+          status: detail.status,
+          activeTask: Boolean(detail.active_task),
+        }));
       })
       .catch((loadError) => {
         if (cancelled) return;
@@ -55,10 +62,6 @@ export function ChatPage() {
       cancelled = true;
     };
   }, [activeSessionID, viewSessionID, dispatch]);
-
-  useEffect(() => {
-    dispatch(chatActions.setConnectionState("connected"));
-  }, [dispatch]);
 
   useEffect(() => {
     if (!isLoadingSession) {

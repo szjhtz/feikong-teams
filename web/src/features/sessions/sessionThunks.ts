@@ -1,6 +1,6 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import { listSessions, getSession } from "@/api/sessions";
-import { sessionsActions } from "@/app/store";
+import { chatActions, sessionsActions } from "@/app/store";
 
 let sessionsRequest: ReturnType<typeof listSessions> | undefined;
 const sessionDetailRequests = new Map<string, ReturnType<typeof getSession>>();
@@ -8,11 +8,16 @@ const sessionDetailRequests = new Map<string, ReturnType<typeof getSession>>();
 export const loadSessions = createAsyncThunk(
   "sessions/load",
   async (_, { dispatch }) => {
+    const requestStartedAt = Date.now();
     dispatch(sessionsActions.setSessionsLoading(true));
     sessionsRequest = listSessions();
     try {
       const result = await sessionsRequest;
       dispatch(sessionsActions.setSessions(result.sessions || []));
+      dispatch(chatActions.syncRunningSessions({
+        sessionIDs: (result.sessions || []).filter((session) => session.active_task).map((session) => session.session_id),
+        requestStartedAt,
+      }));
     } catch (error) {
       dispatch(sessionsActions.setSessionsLoading(false));
       throw error;

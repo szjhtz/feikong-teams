@@ -11,6 +11,7 @@ const streamReconnectMaxDelayMs = 5000;
 
 interface ActiveSubscription {
   sessionID: string;
+  mode: "foreground" | "background";
   controller: AbortController;
 }
 
@@ -18,49 +19,62 @@ export function TaskStreamController() {
   const dispatch = useAppDispatch();
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const viewSessionID = useAppSelector((state) => state.chat.viewSessionID);
-  const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
-  const initialOffset = useAppSelector((state) => state.chat.streamInitialOffset);
-  const isProcessing = useAppSelector((state) => state.chat.isProcessing);
+  const runningTasks = useAppSelector((state) => state.chat.runningTasks);
   const authExpired = useAppSelector((state) => state.app.authExpired);
-  const consumableSessionRef = useRef("");
-  const subscriptionRef = useRef<ActiveSubscription | undefined>(undefined);
-
-  const consumableSessionID = activeSessionID === runningSessionID && viewSessionID === runningSessionID
-    ? runningSessionID
-    : "";
-  consumableSessionRef.current = consumableSessionID;
+  const activeSessionRef = useRef(activeSessionID);
+  const viewSessionRef = useRef(viewSessionID);
+  const subscriptionsRef = useRef(new Map<string, ActiveSubscription>());
+  activeSessionRef.current = activeSessionID;
+  viewSessionRef.current = viewSessionID;
+  const taskKey = Object.entries(runningTasks)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([sessionID, task]) => `${sessionID}:${task.phase}:${task.initialOffset ?? ""}`)
+    .join("|");
 
   useEffect(() => {
-    const current = subscriptionRef.current;
-    if (authExpired || !consumableSessionID || !isProcessing) {
-      if (current) {
-        current.controller.abort();
-        subscriptionRef.current = undefined;
+    const subscriptions = subscriptionsRef.current;
+    const desired = new Map<string, "foreground" | "background">();
+    if (!authExpired) {
+      for (const [sessionID, task] of Object.entries(runningTasks)) {
+        if (task.phase !== "processing") continue;
+        desired.set(
+          sessionID,
+          sessionID === activeSessionID && sessionID === viewSessionID ? "foreground" : "background",
+        );
       }
-      dispatch(chatActions.setConnectionState(authExpired ? "disconnected" : "connected"));
-      return;
     }
-    if (current?.sessionID === consumableSessionID) return;
-    current?.controller.abort();
 
-    const controller = new AbortController();
-    const subscription = { sessionID: consumableSessionID, controller };
-    subscriptionRef.current = subscription;
-    dispatch(chatActions.consumeStreamInitialOffset());
-    void followTaskStream(
-      consumableSessionID,
-      initialOffset,
-      controller.signal,
-      dispatch,
-      () => consumableSessionRef.current === consumableSessionID,
-    ).finally(() => {
-      if (subscriptionRef.current === subscription) subscriptionRef.current = undefined;
-    });
-  }, [authExpired, consumableSessionID, dispatch, isProcessing]);
+    for (const [sessionID, subscription] of subscriptions) {
+      if (desired.get(sessionID) === subscription.mode) continue;
+      subscription.controller.abort();
+      subscriptions.delete(sessionID);
+    }
+
+    for (const [sessionID, mode] of desired) {
+      if (subscriptions.has(sessionID)) continue;
+      const controller = new AbortController();
+      const subscription: ActiveSubscription = { sessionID, mode, controller };
+      subscriptions.set(sessionID, subscription);
+      const task = runningTasks[sessionID];
+      const work = mode === "foreground"
+        ? followTaskStream(
+          sessionID,
+          task.initialOffset,
+          controller.signal,
+          dispatch,
+          () => activeSessionRef.current === sessionID && viewSessionRef.current === sessionID,
+        )
+        : monitorTaskStream(sessionID, controller.signal, dispatch);
+      if (mode === "foreground") dispatch(chatActions.consumeStreamInitialOffset(sessionID));
+      void work.finally(() => {
+        if (subscriptions.get(sessionID) === subscription) subscriptions.delete(sessionID);
+      });
+    }
+  }, [activeSessionID, authExpired, dispatch, taskKey, viewSessionID]);
 
   useEffect(() => () => {
-    subscriptionRef.current?.controller.abort();
-    subscriptionRef.current = undefined;
+    for (const subscription of subscriptionsRef.current.values()) subscription.controller.abort();
+    subscriptionsRef.current.clear();
   }, []);
 
   return null;
@@ -80,7 +94,8 @@ async function followTaskStream(
     try {
       const offset = await resolveSubscribeOffset(sessionID, fallbackOffset, dispatch, canConsume);
       if (offset === undefined || signal.aborted) return;
-      dispatch(chatActions.setConnectionState("connecting"));
+      dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
+      let terminal = false;
       const result = await subscribeStream(sessionID, offset, (events) => {
         if (!canConsume()) return;
         retryCount = 0;
@@ -90,13 +105,43 @@ async function followTaskStream(
             writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
           }
         }
-        dispatch(chatActions.setConnectionState("connected"));
-        applyStreamEvents(sessionID, events, dispatch);
+        dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
+        terminal = applyStreamEvents(sessionID, events, dispatch) || terminal;
       }, signal);
       if (result === "done") {
-        dispatch(chatActions.setConnectionState("connected"));
+        dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
+        if (terminal) return;
+      }
+    } catch (error) {
+      if (signal.aborted || isAbortError(error) || isAuthenticationError(error)) return;
+    }
+
+    if (!await shouldReconnect(sessionID, dispatch)) return;
+    retryCount += 1;
+    await sleep(streamReconnectDelay(retryCount), signal);
+  }
+}
+
+async function monitorTaskStream(sessionID: string, signal: AbortSignal, dispatch: AppDispatch) {
+  let retryCount = 0;
+  for (;;) {
+    if (signal.aborted) return;
+    try {
+      dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
+      const status = await streamStatus(sessionID);
+      if (status.status !== "processing" || status.has_task === false) {
+        finishFromStatus(sessionID, status.status, status.finished_at || status.updated_at, dispatch);
         return;
       }
+      dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
+      let terminal = false;
+      await subscribeStream(sessionID, Number(status.event_count || 0), (events) => {
+        const event = [...events].reverse().find((item) => terminalEventStatus(item));
+        if (!event) return;
+        terminal = true;
+        markSessionFinished(sessionID, terminalEventStatus(event) || "completed", event.created_at, dispatch);
+      }, signal);
+      if (terminal || signal.aborted) return;
     } catch (error) {
       if (signal.aborted || isAbortError(error) || isAuthenticationError(error)) return;
     }
@@ -163,22 +208,23 @@ function applyStreamSnapshot(
 }
 
 function applyStreamEvents(sessionID: string, events: ChatEvent[], dispatch: AppDispatch) {
-  if (events.length === 0) return;
+  if (events.length === 0) return false;
   dispatch(chatActions.receiveEvents(events));
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     const status = terminalEventStatus(event);
     if (!status) continue;
     markSessionFinished(sessionID, status, event.created_at, dispatch);
-    return;
+    return true;
   }
+  return false;
 }
 
 async function shouldReconnect(sessionID: string, dispatch: AppDispatch) {
-  dispatch(chatActions.setConnectionState("connecting"));
+  dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
   try {
     const status = await streamStatus(sessionID);
-    if (status.status === "processing") return true;
+    if (status.status === "processing" && status.has_task !== false) return true;
     if (isTerminalStreamStatus(status.status)) {
       markSessionFinished(sessionID, status.status, status.finished_at, dispatch);
     } else {
@@ -186,7 +232,7 @@ async function shouldReconnect(sessionID: string, dispatch: AppDispatch) {
       dispatch(chatActions.finishRunningSession(sessionID));
       dispatch(sessionsActions.updateSessionRuntime({ sessionID, status: status.status, activeTask: false }));
     }
-    dispatch(chatActions.setConnectionState("connected"));
+    dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
     return false;
   } catch (error) {
     if (isAuthenticationError(error)) return false;
@@ -194,11 +240,21 @@ async function shouldReconnect(sessionID: string, dispatch: AppDispatch) {
       clearStreamOffset(sessionID);
       dispatch(chatActions.finishRunningSession(sessionID));
       dispatch(sessionsActions.updateSessionRuntime({ sessionID, activeTask: false }));
-      dispatch(chatActions.setConnectionState("connected"));
+      dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
       return false;
     }
     return true;
   }
+}
+
+function finishFromStatus(sessionID: string, status: string, updatedAt: string | undefined, dispatch: AppDispatch) {
+  if (isTerminalStreamStatus(status)) {
+    markSessionFinished(sessionID, status, updatedAt, dispatch);
+    return;
+  }
+  clearStreamOffset(sessionID);
+  dispatch(chatActions.finishRunningSession(sessionID));
+  dispatch(sessionsActions.updateSessionRuntime({ sessionID, status, activeTask: false, updatedAt }));
 }
 
 function markSessionFinished(sessionID: string, status: string, updatedAt: string | undefined, dispatch: AppDispatch) {

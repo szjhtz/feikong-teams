@@ -103,14 +103,15 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
   const dispatch = useAppDispatch();
   const messages = useAppSelector((state) => state.chat.messages);
   const events = useAppSelector((state) => state.chat.events);
-  const isProcessing = useAppSelector((state) => state.chat.isProcessing);
+  const isProcessing = useAppSelector((state) => Boolean(
+    state.chat.activeSessionID && state.chat.runningTasks[state.chat.activeSessionID],
+  ));
   const statusText = useAppSelector((state) => state.chat.statusText);
   const error = useAppSelector((state) => state.chat.error);
   const errorTitle = useAppSelector((state) => state.chat.errorTitle);
   const errorSuggestions = useAppSelector((state) => state.chat.errorSuggestions);
   const technicalError = useAppSelector((state) => state.chat.technicalError);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
-  const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
   const agents = useAppSelector((state) => state.app.agents);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -120,7 +121,7 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [scrollDistanceFromBottom, setScrollDistanceFromBottom] = useState(0);
   const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
-  const canAnswerAsk = Boolean(isProcessing && activeSessionID && (!runningSessionID || runningSessionID === activeSessionID));
+  const canAnswerAsk = Boolean(isProcessing && activeSessionID);
   const canAnswerApproval = canAnswerAsk;
   const timeline = useMemo(
     () => buildTimelineModel(messages, displayEvents, submittedAskIDs, submittedApprovalIDs, isProcessing),

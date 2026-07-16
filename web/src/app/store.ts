@@ -15,15 +15,13 @@ export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "s
 const initialChatState: ChatState = {
   activeSessionID: chatSessionIDFromPath(location.pathname),
   viewSessionID: "",
-  runningSessionID: "",
+  runningTasks: {},
   currentAgent: "",
   mode: "team",
   messages: [],
   events: [],
   seenEventKeys: {},
   queue: [],
-  isProcessing: false,
-  connectionState: "disconnected",
 };
 
 const chatSlice = createSlice({
@@ -41,32 +39,53 @@ const chatSlice = createSlice({
     setCurrentAgent(state, action: PayloadAction<string>) {
       state.currentAgent = action.payload;
     },
-    setConnectionState(state, action: PayloadAction<ChatState["connectionState"]>) {
-      state.connectionState = action.payload;
+    setTaskConnectionState(state, action: PayloadAction<{ sessionID: string; connectionState: "disconnected" | "connecting" | "connected" }>) {
+      const task = state.runningTasks[action.payload.sessionID];
+      if (task) task.connectionState = action.payload.connectionState;
     },
-    setProcessing(state, action: PayloadAction<boolean>) {
-      state.isProcessing = action.payload;
-      if (!action.payload) {
-        state.runningSessionID = "";
-        state.streamInitialOffset = undefined;
-      }
-    },
-    activateRunningSession(state, action: PayloadAction<{ sessionID: string; initialOffset?: number }>) {
-      const { sessionID, initialOffset } = action.payload;
+    beginRunningSession(state, action: PayloadAction<{ sessionID: string; startedAt: number }>) {
+      const { sessionID, startedAt } = action.payload;
       state.activeSessionID = sessionID;
-      state.runningSessionID = sessionID;
-      state.streamInitialOffset = initialOffset;
-      state.isProcessing = true;
+      state.runningTasks[sessionID] = {
+        phase: "starting",
+        startedAt,
+        connectionState: "disconnected",
+      };
       localStorage.setItem(storageKeys.sessionID, sessionID);
     },
-    consumeStreamInitialOffset(state) {
-      state.streamInitialOffset = undefined;
+    activateRunningSession(state, action: PayloadAction<{ sessionID: string; initialOffset?: number; startedAt?: number }>) {
+      const { sessionID, initialOffset, startedAt } = action.payload;
+      const current = state.runningTasks[sessionID];
+      state.activeSessionID = sessionID;
+      state.runningTasks[sessionID] = {
+        phase: "processing",
+        initialOffset,
+        startedAt: current?.startedAt ?? startedAt ?? 0,
+        connectionState: current?.connectionState ?? "disconnected",
+      };
+      localStorage.setItem(storageKeys.sessionID, sessionID);
+    },
+    syncRunningSessions(state, action: PayloadAction<{ sessionIDs: string[]; requestStartedAt: number }>) {
+      const active = new Set(action.payload.sessionIDs);
+      for (const sessionID of action.payload.sessionIDs) {
+        if (state.runningTasks[sessionID]) continue;
+        state.runningTasks[sessionID] = {
+          phase: "processing",
+          startedAt: 0,
+          connectionState: "disconnected",
+        };
+      }
+      for (const [sessionID, task] of Object.entries(state.runningTasks)) {
+        if (active.has(sessionID) || task.phase === "starting" || task.startedAt > action.payload.requestStartedAt) continue;
+        delete state.runningTasks[sessionID];
+      }
+    },
+    consumeStreamInitialOffset(state, action: PayloadAction<string>) {
+      const task = state.runningTasks[action.payload];
+      if (task) task.initialOffset = undefined;
     },
     finishRunningSession(state, action: PayloadAction<string>) {
-      if (state.runningSessionID !== action.payload) return;
-      state.runningSessionID = "";
-      state.streamInitialOffset = undefined;
-      state.isProcessing = false;
+      delete state.runningTasks[action.payload];
     },
     clearMessages(state) {
       state.viewSessionID = "";
@@ -74,9 +93,6 @@ const chatSlice = createSlice({
       state.events = [];
       state.seenEventKeys = {};
       state.queue = [];
-      state.isProcessing = false;
-      state.runningSessionID = "";
-      state.streamInitialOffset = undefined;
       state.error = undefined;
       state.errorTitle = undefined;
       state.errorSuggestions = undefined;
@@ -103,13 +119,14 @@ const chatSlice = createSlice({
       }
       state.queue = detail.queue || [];
       if (detail.active_task) {
-        state.runningSessionID = detail.session_id;
-        state.streamInitialOffset = undefined;
-        state.isProcessing = true;
-      } else {
-        state.runningSessionID = "";
-        state.streamInitialOffset = undefined;
-        state.isProcessing = false;
+        const current = state.runningTasks[detail.session_id];
+        state.runningTasks[detail.session_id] = {
+          phase: "processing",
+          startedAt: current?.startedAt ?? 0,
+          connectionState: current?.connectionState ?? "disconnected",
+        };
+      } else if (state.runningTasks[detail.session_id]?.phase !== "starting") {
+        delete state.runningTasks[detail.session_id];
       }
     },
     appendUserMessage(state, action: PayloadAction<{ id: string; content: string; sessionID?: string; contentParts?: ContentPartDTO[]; createdAt?: string }>) {
@@ -155,12 +172,19 @@ const chatSlice = createSlice({
 
 function applyChatEvent(state: ChatState, payload: ChatEvent) {
   const event = { ...payload };
+  const eventSessionID = event.session_id || state.activeSessionID;
+  if (event.type === "processing_start" && eventSessionID) {
+    const current = state.runningTasks[eventSessionID];
+    state.runningTasks[eventSessionID] = {
+      phase: "processing",
+      startedAt: current?.startedAt ?? 0,
+      connectionState: current?.connectionState ?? "connected",
+    };
+  }
+  if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && eventSessionID) {
+    delete state.runningTasks[eventSessionID];
+  }
   if (event.session_id && state.activeSessionID && event.session_id !== state.activeSessionID) {
-    if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && state.runningSessionID === event.session_id) {
-      state.isProcessing = false;
-      state.runningSessionID = "";
-      state.streamInitialOffset = undefined;
-    }
     return;
   }
   const identity = stableChatEventIdentity(event);
@@ -171,8 +195,6 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
     state.queue = event.queue;
   }
   if (event.type === "processing_start") {
-    state.isProcessing = true;
-    if (event.session_id) state.runningSessionID = event.session_id;
     state.statusText = String(event.message || event.content || "处理中");
   }
   if (isModelResponseEvent(event)) {
@@ -250,15 +272,9 @@ function applyChatEvent(state: ChatState, payload: ChatEvent) {
     state.errorTitle = event.error_title;
     state.errorSuggestions = Array.isArray(event.error_suggestions) ? event.error_suggestions : undefined;
     state.technicalError = event.technical_error || event.error || event.content || event.message;
-    state.isProcessing = false;
-    state.runningSessionID = "";
-    state.streamInitialOffset = undefined;
     state.statusText = undefined;
   }
   if (event.type === "cancelled" || event.type === "processing_end") {
-    state.isProcessing = false;
-    state.runningSessionID = "";
-    state.streamInitialOffset = undefined;
     state.statusText = String(event.message || event.content || "");
   }
   if (event.type === "cancelled") {

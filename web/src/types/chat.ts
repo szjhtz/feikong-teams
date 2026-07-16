@@ -48,19 +48,23 @@ export interface ChatAttachmentDraft {
   error?: string;
 }
 
+export interface RunningChatTask {
+  phase: "starting" | "processing";
+  initialOffset?: number;
+  startedAt: number;
+  connectionState: "disconnected" | "connecting" | "connected";
+}
+
 export interface ChatState {
   activeSessionID: string;
   viewSessionID: string;
-  runningSessionID: string;
-  streamInitialOffset?: number;
+  runningTasks: Record<string, RunningChatTask>;
   currentAgent: string;
   mode: string;
   messages: ChatViewMessage[];
   events: ChatEvent[];
   seenEventKeys: Record<string, true>;
   queue: QueueItem[];
-  isProcessing: boolean;
-  connectionState: "disconnected" | "connecting" | "connected";
   error?: string;
   errorTitle?: string;
   errorSuggestions?: string[];

@@ -12,6 +12,7 @@ export function streamStatus(sessionID: string) {
     agent_name?: string;
     created_at?: string;
     finished_at?: string;
+    updated_at?: string;
   }>(`/api/fkteams/stream/status/${encodeURIComponent(sessionID)}`);
 }
 

@@ -24,10 +24,10 @@ export function ChatInput({
 }) {
   const dispatch = useAppDispatch();
   const sessionID = useAppSelector((state) => state.chat.activeSessionID);
-  const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
+  const runningTask = useAppSelector((state) => (sessionID ? state.chat.runningTasks[sessionID] : undefined));
   const mode = useAppSelector((state) => state.chat.mode);
   const currentAgent = useAppSelector((state) => state.chat.currentAgent);
-  const isProcessing = useAppSelector((state) => state.chat.isProcessing);
+  const isProcessing = Boolean(runningTask);
   const agents = useAppSelector((state) => state.app.agents);
   const [value, setValue] = useState("");
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
@@ -80,13 +80,14 @@ export function ChatInput({
     const displayText = message || attachmentSummary(readyAttachments);
     const newSession = !sessionID;
     const targetSessionID = sessionID || newSessionID();
-    const queueing = Boolean(isProcessing && runningSessionID === sessionID && sessionID);
+    const queueing = Boolean(runningTask?.phase === "processing" && sessionID);
+    const startedAt = Date.now();
     setValue("");
     clearAttachments();
     dispatch(chatActions.setError(undefined));
     if (!queueing) {
-      dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: displayText, sessionID: targetSessionID, contentParts: contents, createdAt: new Date().toISOString() }));
-      dispatch(chatActions.setProcessing(true));
+      dispatch(chatActions.appendUserMessage({ id: `user-${startedAt}`, content: displayText, sessionID: targetSessionID, contentParts: contents, createdAt: new Date(startedAt).toISOString() }));
+      dispatch(chatActions.beginRunningSession({ sessionID: targetSessionID, startedAt }));
     }
     try {
       if (queueing) {
@@ -114,7 +115,7 @@ export function ChatInput({
           status: "processing",
           activeTask: true,
         }));
-        dispatch(chatActions.activateRunningSession({ sessionID: result.session_id }));
+        dispatch(chatActions.activateRunningSession({ sessionID: result.session_id, startedAt }));
         return;
       }
       const now = new Date().toISOString();
@@ -136,16 +137,16 @@ export function ChatInput({
         }));
       }
       clearStreamOffset(result.session_id);
-      dispatch(chatActions.activateRunningSession({ sessionID: result.session_id, initialOffset: 0 }));
+      dispatch(chatActions.activateRunningSession({ sessionID: result.session_id, initialOffset: 0, startedAt }));
       if (newSession) pushAppPath(chatPath(result.session_id));
     } catch (error) {
       dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
-      if (!queueing) dispatch(chatActions.setProcessing(false));
+      if (!queueing) dispatch(chatActions.finishRunningSession(targetSessionID));
     }
   }
 
   async function stop() {
-    const id = runningSessionID === sessionID ? sessionID : "";
+    const id = runningTask?.phase === "processing" ? sessionID : "";
     if (!id) return;
     try {
       await stopStream(id);
