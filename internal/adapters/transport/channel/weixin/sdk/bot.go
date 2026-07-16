@@ -45,10 +45,12 @@ type Bot struct {
 	client        *protocol.Client
 	creds         *auth.Credentials
 	handlers      []MessageHandler
-	contextTokens sync.Map // userID -> context_token
+	contextTokens *contextTokenCache
 	cursor        string
-	stopped       bool
+	running       bool
+	runDone       chan struct{}
 	mu            sync.Mutex
+	loginMu       sync.Mutex
 	cancelPoll    context.CancelFunc
 }
 
@@ -62,20 +64,26 @@ func New(opts ...Options) *Bot {
 		o.BaseURL = protocol.DefaultBaseURL
 	}
 	return &Bot{
-		opts:   o,
-		client: protocol.NewClient(),
+		opts:          o,
+		client:        protocol.NewClient(),
+		contextTokens: newContextTokenCache(maxContextTokens, contextTokenTTL),
 	}
 }
 
 // Login 执行扫码登录，或加载已保存的凭证。
 func (b *Bot) Login(ctx context.Context, force bool) (*Credentials, error) {
+	b.loginMu.Lock()
+	defer b.loginMu.Unlock()
+	b.mu.Lock()
+	opts := b.opts
+	b.mu.Unlock()
 	creds, err := auth.Login(ctx, b.client, auth.LoginOptions{
-		BaseURL:   b.opts.BaseURL,
-		CredPath:  b.opts.CredPath,
+		BaseURL:   opts.BaseURL,
+		CredPath:  opts.CredPath,
 		Force:     force,
-		OnQRURL:   b.opts.OnQRURL,
-		OnScanned: b.opts.OnScanned,
-		OnExpired: b.opts.OnExpired,
+		OnQRURL:   opts.OnQRURL,
+		OnScanned: opts.OnScanned,
+		OnExpired: opts.OnExpired,
 	})
 	if err != nil {
 		return nil, err
@@ -99,32 +107,43 @@ func (b *Bot) Login(ctx context.Context, force bool) (*Credentials, error) {
 
 // OnMessage 注册消息处理器。
 func (b *Bot) OnMessage(handler MessageHandler) {
+	if handler == nil {
+		return
+	}
+	b.mu.Lock()
 	b.handlers = append(b.handlers, handler)
+	b.mu.Unlock()
 }
 
 // Reply 回复一条文本消息。
 func (b *Bot) Reply(ctx context.Context, msg *IncomingMessage, text string) error {
-	b.contextTokens.Store(msg.UserID, msg.ContextToken)
+	if msg == nil {
+		return fmt.Errorf("incoming message is required")
+	}
+	b.contextTokens.Set(msg.UserID, msg.ContextToken)
 	return b.sendText(ctx, msg.UserID, text, msg.ContextToken)
 }
 
 // Send 向用户发送文本消息，需要已有 context_token。
 func (b *Bot) Send(ctx context.Context, userID, text string) error {
-	ct, ok := b.contextTokens.Load(userID)
+	ct, ok := b.contextTokens.Get(userID)
 	if !ok {
 		return fmt.Errorf("no context_token for user %s", userID)
 	}
-	return b.sendText(ctx, userID, text, ct.(string))
+	return b.sendText(ctx, userID, text, ct)
 }
 
 // SendTyping 显示输入中状态。
 func (b *Bot) SendTyping(ctx context.Context, userID string) error {
-	ct, ok := b.contextTokens.Load(userID)
+	ct, ok := b.contextTokens.Get(userID)
 	if !ok {
 		return fmt.Errorf("no context_token for user %s", userID)
 	}
 	creds := b.getCreds()
-	config, err := b.client.GetConfig(ctx, creds.BaseURL, creds.Token, userID, ct.(string))
+	if creds == nil {
+		return fmt.Errorf("not logged in; call Login() first")
+	}
+	config, err := b.client.GetConfig(ctx, creds.BaseURL, creds.Token, userID, ct)
 	if err != nil {
 		return err
 	}
@@ -136,12 +155,15 @@ func (b *Bot) SendTyping(ctx context.Context, userID string) error {
 
 // StopTyping 取消输入中状态。
 func (b *Bot) StopTyping(ctx context.Context, userID string) error {
-	ct, ok := b.contextTokens.Load(userID)
+	ct, ok := b.contextTokens.Get(userID)
 	if !ok {
 		return nil
 	}
 	creds := b.getCreds()
-	config, err := b.client.GetConfig(ctx, creds.BaseURL, creds.Token, userID, ct.(string))
+	if creds == nil {
+		return fmt.Errorf("not logged in; call Login() first")
+	}
+	config, err := b.client.GetConfig(ctx, creds.BaseURL, creds.Token, userID, ct)
 	if err != nil {
 		return err
 	}
@@ -177,17 +199,20 @@ func SendFile(data []byte, fileName string) SendContent {
 
 // ReplyContent 回复任意类型内容。
 func (b *Bot) ReplyContent(ctx context.Context, msg *IncomingMessage, content SendContent) error {
-	b.contextTokens.Store(msg.UserID, msg.ContextToken)
+	if msg == nil {
+		return fmt.Errorf("incoming message is required")
+	}
+	b.contextTokens.Set(msg.UserID, msg.ContextToken)
 	return b.sendContent(ctx, msg.UserID, msg.ContextToken, content)
 }
 
 // SendMedia 向用户发送任意类型内容。
 func (b *Bot) SendMedia(ctx context.Context, userID string, content SendContent) error {
-	ct, ok := b.contextTokens.Load(userID)
+	ct, ok := b.contextTokens.Get(userID)
 	if !ok {
 		return fmt.Errorf("no context_token for user %s", userID)
 	}
-	return b.sendContent(ctx, userID, ct.(string), content)
+	return b.sendContent(ctx, userID, ct, content)
 }
 
 // Download 下载消息中的媒体内容，优先级为图片、文件、视频、语音。
@@ -247,16 +272,36 @@ func (b *Bot) Upload(ctx context.Context, data []byte, userID string, mediaType 
 
 // Run 启动长轮询循环，直到 Stop 调用或 context 取消。
 func (b *Bot) Run(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	creds := b.getCreds()
 	if creds == nil {
 		return fmt.Errorf("not logged in; call Login() first")
 	}
 
 	b.mu.Lock()
-	b.stopped = false
+	if b.running {
+		b.mu.Unlock()
+		return fmt.Errorf("wechat bot is already running")
+	}
 	pollCtx, cancel := context.WithCancel(ctx)
 	b.cancelPoll = cancel
+	b.running = true
+	b.runDone = make(chan struct{})
+	done := b.runDone
 	b.mu.Unlock()
+	defer func() {
+		cancel()
+		b.mu.Lock()
+		b.running = false
+		b.cancelPoll = nil
+		if b.runDone == done {
+			close(done)
+			b.runDone = nil
+		}
+		b.mu.Unlock()
+	}()
 
 	b.log("info", "Long-poll loop started")
 	retryDelay := time.Second
@@ -281,11 +326,13 @@ func (b *Bot) Run(ctx context.Context) error {
 			if isAPI && apiErr.IsSessionExpired() {
 				b.log("warn", "Session expired — re-login required")
 				auth.ClearCredentials(b.opts.CredPath)
-				b.contextTokens = sync.Map{}
+				b.contextTokens.Reset()
 				b.cursor = ""
 				if _, loginErr := b.Login(pollCtx, true); loginErr != nil {
 					b.reportError(loginErr)
-					time.Sleep(retryDelay)
+					if !waitForRetry(pollCtx, retryDelay) {
+						return nil
+					}
 					continue
 				}
 				retryDelay = time.Second
@@ -293,7 +340,9 @@ func (b *Bot) Run(ctx context.Context) error {
 			}
 
 			b.reportError(err)
-			time.Sleep(retryDelay)
+			if !waitForRetry(pollCtx, retryDelay) {
+				return nil
+			}
 			retryDelay = min(retryDelay*2, 10*time.Second)
 			continue
 		}
@@ -313,7 +362,7 @@ func (b *Bot) Run(ctx context.Context) error {
 			if incoming == nil {
 				continue
 			}
-			for _, h := range b.handlers {
+			for _, h := range b.messageHandlers() {
 				h(incoming)
 			}
 		}
@@ -323,10 +372,29 @@ func (b *Bot) Run(ctx context.Context) error {
 // Stop 停止轮询循环。
 func (b *Bot) Stop() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.stopped = true
-	if b.cancelPoll != nil {
-		b.cancelPoll()
+	cancel := b.cancelPoll
+	b.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// Wait 等待轮询循环退出。
+func (b *Bot) Wait(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	b.mu.Lock()
+	done := b.runDone
+	b.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for wechat bot: %w", ctx.Err())
 	}
 }
 
@@ -395,7 +463,9 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 			return b.sendContent(ctx, userID, contextToken, SendContent{Video: content.File, Caption: content.Caption})
 		}
 		if content.Caption != "" {
-			_ = b.sendText(ctx, userID, content.Caption, contextToken)
+			if err := b.sendText(ctx, userID, content.Caption, contextToken); err != nil {
+				return err
+			}
 		}
 		result, err := b.cdnUpload(ctx, creds, content.File, userID, int(MediaFile))
 		if err != nil {
@@ -570,6 +640,9 @@ func categorizeByExtension(filename string) string {
 
 func (b *Bot) sendText(ctx context.Context, userID, text, contextToken string) error {
 	creds := b.getCreds()
+	if creds == nil {
+		return fmt.Errorf("not logged in; call Login() first")
+	}
 	chunks := chunkText(text, 2000)
 	for _, chunk := range chunks {
 		msg := protocol.BuildTextMessage(userID, contextToken, chunk)
@@ -586,7 +659,7 @@ func (b *Bot) rememberContext(wire *WireMessage) {
 		userID = wire.ToUserID
 	}
 	if userID != "" && wire.ContextToken != "" {
-		b.contextTokens.Store(userID, wire.ContextToken)
+		b.contextTokens.Set(userID, wire.ContextToken)
 	}
 }
 
@@ -646,7 +719,28 @@ func (b *Bot) parseMessage(wire *WireMessage) *IncomingMessage {
 func (b *Bot) getCreds() *auth.Credentials {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.creds
+	if b.creds == nil {
+		return nil
+	}
+	creds := *b.creds
+	return &creds
+}
+
+func (b *Bot) messageHandlers() []MessageHandler {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]MessageHandler(nil), b.handlers...)
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (b *Bot) reportError(err error) {
