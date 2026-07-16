@@ -172,7 +172,7 @@ func TestApplicationRunStopsServicesOnStartError(t *testing.T) {
 		t.Fatalf("Run start error = %v", err)
 	}
 
-	want := []string{"start:one", "start:two", "stop:two", "stop:one"}
+	want := []string{"start:one", "start:two", "stop:one"}
 	if got := strings.Join(order, ","); got != strings.Join(want, ",") {
 		t.Fatalf("order = %#v, want %#v", order, want)
 	}
@@ -278,6 +278,11 @@ func TestStopServicesIgnoresStopErrors(t *testing.T) {
 	app.RegisterService(&fakeService{name: "one", order: &order, stopErr: errors.New("stop failed")})
 	app.RegisterService(&fakeService{name: "two", order: &order})
 
+	if err := app.startServices(context.Background()); err != nil {
+		t.Fatalf("startServices returned error: %v", err)
+	}
+	order = nil
+	app.stopServices(context.Background())
 	app.stopServices(context.Background())
 
 	want := []string{"stop:two", "stop:one"}

@@ -67,7 +67,9 @@ type Application struct {
 	state        *appstate.State      // 应用运行时状态
 	hooks        map[Phase][]HookFunc // 各阶段的钩子函数
 	services     []Service            // 注册的后台服务
+	started      []Service            // 本轮已成功启动的服务
 	mu           sync.Mutex           // 保护并发访问
+	running      bool                 // 是否正在执行生命周期
 	currentPhase Phase                // 当前生命周期阶段
 	exitCh       chan os.Signal       // 退出信号通道
 }
@@ -106,6 +108,9 @@ func (app *Application) CurrentPhase() Phase {
 
 // OnPhase 注册指定阶段的钩子函数
 func (app *Application) OnPhase(phase Phase, hook HookFunc) {
+	if hook == nil {
+		return
+	}
 	app.mu.Lock()
 	defer app.mu.Unlock()
 	app.hooks[phase] = append(app.hooks[phase], hook)
@@ -134,6 +139,9 @@ func (app *Application) OnCleanup(hook HookFunc) { app.OnPhase(PhaseCleanup, hoo
 
 // RegisterService 注册服务（Start 时按序启动，Stop 时逆序停止）
 func (app *Application) RegisterService(svc Service) {
+	if svc == nil {
+		return
+	}
 	app.mu.Lock()
 	defer app.mu.Unlock()
 	app.services = append(app.services, svc)
@@ -146,30 +154,54 @@ func (app *Application) ExitCh() chan os.Signal {
 
 // Run 执行完整生命周期，阻塞直到收到退出信号或 context 取消
 func (app *Application) Run(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	app.mu.Lock()
+	if app.running {
+		app.mu.Unlock()
+		return fmt.Errorf("application lifecycle is already running")
+	}
+	app.running = true
+	app.started = nil
+	app.mu.Unlock()
+	defer func() {
+		app.mu.Lock()
+		app.running = false
+		app.mu.Unlock()
+	}()
+
 	appCtx, cancel := context.WithCancel(ctx)
 	appCtx = appstate.WithState(appCtx, app.state)
 	defer cancel()
 
 	if err := app.executePhase(appCtx, PhaseInit); err != nil {
+		cancel()
+		app.cleanupStartupFailure()
 		return fmt.Errorf("init failed: %w", err)
 	}
 
 	if err := app.executePhase(appCtx, PhaseSetup); err != nil {
+		cancel()
+		app.cleanupStartupFailure()
 		return fmt.Errorf("setup failed: %w", err)
 	}
 
 	// 启动所有注册的服务
 	if err := app.startServices(appCtx); err != nil {
-		app.stopServices(appCtx)
+		cancel()
+		app.cleanupStartupFailure()
 		return fmt.Errorf("start failed: %w", err)
 	}
 	if err := app.executePhase(appCtx, PhaseStart); err != nil {
-		app.stopServices(appCtx)
+		cancel()
+		app.cleanupStartupFailure()
 		return fmt.Errorf("start hooks failed: %w", err)
 	}
 
 	if err := app.executePhase(appCtx, PhaseReady); err != nil {
-		app.stopServices(appCtx)
+		cancel()
+		app.cleanupStartupFailure()
 		return fmt.Errorf("ready failed: %w", err)
 	}
 
@@ -192,6 +224,13 @@ func (app *Application) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (app *Application) cleanupStartupFailure() {
+	app.stopServices(context.Background())
+	if err := app.executePhase(context.Background(), PhaseCleanup); err != nil {
+		log.Printf("[lifecycle] cleanup after startup failure: %v", err)
+	}
 }
 
 // Shutdown 主动触发优雅退出
@@ -229,6 +268,9 @@ func (app *Application) startServices(ctx context.Context) error {
 		if err := svc.Start(ctx); err != nil {
 			return fmt.Errorf("service %s start failed: %w", svc.Name(), err)
 		}
+		app.mu.Lock()
+		app.started = append(app.started, svc)
+		app.mu.Unlock()
 		log.Printf("[lifecycle] service started: %s", svc.Name())
 	}
 	return nil
@@ -237,8 +279,9 @@ func (app *Application) startServices(ctx context.Context) error {
 // stopServices 按注册逆序停止所有服务（LIFO）
 func (app *Application) stopServices(ctx context.Context) {
 	app.mu.Lock()
-	services := make([]Service, len(app.services))
-	copy(services, app.services)
+	services := make([]Service, len(app.started))
+	copy(services, app.started)
+	app.started = nil
 	app.mu.Unlock()
 
 	for i := len(services) - 1; i >= 0; i-- {
