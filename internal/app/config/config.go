@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 )
+
+const maxConfigFileBytes = 8 << 20
 
 // ==================== 模型池 ====================
 
@@ -606,9 +609,17 @@ func defaultConfig() *Config {
 
 // Unmarshal 从 TOML 文件反序列化配置
 func Unmarshal(filePath string, v any) error {
-	data, err := os.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxConfigFileBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > maxConfigFileBytes {
+		return fmt.Errorf("config file is too large")
 	}
 	return toml.Unmarshal(data, v)
 }

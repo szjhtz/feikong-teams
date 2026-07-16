@@ -246,6 +246,12 @@ func TestLoadAndUnmarshal(t *testing.T) {
 	if err := Unmarshal(filepath.Join(appDir, "missing.toml"), &out); err == nil {
 		t.Fatal("Unmarshal missing file should return error")
 	}
+	if err := os.WriteFile(configPath, []byte("#"+strings.Repeat("x", maxConfigFileBytes)), 0644); err != nil {
+		t.Fatalf("write oversized config: %v", err)
+	}
+	if err := Unmarshal(configPath, &out); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("oversized config error = %v", err)
+	}
 }
 
 func TestGenerateExample(t *testing.T) {

@@ -7,12 +7,16 @@ import (
 	"fkteams/internal/runtime/atomicfile"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 )
 
-const defaultSessionRecorderCacheSize = 128
+const (
+	defaultSessionRecorderCacheSize = 128
+	maxSessionMetadataBytes         = 1 << 20
+)
 
 const metadataLockStripeCount = 64
 
@@ -43,6 +47,9 @@ func saveMetadataUnlocked(sessionDir string, meta *SessionMetadata) error {
 	if err != nil {
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
+	if len(data) > maxSessionMetadataBytes {
+		return fmt.Errorf("session metadata is too large")
+	}
 	return atomicfile.WriteFile(filepath.Join(sessionDir, "metadata.json"), data, 0644)
 }
 
@@ -55,9 +62,17 @@ func LoadMetadata(sessionDir string) (*SessionMetadata, error) {
 }
 
 func loadMetadataUnlocked(sessionDir string) (*SessionMetadata, error) {
-	data, err := os.ReadFile(filepath.Join(sessionDir, "metadata.json"))
+	file, err := os.Open(filepath.Join(sessionDir, "metadata.json"))
 	if err != nil {
 		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxSessionMetadataBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxSessionMetadataBytes {
+		return nil, fmt.Errorf("session metadata is too large")
 	}
 	var meta SessionMetadata
 	if err := json.Unmarshal(data, &meta); err != nil {

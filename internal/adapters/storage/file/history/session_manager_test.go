@@ -2,12 +2,25 @@ package eventlog
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"fkteams/internal/domain/apperror"
 	domainsession "fkteams/internal/domain/session"
 )
+
+func TestLoadMetadataRejectsOversizedFile(t *testing.T) {
+	sessionDir := t.TempDir()
+	data := make([]byte, maxSessionMetadataBytes+1)
+	if err := os.WriteFile(filepath.Join(sessionDir, "metadata.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadMetadata(sessionDir); err == nil {
+		t.Fatal("oversized metadata was accepted")
+	}
+}
 
 func TestSessionHistoryManagerEvictsLeastRecentlyUsedRecorder(t *testing.T) {
 	manager := NewSessionHistoryManagerWithCapacity(2)

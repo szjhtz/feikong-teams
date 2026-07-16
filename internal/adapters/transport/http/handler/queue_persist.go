@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fkteams/internal/runtime/log"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -21,7 +22,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const queueSnapshotFileName = "queue.json"
+const (
+	queueSnapshotFileName             = "queue.json"
+	maxPersistentQueueSnapshotBytes   = 8 << 20
+	maxPersistentQueueAttachmentBytes = 4 << 20
+	maxPersistentQueueRestoredBytes   = 4 << 20
+	maxPersistentQueueItems           = 100
+)
 
 type queueSnapshotFile struct {
 	Version   int                        `json:"version"`
@@ -54,6 +61,9 @@ func (rt *Runtime) savePersistentQueue(sessionID string, queue []taskstream.Queu
 		}
 		return nil
 	}
+	if len(queue) > maxPersistentQueueItems {
+		return fmt.Errorf("queue snapshot contains too many items")
+	}
 
 	items := make([]taskstream.QueuedMessage, len(queue))
 	copy(items, queue)
@@ -74,6 +84,9 @@ func (rt *Runtime) savePersistentQueue(sessionID string, queue []taskstream.Queu
 	if err != nil {
 		return fmt.Errorf("marshal queue snapshot: %w", err)
 	}
+	if len(data) > maxPersistentQueueSnapshotBytes {
+		return fmt.Errorf("queue snapshot is too large")
+	}
 	if err := os.MkdirAll(sessionDir, 0755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
 	}
@@ -88,23 +101,46 @@ func (rt *Runtime) loadPersistentQueue(sessionID string) ([]taskstream.QueuedMes
 		return nil, fmt.Errorf("invalid session ID")
 	}
 	sessionDir := rt.sessionDirPath(sessionID)
-	data, err := os.ReadFile(persistentQueuePath(sessionDir))
+	file, err := os.Open(persistentQueuePath(sessionDir))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read queue snapshot: %w", err)
 	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxPersistentQueueSnapshotBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read queue snapshot: %w", err)
+	}
+	if len(data) > maxPersistentQueueSnapshotBytes {
+		return nil, fmt.Errorf("queue snapshot is too large")
+	}
 	var snapshot queueSnapshotFile
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return nil, fmt.Errorf("decode queue snapshot: %w", err)
 	}
+	if snapshot.Version != 1 || snapshot.SessionID != sessionID {
+		return nil, fmt.Errorf("invalid queue snapshot metadata")
+	}
+	if len(snapshot.Items) > maxPersistentQueueItems {
+		return nil, fmt.Errorf("queue snapshot contains too many items")
+	}
 	items := make([]taskstream.QueuedMessage, 0, len(snapshot.Items))
+	restoredBytes := 0
 	for _, item := range snapshot.Items {
 		restored, err := restoreQueueAttachments(sessionDir, item)
 		if err != nil {
 			return nil, err
 		}
+		encoded, err := json.Marshal(restored)
+		if err != nil {
+			return nil, fmt.Errorf("measure restored queue item: %w", err)
+		}
+		if restoredBytes+len(encoded) > maxPersistentQueueRestoredBytes {
+			return nil, fmt.Errorf("restored queue is too large")
+		}
+		restoredBytes += len(encoded)
 		items = append(items, restored)
 	}
 	return items, nil
@@ -144,6 +180,9 @@ func externalizeQueueAttachments(sessionDir string, item taskstream.QueuedMessag
 		if err != nil {
 			return item, fmt.Errorf("decode queued image: %w", err)
 		}
+		if len(data) > maxPersistentQueueAttachmentBytes {
+			return item, fmt.Errorf("queued image is too large")
+		}
 		relPath := queueAttachmentRelPath(item.ID, i, part)
 		fullPath := filepath.Join(sessionDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -171,9 +210,20 @@ func restoreQueueAttachments(sessionDir string, item taskstream.QueuedMessage) (
 		if part.Type != domainmessage.ContentPartImageURL || part.Base64Data != "" || !isQueueAttachmentPath(part.URL) {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(sessionDir, filepath.Clean(part.URL)))
+		file, err := os.Open(filepath.Join(sessionDir, filepath.Clean(part.URL)))
 		if err != nil {
 			return item, fmt.Errorf("read queue attachment: %w", err)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, maxPersistentQueueAttachmentBytes+1))
+		closeErr := file.Close()
+		if readErr != nil {
+			return item, fmt.Errorf("read queue attachment: %w", readErr)
+		}
+		if closeErr != nil {
+			return item, fmt.Errorf("close queue attachment: %w", closeErr)
+		}
+		if len(data) > maxPersistentQueueAttachmentBytes {
+			return item, fmt.Errorf("queue attachment is too large")
 		}
 		part.Base64Data = base64.StdEncoding.EncodeToString(data)
 		parts[i] = part

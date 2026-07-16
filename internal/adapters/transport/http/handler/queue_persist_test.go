@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,5 +81,60 @@ func TestPersistentQueueCleanupRemovesSnapshotAndAttachments(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(sessionDir, "attachments", "queue")); !os.IsNotExist(err) {
 		t.Fatalf("queue attachments should be removed, err=%v", err)
+	}
+}
+
+func TestPersistentQueueRejectsOversizedState(t *testing.T) {
+	rt := NewRuntime(RuntimeOptions{HistoryDir: t.TempDir()})
+	sessionID := "session-1"
+	sessionDir := rt.sessionDirPath(sessionID)
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(persistentQueuePath(sessionDir), make([]byte, maxPersistentQueueSnapshotBytes+1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.loadPersistentQueue(sessionID); err == nil {
+		t.Fatal("oversized queue snapshot was accepted")
+	}
+
+	items := make([]taskstream.QueuedMessage, maxPersistentQueueItems+1)
+	data, err := json.Marshal(queueSnapshotFile{Version: 1, SessionID: sessionID, Items: items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(persistentQueuePath(sessionDir), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.loadPersistentQueue(sessionID); err == nil {
+		t.Fatal("queue snapshot with too many items was accepted")
+	}
+
+	attachmentPath := filepath.Join(sessionDir, "attachments", "queue", "queue-1", "00-image.png")
+	if err := os.MkdirAll(filepath.Dir(attachmentPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(attachmentPath, make([]byte, maxPersistentQueueAttachmentBytes+1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	data, err = json.Marshal(queueSnapshotFile{
+		Version:   1,
+		SessionID: sessionID,
+		Items: []taskstream.QueuedMessage{{
+			ID: "queue-1",
+			Parts: []domainmessage.ContentPart{{
+				Type: domainmessage.ContentPartImageURL,
+				URL:  "attachments/queue/queue-1/00-image.png",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(persistentQueuePath(sessionDir), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.loadPersistentQueue(sessionID); err == nil {
+		t.Fatal("oversized queue attachment was accepted")
 	}
 }
