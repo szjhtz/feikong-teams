@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +10,9 @@ import (
 
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/domain/message"
+	domainsession "fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/atomicfile"
 )
 
 // RunnerCreator 为每次后台任务创建独立运行器。
@@ -49,6 +52,9 @@ func (e *BackgroundExecutor) taskResultPath(taskID string) string {
 
 // Execute 执行调度任务并写入当前结果和历史快照。
 func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task string) (string, error) {
+	if !domainsession.ValidID(taskID) || len(taskID) > 160 {
+		return "", fmt.Errorf("invalid task ID")
+	}
 	if e.contextHook != nil {
 		ctx = e.contextHook(ctx)
 	}
@@ -70,23 +76,27 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 	}
 
 	_, err = e.chat.RunTurn(ctx, appchat.TurnRequest{
-		SessionID: "fkteams_scheduler",
+		SessionID: "fkteams_scheduler_" + taskID,
 		Runner:    r,
 		Input:     input,
 		EventSink: callback,
 	})
 	if err != nil {
 		errMsg := fmt.Sprintf("execution error: %v", err)
-		e.writeResult(taskID, task, errMsg)
+		if writeErr := e.writeResult(taskID, task, errMsg); writeErr != nil {
+			return "", errors.Join(err, writeErr)
+		}
 		return "", err
 	}
 
 	output := getResult()
-	e.writeResult(taskID, task, output)
+	if err := e.writeResult(taskID, task, output); err != nil {
+		return "", err
+	}
 	return output, nil
 }
 
-func (e *BackgroundExecutor) writeResult(taskID string, task string, result string) {
+func (e *BackgroundExecutor) writeResult(taskID string, task string, result string) error {
 	now := time.Now()
 	ts := now.Format("20060102_150405")
 
@@ -97,9 +107,16 @@ func (e *BackgroundExecutor) writeResult(taskID string, task string, result stri
 		result,
 	)
 
-	_ = os.WriteFile(e.taskResultPath(taskID), []byte(content), 0644)
+	if err := atomicfile.WriteFile(e.taskResultPath(taskID), []byte(content), 0644); err != nil {
+		return fmt.Errorf("write task result: %w", err)
+	}
 
 	historyDir := filepath.Join(e.taskDir(taskID), "history")
-	_ = os.MkdirAll(historyDir, 0755)
-	_ = os.WriteFile(filepath.Join(historyDir, ts+".md"), []byte(content), 0644)
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		return fmt.Errorf("create task history dir: %w", err)
+	}
+	if err := atomicfile.WriteFile(filepath.Join(historyDir, ts+".md"), []byte(content), 0644); err != nil {
+		return fmt.Errorf("write task history: %w", err)
+	}
+	return nil
 }

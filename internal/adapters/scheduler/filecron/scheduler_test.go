@@ -168,7 +168,10 @@ func TestResultAndHistoryReaders(t *testing.T) {
 		t.Fatalf("entries = %#v", entries)
 	}
 
-	content, err := s.ReadHistoryFile(context.Background(), taskID, "../20260430_150405.md")
+	if _, err := s.ReadHistoryFile(context.Background(), taskID, "../20260430_150405.md"); err == nil {
+		t.Fatal("ReadHistoryFile should reject a non-base filename")
+	}
+	content, err := s.ReadHistoryFile(context.Background(), taskID, "20260430_150405.md")
 	if err != nil {
 		t.Fatalf("ReadHistoryFile: %v", err)
 	}

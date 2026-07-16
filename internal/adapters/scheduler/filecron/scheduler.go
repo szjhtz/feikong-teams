@@ -25,7 +25,11 @@ type Scheduler struct {
 	filePath    string
 	resultsDir  string
 	mu          sync.RWMutex
+	lifecycleMu sync.Mutex
 	stopCh      chan struct{}
+	runCtx      context.Context
+	runCancel   context.CancelFunc
+	wg          sync.WaitGroup
 	executor    schedulerport.TaskExecutor
 	running     bool
 	cronParser  cron.Parser
@@ -83,6 +87,11 @@ func generateTaskID() string {
 	return uuid.New().String()
 }
 
+func validTaskID(taskID string) bool {
+	return taskID != "" && taskID != "." && taskID != ".." && len(taskID) <= 200 &&
+		filepath.Base(taskID) == taskID && !strings.Contains(taskID, `\`)
+}
+
 // taskDir 返回任务的结果存储目录
 func (s *Scheduler) taskDir(taskID string) string {
 	return filepath.Join(s.resultsDir, taskID)
@@ -138,8 +147,8 @@ func (s *Scheduler) AddTask(ctx context.Context, req schedulerport.AddTaskReques
 
 // UpdateTask 更新非运行中的调度任务，并重新计算下次执行时间。
 func (s *Scheduler) UpdateTask(ctx context.Context, taskID string, req schedulerport.AddTaskRequest) (*domainschedule.Task, error) {
-	if taskID == "" {
-		return nil, apperror.New(apperror.CodeInvalidArgument, "task ID is required")
+	if !validTaskID(taskID) {
+		return nil, apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
 
 	s.mu.Lock()
@@ -232,8 +241,8 @@ func (s *Scheduler) ListTasks(ctx context.Context, statusFilter domainschedule.S
 
 // CancelTask 取消尚未执行的任务。
 func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
-	if taskID == "" {
-		return apperror.New(apperror.CodeInvalidArgument, "task ID is required")
+	if !validTaskID(taskID) {
+		return apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
 
 	s.mu.Lock()
@@ -262,8 +271,8 @@ func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
 
 // DeleteTask 删除非运行中的任务及其结果。
 func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
-	if taskID == "" {
-		return apperror.New(apperror.CodeInvalidArgument, "task ID is required")
+	if !validTaskID(taskID) {
+		return apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
 
 	s.mu.Lock()
@@ -309,16 +318,32 @@ func (s *Scheduler) SetExecutor(executor schedulerport.TaskExecutor) {
 
 // Start 启动调度器后台轮询
 func (s *Scheduler) Start() {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
 		return
 	}
+	s.stopCh = make(chan struct{})
+	s.runCtx, s.runCancel = context.WithCancel(context.Background())
 	s.running = true
 	s.mu.Unlock()
 
 	s.recoverStaleRunningTasks()
-	go s.run()
+
+	s.mu.Lock()
+	if !s.running {
+		s.mu.Unlock()
+		return
+	}
+	s.wg.Add(1)
+	s.mu.Unlock()
+	go func() {
+		defer s.wg.Done()
+		s.run()
+	}()
 }
 
 // recoverStaleRunningTasks 将上次中断遗留的 running 状态任务恢复为 pending
@@ -350,11 +375,20 @@ func (s *Scheduler) recoverStaleRunningTasks() {
 
 // Stop 停止调度器
 func (s *Scheduler) Stop() {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var runCancel context.CancelFunc
 	if s.running {
 		close(s.stopCh)
 		s.running = false
+		runCancel = s.runCancel
+		s.runCancel = nil
+	}
+	s.mu.Unlock()
+	if runCancel != nil {
+		runCancel()
 	}
 
 	// 取消所有正在执行的任务
@@ -364,6 +398,10 @@ func (s *Scheduler) Stop() {
 		cancel()
 	}
 	s.cancelsMu.Unlock()
+	s.wg.Wait()
+	s.mu.Lock()
+	s.runCtx = nil
+	s.mu.Unlock()
 }
 
 func (s *Scheduler) run() {
@@ -443,11 +481,25 @@ func (s *Scheduler) checkAndExecute() {
 			continue
 		}
 
+		// 先占用并发名额，满载时保持 pending，等待下一轮检查。
+		select {
+		case s.semaphore <- struct{}{}:
+		default:
+			log.Printf("[scheduler] max concurrent reached (%d), task %s deferred", maxConcurrentTasks, task.ID)
+			continue
+		}
+
 		// 加写锁二次确认状态，防止重复执行
 		s.mu.Lock()
+		if !s.running {
+			s.mu.Unlock()
+			<-s.semaphore
+			return
+		}
 		currentTasks, loadErr := s.loadTasks()
 		if loadErr != nil {
 			s.mu.Unlock()
+			<-s.semaphore
 			log.Printf("[scheduler] re-check load failed: %v", loadErr)
 			continue
 		}
@@ -460,8 +512,9 @@ func (s *Scheduler) checkAndExecute() {
 			}
 		}
 
-		if currentTask == nil || currentTask.Status != domainschedule.StatusPending {
+		if currentTask == nil || currentTask.Status != domainschedule.StatusPending || time.Now().Before(currentTask.NextRunAt) {
 			s.mu.Unlock()
+			<-s.semaphore
 			continue
 		}
 
@@ -469,39 +522,29 @@ func (s *Scheduler) checkAndExecute() {
 		currentTask.LastRunAt = &now
 		if saveErr := s.saveTasks(currentTasks); saveErr != nil {
 			s.mu.Unlock()
+			<-s.semaphore
 			log.Printf("[scheduler] save task status failed: %v", saveErr)
 			continue
 		}
+		s.wg.Add(1)
 		s.mu.Unlock()
 
-		// 通过 semaphore 控制并发
-		select {
-		case s.semaphore <- struct{}{}:
-			go func(tID, tContent, tCron string, tOneTime bool, tExec schedulerport.TaskExecutor) {
-				defer func() { <-s.semaphore }()
-				s.executeTask(tID, tContent, tCron, tOneTime, tExec)
-			}(currentTask.ID, currentTask.Task, currentTask.CronExpr, currentTask.OneTime, executor)
-		default:
-			// 并发已满，回退状态到 pending
-			log.Printf("[scheduler] max concurrent reached (%d), task %s deferred", maxConcurrentTasks, currentTask.ID)
-			s.mu.Lock()
-			fallbackTasks, _ := s.loadTasks()
-			if fallbackTasks != nil {
-				for j := range fallbackTasks.Tasks {
-					if fallbackTasks.Tasks[j].ID == currentTask.ID {
-						fallbackTasks.Tasks[j].Status = domainschedule.StatusPending
-						_ = s.saveTasks(fallbackTasks)
-						break
-					}
-				}
-			}
-			s.mu.Unlock()
-		}
+		go func(tID, tContent, tCron string, tOneTime bool, tExec schedulerport.TaskExecutor) {
+			defer s.wg.Done()
+			defer func() { <-s.semaphore }()
+			s.executeTask(tID, tContent, tCron, tOneTime, tExec)
+		}(currentTask.ID, currentTask.Task, currentTask.CronExpr, currentTask.OneTime, executor)
 	}
 }
 
 func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr string, oneTime bool, executor schedulerport.TaskExecutor) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	s.mu.RLock()
+	parentCtx := s.runCtx
+	s.mu.RUnlock()
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Minute)
 	defer cancel()
 
 	s.cancelsMu.Lock()
@@ -531,7 +574,10 @@ func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr stri
 			now := time.Now()
 			tasks.Tasks[i].LastRunAt = &now
 
-			if err != nil {
+			if parentCtx.Err() != nil {
+				tasks.Tasks[i].Status = domainschedule.StatusPending
+				log.Printf("[scheduler] task interrupted by shutdown, returning to pending: %s", taskID)
+			} else if err != nil {
 				tasks.Tasks[i].Status = domainschedule.StatusFailed
 				log.Printf("[scheduler] task failed: %s, err=%v", taskID, err)
 			} else {
@@ -662,6 +708,9 @@ func (s *Scheduler) saveTasks(list *domainschedule.TaskList) error {
 
 // ReadTaskResult 读取任务执行结果。
 func (s *Scheduler) ReadTaskResult(ctx context.Context, taskID string) (string, error) {
+	if !validTaskID(taskID) {
+		return "", apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -686,8 +735,18 @@ func (s *Scheduler) ReadTaskResult(ctx context.Context, taskID string) (string, 
 
 // ListHistoryEntries 列出任务的历史结果文件。
 func (s *Scheduler) ListHistoryEntries(ctx context.Context, taskID string) ([]domainschedule.HistoryEntry, error) {
+	if !validTaskID(taskID) {
+		return nil, apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	task, err := s.loadTaskByID(taskID)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
+	}
+	if task == nil {
+		return nil, apperror.New(apperror.CodeNotFound, "task not found")
+	}
 
 	historyDir := filepath.Join(s.taskDir(taskID), "history")
 	entries, err := os.ReadDir(historyDir)
@@ -720,11 +779,20 @@ func (s *Scheduler) ListHistoryEntries(ctx context.Context, taskID string) ([]do
 
 // ReadHistoryFile 读取指定历史结果文件。
 func (s *Scheduler) ReadHistoryFile(ctx context.Context, taskID string, filename string) (string, error) {
+	if !validTaskID(taskID) {
+		return "", apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	task, err := s.loadTaskByID(taskID)
+	if err != nil {
+		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
+	}
+	if task == nil {
+		return "", apperror.New(apperror.CodeNotFound, "task not found")
+	}
 
-	filename = filepath.Base(filename)
-	if filepath.Ext(filename) != ".md" {
+	if filepath.Base(filename) != filename || strings.Contains(filename, `\`) || filepath.Ext(filename) != ".md" {
 		return "", apperror.New(apperror.CodeInvalidArgument, "invalid file type")
 	}
 
