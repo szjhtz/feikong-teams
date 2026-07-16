@@ -468,7 +468,6 @@ func (m *handlerFakeMemory) Count() int { return m.count }
 func (m *handlerFakeMemory) Clear()     { m.cleared = true }
 func (m *handlerFakeMemory) ResetLLM(memory.LLMClient) {
 }
-func (m *handlerFakeMemory) Wait() {
-}
+func (m *handlerFakeMemory) Wait(context.Context) error { return nil }
 
 var _ appstate.MemoryManager = (*handlerFakeMemory)(nil)

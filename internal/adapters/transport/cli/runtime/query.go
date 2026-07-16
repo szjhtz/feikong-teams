@@ -463,24 +463,24 @@ func (s *Session) SaveChatHistoryToHTML() (string, error) {
 }
 
 // FlushMemoryWithManager 退出前强制提取当前会话的剩余记忆。
-func (s *Session) FlushMemoryWithManager(manager appstate.MemoryManager) {
+func (s *Session) FlushMemoryWithManager(ctx context.Context, manager appstate.MemoryManager) {
 	if manager == nil {
 		return
 	}
 	recorder := s.recorder()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	appchat.FlushMemory(ctx, manager, eventlog.ConvertMemoryMessages(recorder), s.sessionID())
 }
 
 // SaveHistory 保存当前 CLI 实例的可恢复会话历史。
-func (s *Session) SaveHistory() bool {
+func (s *Session) SaveHistory(ctx context.Context) bool {
 	recorder := s.recorder()
 	if recorder.GetMessageCount() == 0 {
 		return false
 	}
 	store := eventlog.NewChatSessionStore(s.historyDir)
-	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), s.sessionID(), s.sessionTitle, recorder); err != nil {
+	if err := appchat.NewSessionLifecycle(store, store).SaveActive(ctx, s.sessionID(), s.sessionTitle, recorder); err != nil {
 		pterm.Error.Printfln("保存聊天历史失败: %v", err)
 		return false
 	}

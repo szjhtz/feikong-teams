@@ -41,7 +41,7 @@ type MemoryExtractor interface {
 // MemoryLifecycle 提供记忆服务生命周期能力。
 type MemoryLifecycle interface {
 	ResetLLM(llm memoryport.LLMClient)
-	Wait()
+	Wait(ctx context.Context) error
 }
 
 // State 保存单个应用实例的运行时依赖。

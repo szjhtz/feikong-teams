@@ -208,29 +208,42 @@ func (app *Application) Run(ctx context.Context) error {
 	// 阻塞等待退出信号
 	app.waitForExit(appCtx)
 	cancel()
-
-	if err := app.executePhase(context.Background(), PhasePreStop); err != nil {
-		log.Printf("[lifecycle] prestop error: %v", err)
-	}
-
-	// 逆序停止服务（LIFO）
-	app.stopServices(context.Background())
-	if err := app.executePhase(context.Background(), PhaseStop); err != nil {
-		log.Printf("[lifecycle] stop hooks error: %v", err)
-	}
-
-	if err := app.executePhase(context.Background(), PhaseCleanup); err != nil {
-		log.Printf("[lifecycle] cleanup error: %v", err)
-	}
+	app.shutdownStartedServices()
 
 	return nil
 }
 
 func (app *Application) cleanupStartupFailure() {
-	app.stopServices(context.Background())
-	if err := app.executePhase(context.Background(), PhaseCleanup); err != nil {
+	ctx, cancel := app.shutdownContext()
+	defer cancel()
+	app.stopServices(ctx)
+	if err := app.executePhaseBounded(ctx, PhaseCleanup); err != nil {
 		log.Printf("[lifecycle] cleanup after startup failure: %v", err)
 	}
+}
+
+func (app *Application) shutdownStartedServices() {
+	ctx, cancel := app.shutdownContext()
+	defer cancel()
+
+	if err := app.executePhaseBounded(ctx, PhasePreStop); err != nil {
+		log.Printf("[lifecycle] prestop error: %v", err)
+	}
+	app.stopServices(ctx)
+	if err := app.executePhaseBounded(ctx, PhaseStop); err != nil {
+		log.Printf("[lifecycle] stop hooks error: %v", err)
+	}
+	if err := app.executePhaseBounded(ctx, PhaseCleanup); err != nil {
+		log.Printf("[lifecycle] cleanup error: %v", err)
+	}
+}
+
+func (app *Application) shutdownContext() (context.Context, context.CancelFunc) {
+	timeout := app.config.ShutdownTimeout
+	if timeout <= 0 {
+		timeout = defaultShutdownTimeout
+	}
+	return context.WithTimeout(context.Background(), timeout)
 }
 
 // Shutdown 主动触发优雅退出
@@ -252,6 +265,29 @@ func (app *Application) executePhase(ctx context.Context, phase Phase) error {
 	for _, hook := range hooks {
 		if err := hook(ctx); err != nil {
 			return fmt.Errorf("[%s] hook error: %w", phase, err)
+		}
+	}
+	return nil
+}
+
+func (app *Application) executePhaseBounded(ctx context.Context, phase Phase) error {
+	app.mu.Lock()
+	app.currentPhase = phase
+	hooks := append([]HookFunc(nil), app.hooks[phase]...)
+	app.mu.Unlock()
+
+	for _, hook := range hooks {
+		result := make(chan error, 1)
+		go func(hook HookFunc) {
+			result <- hook(ctx)
+		}(hook)
+		select {
+		case err := <-result:
+			if err != nil {
+				return fmt.Errorf("[%s] hook error: %w", phase, err)
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("[%s] hook timeout: %w", phase, ctx.Err())
 		}
 	}
 	return nil
@@ -286,7 +322,17 @@ func (app *Application) stopServices(ctx context.Context) {
 
 	for i := len(services) - 1; i >= 0; i-- {
 		svc := services[i]
-		if err := svc.Stop(ctx); err != nil {
+		result := make(chan error, 1)
+		go func() {
+			result <- svc.Stop(ctx)
+		}()
+		var err error
+		select {
+		case err = <-result:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+		if err != nil {
 			log.Printf("[lifecycle] service %s stop error: %v", svc.Name(), err)
 		} else {
 			log.Printf("[lifecycle] service stopped: %s", svc.Name())

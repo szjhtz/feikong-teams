@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 type fakeService struct {
@@ -15,6 +16,7 @@ type fakeService struct {
 	order    *[]string
 	startErr error
 	stopErr  error
+	stopFn   func(context.Context) error
 }
 
 func (s *fakeService) Name() string { return s.name }
@@ -24,8 +26,11 @@ func (s *fakeService) Start(context.Context) error {
 	return s.startErr
 }
 
-func (s *fakeService) Stop(context.Context) error {
+func (s *fakeService) Stop(ctx context.Context) error {
 	*s.order = append(*s.order, "stop:"+s.name)
+	if s.stopFn != nil {
+		return s.stopFn(ctx)
+	}
 	return s.stopErr
 }
 
@@ -209,6 +214,50 @@ func TestApplicationRunStopsOnContextCancel(t *testing.T) {
 	if phase := app.CurrentPhase(); phase != PhaseCleanup {
 		t.Fatalf("current phase = %s, want Cleanup", phase)
 	}
+}
+
+func TestApplicationShutdownTimeoutDoesNotBlockCleanup(t *testing.T) {
+	app := New(WithExitSignals(), WithShutdownTimeout(20*time.Millisecond))
+	var order []string
+	stopStarted := make(chan struct{})
+	releaseStop := make(chan struct{})
+	cleanupStarted := make(chan struct{})
+	app.RegisterService(&fakeService{
+		name:  "blocking",
+		order: &order,
+		stopFn: func(context.Context) error {
+			close(stopStarted)
+			<-releaseStop
+			return nil
+		},
+	})
+	app.OnReady(func(context.Context) error {
+		app.Shutdown()
+		return nil
+	})
+	app.OnCleanup(func(context.Context) error {
+		close(cleanupStarted)
+		return nil
+	})
+
+	startedAt := time.Now()
+	if err := app.Run(context.Background()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("shutdown elapsed = %v, want bounded shutdown", elapsed)
+	}
+	select {
+	case <-stopStarted:
+	default:
+		t.Fatal("service stop was not attempted")
+	}
+	select {
+	case <-cleanupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup hook was not attempted after timeout")
+	}
+	close(releaseStop)
 }
 
 func TestApplicationAccessorsAndShutdownBuffer(t *testing.T) {

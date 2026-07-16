@@ -201,7 +201,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 
 	app.OnPreStop(func(ctx context.Context) error {
 		if !temporarySession {
-			if session != nil && session.SaveHistory() {
+			if session != nil && session.SaveHistory(ctx) {
 				if query == "" {
 					session.PrintResumeHint()
 				}

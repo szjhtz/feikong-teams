@@ -37,6 +37,8 @@ type Manager struct {
 	taskMu           sync.Mutex
 	wg               sync.WaitGroup
 	stopping         bool
+	stopOnce         sync.Once
+	stopDone         chan struct{}
 	extractedOffsets map[string]int
 	lastExtractTime  map[string]time.Time
 	dirty            bool
@@ -74,6 +76,7 @@ func NewManager(workspaceDir string, llmClient LLMClient, cfg *Config) *Manager 
 		evictionDays:     evictionDays,
 		extractedOffsets: make(map[string]int),
 		lastExtractTime:  make(map[string]time.Time),
+		stopDone:         make(chan struct{}),
 	}
 	m.load()
 	m.rebuildIndex()
@@ -195,18 +198,32 @@ func (m *Manager) Search(query string, topK int) []MemoryEntry {
 }
 
 // Wait 等待所有异步提取任务完成（用于优雅退出）
-func (m *Manager) Wait() {
+func (m *Manager) Wait(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	m.taskMu.Lock()
 	m.stopping = true
 	m.taskMu.Unlock()
-	m.wg.Wait()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.dirty {
-		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: final save failed: %v", err)
-		}
-		m.dirty = false
+	m.stopOnce.Do(func() {
+		go func() {
+			m.wg.Wait()
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if m.dirty {
+				if err := m.save(); err != nil {
+					log.Warnf("[memory] warn: final save failed: %v", err)
+				}
+				m.dirty = false
+			}
+			close(m.stopDone)
+		}()
+	})
+	select {
+	case <-m.stopDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

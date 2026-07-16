@@ -108,7 +108,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 
 	app.OnPreStop(func(ctx context.Context) error {
 		if !temporarySession {
-			if session != nil && session.SaveHistory() {
+			if session != nil && session.SaveHistory(ctx) {
 				if query == "" {
 					session.PrintResumeHint()
 				}
@@ -117,11 +117,11 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		if cfg.MemoryEnabled && query != "" {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
 			if session != nil {
-				session.FlushMemoryWithManager(state.Memory())
+				session.FlushMemoryWithManager(ctx, state.Memory())
 			}
 		} else if cfg.MemoryEnabled {
 			if session != nil {
-				session.FlushMemoryWithManager(state.Memory())
+				session.FlushMemoryWithManager(ctx, state.Memory())
 			}
 		}
 		return nil

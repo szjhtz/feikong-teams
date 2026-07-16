@@ -50,4 +50,4 @@ func (m *fakeMemoryManager) Delete(string) int                                  
 func (m *fakeMemoryManager) Count() int                                             { return 0 }
 func (m *fakeMemoryManager) Clear()                                                 {}
 func (m *fakeMemoryManager) ResetLLM(memory.LLMClient)                              {}
-func (m *fakeMemoryManager) Wait()                                                  {}
+func (m *fakeMemoryManager) Wait(context.Context) error                             { return nil }

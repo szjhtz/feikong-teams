@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 )
+
+const defaultShutdownTimeout = 30 * time.Second
 
 // AppConfig 应用配置
 type AppConfig struct {
@@ -16,6 +19,7 @@ type AppConfig struct {
 	SchedulerDir     string // 定时任务调度器数据目录
 	InputHistoryPath string // 输入历史文件路径
 	ChatHistoryDir   string // 聊天历史目录
+	ShutdownTimeout  time.Duration
 
 	// ExitSignals 触发退出的系统信号（CLI 模式应排除 SIGINT）
 	ExitSignals []os.Signal
@@ -32,6 +36,7 @@ func DefaultConfig() *AppConfig {
 		SchedulerDir:     appdata.SchedulerDir(),
 		InputHistoryPath: filepath.Join(appDir, "history", "input_history", "fkteams_input_history"),
 		ChatHistoryDir:   filepath.Join(appDir, "history", "chat_history"),
+		ShutdownTimeout:  defaultShutdownTimeout,
 		ExitSignals:      []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP},
 	}
 }
@@ -85,5 +90,12 @@ func WithChatHistoryDir(dir string) Option {
 func WithExitSignals(signals ...os.Signal) Option {
 	return func(c *AppConfig) {
 		c.ExitSignals = signals
+	}
+}
+
+// WithShutdownTimeout 设置应用停止和清理阶段共用的最长时间。
+func WithShutdownTimeout(timeout time.Duration) Option {
+	return func(c *AppConfig) {
+		c.ShutdownTimeout = timeout
 	}
 }

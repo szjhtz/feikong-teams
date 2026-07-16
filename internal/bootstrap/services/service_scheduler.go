@@ -80,7 +80,9 @@ func (s *SchedulerService) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.scheduler != nil {
-		s.scheduler.Stop()
+		if err := s.scheduler.Stop(ctx); err != nil {
+			return err
+		}
 		s.scheduler = nil
 	}
 	s.service = nil

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,7 +125,7 @@ func TestManagerWaitTracksAsyncWorkAndRejectsNewTasks(t *testing.T) {
 	<-llm.started
 	waited := make(chan struct{})
 	go func() {
-		manager.Wait()
+		_ = manager.Wait(context.Background())
 		close(waited)
 	}()
 
@@ -154,9 +155,38 @@ func TestManagerWaitTracksHitStatsUpdate(t *testing.T) {
 	if entries := manager.Search("偏好中文", 1); len(entries) != 1 {
 		t.Fatalf("search entries = %#v, want one", entries)
 	}
-	manager.Wait()
+	if err := manager.Wait(context.Background()); err != nil {
+		t.Fatalf("Wait returned error: %v", err)
+	}
 	if entries := manager.List(); entries[0].HitCount != 1 {
 		t.Fatalf("hit count = %d, want 1", entries[0].HitCount)
+	}
+}
+
+func TestManagerWaitHonorsContextDeadline(t *testing.T) {
+	llm := &blockingLLMClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	manager := NewManager(t.TempDir(), llm, nil)
+	messages := []Message{
+		{Role: "user", Content: strings.Repeat("用户偏好", 80)},
+		{Role: "assistant", Content: "收到"},
+		{Role: "user", Content: strings.Repeat("继续补充", 80)},
+	}
+	if !manager.ExtractAndStoreAsync(messages, "session-1") {
+		t.Fatal("async extraction should be accepted")
+	}
+	<-llm.started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := manager.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Wait error = %v, want deadline exceeded", err)
+	}
+	close(llm.release)
+	if err := manager.Wait(context.Background()); err != nil {
+		t.Fatalf("second Wait returned error: %v", err)
 	}
 }
 

@@ -29,9 +29,11 @@ type Scheduler struct {
 	stopCh      chan struct{}
 	runCtx      context.Context
 	runCancel   context.CancelFunc
+	stopDone    chan struct{}
 	wg          sync.WaitGroup
 	executor    schedulerport.TaskExecutor
 	running     bool
+	stopping    bool
 	cronParser  cron.Parser
 	semaphore   chan struct{}
 	cancelFuncs map[string]context.CancelFunc
@@ -322,7 +324,7 @@ func (s *Scheduler) Start() {
 	defer s.lifecycleMu.Unlock()
 
 	s.mu.Lock()
-	if s.running {
+	if s.running || s.stopping {
 		s.mu.Unlock()
 		return
 	}
@@ -374,10 +376,11 @@ func (s *Scheduler) recoverStaleRunningTasks() {
 }
 
 // Stop 停止调度器
-func (s *Scheduler) Stop() {
+func (s *Scheduler) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.lifecycleMu.Lock()
-	defer s.lifecycleMu.Unlock()
-
 	s.mu.Lock()
 	var runCancel context.CancelFunc
 	if s.running {
@@ -385,8 +388,15 @@ func (s *Scheduler) Stop() {
 		s.running = false
 		runCancel = s.runCancel
 		s.runCancel = nil
+		s.stopping = true
+		s.stopDone = make(chan struct{})
 	}
+	done := s.stopDone
 	s.mu.Unlock()
+	s.lifecycleMu.Unlock()
+	if done == nil {
+		return nil
+	}
 	if runCancel != nil {
 		runCancel()
 	}
@@ -398,10 +408,22 @@ func (s *Scheduler) Stop() {
 		cancel()
 	}
 	s.cancelsMu.Unlock()
-	s.wg.Wait()
-	s.mu.Lock()
-	s.runCtx = nil
-	s.mu.Unlock()
+	if runCancel != nil {
+		go func(done chan struct{}) {
+			s.wg.Wait()
+			s.mu.Lock()
+			s.runCtx = nil
+			s.stopping = false
+			close(done)
+			s.mu.Unlock()
+		}(done)
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for scheduler shutdown: %w", ctx.Err())
+	}
 }
 
 func (s *Scheduler) run() {

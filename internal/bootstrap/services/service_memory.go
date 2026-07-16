@@ -7,6 +7,7 @@ import (
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/memory"
 	"fkteams/internal/runtime/log"
+	"fmt"
 )
 
 // MemoryService 长期记忆服务，封装 memory.Manager 的生命周期管理。
@@ -46,7 +47,9 @@ func (s *MemoryService) Start(ctx context.Context) error {
 func (s *MemoryService) Stop(ctx context.Context) error {
 	if manager := s.state.Memory(); manager != nil {
 		log.Println("[memory] 正在等待记忆提取完成...")
-		manager.Wait()
+		if err := manager.Wait(ctx); err != nil {
+			return fmt.Errorf("wait for memory extraction: %w", err)
+		}
 		log.Println("[memory] 记忆提取完成")
 	}
 	return nil
