@@ -626,7 +626,7 @@ func (m *Manager) rebuildIndex() {
 }
 
 func (m *Manager) load() {
-	m.entries = loadAllMarkdown(m.storeDir)
+	m.entries = loadAllMarkdown(m.storeDir, m.maxEntries)
 }
 
 // save 保存到 Markdown 文件

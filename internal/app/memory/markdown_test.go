@@ -29,7 +29,7 @@ func TestSaveAndLoadAllMarkdownRoundTrip(t *testing.T) {
 		t.Fatalf("index content = %s", string(index))
 	}
 
-	loaded := loadAllMarkdown(dir)
+	loaded := loadAllMarkdown(dir, defaultMaxEntries)
 	if len(loaded) != 2 {
 		t.Fatalf("loaded = %#v, want 2 entries", loaded)
 	}
@@ -63,6 +63,44 @@ func TestSaveAllMarkdownRemovesEmptyTypeFilesAndIndex(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "MEMORY.md")); !os.IsNotExist(err) {
 		t.Fatalf("MEMORY.md should be removed, err=%v", err)
+	}
+}
+
+func TestLoadAllMarkdownLimitsEntries(t *testing.T) {
+	dir := t.TempDir()
+	entries := []MemoryEntry{
+		{Type: Preference, Summary: "one", CreatedAt: time.Now()},
+		{Type: Preference, Summary: "two", CreatedAt: time.Now()},
+		{Type: Preference, Summary: "three", CreatedAt: time.Now()},
+	}
+	if err := saveAllMarkdown(dir, entries); err != nil {
+		t.Fatalf("save markdown: %v", err)
+	}
+	if loaded := loadAllMarkdown(dir, 2); len(loaded) != 2 {
+		t.Fatalf("loaded entry count = %d, want 2", len(loaded))
+	}
+}
+
+func TestLoadMarkdownRejectsOversizedFileAndLine(t *testing.T) {
+	dir := t.TempDir()
+	oversized := filepath.Join(dir, "oversized.md")
+	if err := os.WriteFile(oversized, []byte("# memory\n"), 0644); err != nil {
+		t.Fatalf("write oversized file: %v", err)
+	}
+	if err := os.Truncate(oversized, maxMemoryMarkdownBytes+1); err != nil {
+		t.Fatalf("truncate oversized file: %v", err)
+	}
+	if _, err := loadMarkdownFile(oversized, Preference, 1); err == nil {
+		t.Fatal("expected oversized memory file to be rejected")
+	}
+
+	longLine := filepath.Join(dir, "long-line.md")
+	content := "## " + strings.Repeat("x", maxMemoryLineBytes+1)
+	if err := os.WriteFile(longLine, []byte(content), 0644); err != nil {
+		t.Fatalf("write long-line file: %v", err)
+	}
+	if _, err := loadMarkdownFile(longLine, Preference, 1); err == nil {
+		t.Fatal("expected oversized memory line to be rejected")
 	}
 }
 

@@ -2,15 +2,23 @@ package memory
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"fkteams/internal/runtime/atomicfile"
+	"fkteams/internal/runtime/log"
 )
 
-const timeLayout = "2006-01-02 15:04:05"
+const (
+	timeLayout             = "2006-01-02 15:04:05"
+	maxMemoryMarkdownBytes = 4 << 20
+	maxMemoryLineBytes     = 256 << 10
+)
 
 // memoryTypeFile 记忆类型到文件名和标题的映射
 var memoryTypeFile = []struct {
@@ -43,7 +51,9 @@ func saveAllMarkdown(dir string, entries []MemoryEntry) error {
 		path := filepath.Join(dir, tf.File)
 		items := grouped[tf.Type]
 		if len(items) == 0 {
-			os.Remove(path)
+			if err := removeMemoryFile(path); err != nil {
+				return fmt.Errorf("remove empty %s: %w", tf.File, err)
+			}
 			continue
 		}
 		if err := writeMarkdownFile(path, tf.Title, items); err != nil {
@@ -84,16 +94,26 @@ func writeMarkdownFile(path, title string, entries []MemoryEntry) error {
 		sb.WriteString("\n\n")
 	}
 
-	return os.WriteFile(path, []byte(sb.String()), 0644)
+	return atomicfile.WriteFile(path, []byte(sb.String()), 0644)
 }
 
 // loadAllMarkdown 从目录加载所有类型的 Markdown 文件
-func loadAllMarkdown(dir string) []MemoryEntry {
+func loadAllMarkdown(dir string, maxEntries int) []MemoryEntry {
+	if maxEntries <= 0 {
+		return nil
+	}
 	var all []MemoryEntry
 	for _, tf := range memoryTypeFile {
+		remaining := maxEntries - len(all)
+		if remaining <= 0 {
+			break
+		}
 		path := filepath.Join(dir, tf.File)
-		entries, err := loadMarkdownFile(path, tf.Type)
+		entries, err := loadMarkdownFile(path, tf.Type, remaining)
 		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				log.Warnf("[memory] warn: load %s failed: %v", tf.File, err)
+			}
 			continue
 		}
 		all = append(all, entries...)
@@ -102,16 +122,27 @@ func loadAllMarkdown(dir string) []MemoryEntry {
 }
 
 // loadMarkdownFile 从单个 Markdown 文件加载记忆条目
-func loadMarkdownFile(path string, memType MemoryType) ([]MemoryEntry, error) {
+func loadMarkdownFile(path string, memType MemoryType, maxEntries int) ([]MemoryEntry, error) {
+	if maxEntries <= 0 {
+		return nil, nil
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxMemoryMarkdownBytes {
+		return nil, fmt.Errorf("memory file exceeds %d bytes", maxMemoryMarkdownBytes)
+	}
 
 	var entries []MemoryEntry
 	var current *MemoryEntry
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64<<10), maxMemoryLineBytes)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -119,6 +150,10 @@ func loadMarkdownFile(path string, memType MemoryType) ([]MemoryEntry, error) {
 		if strings.HasPrefix(line, "## ") {
 			if current != nil {
 				entries = append(entries, *current)
+				if len(entries) >= maxEntries {
+					current = nil
+					break
+				}
 			}
 			current = &MemoryEntry{
 				Summary: strings.TrimSpace(strings.TrimPrefix(line, "## ")),
@@ -160,7 +195,7 @@ func loadMarkdownFile(path string, memType MemoryType) ([]MemoryEntry, error) {
 		}
 	}
 
-	if current != nil {
+	if current != nil && len(entries) < maxEntries {
 		entries = append(entries, *current)
 	}
 
@@ -175,8 +210,7 @@ func loadMarkdownFile(path string, memType MemoryType) ([]MemoryEntry, error) {
 // writeIndexFile 生成 MEMORY.md 入口索引，人类可读
 func writeIndexFile(dir string, entries []MemoryEntry) error {
 	if len(entries) == 0 {
-		os.Remove(filepath.Join(dir, "MEMORY.md"))
-		return nil
+		return removeMemoryFile(filepath.Join(dir, "MEMORY.md"))
 	}
 
 	grouped := make(map[MemoryType][]MemoryEntry)
@@ -200,5 +234,12 @@ func writeIndexFile(dir string, entries []MemoryEntry) error {
 		sb.WriteString("\n")
 	}
 
-	return os.WriteFile(filepath.Join(dir, "MEMORY.md"), []byte(sb.String()), 0644)
+	return atomicfile.WriteFile(filepath.Join(dir, "MEMORY.md"), []byte(sb.String()), 0644)
+}
+
+func removeMemoryFile(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
