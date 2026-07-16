@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
-    "test": "bun test",
+    "test": "bun test src",
     "test:security": "bun test src/lib/markdown.test.ts",
+    "test:integration:stream": "bun run scripts/stream_frontend_logic_check.ts",
     "typecheck": "tsc -b",
     "preview": "vite preview --host 0.0.0.0"
   },

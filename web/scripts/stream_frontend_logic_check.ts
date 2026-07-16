@@ -129,11 +129,11 @@ try {
   const report = analyzeEvents(state.events, state);
   printReport(report);
   assertReport(report);
-  console.log("STREAM_FRONTEND_LOGIC_TEST_OK");
+  console.log("STREAM_FRONTEND_LOGIC_CHECK_OK");
 } catch (error) {
   clearTimeout(timeout);
   console.error("");
-  console.error("STREAM_FRONTEND_LOGIC_TEST_FAILED");
+  console.error("STREAM_FRONTEND_LOGIC_CHECK_FAILED");
   console.error(error instanceof Error ? error.stack || error.message : error);
   process.exitCode = 1;
 }
