@@ -1,5 +1,4 @@
 import { expireAuthentication } from "@/lib/auth-session";
-import { authToken } from "@/lib/storage";
 import type { APIResponse } from "@/types/api";
 
 export interface RequestOptions extends RequestInit {
@@ -19,13 +18,15 @@ export class APIError extends Error {
 export async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
   const { authFailure = "expire", ...fetchInit } = init;
   const headers = new Headers(fetchInit.headers);
-  const token = authToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
   if (fetchInit.body && !headers.has("Content-Type") && !(fetchInit.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(path, { ...fetchInit, headers });
+  const response = await fetch(path, {
+    ...fetchInit,
+    credentials: fetchInit.credentials || "same-origin",
+    headers,
+  });
   if (!response.ok) {
     const message = await responseErrorMessage(response);
     if (response.status === 401 && authFailure === "expire") expireAuthentication();

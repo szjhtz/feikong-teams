@@ -24,6 +24,7 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 		"GET /ready",
 		"GET /ws",
 		"POST /api/fkteams/login",
+		"POST /api/fkteams/logout",
 		"GET /v1/models",
 		"POST /v1/chat/completions",
 		"GET /api/fkteams/version",

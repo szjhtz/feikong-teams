@@ -1,6 +1,5 @@
 import type { ChatEvent, QueueItem } from "@/types/events";
 import { expireAuthentication } from "@/lib/auth-session";
-import { authToken } from "@/lib/storage";
 import { APIError, del, get, patch, post } from "./client";
 
 export function streamStatus(sessionID: string) {
@@ -100,12 +99,9 @@ export async function subscribeStream(
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<"done" | "eof"> {
-  const headers = new Headers();
-  const token = authToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(
     `/api/fkteams/stream/subscribe/${encodeURIComponent(sessionID)}?offset=${encodeURIComponent(String(offset))}`,
-    { headers, signal },
+    { credentials: "same-origin", signal },
   );
   if (response.status === 401) {
     expireAuthentication();

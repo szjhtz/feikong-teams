@@ -8,7 +8,7 @@ export function LoginForm({
   onAuthenticated,
   submitLabel = "登录",
 }: {
-  onAuthenticated: (token: string) => void;
+  onAuthenticated: () => void;
   submitLabel?: string;
 }) {
   const [username, setUsername] = useState("");
@@ -23,8 +23,8 @@ export function LoginForm({
     setSubmitting(true);
     try {
       const result = await login(username, password);
-      if (!result.token) throw new Error("登录响应中缺少 Token");
-      onAuthenticated(result.token);
+      if (!result.authenticated) throw new Error("登录响应无效");
+      onAuthenticated();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

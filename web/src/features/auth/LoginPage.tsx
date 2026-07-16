@@ -4,8 +4,8 @@ import { restoreAuthentication } from "@/lib/auth-session";
 import { loginReturnPath } from "@/lib/navigation";
 
 export function LoginPage() {
-  function authenticated(token: string) {
-    restoreAuthentication(token);
+  function authenticated() {
+    restoreAuthentication();
     location.replace(loginReturnPath(location.search));
   }
 

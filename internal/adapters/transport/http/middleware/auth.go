@@ -29,7 +29,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		// 登录页和登录接口不需要验证
-		if path == "/login" || path == "/favicon.ico" || path == "/api/fkteams/login" {
+		if path == "/login" || path == "/favicon.ico" || path == "/api/fkteams/login" || path == "/api/fkteams/logout" {
 			c.Next()
 			return
 		}

@@ -1,9 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { clearLegacyAuthStorage } from "@/lib/storage";
 import "katex/dist/katex.min.css";
 import "./styles/globals.css";
 
+clearLegacyAuthStorage();
 syncAppViewportHeight();
 
 createRoot(document.getElementById("root")!).render(

@@ -138,6 +138,99 @@ func TestLoginHandler(t *testing.T) {
 	if !ValidateToken(token) {
 		t.Fatal("expected login token to be valid")
 	}
+	assertAuthCookie(t, resp, token, false)
+
+	resp = performJSON(router, http.MethodPost, "/login", `{"username":"admin","password":"secret","cookie_only":true}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected cookie-only login status 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal cookie-only response: %v", err)
+	}
+	data, ok = got.Data.(map[string]any)
+	if !ok || data["authenticated"] != true {
+		t.Fatalf("expected authenticated response, got %#v", got.Data)
+	}
+	if _, exists := data["token"]; exists {
+		t.Fatalf("cookie-only response must not expose token: %#v", data)
+	}
+	cookies := resp.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Value == "" {
+		t.Fatalf("expected cookie-only login cookie, got %#v", cookies)
+	}
+}
+
+func TestLoginCookieUsesSecureFlagForHTTPS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{Server: config.Server{Auth: config.ServerAuth{
+		Enabled: true, Username: "admin", Password: "secret", Secret: "token-secret",
+	}}})
+
+	router := gin.New()
+	router.POST("/login", LoginHandler())
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(`{"username":"admin","password":"secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("login status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var payload Response
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	data, ok := payload.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected data object, got %#v", payload.Data)
+	}
+	token, _ := data["token"].(string)
+	assertAuthCookie(t, resp, token, true)
+}
+
+func TestLogoutHandlerClearsAuthCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/logout", LogoutHandler())
+
+	resp := performJSON(router, http.MethodPost, "/logout", `{}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("logout status = %d: %s", resp.Code, resp.Body.String())
+	}
+	cookies := resp.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != authCookieName || cookies[0].MaxAge >= 0 {
+		t.Fatalf("expected expired auth cookie, got %#v", cookies)
+	}
+}
+
+func TestRequestAuthTokenRejectsQueryToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/token", func(c *gin.Context) {
+		c.String(http.StatusOK, RequestAuthToken(c))
+	})
+
+	resp := performRequest(router, http.MethodGet, "/token?token=query-secret", nil)
+	if resp.Body.String() != "" {
+		t.Fatalf("query token must be ignored, got %q", resp.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/token", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: "cookie-token"})
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Body.String() != "cookie-token" {
+		t.Fatalf("cookie token = %q, want cookie-token", resp.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/token", nil)
+	req.Header.Set("Authorization", "Bearer header-token")
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: "cookie-token"})
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Body.String() != "header-token" {
+		t.Fatalf("header token = %q, want header-token", resp.Body.String())
+	}
 }
 
 func TestLoginHandlerRejectsLoginWhenAuthDisabled(t *testing.T) {
@@ -201,6 +294,24 @@ func signedTestToken(t *testing.T, username string, expiry time.Time) string {
 		t.Fatalf("write hmac payload: %v", err)
 	}
 	return hex.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+func assertAuthCookie(t *testing.T, resp *httptest.ResponseRecorder, token string, secure bool) {
+	t.Helper()
+	cookies := resp.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one auth cookie, got %#v", cookies)
+	}
+	cookie := cookies[0]
+	if cookie.Name != authCookieName || cookie.Value != token {
+		t.Fatalf("unexpected auth cookie: %#v", cookie)
+	}
+	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Secure != secure {
+		t.Fatalf("insecure auth cookie attributes: %#v", cookie)
+	}
+	if cookie.MaxAge != int(authTokenTTL/time.Second) {
+		t.Fatalf("auth cookie MaxAge = %d, want %d", cookie.MaxAge, int(authTokenTTL/time.Second))
+	}
 }
 
 func performJSON(router http.Handler, method, path, body string) *httptest.ResponseRecorder {

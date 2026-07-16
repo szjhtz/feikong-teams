@@ -44,6 +44,7 @@
 - `/login`
 - `/favicon.ico`
 - `/api/fkteams/login`
+- `/api/fkteams/logout`
 - `/api/fkteams/favicon`
 - `/assets/*`
 - `/p/*`、`/s/*`
@@ -56,8 +57,9 @@ Token 传递方式：
 | 方式 | 示例 |
 | ---- | ---- |
 | Header | `Authorization: Bearer <token>` |
-| Query | `?token=<token>` |
-| Cookie | `fk_token=<token>` |
+| Cookie | 登录接口设置的 `HttpOnly` `fk_token` Cookie |
+
+Token 不接受 query 参数，避免凭据进入访问日志、浏览器历史和 Referer。Web UI 使用 `HttpOnly` Cookie；非浏览器 API 客户端使用 Bearer Header。
 
 登录接口见 [通用接口](misc.md)。
 
@@ -119,6 +121,7 @@ Authorization: Bearer <api_key>
 | GET | `/ready` | 核心 Runtime 就绪检查 |
 | GET | `/ws` | WebSocket 聊天和任务事件通道 |
 | POST | `/api/fkteams/login` | 登录获取 Token；未启用认证时返回 `404` |
+| POST | `/api/fkteams/logout` | 清除 Web 登录 Cookie |
 | GET | `/api/fkteams/version` | 版本信息 |
 | GET | `/api/fkteams/agents` | 可用智能体列表 |
 | GET | `/api/fkteams/favicon` | favicon 代理 |

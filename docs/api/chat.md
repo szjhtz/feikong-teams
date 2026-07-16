@@ -91,7 +91,7 @@ ws://<host>/ws
 wss://<host>/ws
 ```
 
-启用登录认证时，Token 可以通过 `?token=<token>` 或 `fk_token` Cookie 传递。服务端会对连接中的每条消息再次校验 Token，以响应登录过期和认证配置热更新。连接建立后服务端发送：
+启用登录认证时，浏览器通过登录接口设置的 `HttpOnly` `fk_token` Cookie 建立连接；非浏览器客户端可使用 `Authorization: Bearer <token>` 握手 Header。Token 不接受 query 参数。服务端会对连接中的每条消息再次校验 Token，以响应登录过期和认证配置热更新。连接建立后服务端发送：
 
 ```json
 {

@@ -45,6 +45,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 	apiV1 := r.Group("/api/fkteams")
 	{
 		apiV1.POST("/login", handler.LoginHandler())
+		apiV1.POST("/logout", handler.LogoutHandler())
 		apiV1.GET("/version", handler.VersionHandler())
 
 		// 智能体 API

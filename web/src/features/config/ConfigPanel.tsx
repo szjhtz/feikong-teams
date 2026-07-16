@@ -27,8 +27,7 @@ import { getConfig, getToolCatalog, saveConfig } from "@/api/config";
 import { listProviderModels } from "@/api/providers";
 import { configActions, appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
-import { authRestoredEvent, expireAuthentication } from "@/lib/auth-session";
-import { setAuthToken } from "@/lib/storage";
+import { authRestoredEvent, clearServerAuthentication, expireAuthentication } from "@/lib/auth-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -108,10 +107,11 @@ export function ConfigPanel() {
       const result = await saveConfig(normalizeConfigForSave(nextDraft));
       dispatch(appActions.showToast(message));
       if (result.auth_changed && nextDraft.server?.auth?.enabled) {
+        await clearServerAuthentication();
         expireAuthentication();
         return;
       }
-      if (result.auth_changed) setAuthToken("");
+      if (result.auth_changed) await clearServerAuthentication();
       await load();
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));

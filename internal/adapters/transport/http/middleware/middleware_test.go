@@ -134,6 +134,7 @@ func TestAuthRejectsAPIAndRedirectsPageToLogin(t *testing.T) {
 	router.Use(Auth())
 	router.GET("/chat/:sessionID", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 	router.GET("/api/fkteams/version", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	router.POST("/api/fkteams/logout", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	pageTarget := "/chat/session-1?panel=details"
 	pageReq := httptest.NewRequest(http.MethodGet, pageTarget, nil)
@@ -152,6 +153,13 @@ func TestAuthRejectsAPIAndRedirectsPageToLogin(t *testing.T) {
 	router.ServeHTTP(apiResp, apiReq)
 	if apiResp.Code != http.StatusUnauthorized {
 		t.Fatalf("API status = %d, want %d", apiResp.Code, http.StatusUnauthorized)
+	}
+
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/fkteams/logout", nil)
+	logoutResp := httptest.NewRecorder()
+	router.ServeHTTP(logoutResp, logoutReq)
+	if logoutResp.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", logoutResp.Code, http.StatusOK)
 	}
 }
 

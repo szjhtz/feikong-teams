@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fkteams/internal/app/config"
 	"fkteams/internal/runtime/log"
@@ -12,6 +13,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+)
+
+const (
+	authCookieName = "fk_token"
+	authTokenTTL   = 7 * 24 * time.Hour
 )
 
 func getTokenSecret() []byte {
@@ -33,7 +39,7 @@ func AuthEnabled() (bool, error) {
 }
 
 func generateToken(username string) string {
-	expiry := time.Now().Add(7 * 24 * time.Hour)
+	expiry := time.Now().Add(authTokenTTL)
 	payload := username + "|" + expiry.Format(time.RFC3339)
 	mac := hmac.New(sha256.New, getTokenSecret())
 	mac.Write([]byte(payload))
@@ -78,19 +84,49 @@ func ValidateToken(token string) bool {
 	return time.Now().Before(expiry)
 }
 
-// RequestAuthToken 按认证中间件的优先级提取请求 Token。
+// RequestAuthToken 从 Bearer Header 或 HttpOnly Cookie 提取请求 Token。
+// Token 不接受 query 参数，避免进入访问日志、浏览器历史和 Referer。
 func RequestAuthToken(c *gin.Context) string {
 	authHeader := c.GetHeader("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		return authHeader[7:]
 	}
-	if token := c.Query("token"); token != "" {
-		return token
-	}
-	if cookie, err := c.Cookie("fk_token"); err == nil {
+	if cookie, err := c.Cookie(authCookieName); err == nil {
 		return cookie
 	}
 	return ""
+}
+
+func credentialsMatch(actualUsername, actualPassword, expectedUsername, expectedPassword string) bool {
+	actualUserHash := sha256.Sum256([]byte(actualUsername))
+	expectedUserHash := sha256.Sum256([]byte(expectedUsername))
+	actualPasswordHash := sha256.Sum256([]byte(actualPassword))
+	expectedPasswordHash := sha256.Sum256([]byte(expectedPassword))
+	return subtle.ConstantTimeCompare(actualUserHash[:], expectedUserHash[:]) == 1 &&
+		subtle.ConstantTimeCompare(actualPasswordHash[:], expectedPasswordHash[:]) == 1
+}
+
+func setAuthCookie(c *gin.Context, token string, maxAge int) {
+	cookie := &http.Cookie{
+		Name:     authCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   requestUsesHTTPS(c.Request),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   maxAge,
+	}
+	if maxAge < 0 {
+		cookie.Expires = time.Unix(1, 0)
+	}
+	http.SetCookie(c.Writer, cookie)
+}
+
+func requestUsesHTTPS(request *http.Request) bool {
+	if request.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(request.Header.Get("X-Forwarded-Proto")), "https")
 }
 
 func splitToken(token string) []string {
@@ -116,8 +152,9 @@ func LoginHandler() gin.HandlerFunc {
 		}
 
 		var req struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
+			Username   string `json:"username"`
+			Password   string `json:"password"`
+			CookieOnly bool   `json:"cookie_only"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "请求格式错误")
@@ -128,13 +165,28 @@ func LoginHandler() gin.HandlerFunc {
 		expectedUser := auth.Username
 		expectedPass := auth.Password
 
-		if req.Username != expectedUser || req.Password != expectedPass {
+		if !credentialsMatch(req.Username, req.Password, expectedUser, expectedPass) {
 			log.Printf("login failed: username=%s, ip=%s", req.Username, c.ClientIP())
 			Fail(c, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
 
 		token := generateToken(req.Username)
+		setAuthCookie(c, token, int(authTokenTTL/time.Second))
+		c.Header("Cache-Control", "no-store")
+		if req.CookieOnly {
+			OK(c, gin.H{"authenticated": true})
+			return
+		}
 		OK(c, gin.H{"token": token})
+	}
+}
+
+// LogoutHandler 清除浏览器登录 Cookie。该接口允许在 Token 失效后调用。
+func LogoutHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		setAuthCookie(c, "", -1)
+		c.Header("Cache-Control", "no-store")
+		OK(c, nil)
 	}
 }

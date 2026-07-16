@@ -1,9 +1,9 @@
 import { post } from "./client";
 
 export interface LoginResponse {
-  token: string;
+  authenticated: boolean;
 }
 
 export function login(username: string, password: string) {
-  return post<LoginResponse>("/api/fkteams/login", { username, password }, { authFailure: "ignore" });
+	return post<LoginResponse>("/api/fkteams/login", { username, password, cookie_only: true }, { authFailure: "ignore" });
 }

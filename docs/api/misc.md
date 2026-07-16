@@ -39,9 +39,12 @@
 ```json
 {
   "username": "admin",
-  "password": "your_password"
+  "password": "your_password",
+  "cookie_only": false
 }
 ```
+
+`cookie_only` 可选。Web UI 设置为 `true`，使 Token 不进入 JavaScript 响应；普通 API 客户端可省略并取得 Bearer Token。
 
 **成功响应**：
 
@@ -55,7 +58,19 @@
 }
 ```
 
-Token payload 为 `username|expiry(RFC3339)`，有效期 7 天，签名为 HMAC-SHA256。服务端不主动设置 Cookie，前端自行保存。
+无论是否启用 `cookie_only`，服务端都会设置有效期 7 天的 `HttpOnly`、`SameSite=Strict` Cookie；HTTPS 请求同时设置 `Secure`。Token payload 为 `username|expiry(RFC3339)`，签名为 HMAC-SHA256。
+
+`cookie_only: true` 时成功响应不返回 Token：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "authenticated": true
+  }
+}
+```
 
 **失败响应**：
 
@@ -63,6 +78,12 @@ Token payload 为 `username|expiry(RFC3339)`，有效期 7 天，签名为 HMAC-
 | ------ | ------- | ---- |
 | 400 | `请求格式错误` | 请求体解析失败 |
 | 401 | `用户名或密码错误` | 凭证不匹配 |
+
+---
+
+## POST /api/fkteams/logout
+
+清除 `fk_token` Cookie。接口不要求有效 Token，因此登录已过期或认证配置刚刚变更时仍可调用。
 
 ---
 
