@@ -132,8 +132,13 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	}
 
 	resp = performRequest(router, http.MethodDelete, "/sessions/session-1", nil)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("delete active session status = %d, want 409: %s", resp.Code, resp.Body.String())
+	}
+	stream.SetStatus("completed")
+	resp = performRequest(router, http.MethodDelete, "/sessions/session-1", nil)
 	if resp.Code != http.StatusOK {
-		t.Fatalf("delete session status = %d: %s", resp.Code, resp.Body.String())
+		t.Fatalf("delete idle session status = %d: %s", resp.Code, resp.Body.String())
 	}
 	if _, err := os.Stat(rt.sessionDirPath("session-1")); !os.IsNotExist(err) {
 		t.Fatalf("session dir should be deleted, stat err=%v", err)

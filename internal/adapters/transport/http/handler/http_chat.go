@@ -67,7 +67,8 @@ func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			return
 		}
 
-		recorder := rt.recorder(sessionID)
+		recorder, releaseRecorder := rt.acquireRecorder(sessionID)
+		defer releaseRecorder()
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 

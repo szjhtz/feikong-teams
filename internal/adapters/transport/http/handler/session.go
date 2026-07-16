@@ -161,12 +161,19 @@ func (rt *Runtime) DeleteSessionHandler() gin.HandlerFunc {
 			return
 		}
 
+		if stream := rt.Streams.Get(sessionID); stream != nil && stream.Status() == "processing" {
+			Fail(c, http.StatusConflict, "session is active")
+			return
+		}
+		if !rt.Sessions.Remove(sessionID) {
+			Fail(c, http.StatusConflict, "session is active")
+			return
+		}
 		if err := rt.SessionService.Delete(c.Request.Context(), sessionID); err != nil {
 			FailError(c, err)
 			return
 		}
 		rt.Streams.CancelAndRemove(sessionID)
-		rt.Sessions.Remove(sessionID)
 		log.Printf("deleted session directory: %s", sessionID)
 		OK(c, gin.H{"message": "session deleted"})
 	}

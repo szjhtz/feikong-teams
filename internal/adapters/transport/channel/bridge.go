@@ -323,7 +323,8 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		combinedInput = merged.String()
 	}
 
-	recorder := b.sessions.GetOrCreate(sessionID, b.historyDir)
+	recorder, releaseRecorder := b.sessions.Acquire(sessionID, b.historyDir)
+	defer releaseRecorder()
 	recorder.SetToolDisplayResolver(toolmeta.ResolverFromContext(ctx))
 	turnInput := appchat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
 

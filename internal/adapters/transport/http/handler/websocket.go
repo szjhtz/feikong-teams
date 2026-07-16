@@ -341,7 +341,8 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	}
 
 	// 构建输入消息
-	recorder := rt.recorder(sessionID)
+	recorder, releaseRecorder := rt.acquireRecorder(sessionID)
+	defer releaseRecorder()
 	manager := memoryFromState(state)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
 	currentRunID := newTurnRunID(sessionID)

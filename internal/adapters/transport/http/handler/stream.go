@@ -103,7 +103,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			return
 		}
 		rt.restorePersistentQueue(sessionID, stream)
-		recorder := rt.recorder(sessionID)
+		recorder, releaseRecorder := rt.acquireRecorder(sessionID)
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
@@ -114,7 +114,10 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		stream.Publish(standardMessageEventPayload(sessionID, initialRunID, initialTurnID, "开始处理您的请求..."))
 
 		// 后台执行任务
-		go rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
+		go func() {
+			defer releaseRecorder()
+			rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
+		}()
 
 		OK(c, gin.H{
 			"session_id":   sessionID,

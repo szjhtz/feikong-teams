@@ -180,10 +180,10 @@ func (rt *Runtime) Close() {
 	}
 }
 
-func (rt *Runtime) recorder(sessionID string) *eventlog.HistoryRecorder {
-	recorder := rt.Sessions.GetOrCreate(sessionID, rt.HistoryDir)
+func (rt *Runtime) acquireRecorder(sessionID string) (*eventlog.HistoryRecorder, func()) {
+	recorder, release := rt.Sessions.Acquire(sessionID, rt.HistoryDir)
 	recorder.SetToolDisplayResolver(rt.ToolDisplays)
-	return recorder
+	return recorder, release
 }
 
 func (rt *Runtime) sessionDirPath(sessionID string) string {
