@@ -1,13 +1,16 @@
 package qq
 
 import (
+	"container/list"
 	"context"
-	channel "fkteams/internal/adapters/transport/channel"
-	"fkteams/internal/runtime/log"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	channel "fkteams/internal/adapters/transport/channel"
+	"fkteams/internal/runtime/log"
 
 	"github.com/tencent-connect/botgo"
 	"github.com/tencent-connect/botgo/dto"
@@ -27,6 +30,7 @@ type chatState struct {
 	msgID    string
 	msgSeq   atomic.Uint32
 	lastSeen time.Time
+	order    *list.Element
 }
 
 // Channel QQ 机器人通道
@@ -38,26 +42,46 @@ type Channel struct {
 	api     openapi.OpenAPI
 	handler channel.MessageHandler
 	running atomic.Bool
-	cancel  context.CancelFunc
+
+	lifecycleMu sync.Mutex
+	cancel      context.CancelFunc
+	sessionDone <-chan error
 
 	// 消息去重（TTL 5 分钟）
-	seen   map[string]time.Time
-	seenMu sync.Mutex
+	seen      map[string]time.Time
+	seenOrder *list.List
+	seenMu    sync.Mutex
 
 	// 每个会话的状态
-	states   map[string]*chatState
-	statesMu sync.RWMutex
+	states     map[string]*chatState
+	stateOrder *list.List
+	statesMu   sync.Mutex
+}
+
+const (
+	seenMessageTTL  = 5 * time.Minute
+	chatStateTTL    = 30 * time.Minute
+	maxSeenMessages = 20_000
+	maxChatStates   = 4_096
+	cleanupInterval = 2 * time.Minute
+)
+
+type seenMessage struct {
+	id     string
+	seenAt time.Time
 }
 
 // NewChannel 创建 QQ 通道实例
 func NewChannel(cfg channel.ChannelConfig, handler channel.MessageHandler) (channel.Channel, error) {
 	return &Channel{
-		appID:     cfg.Extra["app_id"],
-		appSecret: cfg.Extra["app_secret"],
-		sandbox:   cfg.Extra["sandbox"] == "true",
-		handler:   handler,
-		seen:      make(map[string]time.Time),
-		states:    make(map[string]*chatState),
+		appID:      cfg.Extra["app_id"],
+		appSecret:  cfg.Extra["app_secret"],
+		sandbox:    cfg.Extra["sandbox"] == "true",
+		handler:    handler,
+		seen:       make(map[string]time.Time),
+		seenOrder:  list.New(),
+		states:     make(map[string]*chatState),
+		stateOrder: list.New(),
 	}, nil
 }
 
@@ -66,16 +90,33 @@ func (c *Channel) IsRunning() bool { return c.running.Load() }
 
 // Start 启动 QQ 机器人 WebSocket 连接
 func (c *Channel) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !c.running.CompareAndSwap(false, true) {
+		return fmt.Errorf("QQ channel is already running")
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	c.lifecycleMu.Lock()
+	c.cancel = cancel
+	c.sessionDone = done
+	c.lifecycleMu.Unlock()
+	started := false
+	defer func() {
+		if !started {
+			cancel()
+			close(done)
+			c.running.Store(false)
+		}
+	}()
+
 	tokenSource := token.NewQQBotTokenSource(
 		&token.QQBotCredentials{
 			AppID:     c.appID,
 			AppSecret: c.appSecret,
 		},
 	)
-
-	if err := token.StartRefreshAccessToken(ctx, tokenSource); err != nil {
-		return err
-	}
 
 	if c.sandbox {
 		c.api = botgo.NewSandboxOpenAPI(c.appID, tokenSource).WithTimeout(10 * time.Second)
@@ -88,35 +129,63 @@ func (c *Channel) Start(ctx context.Context) error {
 		c.groupATMessageHandler(),
 	)
 
-	wsInfo, err := c.api.WS(ctx, nil, "")
+	wsInfo, err := c.api.WS(runCtx, nil, "")
 	if err != nil {
 		return err
 	}
 
-	wsCtx, cancel := context.WithCancel(ctx)
-	c.cancel = cancel
-	c.running.Store(true)
+	started = true
 
 	go func() {
-		defer c.running.Store(false)
-		if err := botgo.NewSessionManager().Start(wsInfo, tokenSource, &intent); err != nil {
+		cleanupDone := make(chan struct{})
+		go func() {
+			defer close(cleanupDone)
+			c.cleanupState(runCtx)
+		}()
+
+		err := newSessionRunner().Run(runCtx, wsInfo, tokenSource, &intent)
+		if err != nil && runCtx.Err() == nil {
 			log.Printf("[qq] session manager exited: %v", err)
 		}
 		cancel()
+		<-cleanupDone
+		c.resetStateCaches()
+		done <- err
+		close(done)
+		c.running.Store(false)
 	}()
-
-	// 定期清理过期的去重记录
-	go c.cleanupSeen(wsCtx)
 
 	log.Printf("[qq] QQ bot started (appID=%s, sandbox=%v)", c.appID, c.sandbox)
 	return nil
 }
 
 // Stop 停止 QQ 机器人
-func (c *Channel) Stop(_ context.Context) error {
-	if c.cancel != nil {
-		c.cancel()
+func (c *Channel) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	c.lifecycleMu.Lock()
+	cancel := c.cancel
+	done := c.sessionDone
+	c.lifecycleMu.Unlock()
+	if cancel == nil {
+		c.running.Store(false)
+		return nil
+	}
+	cancel()
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return fmt.Errorf("stop QQ channel: %w", ctx.Err())
+		}
+	}
+	c.lifecycleMu.Lock()
+	if c.sessionDone == done {
+		c.cancel = nil
+		c.sessionDone = nil
+	}
+	c.lifecycleMu.Unlock()
 	c.running.Store(false)
 	log.Printf("[qq] QQ bot stopped")
 	return nil
@@ -215,7 +284,7 @@ func (c *Channel) c2cMessageHandler() event.C2CMessageEventHandler {
 		}
 
 		ctx := channel.WithChannelName(context.Background(), "qq")
-		go c.handler(ctx, chatID, msg.Author.ID, inMsg, false)
+		c.handler(ctx, chatID, msg.Author.ID, inMsg, false)
 		return nil
 	}
 }
@@ -243,7 +312,7 @@ func (c *Channel) groupATMessageHandler() event.GroupATMessageEventHandler {
 		}
 
 		ctx := channel.WithChannelName(context.Background(), "qq")
-		go c.handler(ctx, chatID, msg.Author.ID, inMsg, true)
+		c.handler(ctx, chatID, msg.Author.ID, inMsg, true)
 		return nil
 	}
 }
@@ -290,18 +359,27 @@ func guessAttachmentType(url, fileName string) channel.MessageType {
 
 // isDuplicate 检查消息是否重复（5 分钟内的重复 msgID）
 func (c *Channel) isDuplicate(msgID string) bool {
+	if msgID == "" {
+		return false
+	}
+	now := time.Now()
 	c.seenMu.Lock()
 	defer c.seenMu.Unlock()
-	if _, ok := c.seen[msgID]; ok {
+	c.pruneSeenLocked(now)
+	if seenAt, ok := c.seen[msgID]; ok && now.Sub(seenAt) < seenMessageTTL {
 		return true
 	}
-	c.seen[msgID] = time.Now()
+	for len(c.seen) >= maxSeenMessages {
+		c.removeOldestSeenLocked()
+	}
+	c.seen[msgID] = now
+	c.seenOrder.PushBack(seenMessage{id: msgID, seenAt: now})
 	return false
 }
 
-// cleanupSeen 定期清理过期的去重记录和空闲会话状态
-func (c *Channel) cleanupSeen(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Minute)
+// cleanupState 定期清理过期的去重记录和空闲会话状态。
+func (c *Channel) cleanupState(ctx context.Context) {
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -309,28 +387,12 @@ func (c *Channel) cleanupSeen(ctx context.Context) {
 			return
 		case <-ticker.C:
 			now := time.Now()
-
-			// 清理去重记录（5 分钟过期）
 			c.seenMu.Lock()
-			seenCutoff := now.Add(-5 * time.Minute)
-			for id, t := range c.seen {
-				if t.Before(seenCutoff) {
-					delete(c.seen, id)
-				}
-			}
+			c.pruneSeenLocked(now)
 			c.seenMu.Unlock()
 
-			// 清理空闲会话状态（30 分钟无活动）
 			c.statesMu.Lock()
-			stateCutoff := now.Add(-30 * time.Minute)
-			for id, s := range c.states {
-				s.mu.Lock()
-				idle := s.lastSeen.Before(stateCutoff)
-				s.mu.Unlock()
-				if idle {
-					delete(c.states, id)
-				}
-			}
+			c.pruneStatesLocked(now)
 			c.statesMu.Unlock()
 		}
 	}
@@ -338,18 +400,22 @@ func (c *Channel) cleanupSeen(ctx context.Context) {
 
 // getState 获取会话状态，不存在则创建
 func (c *Channel) getState(chatID string) *chatState {
-	c.statesMu.RLock()
-	s, ok := c.states[chatID]
-	c.statesMu.RUnlock()
-	if ok {
-		return s
-	}
 	c.statesMu.Lock()
 	defer c.statesMu.Unlock()
-	if s, ok = c.states[chatID]; ok {
+	c.ensureStateCacheLocked()
+	now := time.Now()
+	if s, ok := c.states[chatID]; ok {
+		s.mu.Lock()
+		s.lastSeen = now
+		s.mu.Unlock()
+		c.stateOrder.MoveToFront(s.order)
 		return s
 	}
-	s = &chatState{}
+	for len(c.states) >= maxChatStates {
+		c.removeOldestStateLocked()
+	}
+	s := &chatState{lastSeen: now}
+	s.order = c.stateOrder.PushFront(chatID)
 	c.states[chatID] = s
 	return s
 }
@@ -362,4 +428,74 @@ func (c *Channel) updateState(chatID, msgID string) {
 	s.lastSeen = time.Now()
 	s.mu.Unlock()
 	s.msgSeq.Store(0)
+}
+
+func (c *Channel) ensureStateCacheLocked() {
+	if c.stateOrder == nil {
+		c.stateOrder = list.New()
+	}
+}
+
+func (c *Channel) pruneSeenLocked(now time.Time) {
+	if c.seenOrder == nil {
+		c.seenOrder = list.New()
+	}
+	for element := c.seenOrder.Front(); element != nil; element = c.seenOrder.Front() {
+		entry := element.Value.(seenMessage)
+		if now.Sub(entry.seenAt) < seenMessageTTL {
+			return
+		}
+		c.removeOldestSeenLocked()
+	}
+}
+
+func (c *Channel) removeOldestSeenLocked() {
+	if c.seenOrder == nil {
+		return
+	}
+	element := c.seenOrder.Front()
+	if element == nil {
+		return
+	}
+	entry := element.Value.(seenMessage)
+	if c.seen[entry.id].Equal(entry.seenAt) {
+		delete(c.seen, entry.id)
+	}
+	c.seenOrder.Remove(element)
+}
+
+func (c *Channel) pruneStatesLocked(now time.Time) {
+	c.ensureStateCacheLocked()
+	for element := c.stateOrder.Back(); element != nil; element = c.stateOrder.Back() {
+		chatID := element.Value.(string)
+		state := c.states[chatID]
+		state.mu.Lock()
+		idle := now.Sub(state.lastSeen) >= chatStateTTL
+		state.mu.Unlock()
+		if !idle {
+			return
+		}
+		c.removeOldestStateLocked()
+	}
+}
+
+func (c *Channel) removeOldestStateLocked() {
+	c.ensureStateCacheLocked()
+	element := c.stateOrder.Back()
+	if element == nil {
+		return
+	}
+	delete(c.states, element.Value.(string))
+	c.stateOrder.Remove(element)
+}
+
+func (c *Channel) resetStateCaches() {
+	c.seenMu.Lock()
+	c.seen = make(map[string]time.Time)
+	c.seenOrder = list.New()
+	c.seenMu.Unlock()
+	c.statesMu.Lock()
+	c.states = make(map[string]*chatState)
+	c.stateOrder = list.New()
+	c.statesMu.Unlock()
 }
