@@ -160,6 +160,8 @@ func (rt *Runtime) DeleteSessionHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "invalid session ID")
 			return
 		}
+		unlockSession := rt.lockSessionOperation(sessionID)
+		defer unlockSession()
 
 		if stream := rt.Streams.Get(sessionID); stream != nil && stream.Status() == "processing" {
 			Fail(c, http.StatusConflict, "session is active")

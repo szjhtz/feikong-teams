@@ -59,6 +59,8 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			Fail(c, http.StatusBadRequest, "invalid session ID")
 			return
 		}
+		unlockSession := rt.lockSessionOperation(sessionID)
+		defer unlockSession()
 
 		if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
 			if queued, ok := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents); ok {
@@ -103,7 +105,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			return
 		}
 		rt.restorePersistentQueue(sessionID, stream)
-		recorder, releaseRecorder := rt.acquireRecorder(sessionID)
+		recorder, releaseRecorder := rt.acquireRecorderLocked(sessionID)
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
@@ -118,6 +120,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			defer releaseRecorder()
 			rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
 		}()
+		unlockSession()
 
 		OK(c, gin.H{
 			"session_id":   sessionID,

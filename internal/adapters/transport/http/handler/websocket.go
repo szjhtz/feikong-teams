@@ -298,6 +298,12 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		_ = writeJSON(errorEventPayload(sessionID, "message or contents is required"))
 		return
 	}
+	if !validateSessionID(sessionID) {
+		_ = writeJSON(errorEventPayload(sessionID, "invalid session ID"))
+		return
+	}
+	unlockSession := rt.lockSessionOperation(sessionID)
+	defer unlockSession()
 
 	if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
 		if _, ok := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); ok {
@@ -322,6 +328,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		}
 		return
 	}
+	unlockSession()
 	rt.restorePersistentQueue(sessionID, stream)
 	// 绑定当前 WS 连接为 Push 订阅者
 	_, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {

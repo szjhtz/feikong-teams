@@ -5,6 +5,7 @@ import (
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	modelproviders "fkteams/internal/adapters/model/providers"
@@ -46,6 +47,9 @@ type Runtime struct {
 	Runtime        runtimeport.Runtime
 	Interrupt      runtimeport.InterruptRuntime
 	ResetChannels  func()
+
+	sessionOperationsMu sync.Mutex
+	sessionOperations   map[string]*sessionOperationLock
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
@@ -181,9 +185,49 @@ func (rt *Runtime) Close() {
 }
 
 func (rt *Runtime) acquireRecorder(sessionID string) (*eventlog.HistoryRecorder, func()) {
+	unlock := rt.lockSessionOperation(sessionID)
+	defer unlock()
+	return rt.acquireRecorderLocked(sessionID)
+}
+
+func (rt *Runtime) acquireRecorderLocked(sessionID string) (*eventlog.HistoryRecorder, func()) {
 	recorder, release := rt.Sessions.Acquire(sessionID, rt.HistoryDir)
 	recorder.SetToolDisplayResolver(rt.ToolDisplays)
 	return recorder, release
+}
+
+type sessionOperationLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lockSessionOperation 将同一会话的短时注册、删除和 recorder 获取串行化。
+func (rt *Runtime) lockSessionOperation(sessionID string) func() {
+	rt.sessionOperationsMu.Lock()
+	if rt.sessionOperations == nil {
+		rt.sessionOperations = make(map[string]*sessionOperationLock)
+	}
+	operation := rt.sessionOperations[sessionID]
+	if operation == nil {
+		operation = &sessionOperationLock{}
+		rt.sessionOperations[sessionID] = operation
+	}
+	operation.refs++
+	rt.sessionOperationsMu.Unlock()
+
+	operation.mu.Lock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			operation.mu.Unlock()
+			rt.sessionOperationsMu.Lock()
+			operation.refs--
+			if operation.refs == 0 && rt.sessionOperations[sessionID] == operation {
+				delete(rt.sessionOperations, sessionID)
+			}
+			rt.sessionOperationsMu.Unlock()
+		})
+	}
 }
 
 func (rt *Runtime) sessionDirPath(sessionID string) string {
