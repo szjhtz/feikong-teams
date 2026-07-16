@@ -310,7 +310,10 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	defer unlockSession()
 
 	if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
-		if _, ok := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); ok {
+		if _, queueErr := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); queueErr == nil {
+			return
+		} else {
+			_ = writeJSON(errorEventPayload(sessionID, taskQueueErrorMessage(queueErr)))
 			return
 		}
 	}
@@ -327,8 +330,8 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		CleanupTTL: 5 * time.Minute,
 	})
 	if !created {
-		if _, ok := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); !ok {
-			_ = writeJSON(errorEventPayload(sessionID, "task is finishing; retry the request"))
+		if _, queueErr := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); queueErr != nil {
+			_ = writeJSON(errorEventPayload(sessionID, taskQueueErrorMessage(queueErr)))
 		}
 		return
 	}
@@ -455,7 +458,7 @@ func (rt *Runtime) handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) er
 		_ = writeJSON(errorEventPayload(sessionID, "no running task to steer"))
 		return
 	}
-	if _, ok := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents); !ok {
-		_ = writeJSON(errorEventPayload(sessionID, "task is finishing; steering was not queued"))
+	if _, queueErr := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents); queueErr != nil {
+		_ = writeJSON(errorEventPayload(sessionID, taskQueueErrorMessage(queueErr)))
 	}
 }

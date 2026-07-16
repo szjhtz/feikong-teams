@@ -63,8 +63,11 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		defer unlockSession()
 
 		if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
-			if queued, ok := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents); ok {
+			if queued, queueErr := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents); queueErr == nil {
 				writeStreamQueuedResponse(c, sessionID, existing, queued)
+				return
+			} else {
+				writeTaskQueueError(c, queueErr)
 				return
 			}
 		}
@@ -97,12 +100,13 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		})
 		if !created {
 			taskCancel()
-			if queued, ok := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents); ok {
+			if queued, queueErr := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents); queueErr == nil {
 				writeStreamQueuedResponse(c, sessionID, stream, queued)
 				return
+			} else {
+				writeTaskQueueError(c, queueErr)
+				return
 			}
-			Fail(c, http.StatusConflict, "task is finishing; retry the request")
-			return
 		}
 		rt.restorePersistentQueue(sessionID, stream)
 		recorder, releaseRecorder := rt.acquireRecorderLocked(sessionID)
@@ -178,9 +182,9 @@ func (rt *Runtime) StreamSteerHandler() gin.HandlerFunc {
 			return
 		}
 
-		queued, ok := rt.enqueueTaskMessage(stream, req.SessionID, taskstream.QueueSteering, req.Message, req.Contents)
-		if !ok {
-			Fail(c, http.StatusConflict, "task is finishing; steering was not queued")
+		queued, queueErr := rt.enqueueTaskMessage(stream, req.SessionID, taskstream.QueueSteering, req.Message, req.Contents)
+		if queueErr != nil {
+			writeTaskQueueError(c, queueErr)
 			return
 		}
 		OK(c, gin.H{
@@ -233,9 +237,13 @@ func (rt *Runtime) StreamQueueUpdateHandler() gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		updated, ok := stream.UpdateQueuedMessage(queueID, queued.Text, queued.Parts, queued.DisplayText)
-		if !ok {
-			Fail(c, http.StatusNotFound, "queued message not found")
+		updated, updateErr := stream.UpdateQueuedMessage(queueID, queued.Text, queued.Parts, queued.DisplayText)
+		if errors.Is(updateErr, taskstream.ErrQueuedMessageNotFound) {
+			Fail(c, http.StatusNotFound, updateErr.Error())
+			return
+		}
+		if updateErr != nil {
+			writeTaskQueueError(c, updateErr)
 			return
 		}
 		publishQueueUpdated(stream, sessionID)

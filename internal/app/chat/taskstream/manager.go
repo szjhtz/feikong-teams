@@ -10,6 +10,8 @@ import (
 const (
 	defaultMaxRetainedEvents     = 4096
 	defaultMaxRetainedEventBytes = 8 << 20
+	defaultMaxQueuedMessages     = 100
+	defaultMaxQueuedMessageBytes = 4 << 20
 )
 
 // Manager 全局任务流注册表，管理所有活跃和已完成的任务流。
@@ -31,6 +33,12 @@ func (m *Manager) newStream(cfg StreamConfig) *Stream {
 	}
 	if cfg.MaxRetainedEventBytes <= 0 {
 		cfg.MaxRetainedEventBytes = defaultMaxRetainedEventBytes
+	}
+	if cfg.MaxQueuedMessages <= 0 {
+		cfg.MaxQueuedMessages = defaultMaxQueuedMessages
+	}
+	if cfg.MaxQueuedMessageBytes <= 0 {
+		cfg.MaxQueuedMessageBytes = defaultMaxQueuedMessageBytes
 	}
 	return &Stream{
 		config:      cfg,

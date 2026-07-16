@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appstate"
@@ -15,8 +16,10 @@ import (
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -98,22 +101,44 @@ func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.Que
 	return appchat.BuildTurnInputWithMemory(recorder, msg.Text, manager)
 }
 
-func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, bool) {
-	queued, ok := stream.EnqueueMessageIfProcessing(queuedChatMessage(kind, message, contents))
-	if !ok {
-		return taskstream.QueuedMessage{}, false
+func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, error) {
+	queued, err := stream.EnqueueMessageIfProcessing(queuedChatMessage(kind, message, contents))
+	if err != nil {
+		return taskstream.QueuedMessage{}, err
 	}
 	publishQueueUpdated(stream, sessionID)
-	return queued, true
+	return queued, nil
 }
 
-func (rt *Runtime) enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, bool) {
-	queued, ok := enqueueTaskMessage(stream, sessionID, kind, message, contents)
-	if !ok {
-		return taskstream.QueuedMessage{}, false
+func (rt *Runtime) enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, error) {
+	queued, err := enqueueTaskMessage(stream, sessionID, kind, message, contents)
+	if err != nil {
+		return taskstream.QueuedMessage{}, err
 	}
 	rt.persistQueueSnapshot(sessionID, stream)
-	return queued, true
+	return queued, nil
+}
+
+func writeTaskQueueError(c *gin.Context, err error) {
+	status := http.StatusConflict
+	switch {
+	case errors.Is(err, taskstream.ErrQueueMessageTooLarge):
+		status = http.StatusRequestEntityTooLarge
+	case errors.Is(err, taskstream.ErrQueueFull):
+		status = http.StatusTooManyRequests
+	}
+	Fail(c, status, taskQueueErrorMessage(err))
+}
+
+func taskQueueErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, taskstream.ErrQueueMessageTooLarge):
+		return "queued message is too large"
+	case errors.Is(err, taskstream.ErrQueueFull):
+		return "task queue is full; retry after queued messages are processed"
+	default:
+		return "task is finishing; retry the request"
+	}
 }
 
 func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {

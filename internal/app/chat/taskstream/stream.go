@@ -10,6 +10,7 @@ package taskstream
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -81,6 +82,13 @@ type QueueKind string
 const (
 	QueueFollowUp QueueKind = "follow_up"
 	QueueSteering QueueKind = "steering"
+)
+
+var (
+	ErrQueueNotProcessing    = errors.New("task is not processing")
+	ErrQueueFull             = errors.New("task queue is full")
+	ErrQueueMessageTooLarge  = errors.New("queued message is too large")
+	ErrQueuedMessageNotFound = errors.New("queued message not found")
 )
 
 type QueuedMessage struct {
@@ -186,6 +194,8 @@ type StreamConfig struct {
 
 	MaxRetainedEvents     int // 事件回放窗口的最大事件数
 	MaxRetainedEventBytes int // 事件回放窗口的最大估算字节数
+	MaxQueuedMessages     int // 未消费输入的最大条数
+	MaxQueuedMessageBytes int // 未消费输入的最大总字节数
 
 	// 元数据（可选）
 	Mode      string // 协作模式
@@ -229,6 +239,7 @@ type Stream struct {
 	submitted    bool
 	steering     []QueuedMessage
 	followUps    []QueuedMessage
+	queuedBytes  int
 
 	// 所属 Manager 引用（用于 grace timer 自动移除）
 	manager *Manager
@@ -600,24 +611,37 @@ func (s *Stream) CancelIfProcessing() bool {
 	return true
 }
 
-func (s *Stream) EnqueueMessage(msg QueuedMessage) QueuedMessage {
+func (s *Stream) EnqueueMessage(msg QueuedMessage) (QueuedMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.enqueueMessageLocked(msg)
 }
 
 // EnqueueMessageIfProcessing 仅在任务仍可消费队列时追加消息。
-func (s *Stream) EnqueueMessageIfProcessing(msg QueuedMessage) (QueuedMessage, bool) {
+func (s *Stream) EnqueueMessageIfProcessing(msg QueuedMessage) (QueuedMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.done || s.status != "processing" {
-		return QueuedMessage{}, false
+		return QueuedMessage{}, ErrQueueNotProcessing
 	}
-	return s.enqueueMessageLocked(msg), true
+	return s.enqueueMessageLocked(msg)
 }
 
-func (s *Stream) enqueueMessageLocked(msg QueuedMessage) QueuedMessage {
+func (s *Stream) enqueueMessageLocked(msg QueuedMessage) (QueuedMessage, error) {
 	msg = normalizeQueuedMessage(msg)
+	size := queuedMessageSize(msg)
+	if s.config.MaxQueuedMessageBytes > 0 && size > s.config.MaxQueuedMessageBytes {
+		return QueuedMessage{}, ErrQueueMessageTooLarge
+	}
+	if (s.config.MaxQueuedMessages > 0 && len(s.steering)+len(s.followUps) >= s.config.MaxQueuedMessages) ||
+		(s.config.MaxQueuedMessageBytes > 0 && s.queuedBytes+size > s.config.MaxQueuedMessageBytes) {
+		return QueuedMessage{}, ErrQueueFull
+	}
+	s.appendQueuedMessageLocked(msg, size)
+	return msg, nil
+}
+
+func (s *Stream) appendQueuedMessageLocked(msg QueuedMessage, size int) {
 	switch msg.Kind {
 	case QueueSteering:
 		s.steering = append(s.steering, msg)
@@ -625,7 +649,7 @@ func (s *Stream) enqueueMessageLocked(msg QueuedMessage) QueuedMessage {
 		msg.Kind = QueueFollowUp
 		s.followUps = append(s.followUps, msg)
 	}
-	return msg
+	s.queuedBytes += size
 }
 
 func normalizeQueuedMessage(msg QueuedMessage) QueuedMessage {
@@ -636,13 +660,25 @@ func normalizeQueuedMessage(msg QueuedMessage) QueuedMessage {
 	if msg.Kind == "" {
 		msg.Kind = QueueFollowUp
 	}
+	if msg.Kind != QueueSteering {
+		msg.Kind = QueueFollowUp
+	}
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = now
 	}
 	if msg.DisplayText == "" {
 		msg.DisplayText = msg.Text
 	}
+	msg.Parts = append([]domainmessage.ContentPart(nil), msg.Parts...)
 	return msg
+}
+
+func queuedMessageSize(msg QueuedMessage) int {
+	size := len(msg.ID) + len(msg.Kind) + len(msg.Text) + len(msg.DisplayText) + 32
+	for _, part := range msg.Parts {
+		size += len(part.Type) + len(part.Name) + len(part.Text) + len(part.URL) + len(part.Base64Data) + len(part.MIMEType) + len(part.Detail)
+	}
+	return size
 }
 
 func (s *Stream) TakeSteeringMessages(limit int) []QueuedMessage {
@@ -657,6 +693,9 @@ func (s *Stream) TakeSteeringMessages(limit int) []QueuedMessage {
 	result := make([]QueuedMessage, limit)
 	copy(result, s.steering[:limit])
 	s.steering = s.steering[limit:]
+	for _, msg := range result {
+		s.queuedBytes -= queuedMessageSize(msg)
+	}
 	return result
 }
 
@@ -685,11 +724,13 @@ func (s *Stream) dequeueNextMessageLocked() (QueuedMessage, bool) {
 	if len(s.steering) > 0 {
 		msg := s.steering[0]
 		s.steering = s.steering[1:]
+		s.queuedBytes -= queuedMessageSize(msg)
 		return msg, true
 	}
 	if len(s.followUps) > 0 {
 		msg := s.followUps[0]
 		s.followUps = s.followUps[1:]
+		s.queuedBytes -= queuedMessageSize(msg)
 		return msg, true
 	}
 	return QueuedMessage{}, false
@@ -715,24 +756,28 @@ func (s *Stream) RestoreQueue(queue []QueuedMessage) {
 		}
 	}
 
+	currentBytes := 0
+	for _, msg := range current {
+		currentBytes += queuedMessageSize(msg)
+	}
 	s.steering = nil
 	s.followUps = nil
+	s.queuedBytes = 0
 	for _, msg := range queue {
 		msg = normalizeQueuedMessage(msg)
 		if _, exists := currentIDs[msg.ID]; exists {
 			continue
 		}
-		s.enqueueMessageLocked(msg)
+		size := queuedMessageSize(msg)
+		if (s.config.MaxQueuedMessages > 0 && len(s.steering)+len(s.followUps)+len(current) >= s.config.MaxQueuedMessages) ||
+			(s.config.MaxQueuedMessageBytes > 0 && (size > s.config.MaxQueuedMessageBytes || s.queuedBytes+size+currentBytes > s.config.MaxQueuedMessageBytes)) {
+			continue
+		}
+		s.appendQueuedMessageLocked(msg, size)
 	}
 	for _, msg := range current {
 		msg = normalizeQueuedMessage(msg)
-		switch msg.Kind {
-		case QueueSteering:
-			s.steering = append(s.steering, msg)
-		default:
-			msg.Kind = QueueFollowUp
-			s.followUps = append(s.followUps, msg)
-		}
+		s.appendQueuedMessageLocked(msg, queuedMessageSize(msg))
 	}
 }
 
@@ -740,15 +785,18 @@ func (s *Stream) queueSnapshotLocked() []QueuedMessage {
 	queue := make([]QueuedMessage, 0, len(s.steering)+len(s.followUps))
 	queue = append(queue, s.steering...)
 	queue = append(queue, s.followUps...)
+	for i := range queue {
+		queue[i].Parts = append([]domainmessage.ContentPart(nil), queue[i].Parts...)
+	}
 	return queue
 }
 
-func (s *Stream) UpdateQueuedMessage(id, text string, parts []domainmessage.ContentPart, displayText string) (QueuedMessage, bool) {
+func (s *Stream) UpdateQueuedMessage(id, text string, parts []domainmessage.ContentPart, displayText string) (QueuedMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	queue, index, ok := s.findQueuedMessageLocked(id)
 	if !ok {
-		return QueuedMessage{}, false
+		return QueuedMessage{}, ErrQueuedMessageNotFound
 	}
 	msg := (*queue)[index]
 	msg.Text = text
@@ -758,8 +806,17 @@ func (s *Stream) UpdateQueuedMessage(id, text string, parts []domainmessage.Cont
 		msg.DisplayText = msg.Text
 	}
 	msg.UpdatedAt = time.Now()
+	oldSize := queuedMessageSize((*queue)[index])
+	newSize := queuedMessageSize(msg)
+	if s.config.MaxQueuedMessageBytes > 0 && (newSize > s.config.MaxQueuedMessageBytes || s.queuedBytes-oldSize+newSize > s.config.MaxQueuedMessageBytes) {
+		if newSize > s.config.MaxQueuedMessageBytes {
+			return QueuedMessage{}, ErrQueueMessageTooLarge
+		}
+		return QueuedMessage{}, ErrQueueFull
+	}
 	(*queue)[index] = msg
-	return msg, true
+	s.queuedBytes += newSize - oldSize
+	return msg, nil
 }
 
 func (s *Stream) SetQueuedMessageKind(id string, kind QueueKind) (QueuedMessage, bool) {
@@ -779,6 +836,7 @@ func (s *Stream) SetQueuedMessageKind(id string, kind QueueKind) (QueuedMessage,
 	if msg.Kind == kind {
 		return msg, true
 	}
+	oldSize := queuedMessageSize(msg)
 	*queue = append((*queue)[:index], (*queue)[index+1:]...)
 	msg.Kind = kind
 	msg.UpdatedAt = time.Now()
@@ -788,6 +846,7 @@ func (s *Stream) SetQueuedMessageKind(id string, kind QueueKind) (QueuedMessage,
 	default:
 		s.followUps = append(s.followUps, msg)
 	}
+	s.queuedBytes += queuedMessageSize(msg) - oldSize
 	return msg, true
 }
 
@@ -800,6 +859,7 @@ func (s *Stream) RemoveQueuedMessage(id string) (QueuedMessage, bool) {
 	}
 	msg := (*queue)[index]
 	*queue = append((*queue)[:index], (*queue)[index+1:]...)
+	s.queuedBytes -= queuedMessageSize(msg)
 	return msg, true
 }
 

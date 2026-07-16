@@ -1,6 +1,7 @@
 package taskstream
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -516,8 +517,12 @@ func TestSubscribeReplaysEventsFromOffset(t *testing.T) {
 func TestSteeringQueueIsConsumedBeforeFollowUpFallback(t *testing.T) {
 	s := newTestStream()
 
-	s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
-	s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "change direction"})
+	if _, err := s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "change direction"}); err != nil {
+		t.Fatal(err)
+	}
 
 	steering := s.TakeSteeringMessages(1)
 	if len(steering) != 1 || steering[0].Text != "change direction" {
@@ -535,11 +540,14 @@ func TestSteeringQueueIsConsumedBeforeFollowUpFallback(t *testing.T) {
 
 func TestRestoreQueuePreservesMessagesAcceptedDuringRestore(t *testing.T) {
 	s := newTestStream()
-	accepted := s.EnqueueMessage(QueuedMessage{
+	accepted, err := s.EnqueueMessage(QueuedMessage{
 		ID:   "accepted",
 		Kind: QueueFollowUp,
 		Text: "new message",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	s.RestoreQueue([]QueuedMessage{
 		{ID: "persisted-steering", Kind: QueueSteering, Text: "old steering"},
@@ -570,7 +578,8 @@ func TestEnqueueAndCompletionTransitionAreAtomic(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, accepted = s.EnqueueMessageIfProcessing(QueuedMessage{Kind: QueueFollowUp, Text: "follow-up"})
+			_, err := s.EnqueueMessageIfProcessing(QueuedMessage{Kind: QueueFollowUp, Text: "follow-up"})
+			accepted = err == nil
 		}()
 		go func() {
 			defer wg.Done()
@@ -593,7 +602,7 @@ func TestEnqueueAndCompletionTransitionAreAtomic(t *testing.T) {
 		} else if s.Status() != "completed" {
 			t.Fatalf("iteration %d rejected enqueue status = %q", i, s.Status())
 		}
-		if _, ok := s.EnqueueMessageIfProcessing(QueuedMessage{Text: "too late"}); ok {
+		if _, err := s.EnqueueMessageIfProcessing(QueuedMessage{Text: "too late"}); err == nil {
 			t.Fatalf("iteration %d accepted message after completion", i)
 		}
 	}
@@ -636,15 +645,24 @@ func TestCancellationAndCompletionTransitionAreAtomic(t *testing.T) {
 func TestQueuedMessagesCanBeManagedBeforeConsumption(t *testing.T) {
 	s := newTestStream()
 
-	first := s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "first"})
-	second := s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "second"})
-	follow := s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
+	first, err := s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.EnqueueMessage(QueuedMessage{Kind: QueueSteering, Text: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	follow, err := s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if first.ID == "" || second.ID == "" || follow.ID == "" {
 		t.Fatal("queued messages should get stable IDs")
 	}
-	if updated, ok := s.UpdateQueuedMessage(second.ID, "changed", nil, "changed"); !ok || updated.Text != "changed" {
-		t.Fatalf("expected second item to update, got %#v ok=%v", updated, ok)
+	if updated, err := s.UpdateQueuedMessage(second.ID, "changed", nil, "changed"); err != nil || updated.Text != "changed" {
+		t.Fatalf("expected second item to update, got %#v err=%v", updated, err)
 	}
 	if moved, ok := s.MoveQueuedMessage(second.ID, -1); !ok || moved.ID != second.ID {
 		t.Fatalf("expected second item to move up, got %#v ok=%v", moved, ok)
@@ -666,7 +684,10 @@ func TestQueuedMessagesCanBeManagedBeforeConsumption(t *testing.T) {
 func TestQueuedMessageKindCanBeChangedBeforeConsumption(t *testing.T) {
 	s := newTestStream()
 
-	follow := s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
+	follow, err := s.EnqueueMessage(QueuedMessage{Kind: QueueFollowUp, Text: "later"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	updated, ok := s.SetQueuedMessageKind(follow.ID, QueueSteering)
 	if !ok || updated.Kind != QueueSteering {
 		t.Fatalf("expected item to switch to steering, got %#v ok=%v", updated, ok)
@@ -677,6 +698,57 @@ func TestQueuedMessageKindCanBeChangedBeforeConsumption(t *testing.T) {
 	steering := s.TakeSteeringMessages(1)
 	if len(steering) != 1 || steering[0].ID != follow.ID {
 		t.Fatalf("expected switched item to be consumed as steering, got %#v", steering)
+	}
+}
+
+func TestQueueLimitsCountAndBytes(t *testing.T) {
+	s := NewManager().Register(StreamConfig{
+		SessionID:             "bounded-queue",
+		MaxQueuedMessages:     2,
+		MaxQueuedMessageBytes: 512,
+	})
+	first, err := s.EnqueueMessageIfProcessing(QueuedMessage{Text: strings.Repeat("a", 40)})
+	if err != nil {
+		t.Fatalf("first enqueue: %v", err)
+	}
+	if _, err := s.EnqueueMessageIfProcessing(QueuedMessage{Text: strings.Repeat("b", 40)}); err != nil {
+		t.Fatalf("second enqueue: %v", err)
+	}
+	if _, err := s.EnqueueMessageIfProcessing(QueuedMessage{Text: "third"}); !errors.Is(err, ErrQueueFull) {
+		t.Fatalf("third enqueue error = %v, want queue full", err)
+	}
+	if _, err := s.UpdateQueuedMessage(first.ID, strings.Repeat("x", 600), nil, ""); !errors.Is(err, ErrQueueMessageTooLarge) {
+		t.Fatalf("oversized update error = %v, want message too large", err)
+	}
+	if removed, ok := s.RemoveQueuedMessage(first.ID); !ok || removed.ID != first.ID {
+		t.Fatalf("remove first = %#v, %v", removed, ok)
+	}
+	if _, err := s.EnqueueMessageIfProcessing(QueuedMessage{Text: strings.Repeat("x", 600)}); !errors.Is(err, ErrQueueMessageTooLarge) {
+		t.Fatalf("oversized enqueue error = %v, want message too large", err)
+	}
+	if _, err := s.EnqueueMessageIfProcessing(QueuedMessage{Text: "replacement"}); err != nil {
+		t.Fatalf("replacement enqueue: %v", err)
+	}
+}
+
+func TestRestoreQueueReservesCapacityForConcurrentMessages(t *testing.T) {
+	s := NewManager().Register(StreamConfig{
+		SessionID:             "restore-bounded-queue",
+		MaxQueuedMessages:     2,
+		MaxQueuedMessageBytes: 1 << 20,
+	})
+	current, err := s.EnqueueMessageIfProcessing(QueuedMessage{ID: "current", Text: "current"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.RestoreQueue([]QueuedMessage{
+		{ID: "persisted-1", Text: "first"},
+		{ID: "persisted-2", Text: "second"},
+	})
+
+	queue := s.QueueSnapshot()
+	if len(queue) != 2 || queue[0].ID != "persisted-1" || queue[1].ID != current.ID {
+		t.Fatalf("restored queue = %#v", queue)
 	}
 }
 
