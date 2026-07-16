@@ -328,6 +328,8 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		SessionID:  sessionID,
 		Cancel:     taskCancel,
 		CleanupTTL: 5 * time.Minute,
+		Mode:       mode,
+		AgentName:  wsMsg.AgentName,
 	})
 	if !created {
 		if _, queueErr := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); queueErr != nil {
@@ -377,7 +379,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	})
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
-	rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+	rt.updateSessionExecutionMetadata(sessionID, currentDisplayText, mode, wsMsg.AgentName)
 	stream.Publish(standardMessageEventPayload(sessionID, currentRunID, currentTurnID, "开始处理您的请求..."))
 
 	chatService := appchat.NewService()
@@ -426,7 +428,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			currentRunID = queuedTurnRunID(sessionID, queued)
-			rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+			rt.updateSessionExecutionMetadata(sessionID, currentDisplayText, mode, wsMsg.AgentName)
 			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
 			continue
 		}

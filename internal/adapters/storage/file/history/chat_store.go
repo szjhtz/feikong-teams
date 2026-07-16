@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	appchat "fkteams/internal/app/chat"
@@ -44,14 +45,20 @@ func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.Meta
 			meta.Status = domainsession.Status(update.Status)
 			meta.CreatedAt = now
 			meta.UpdatedAt = now
-			return nil
+		} else {
+			meta.UpdatedAt = now
+			if update.Status != "" {
+				meta.Status = domainsession.Status(update.Status)
+			}
+			if update.UpdateDefaultTitle && update.TitleSource != "" && isDefaultTitle(meta.Title) {
+				meta.Title = truncateTitle(update.TitleSource)
+			}
 		}
-		meta.UpdatedAt = now
-		if update.Status != "" {
-			meta.Status = domainsession.Status(update.Status)
+		if update.Mode != nil {
+			meta.Mode = strings.TrimSpace(*update.Mode)
 		}
-		if update.UpdateDefaultTitle && update.TitleSource != "" && isDefaultTitle(meta.Title) {
-			meta.Title = truncateTitle(update.TitleSource)
+		if update.CurrentAgent != nil {
+			meta.CurrentAgent = strings.TrimSpace(*update.CurrentAgent)
 		}
 		return nil
 	})

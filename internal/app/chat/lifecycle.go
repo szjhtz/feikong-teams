@@ -36,6 +36,14 @@ type MetadataUpdate struct {
 	DefaultTitle       string
 	CreateIfMissing    bool
 	UpdateDefaultTitle bool
+	Mode               *string
+	CurrentAgent       *string
+}
+
+// ExecutionTarget 描述当前会话实际使用的运行模式和目标智能体。
+type ExecutionTarget struct {
+	Mode         string
+	CurrentAgent string
 }
 
 // MetadataStore 保存会话 metadata。
@@ -79,6 +87,20 @@ func (l *SessionLifecycle) MarkProcessing(ctx context.Context, sessionID, titleS
 		DefaultTitle:       "未命名会话",
 		CreateIfMissing:    true,
 		UpdateDefaultTitle: true,
+	})
+}
+
+// MarkProcessingWithTarget 在进入处理态时同步本次运行目标。
+func (l *SessionLifecycle) MarkProcessingWithTarget(ctx context.Context, sessionID, titleSource string, target ExecutionTarget) error {
+	return l.updateMetadata(ctx, MetadataUpdate{
+		SessionID:          sessionID,
+		TitleSource:        titleSource,
+		Status:             SessionStatusProcessing,
+		DefaultTitle:       "未命名会话",
+		CreateIfMissing:    true,
+		UpdateDefaultTitle: true,
+		Mode:               &target.Mode,
+		CurrentAgent:       &target.CurrentAgent,
 	})
 }
 

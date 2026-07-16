@@ -18,6 +18,7 @@ type SessionInfo struct {
 	SessionID    string    `json:"session_id"`
 	Title        string    `json:"title"`
 	Status       string    `json:"status"`
+	Mode         string    `json:"mode,omitempty"`
 	CurrentAgent string    `json:"current_agent,omitempty"`
 	Favorite     bool      `json:"favorite,omitempty"`
 	ActiveTask   bool      `json:"active_task"` // 是否有内存中的活跃流式任务可订阅
@@ -52,6 +53,7 @@ func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
 				SessionID:    meta.ID,
 				Title:        meta.Title,
 				Status:       status,
+				Mode:         meta.Mode,
 				CurrentAgent: meta.CurrentAgent,
 				Favorite:     meta.Favorite,
 				ActiveTask:   activeTask,
@@ -134,14 +136,17 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 		}
 
 		currentAgent := ""
+		mode := ""
 		favorite := false
 		if metaErr == nil {
+			mode = meta.Mode
 			currentAgent = meta.CurrentAgent
 			favorite = meta.Favorite
 		}
 
 		OK(c, gin.H{
 			"session_id":    sessionID,
+			"mode":          mode,
 			"current_agent": currentAgent,
 			"favorite":      favorite,
 			"events":        rt.transcriptRecordsToChatEvents(sessionID, transcript),
@@ -286,6 +291,7 @@ func (rt *Runtime) UpdateSessionHandler() gin.HandlerFunc {
 		var req struct {
 			Title        *string `json:"title"`
 			Favorite     *bool   `json:"favorite"`
+			Mode         *string `json:"mode"`
 			CurrentAgent *string `json:"current_agent"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -296,6 +302,7 @@ func (rt *Runtime) UpdateSessionHandler() gin.HandlerFunc {
 			SessionID:    sessionID,
 			Title:        req.Title,
 			Favorite:     req.Favorite,
+			Mode:         req.Mode,
 			CurrentAgent: req.CurrentAgent,
 		})
 		if err != nil {

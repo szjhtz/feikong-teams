@@ -113,7 +113,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
-		rt.updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
+		rt.updateSessionExecutionMetadata(sessionID, userDisplayText, mode, req.AgentName)
 		initialRunID := newTurnRunID(sessionID)
 		initialTurnID := turnIDForRun(initialRunID)
 		stream.SetTurn(initialRunID, initialTurnID)
@@ -439,7 +439,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			currentRunID = queuedTurnRunID(sessionID, queued)
-			rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+			rt.updateSessionExecutionMetadata(sessionID, currentDisplayText, stream.Mode(), stream.AgentName())
 			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
 			continue
 		}

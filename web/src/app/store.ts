@@ -102,6 +102,8 @@ const chatSlice = createSlice({
       const detail = action.payload;
       state.activeSessionID = detail.session_id;
       state.viewSessionID = detail.session_id;
+      state.mode = detail.mode || "team";
+      state.currentAgent = detail.current_agent || "";
       state.messages = [];
       state.events = [];
       state.seenEventKeys = {};
@@ -497,12 +499,14 @@ const sessionsSlice = createSlice({
         updated_at: next.updated_at || current.updated_at,
       };
     },
-    updateSessionRuntime(state, action: PayloadAction<{ sessionID: string; status?: string; activeTask: boolean; updatedAt?: string }>) {
-      const { sessionID, status, activeTask, updatedAt } = action.payload;
+    updateSessionRuntime(state, action: PayloadAction<{ sessionID: string; status?: string; activeTask: boolean; updatedAt?: string; mode?: string; currentAgent?: string }>) {
+      const { sessionID, status, activeTask, updatedAt, mode, currentAgent } = action.payload;
       const session = state.items.find((item) => item.session_id === sessionID);
       if (!session) return;
       if (status) session.status = status;
       session.active_task = activeTask;
+      if (mode !== undefined) session.mode = mode;
+      if (currentAgent !== undefined) session.current_agent = currentAgent;
       if (updatedAt) {
         session.mod_time = updatedAt;
         session.updated_at = updatedAt;
@@ -512,6 +516,8 @@ const sessionsSlice = createSlice({
           ...state.localPatches[sessionID],
           ...(status ? { status } : {}),
           active_task: activeTask,
+          ...(mode !== undefined ? { mode } : {}),
+          ...(currentAgent !== undefined ? { current_agent: currentAgent } : {}),
           ...(updatedAt ? { mod_time: updatedAt, updated_at: updatedAt } : {}),
         };
       }

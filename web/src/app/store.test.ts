@@ -54,6 +54,17 @@ describe("chat state", () => {
     expect(getState().chat.messages).toHaveLength(0);
     expect(getState().chat.events).toHaveLength(0);
   });
+
+  test("restores the execution target when opening a session", () => {
+    dispatch(chatActions.setSessionDetail({
+      session_id: "configured-session",
+      mode: "deep",
+      current_agent: "coder",
+    }));
+
+    expect(getState().chat.mode).toBe("deep");
+    expect(getState().chat.currentAgent).toBe("coder");
+  });
 });
 
 describe("session list state", () => {

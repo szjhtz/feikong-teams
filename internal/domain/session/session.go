@@ -29,6 +29,7 @@ type Metadata struct {
 	ID           string    `json:"id"`
 	Title        string    `json:"title"`
 	Status       Status    `json:"status"`
+	Mode         string    `json:"mode,omitempty"`
 	CurrentAgent string    `json:"current_agent,omitempty"`
 	Favorite     bool      `json:"favorite,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`

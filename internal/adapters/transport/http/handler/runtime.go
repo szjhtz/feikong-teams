@@ -330,8 +330,11 @@ func (rt *Runtime) saveTurnHistory(recorder *eventlog.HistoryRecorder, sessionID
 	appchat.LogLifecycleError("http", sessionID, err)
 }
 
-func (rt *Runtime) updateSessionTitleAndStatus(sessionID, userInput, status string) {
-	err := rt.chatLifecycle().MarkProcessing(context.Background(), sessionID, userInput)
+func (rt *Runtime) updateSessionExecutionMetadata(sessionID, userInput, mode, currentAgent string) {
+	err := rt.chatLifecycle().MarkProcessingWithTarget(context.Background(), sessionID, userInput, appchat.ExecutionTarget{
+		Mode:         mode,
+		CurrentAgent: currentAgent,
+	})
 	appchat.LogLifecycleError("http", sessionID, err)
 }
 

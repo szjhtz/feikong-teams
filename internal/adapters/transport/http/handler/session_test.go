@@ -25,6 +25,7 @@ func TestGetSessionReturnsEmptyEventsWhenHistoryFileMissing(t *testing.T) {
 		ID:           sessionID,
 		Title:        "empty",
 		Status:       "idle",
+		Mode:         "deep",
 		CurrentAgent: "coder",
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -56,6 +57,9 @@ func TestGetSessionReturnsEmptyEventsWhenHistoryFileMissing(t *testing.T) {
 	}
 	if data["current_agent"] != "coder" {
 		t.Fatalf("unexpected current_agent: %#v", data["current_agent"])
+	}
+	if data["mode"] != "deep" {
+		t.Fatalf("unexpected mode: %#v", data["mode"])
 	}
 	gotEvents, ok := data["events"].([]any)
 	if !ok {

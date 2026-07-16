@@ -81,7 +81,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	}
 
 	patchTitle := strings.Repeat("新", 55)
-	resp = performJSON(router, http.MethodPatch, "/sessions/session-1", `{"title":"`+patchTitle+`","favorite":false,"current_agent":" analyst "}`)
+	resp = performJSON(router, http.MethodPatch, "/sessions/session-1", `{"title":"`+patchTitle+`","favorite":false,"mode":" deep ","current_agent":" analyst "}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("patch session status = %d: %s", resp.Code, resp.Body.String())
 	}
@@ -89,7 +89,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load metadata after patch: %v", err)
 	}
-	if meta.Title != strings.Repeat("新", 50)+"..." || meta.Favorite || meta.CurrentAgent != "analyst" {
+	if meta.Title != strings.Repeat("新", 50)+"..." || meta.Favorite || meta.Mode != "deep" || meta.CurrentAgent != "analyst" {
 		t.Fatalf("patched metadata = %#v", meta)
 	}
 
@@ -104,7 +104,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	if len(list.Sessions) != 1 {
 		t.Fatalf("sessions = %#v", list.Sessions)
 	}
-	if list.Sessions[0].SessionID != "session-1" || list.Sessions[0].Title != strings.Repeat("新", 50)+"..." || list.Sessions[0].CurrentAgent != "analyst" || list.Sessions[0].Favorite {
+	if list.Sessions[0].SessionID != "session-1" || list.Sessions[0].Title != strings.Repeat("新", 50)+"..." || list.Sessions[0].Mode != "deep" || list.Sessions[0].CurrentAgent != "analyst" || list.Sessions[0].Favorite {
 		t.Fatalf("listed session = %#v", list.Sessions[0])
 	}
 

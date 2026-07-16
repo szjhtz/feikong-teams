@@ -8,6 +8,7 @@ export interface SessionSummary {
   active_task?: boolean;
   mod_time?: string;
   updated_at?: string;
+  mode?: string;
   current_agent?: string;
 }
 
@@ -21,6 +22,8 @@ export interface SessionDetail {
   queue?: QueueItem[];
   message_count?: number;
   allow_tool_details?: boolean;
+  mode?: string;
+  current_agent?: string;
 }
 
 export interface ChatViewMessage {

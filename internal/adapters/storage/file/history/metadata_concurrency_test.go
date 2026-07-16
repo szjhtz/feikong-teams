@@ -41,10 +41,14 @@ func TestMetadataUpdatesAcrossStoresDoNotLoseFields(t *testing.T) {
 	<-updateEntered
 
 	chatDone := make(chan error, 1)
+	mode := "deep"
+	agent := "coder"
 	go func() {
 		chatDone <- chatStore.UpdateMetadata(context.Background(), appchat.MetadataUpdate{
-			SessionID: sessionID,
-			Status:    appchat.SessionStatusCompleted,
+			SessionID:    sessionID,
+			Status:       appchat.SessionStatusCompleted,
+			Mode:         &mode,
+			CurrentAgent: &agent,
 		})
 	}()
 	close(releaseUpdate)
@@ -59,7 +63,7 @@ func TestMetadataUpdatesAcrossStoresDoNotLoseFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !meta.Favorite || meta.Status != domainsession.StatusCompleted {
+	if !meta.Favorite || meta.Status != domainsession.StatusCompleted || meta.Mode != mode || meta.CurrentAgent != agent {
 		t.Fatalf("metadata fields were lost: %#v", meta)
 	}
 }

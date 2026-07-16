@@ -135,6 +135,8 @@ export function ChatInput({
           title: sessionTitle(displayText),
           status: "processing",
           active_task: true,
+          mode,
+          current_agent: currentAgent,
           mod_time: now,
           updated_at: now,
         }));
@@ -144,6 +146,8 @@ export function ChatInput({
           status: "processing",
           activeTask: true,
           updatedAt: now,
+          mode,
+          currentAgent,
         }));
       }
       clearStreamOffset(result.session_id);
