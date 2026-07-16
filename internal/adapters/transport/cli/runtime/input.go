@@ -1,26 +1,43 @@
 package runtime
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strings"
 )
 
+const maxPipeInputBytes int64 = 32 << 20
+
 // ReadPipeInput 检测 stdin 是否为管道并读取内容。
-func ReadPipeInput() (content string, isPipe bool) {
+func ReadPipeInput() (content string, isPipe bool, err error) {
 	stat, err := os.Stdin.Stat()
 	if err != nil {
-		return "", false
+		return "", false, fmt.Errorf("inspect stdin: %w", err)
 	}
 	if (stat.Mode() & os.ModeCharDevice) != 0 {
-		return "", false
+		return "", false, nil
 	}
-	data, err := io.ReadAll(os.Stdin)
+	data, err := readLimitedInput(os.Stdin, maxPipeInputBytes)
 	if err != nil {
-		return "", true
+		return "", true, err
 	}
-	return strings.TrimSpace(string(data)), true
+	return strings.TrimSpace(string(data)), true, nil
+}
+
+func readLimitedInput(reader io.Reader, limit int64) ([]byte, error) {
+	if limit < 0 {
+		return nil, fmt.Errorf("input limit must not be negative")
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read stdin: %w", err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("stdin exceeds %d bytes", limit)
+	}
+	return data, nil
 }
 
 // ExtractAgentMention 提取输入中的智能体 @ 提及。

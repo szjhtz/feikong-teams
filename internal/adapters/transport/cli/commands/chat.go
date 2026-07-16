@@ -27,7 +27,11 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	workMode := cmd.String("mode")
 	currentMode := cliruntime.ParseWorkMode(workMode)
 	query := cmd.String("query")
-	if pipeInput, isPipe := cliruntime.ReadPipeInput(); isPipe {
+	pipeInput, isPipe, err := cliruntime.ReadPipeInput()
+	if err != nil {
+		return fmt.Errorf("read piped input: %w", err)
+	}
+	if isPipe {
 		if pipeInput != "" {
 			if query != "" {
 				query = query + "\n" + pipeInput

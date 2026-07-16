@@ -97,7 +97,11 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	if query == "" {
 		query = cmd.Root().String("query")
 	}
-	if pipeInput, isPipe := cliruntime.ReadPipeInput(); isPipe {
+	pipeInput, isPipe, err := cliruntime.ReadPipeInput()
+	if err != nil {
+		return fmt.Errorf("read piped input: %w", err)
+	}
+	if isPipe {
 		if pipeInput != "" {
 			if query != "" {
 				query = query + "\n" + pipeInput
