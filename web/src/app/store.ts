@@ -438,9 +438,15 @@ const sessionsSlice = createSlice({
     items: [] as SessionSummary[],
     loading: false,
     search: "",
+    activeRequestStartedAt: undefined as number | undefined,
     localPatches: {} as Record<string, { observedAt: number; values: Partial<SessionSummary> }>,
   },
   reducers: {
+    beginSessionsRequest(state, action: PayloadAction<number>) {
+      state.loading = true;
+      state.activeRequestStartedAt = action.payload;
+      state.localPatches = {};
+    },
     setSessions(state, action: PayloadAction<{ items: SessionSummary[]; requestStartedAt: number }>) {
       const currentSessions = new Map(state.items.map((session) => [session.session_id, session]));
       const received = new Set(action.payload.items.map((session) => session.session_id));
@@ -460,17 +466,18 @@ const sessionsSlice = createSlice({
           return { ...session, ...patch.values };
         }),
       ];
-      for (const [sessionID, patch] of Object.entries(state.localPatches)) {
-        if (patch.observedAt < action.payload.requestStartedAt) delete state.localPatches[sessionID];
-      }
+      state.localPatches = {};
+      state.activeRequestStartedAt = undefined;
       state.loading = false;
     },
     upsertSession(state, action: PayloadAction<SessionSummary>) {
       const next = action.payload;
-      state.localPatches[next.session_id] = {
-        observedAt: Date.now(),
-        values: { ...state.localPatches[next.session_id]?.values, ...next },
-      };
+      if (state.activeRequestStartedAt !== undefined) {
+        state.localPatches[next.session_id] = {
+          observedAt: Date.now(),
+          values: { ...state.localPatches[next.session_id]?.values, ...next },
+        };
+      }
       const index = state.items.findIndex((item) => item.session_id === next.session_id);
       if (index < 0) {
         state.items.unshift(next);
@@ -496,33 +503,39 @@ const sessionsSlice = createSlice({
         session.mod_time = updatedAt;
         session.updated_at = updatedAt;
       }
-      state.localPatches[sessionID] = {
-        observedAt: Date.now(),
-        values: {
-          ...state.localPatches[sessionID]?.values,
-          ...(status ? { status } : {}),
-          active_task: activeTask,
-          ...(updatedAt ? { mod_time: updatedAt, updated_at: updatedAt } : {}),
-        },
-      };
+      if (state.activeRequestStartedAt !== undefined) {
+        state.localPatches[sessionID] = {
+          observedAt: Date.now(),
+          values: {
+            ...state.localPatches[sessionID]?.values,
+            ...(status ? { status } : {}),
+            active_task: activeTask,
+            ...(updatedAt ? { mod_time: updatedAt, updated_at: updatedAt } : {}),
+          },
+        };
+      }
     },
     renameSessionLocal(state, action: PayloadAction<{ sessionID: string; title: string }>) {
       const session = state.items.find((item) => item.session_id === action.payload.sessionID);
       if (!session) return;
       session.title = action.payload.title;
-      state.localPatches[action.payload.sessionID] = {
-        observedAt: Date.now(),
-        values: { ...state.localPatches[action.payload.sessionID]?.values, title: action.payload.title },
-      };
+      if (state.activeRequestStartedAt !== undefined) {
+        state.localPatches[action.payload.sessionID] = {
+          observedAt: Date.now(),
+          values: { ...state.localPatches[action.payload.sessionID]?.values, title: action.payload.title },
+        };
+      }
     },
     setSessionFavorite(state, action: PayloadAction<{ sessionID: string; favorite: boolean }>) {
       const session = state.items.find((item) => item.session_id === action.payload.sessionID);
       if (!session) return;
       session.favorite = action.payload.favorite;
-      state.localPatches[action.payload.sessionID] = {
-        observedAt: Date.now(),
-        values: { ...state.localPatches[action.payload.sessionID]?.values, favorite: action.payload.favorite },
-      };
+      if (state.activeRequestStartedAt !== undefined) {
+        state.localPatches[action.payload.sessionID] = {
+          observedAt: Date.now(),
+          values: { ...state.localPatches[action.payload.sessionID]?.values, favorite: action.payload.favorite },
+        };
+      }
     },
     removeSession(state, action: PayloadAction<string>) {
       state.items = state.items.filter((item) => item.session_id !== action.payload);
@@ -530,6 +543,10 @@ const sessionsSlice = createSlice({
     },
     setSessionsLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;
+      if (!action.payload) {
+        state.activeRequestStartedAt = undefined;
+        state.localPatches = {};
+      }
     },
     setSessionSearch(state, action: PayloadAction<string>) {
       state.search = action.payload;

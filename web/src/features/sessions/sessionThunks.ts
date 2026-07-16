@@ -9,7 +9,7 @@ export const loadSessions = createAsyncThunk(
   "sessions/load",
   async (_, { dispatch }) => {
     const requestStartedAt = Date.now();
-    dispatch(sessionsActions.setSessionsLoading(true));
+    dispatch(sessionsActions.beginSessionsRequest(requestStartedAt));
     sessionsRequest = listSessions();
     try {
       const result = await sessionsRequest;
