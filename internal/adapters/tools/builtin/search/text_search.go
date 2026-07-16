@@ -13,6 +13,8 @@ import (
 	"github.com/corpix/uarand"
 )
 
+const maxTextSearchResponseBytes = 4 << 20
+
 func (c *client) TextSearch(ctx context.Context, input *TextSearchRequest) (*TextSearchResponse, error) {
 	// 验证输入
 	if input.Query == "" {
@@ -67,7 +69,9 @@ func (c *client) TextSearch(ctx context.Context, input *TextSearchRequest) (*Tex
 			break
 		}
 
-		<-time.After(3 * time.Second) // request too fast may cause 202
+		if err := waitForSearchPage(ctx, 3*time.Second); err != nil {
+			return &TextSearchResponse{ErrorMessage: fmt.Sprintf("search request cancelled: %v", err)}, nil
+		}
 	}
 
 	if len(results) == 0 {
@@ -135,9 +139,12 @@ func (c *client) doTextHTMLSearch(_ context.Context, req *http.Request) (results
 		return nil, nil, fmt.Errorf("search service returned status %d, please try again later", resp.StatusCode)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxTextSearchResponseBytes+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read search results: %w", err)
+	}
+	if len(respBody) > maxTextSearchResponseBytes {
+		return nil, nil, fmt.Errorf("search response is too large")
 	}
 
 	results, nextReqBody, err = parseTextHTMLSearchResponse(string(respBody))
@@ -146,6 +153,17 @@ func (c *client) doTextHTMLSearch(_ context.Context, req *http.Request) (results
 	}
 
 	return
+}
+
+func waitForSearchPage(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func parseTextHTMLSearchResponse(respBody string) (results []*TextSearchResult, nextReqBody url.Values, err error) {

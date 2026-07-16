@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -312,4 +313,41 @@ func TestBuildTextHTMLRequestBody(t *testing.T) {
 			t.Logf("Request body: %v", body)
 		})
 	}
+}
+
+func TestTextSearchRejectsOversizedResponses(t *testing.T) {
+	searchClient := &client{
+		httpCli: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", maxTextSearchResponseBytes+1))),
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+	req, err := http.NewRequest(http.MethodPost, "https://example.test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := searchClient.doTextHTMLSearch(context.Background(), req); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("oversized response error = %v", err)
+	}
+}
+
+func TestWaitForSearchPageHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	startedAt := time.Now()
+	if err := waitForSearchPage(ctx, time.Hour); err == nil {
+		t.Fatal("cancelled wait returned no error")
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("cancelled wait took %v", elapsed)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
